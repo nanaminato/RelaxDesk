@@ -37,6 +37,7 @@ public sealed class App : Application
             var app = new App();
             if (args is ["--hwnd-contracts"]) HwndLifecycleVerification.Run(app);
             else if (args is ["--toolbar-contracts"]) ToolbarVerification.Run(app);
+            else if (args is ["--keyboard-contracts"]) KeyboardFocusVerification.Run(app);
             else if (args is ["--ui-contracts"]) ViewerUiVerification.Run(app, null);
             else if (args is ["--ui-contracts", var output]) ViewerUiVerification.Run(app, output);
             else app.Run(new ViewerWindow(smoke));
