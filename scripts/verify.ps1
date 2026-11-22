@@ -52,6 +52,8 @@ try {
         if ($LASTEXITCODE) { throw 'Codec benchmark failed' }
     }
     if ($Wpf) {
+        Run-App $viewer --toolbar-contracts
+        if ($LASTEXITCODE) { throw 'Toolbar lifecycle failed' }
         Run-App $viewer --ui-contracts
         if ($LASTEXITCODE) { throw 'Viewer connection/preview contracts failed' }
         Run-App $viewer --hwnd-contracts

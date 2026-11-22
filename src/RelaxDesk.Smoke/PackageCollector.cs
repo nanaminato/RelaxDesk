@@ -124,6 +124,7 @@ internal sealed class PackageCollector
             }
             await Exec("wpf-hwnd-contracts", viewer, ["--hwnd-contracts"], 30);
             await Exec("viewer-ui-contracts", viewer, ["--ui-contracts"], 30);
+            await Exec("viewer-toolbar-contracts", viewer, ["--toolbar-contracts"], 30);
             if (!eligible && !diagnostic) { status = "NOT_ACCEPTED_ENVIRONMENT"; await File.WriteAllTextAsync(Path.Combine(output, "stop-reason.txt"), "Not an unlocked Windows Home local console. No repeated GPU attempts."); }
             else
             {

@@ -21,8 +21,9 @@ public sealed partial class ViewerWindow
         disconnect.Style = (Style)Resources["DangerButton"];
         actions.Children.Add(full); actions.Children.Add(disconnect); DockPanel.SetDock(actions, Dock.Right); toolbar.Children.Add(actions);
         toolbar.Children.Add(new TextBlock { Text = "RelaxDesk   " + BuildIdentity.Display, ToolTip = BuildIdentity.Version, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(20, 0, 0, 0), FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
-        DockPanel.SetDock(toolbar, Dock.Top); root.Children.Add(toolbar);
+        windowToolbar = toolbar; DockPanel.SetDock(toolbar, Dock.Top); root.Children.Add(toolbar);
         var footer = new Border { Background = Brushes.White, Padding = new Thickness(18, 9, 18, 9) }; status.Text = "准备连接"; status.TextWrapping = TextWrapping.Wrap; status.Foreground = Brushes.DimGray; footer.Child = status; DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
+        connectionFooter = footer;
         renderPanel.Background = Background;
         image.Focusable = true; renderPanel.Children.Add(image);
         var form = new StackPanel();
@@ -47,6 +48,11 @@ public sealed partial class ViewerWindow
         connectionOverlay = scroll; renderPanel.Children.Add(scroll); root.Children.Add(renderPanel); Content = root;
     }
     FrameworkElement connectionOverlay = null!;
+    FrameworkElement windowToolbar = null!, connectionFooter = null!;
+    SessionToolbar? sessionToolbar;
+    internal SessionToolbar? Toolbar => sessionToolbar;
+    internal bool DesktopFillsClient => windowToolbar.Visibility == Visibility.Collapsed && connectionFooter.Visibility == Visibility.Collapsed;
+    internal void AddToolbarTestSurface(NativeVideoHost surface) => renderPanel.Children.Add(surface);
     internal bool ConnectionPanelVisible => connectionOverlay.Visibility == Visibility.Visible;
     internal bool BasicConnectionReady => host.IsVisible && port.IsVisible && pinnedConnection.IsChecked != true;
     internal void SetConnectionText(string text) => invitation.Text = text;
@@ -61,6 +67,17 @@ public sealed partial class ViewerWindow
     internal void ShowConnectedView(bool connected)
     {
         connectionOverlay.Visibility = connected ? Visibility.Collapsed : Visibility.Visible;
+        windowToolbar.Visibility = connectionFooter.Visibility = connected ? Visibility.Collapsed : Visibility.Visible;
+        if (connected)
+        {
+            sessionToolbar ??= new SessionToolbar(this, ToggleFullScreen, () => disconnect.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+            sessionToolbar.SetSession(host.Text, fullScreen);
+        }
+        else
+        {
+            sessionToolbar?.Dispose(); sessionToolbar = null;
+            if (fullScreen) ToggleFullScreen();
+        }
         renderPanel.Background = connected ? Brushes.Black : Background;
         Title = connected ? previewing ? "RelaxDesk — 本机预览" : $"RelaxDesk {BuildIdentity.Display} — {host.Text}" : "RelaxDesk " + BuildIdentity.Display;
         if (connected) { invitation.Clear(); token.Clear(); }
@@ -82,11 +99,12 @@ public sealed partial class ViewerWindow
         if (!previewing) return;
         previewTimer?.Stop(); previewTimer = null; previewing = false; image.Source = null; disconnect.IsEnabled = false; ShowConnectedView(false); status.Text = "预览已结束，准备连接";
     }
-    void ToggleFullScreen()
+    internal void ToggleFullScreen()
     {
         ReleaseHeldInputs();
         if (!fullScreen) { previousWindowState = WindowState; WindowStyle = WindowStyle.None; WindowState = WindowState.Maximized; }
         else { WindowStyle = WindowStyle.SingleBorderWindow; WindowState = previousWindowState; }
         fullScreen = !fullScreen;
+        sessionToolbar?.SetFullScreen(fullScreen);
     }
 }
