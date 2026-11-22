@@ -9,12 +9,21 @@ using System.Security.Cryptography.X509Certificates;
 using RelaxDesk.Core;
 using RelaxDesk.Windows;
 using RelaxDesk.Host;
+if (args is ["--version"]) { Console.WriteLine(BuildIdentity.Display); return; }
+if (args.Length == 0)
+{
+    Console.WriteLine("RelaxDesk Host " + BuildIdentity.Display);
+    Console.Write("本机局域网 IP（只监听指定网卡）: "); string localIp = Console.ReadLine()?.Trim() ?? "";
+    Console.Write("端口 [48200]: "); string localPort = Console.ReadLine()?.Trim() ?? "";
+    args = [localIp, string.IsNullOrEmpty(localPort) ? "48200" : localPort, "dxgi"];
+}
 if (args is ["--deployment-info"])
 {
     Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new {
         process = Environment.ProcessPath,
         runtime = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory(),
         framework = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+        version = BuildIdentity.Version,
         x64 = Environment.Is64BitProcess
     }));
     return;
@@ -67,11 +76,16 @@ try
     {
         await tls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = cert, EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, auth.Token);
         hello = await Wire.Read(tls, auth.Token);
-        if (hello.Kind is not ("hello-v1" or "hello-v2") || hello.Text is null || !CryptographicOperations.FixedTimeEquals(System.Text.Encoding.UTF8.GetBytes(hello.Text), System.Text.Encoding.UTF8.GetBytes(token))) throw new AuthenticationException("Pairing rejected");
+        if (hello.Kind == "request-v2")
+        {
+            if (hello.Text is not { Length: 32 } || !hello.Text.All(char.IsAsciiHexDigit) || hello.Capabilities is not { Length: > 0 and <= 2 } || hello.Capabilities.Any(c => c is not ("h264" or "deflate"))) throw new AuthenticationException("Invalid consent request");
+            Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests screen + input via IP/port approval. First-contact identity is not independently verified. Type APPROVE only if you expect this connection:");
+        }
+        else if (hello.Kind is not ("hello-v1" or "hello-v2") || hello.Text is null || !CryptographicOperations.FixedTimeEquals(System.Text.Encoding.UTF8.GetBytes(hello.Text), System.Text.Encoding.UTF8.GetBytes(token))) throw new AuthenticationException("Pairing rejected");
     }
-    Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests screen + input. Type APPROVE to allow this session:");
+    if (hello.Kind != "request-v2") Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests screen + input. Type APPROVE to allow this session:");
     if (await Console.In.ReadLineAsync(stop.Token) != "APPROVE") return;
-    if (hello.Kind == "hello-v2")
+    if (hello.Kind is "hello-v2" or "request-v2")
     {
         await VideoHostSession.Run(listener, client, tls, cert, hello, backend, stop.Token);
         return;

@@ -108,9 +108,16 @@ internal sealed class PackageCollector
             await Exec("core-tls", App("Tools/Tests/RelaxDesk.Tests.exe"), []);
             await Exec("windows-contracts", smoke, ["--windows-contracts"]);
             foreach (string mode in new[] { "--reject-token", "--reject-pin", "--deny-v2", "--reject-media" }) await Exec(mode[2..], smoke, [host, mode]);
+            await Exec("deny-approval", smoke, [host, "--deny-approval"]);
             if (await Exec("deployment", host, ["--deployment-info"]) != 0) throw new IOException("Runtime launch failed");
             using var deployment = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(output, "deployment.stdout.txt")));
             if (!deployment.RootElement.GetProperty("x64").GetBoolean() || !Path.GetFullPath(deployment.RootElement.GetProperty("runtime").GetString()!).StartsWith(App("Host") + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) throw new IOException("Host did not load packaged x64 runtime");
+            using var package = JsonDocument.Parse(await File.ReadAllTextAsync(App("package.json")));
+            if (package.RootElement.TryGetProperty("version", out var version))
+            {
+                if (deployment.RootElement.GetProperty("version").GetString() != version.GetString()) throw new IOException("Host version does not match package manifest");
+                if (await Exec("viewer-version", viewer, ["--version"], 30) != 0 || (await File.ReadAllTextAsync(Path.Combine(output,"viewer-version.stdout.txt"))).Trim() != version.GetString()) throw new IOException("Viewer version does not match package manifest");
+            }
             await Exec("wpf-hwnd-contracts", viewer, ["--hwnd-contracts"], 30);
             await Exec("viewer-ui-contracts", viewer, ["--ui-contracts"], 30);
             if (!eligible && !diagnostic) { status = "NOT_ACCEPTED_ENVIRONMENT"; await File.WriteAllTextAsync(Path.Combine(output, "stop-reason.txt"), "Not an unlocked Windows Home local console. No repeated GPU attempts."); }
@@ -125,7 +132,7 @@ internal sealed class PackageCollector
                     foreach (string mode in new[] { "--video-software", "--video-hardware", "--video-recovery", "--video-stalled" }) { if (await Exec(mode[2..], smoke, [host, mode]) != 0) { good = false; break; } }
                     if (good) good = await Exec("native-render", probe, ["--render-test"], 45) == 0;
                     if (good)
-                        foreach (string mode in new[] { "hardware-cpu", "gpu", "gpu-window", "gpu-idle", "gpu-resolution", "gpu-recovery", "gpu-device-fallback", "gpu-fallback", "gpu-close", "desktop-gpu" })
+                        foreach (string mode in new[] { "approval-cpu", "hardware-cpu", "gpu", "gpu-window", "gpu-idle", "gpu-resolution", "gpu-recovery", "gpu-device-fallback", "gpu-fallback", "gpu-close", "desktop-gpu" })
                             if (await Exec("wpf-" + mode, smoke, [host, "--wpf", viewer, mode]) != 0) { good = false; break; }
                     if (good)
                         foreach (string mode in new[] { "deflate", "software", "hardware-cpu", "gpu" })

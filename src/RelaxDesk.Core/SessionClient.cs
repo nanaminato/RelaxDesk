@@ -12,19 +12,30 @@ public sealed class SessionClient : IDisposable
     public SslStream Control { get; private set; } = null!;
     public SslStream Media { get; private set; } = null!;
     public string[] Capabilities { get; private set; } = [];
-    public async Task Connect(string host, int port, string fingerprint, string token, CancellationToken ct)
+    public Task Connect(string host, int port, string fingerprint, string token, CancellationToken ct) => ConnectInternal(host, port, fingerprint, token, false, ct);
+    // First-contact LAN approval: trust only this TLS session's presented cert,
+    // then pin the media channel to that exact certificate. Host consent remains
+    // mandatory. This provides no out-of-band identity proof on first contact.
+    public Task ConnectByApproval(string host, int port, CancellationToken ct) => ConnectInternal(host, port, "", "", true, ct);
+    async Task ConnectInternal(string host, int port, string fingerprint, string token, bool approvalOnly, CancellationToken ct)
     {
         string expected = fingerprint.Replace(" ", "").Replace(":", "").ToUpperInvariant();
-        if (expected.Length != 64 || !expected.All(Uri.IsHexDigit)) throw new AuthenticationException("Trusted SHA256 fingerprint required");
-        async Task<SslStream> Open(TcpClient socket)
+        if (!approvalOnly && (expected.Length != 64 || !expected.All(Uri.IsHexDigit))) throw new AuthenticationException("Trusted SHA256 fingerprint required");
+        async Task<SslStream> Open(TcpClient socket, bool firstContact = false)
         {
             await socket.ConnectAsync(host, port, ct);
-            var stream = new SslStream(socket.GetStream(), false, (_, cert, _, _) => cert is not null && cert.GetCertHashString(HashAlgorithmName.SHA256) == expected);
+            var stream = new SslStream(socket.GetStream(), false, (_, cert, _, _) =>
+            {
+                if (cert is null) return false;
+                string presented = cert.GetCertHashString(HashAlgorithmName.SHA256);
+                if (firstContact && expected.Length == 0) expected = presented;
+                return presented == expected;
+            });
             try { await stream.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = "RelaxDesk", EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, ct); return stream; }
             catch { stream.Dispose(); throw; }
         }
-        Control = await Open(control);
-        await Wire.Write(Control, new Packet("hello-v2", Text: token, Capabilities: ["h264", "deflate"]), ct);
+        Control = await Open(control, approvalOnly);
+        await Wire.Write(Control, new Packet(approvalOnly ? "request-v2" : "hello-v2", Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"]), ct);
         var approval = await Wire.Read(Control, ct);
         if (approval.Kind != "approved-v2" || approval.Text is null || approval.Capabilities is not { Length: > 0 }) throw new AuthenticationException("Host approval/capabilities missing");
         Capabilities = approval.Capabilities;

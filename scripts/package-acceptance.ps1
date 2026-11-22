@@ -4,6 +4,10 @@ $root = Split-Path $PSScriptRoot -Parent
 Push-Location $root
 try {
     $env:DOTNET_CLI_HOME = Join-Path $root '.dotnet'
+    $revision = & git rev-parse HEAD
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $productVersion = '0.3.0-ipapproval.' + $stamp + '.g' + $revision.Substring(0,7)
+    $fileVersion = '0.3.' + (Get-Date -Format 'MMdd') + '.' + (Get-Date -Format 'HHmm')
     if (!$OutputDirectory) { $OutputDirectory = 'build/RelaxDesk-acceptance-win-x64-' + (Get-Date -Format 'yyyyMMdd-HHmmss') }
     $output = [IO.Path]::GetFullPath((Join-Path $root $OutputDirectory))
     if ((Test-Path -LiteralPath $output) -or (Test-Path -LiteralPath ($output+'.zip'))) { throw 'Output already exists; evidence/packages are never overwritten.' }
@@ -14,7 +18,7 @@ try {
     if (!(Test-Path $native) -or !(Test-Path $probe)) { throw 'Native build missing' }
     $projects = [ordered]@{'RelaxDesk.Host'='Host';'RelaxDesk.Viewer'='Viewer';'RelaxDesk.Smoke'='Tools/Smoke';'RelaxDesk.Tests'='Tools/Tests'}
     foreach ($project in $projects.Keys) {
-        dotnet publish "src/$project/$project.csproj" --artifacts-path "$root/build/package-artifacts" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false "-p:RelaxDeskNativePath=$native" -o (Join-Path $output $projects[$project])
+        dotnet publish "src/$project/$project.csproj" --artifacts-path "$root/build/package-artifacts" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false "-p:InformationalVersion=$productVersion" "-p:FileVersion=$fileVersion" -p:IncludeSourceRevisionInInformationalVersion=false "-p:RelaxDeskNativePath=$native" -o (Join-Path $output $projects[$project])
         if ($LASTEXITCODE) { throw "Publish failed: $project" }
         # Preserve runtime-pack redistribution notices, in addition to anything
         # copied by publish. Do not assign a license to RelaxDesk itself.
@@ -43,7 +47,8 @@ try {
     Copy-Item -LiteralPath "$root/packaging/Collect-Logs.cmd","$root/packaging/Collect-Logs.ps1","$root/packaging/RUN-ME.zh-CN.md" -Destination $output
     $revision = & git rev-parse HEAD
     $dirty = [bool](& git status --porcelain)
-    [pscustomobject]@{format=1;revision=$revision;working_tree_dirty=$dirty;built_at=(Get-Date -Format o);rid='win-x64';self_contained=$true;trimmed=$false;native_abi=2;minimum_os='Windows 10 x64 (supported .NET 11 build) / Windows 11 x64';home_physical_console='NOT_TESTED';signature='UNSIGNED_EXPERIMENTAL'} | ConvertTo-Json | Set-Content (Join-Path $output 'package.json') -Encoding utf8
+    [pscustomobject]@{format=1;version=$productVersion;file_version=$fileVersion;revision=$revision;working_tree_dirty=$dirty;built_at=(Get-Date -Format o);rid='win-x64';self_contained=$true;trimmed=$false;native_abi=2;minimum_os='Windows 10 x64 (supported .NET 11 build) / Windows 11 x64';home_physical_console='NOT_TESTED';signature='UNSIGNED_EXPERIMENTAL'} | ConvertTo-Json | Set-Content (Join-Path $output 'package.json') -Encoding utf8
+    "RelaxDesk $productVersion`r`nRevision: $revision`r`nBuild: $stamp`r`nConnect: IP + port, then Host APPROVE" | Set-Content (Join-Path $output 'BUILD-INFO.txt') -Encoding utf8
     $hashes = @(Get-ChildItem -LiteralPath $output -Recurse -File | Sort-Object FullName | ForEach-Object {
         [pscustomobject]@{path=$_.FullName.Substring($output.Length+1).Replace('\','/');sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash;bytes=$_.Length}
     })

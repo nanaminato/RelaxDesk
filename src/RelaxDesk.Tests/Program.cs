@@ -16,6 +16,7 @@ Check(!invitation.ToString().Contains(invitation.Token));
 foreach (string invalid in new[] { "anything", "https://localhost/", invitation.Encode()+"&token="+invitation.Token, invitation.Encode().Replace("192.168.1.2", "0.0.0.0"), invitation.Encode().Replace("48200", "0"), invitation.Encode().Replace("token=", "other="), invitation.Encode().Replace("fingerprint=", "fingerprint=x"), invitation.Encode()+"#secret" })
 { try { ConnectionInvitation.Parse(invalid); throw new Exception("Invalid invitation accepted"); } catch (FormatException) { Check(true); } }
 if (args is ["--core"]) { Console.WriteLine($"PASS {count} protocol/access/media checks (TLS not run)"); return; }
+count += await ApprovalTlsChecks.Run();
 using var certificate = SessionCertificate.Create();
 var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0); listener.Start();
 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));

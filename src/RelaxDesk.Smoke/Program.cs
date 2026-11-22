@@ -5,6 +5,7 @@ using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using RelaxDesk.Core;
+if (args is [var approvalHost, "--deny-approval"]) { await ApprovalSmoke.Denied(approvalHost); return; }
 if (args is ["--collect-package", var packageRoot, .. var collectorArguments]) { Environment.ExitCode = await PackageCollector.Run(packageRoot, collectorArguments); return; }
 if (args is ["--windows-contracts"]) { RelaxDesk.Windows.WindowsContracts.Run(); return; }
 if (args is [var budgetHost, "--wpf-budget", var budgetViewer, var budgetMode, var budgetFrames]) { await WpfSmoke.Run(budgetHost, budgetViewer, budgetMode, int.Parse(budgetFrames), true); return; }

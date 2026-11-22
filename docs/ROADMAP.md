@@ -90,3 +90,6 @@ Server/RDP tests with development tools removed from PATH demonstrate app-local 
 
 
 Viewer usability follow-up: single invitation, folded credentials after approval, offline preview, control heartbeat and first-failure diagnostics implemented. Remaining: reproduce delayed LAN disconnect with both ends logs; HDR/scRGB capture and calibrated SDR tone mapping, plus HDR↔SDR host/viewer matrix on physical monitors. UI/idle tests do not close physical Home acceptance.
+
+
+Usability correction v0.3: actual IP/port → explicit Host approval is now the default connection flow, with session certificate/media binding and strict pinned compatibility mode. Publication identity must be visible and verified from a fresh ZIP extraction. Dual-PC physical Home validation, delayed disconnect and HDR tone mapping remain open.

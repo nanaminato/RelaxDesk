@@ -22,7 +22,7 @@ internal static class ViewerUiVerification
             try
             {
                 await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-                if (!window.ConnectionPanelVisible) throw new InvalidOperationException("Connection form missing"); Snapshot("connection.png");
+                if (!window.ConnectionPanelVisible || !window.BasicConnectionReady) throw new InvalidOperationException("IP/port approval form missing"); Snapshot("connection.png");
                 window.SetConnectionText("任意测试文字，不是凭证"); window.StartLocalPreview();
                 await Task.Delay(250);
                 if (window.ConnectionPanelVisible || !window.Title.Contains("预览")) throw new InvalidOperationException("Preview must hide credentials"); Snapshot("preview.png");

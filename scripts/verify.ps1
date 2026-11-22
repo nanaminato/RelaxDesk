@@ -31,7 +31,7 @@ try {
     if ($LASTEXITCODE) { throw 'Windows contracts failed' }
     & $probe --present-contracts
     if ($LASTEXITCODE) { throw 'Present state contracts failed' }
-    foreach ($mode in @('--reject-token', '--reject-pin', '--deny-v2', '--reject-media')) {
+    foreach ($mode in @('--reject-token', '--reject-pin', '--deny-v2', '--reject-media', '--deny-approval')) {
         Run-App $smokeDll $hostDll $mode
         if ($LASTEXITCODE) { throw "Security smoke failed: $mode" }
     }
@@ -50,7 +50,7 @@ try {
         if ($LASTEXITCODE) { throw 'WPF HWND lifecycle contracts failed' }
         & $probe --render-test
         if ($LASTEXITCODE) { throw 'Native render/pointer/resize/release test failed' }
-        foreach ($mode in @('hardware-cpu','cpu-idle-long','gpu','gpu-window','gpu-idle','gpu-resolution','gpu-recovery','gpu-device-fallback','gpu-fallback','gpu-close')) {
+        foreach ($mode in @('approval-cpu','hardware-cpu','cpu-idle-long','gpu','gpu-window','gpu-idle','gpu-resolution','gpu-recovery','gpu-device-fallback','gpu-fallback','gpu-close')) {
             Run-App $smokeDll $hostDll --wpf $viewer $mode
             if ($LASTEXITCODE) { throw "WPF render smoke failed: $mode" }
         }

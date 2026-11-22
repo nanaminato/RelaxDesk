@@ -3,13 +3,14 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using RelaxDesk.Windows;
+using RelaxDesk.Core;
 namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
     void BuildInterface()
     {
-        Title = "RelaxDesk"; Width = 1100; Height = 750; MinWidth = 680; MinHeight = 480;
+        Title = "RelaxDesk " + BuildIdentity.Display; Width = 1100; Height = 750; MinWidth = 680; MinHeight = 480;
         FontFamily = new FontFamily("Segoe UI, Microsoft YaHei UI"); FontSize = 14;
         Background = new SolidColorBrush(Color.FromRgb(241, 245, 249));
         var buttonStyle = new Style(typeof(Button));
@@ -22,26 +23,27 @@ public sealed partial class ViewerWindow
         var actions = new StackPanel { Orientation = Orientation.Horizontal };
         var full = new Button { Content = "全屏 / 窗口" }; full.Click += (_, _) => ToggleFullScreen();
         actions.Children.Add(full); actions.Children.Add(disconnect); DockPanel.SetDock(actions, Dock.Right); toolbar.Children.Add(actions);
-        toolbar.Children.Add(new TextBlock { Text = "RelaxDesk   /   局域网桌面", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(20, 0, 0, 0), FontWeight = FontWeights.SemiBold });
+        toolbar.Children.Add(new TextBlock { Text = "RelaxDesk   " + BuildIdentity.Display, ToolTip = BuildIdentity.Version, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(20, 0, 0, 0), FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
         DockPanel.SetDock(toolbar, Dock.Top); root.Children.Add(toolbar);
         var footer = new Border { Background = Brushes.White, Padding = new Thickness(18, 9, 18, 9) }; status.Text = "准备连接"; status.TextWrapping = TextWrapping.Wrap; status.Foreground = Brushes.DimGray; footer.Child = status; DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
         renderPanel.Background = Background;
         image.Focusable = true; renderPanel.Children.Add(image);
         var form = new StackPanel();
         form.Children.Add(new TextBlock { Text = "连接到远程电脑", FontSize = 26, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 10) });
-        form.Children.Add(new TextBlock { Text = "粘贴 Host 本次生成的连接信息，一次填写地址、指纹与凭证。", Foreground = Brushes.DimGray, TextWrapping = TextWrapping.Wrap });
-        invitation.ToolTip = "relaxdesk://…（包含一次性凭证，请通过可信渠道传递）"; form.Children.Add(invitation);
+        form.Children.Add(new TextBlock { Text = "输入 IP 和端口，Host 确认授权后进入桌面。", Foreground = Brushes.DimGray, TextWrapping = TextWrapping.Wrap });
+        form.Children.Add(new TextBlock { Text = "远程电脑 IP", Margin = new Thickness(0, 16, 0, 0) }); form.Children.Add(host);
+        form.Children.Add(new TextBlock { Text = "端口" }); form.Children.Add(port);
         var advanced = new StackPanel();
         void Field(string name, FrameworkElement control) { advanced.Children.Add(new TextBlock { Text = name }); advanced.Children.Add(control); }
-        Field("Host IP", host); Field("端口", port); Field("SHA256 指纹", fingerprint); Field("一次性凭证", token);
+        advanced.Children.Add(pinnedConnection);
+        Field("固定指纹连接信息（可选）", invitation); Field("SHA256 指纹", fingerprint); Field("一次性凭证", token);
         advanced.Children.Add(legacy); advanced.Children.Add(gpuRendering);
         advanced.Children.Add(new TextBlock { Text = "当前传输为 SDR；HDR 色调映射仍待实现与真机验证。", TextWrapping = TextWrapping.Wrap, Foreground = Brushes.DimGray, FontSize = 12 });
         legacy.Content = "兼容模式（旧协议）"; gpuRendering.Content = "GPU 显示（不支持时回退）";
         form.Children.Add(new Expander { Header = "手动填写与显示选项", Content = advanced, Margin = new Thickness(0, 4, 0, 12) });
         connect.Content = "连接"; connect.Background = new SolidColorBrush(Color.FromRgb(37, 99, 235)); connect.Foreground = Brushes.White;
         form.Children.Add(connect);
-        var preview = new Button { Content = "本机界面预览（无需连接信息）" }; preview.Click += (_, _) => StartLocalPreview(); form.Children.Add(preview);
-        form.Children.Add(new TextBlock { Text = "真实连接仍需 Host 确认授权。预览仅生成本机画面，不联网、不发送输入。", FontSize = 12, Foreground = Brushes.DimGray, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) });
+        form.Children.Add(new TextBlock { Text = "Host 必须明确批准，才会共享画面和输入。默认首次连接信任本次所见证书；请仅在可信局域网使用。", FontSize = 12, Foreground = Brushes.DimGray, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) });
         connectionCard.Child = form; connectionCard.Width = 490; connectionCard.Padding = new Thickness(28); connectionCard.Background = Brushes.White; connectionCard.CornerRadius = new CornerRadius(12); connectionCard.VerticalAlignment = VerticalAlignment.Center; connectionCard.HorizontalAlignment = HorizontalAlignment.Center;
         // Scroll when manual settings are expanded on smaller displays.
         var scroll = new ScrollViewer { Content = connectionCard, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalContentAlignment = HorizontalAlignment.Stretch };
@@ -49,6 +51,7 @@ public sealed partial class ViewerWindow
     }
     FrameworkElement connectionOverlay = null!;
     internal bool ConnectionPanelVisible => connectionOverlay.Visibility == Visibility.Visible;
+    internal bool BasicConnectionReady => host.IsVisible && port.IsVisible && pinnedConnection.IsChecked != true;
     internal void SetConnectionText(string text) => invitation.Text = text;
     void ApplyInvitation()
     {
@@ -56,12 +59,13 @@ public sealed partial class ViewerWindow
         var code = RelaxDesk.Core.ConnectionInvitation.Parse(invitation.Text);
         if (smoke is not null && (code.Host != smoke.Host || code.Port != smoke.Port)) throw new InvalidOperationException("Smoke invitation endpoint mismatch");
         host.Text = code.Host; port.Text = code.Port.ToString(); fingerprint.Text = code.Fingerprint; token.Password = code.Token;
+        pinnedConnection.IsChecked = true;
     }
     internal void ShowConnectedView(bool connected)
     {
         connectionOverlay.Visibility = connected ? Visibility.Collapsed : Visibility.Visible;
         renderPanel.Background = connected ? Brushes.Black : Background;
-        Title = connected ? previewing ? "RelaxDesk — 本机预览" : $"RelaxDesk — {host.Text}" : "RelaxDesk";
+        Title = connected ? previewing ? "RelaxDesk — 本机预览" : $"RelaxDesk {BuildIdentity.Display} — {host.Text}" : "RelaxDesk " + BuildIdentity.Display;
         if (connected) { invitation.Clear(); token.Clear(); }
     }
     internal void StartLocalPreview()

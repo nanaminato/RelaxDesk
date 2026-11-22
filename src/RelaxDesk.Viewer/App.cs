@@ -24,6 +24,7 @@ public sealed class App : Application
     [STAThread]
     public static void Main(string[] args)
     {
+        if (args is ["--version"]) { Console.WriteLine(BuildIdentity.Version); return; }
         ViewerSmokeSettings? smoke = null;
         if (args is ["--render-smoke"])
         {
@@ -56,6 +57,7 @@ public sealed partial class ViewerWindow : Window
     readonly Image image = new() { Stretch = Stretch.Uniform, Focusable = true }; readonly TextBlock status = new() { Text = "Disconnected" };
     readonly Grid renderPanel = new();
     readonly CheckBox gpuRendering = new() { Content = "D3D11 GPU display", IsChecked = true };
+    readonly CheckBox pinnedConnection = new() { Content = "使用固定指纹与凭证（可选高级方式）" };
     NativeVideoHost? nativeView;
     readonly PressedInputs heldInputs = new();
     TaskCompletionSource connectionEnded = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -102,6 +104,7 @@ public sealed partial class ViewerWindow : Window
         if (smoke is not null)
         {
             ShowActivated = false; Topmost = true; gpuRendering.IsChecked = smoke.Renderer == "gpu"; host.Text = smoke.Host; port.Text = smoke.Port.ToString(); fingerprint.Text = smoke.Fingerprint; token.Password = smoke.Token;
+            pinnedConnection.IsChecked = !string.IsNullOrEmpty(smoke.Fingerprint);
             if (smoke.ConnectionCode is not null) { invitation.Text = smoke.ConnectionCode; fingerprint.Clear(); token.Clear(); }
             Loaded += async (_, _) => { ApplyInvitation(); await ConnectVideo(); if (!smoke.FixedMediaBudget && smokeFrames < smoke.Frames) { Console.Error.WriteLine("WPF render smoke incomplete: " + status.Text); Environment.ExitCode = 1; } Close(); };
         }
@@ -184,7 +187,10 @@ public sealed partial class ViewerWindow : Window
         {
             if (smoke is null) ViewerSessionLog.Record("connect-start");
             status.Text = "Connecting; waiting for explicit host approval";
-            await connection.Connect(host.Text, int.Parse(port.Text), fingerprint.Text, token.Password, cancellation.Token); token.Clear();
+            if (!IPAddress.TryParse(host.Text.Trim(), out var target) || target.Equals(IPAddress.Any) || target.Equals(IPAddress.IPv6Any) || !int.TryParse(port.Text, out int targetPort) || targetPort is < 1 or > 65535) throw new FormatException("请输入有效的远程 IP 和端口。");
+            if (pinnedConnection.IsChecked == true) await connection.Connect(target.ToString(), targetPort, fingerprint.Text, token.Password, cancellation.Token);
+            else await connection.ConnectByApproval(target.ToString(), targetPort, cancellation.Token);
+            token.Clear();
             ShowConnectedView(true);
             heartbeat = new() { Interval = TimeSpan.FromSeconds(5) };
             heartbeat.Tick += (_, _) =>
