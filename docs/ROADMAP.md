@@ -96,3 +96,6 @@ Usability correction v0.3: actual IP/port → explicit Host approval is now the 
 
 
 v0.3.1 fixes producer fault masking and adds one software-H264 fallback with decoder reinitialization; injected four-frame and WPF recovery tests pass. Await operator NVIDIA root-error logs and real DXGI fallback validation. This does not close HDR, Home GPU or physical input acceptance.
+
+
+v0.3.2: pointer-only duplication updates reuse the last owned image; explicit BGRA format negotiation and descriptor-rich errors added. 24 native/WARP contracts pass; NVIDIA physical format failure and HDR accuracy remain unverified. Next operator log must include actual width/height/format/API if capture still fails.

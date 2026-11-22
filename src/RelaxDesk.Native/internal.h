@@ -51,6 +51,10 @@ struct capture_context {
     DXGI_OUTDUPL_POINTER_SHAPE_INFO shape{};
     DXGI_OUTDUPL_POINTER_POSITION pointer_position{};
     DXGI_OUTPUT_DESC output{};
+    DXGI_OUTDUPL_DESC duplication_desc{};
+    bool format_negotiated=false;
+    int64_t last_desktop_time=0;
+    bool accept_surface(const DXGI_OUTDUPL_FRAME_INFO& info,IDXGIResource* resource);
     void initialize(); void acquire(uint32_t timeout, rd_frame& info);
 };
 struct gpu_frame {

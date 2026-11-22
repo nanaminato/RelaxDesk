@@ -24,7 +24,7 @@
 
 ## 实际双机 LAN：只填 IP 和端口
 
-请两端都使用本 ZIP 内的新版本，解压到新的文件夹，不要覆盖旧目录或使用旧快捷方式。窗口顶部应显示 `v0.3.1-faultfix.构建时间.g提交号`，也可核对根目录 BUILD-INFO.txt 和 package.json。运行库文件时间戳可能保持 SDK 的原始时间，不能据此判断应用版本。
+请两端都使用本 ZIP 内的新版本，解压到新的文件夹，不要覆盖旧目录或使用旧快捷方式。窗口顶部应显示 `v0.3.2-capturefix.构建时间.g提交号`，也可核对根目录 BUILD-INFO.txt 和 package.json。运行库文件时间戳可能保持 SDK 的原始时间，不能据此判断应用版本。
 
 1. Host 电脑双击 `Host/RelaxDesk.Host.exe`，输入本机网卡的具体局域网 IP、端口（回车默认 48200）。也可在普通终端运行：
 
@@ -65,3 +65,5 @@ IP/端口方式采用本次首次接触信任：控制与媒体连接仍使用 T
 v0.3.1：若批准后立即断开，请回传 `producer_error` 或 `recoverable_encoder_error` 行及 `session_end`，并附 Viewer 本地日志。新的编码故障回退只尝试一次软件 H.264；仍保持 DXGI 捕获和已授权加密连接。该回退已经过注入测试，但 NVIDIA 真机根因与恢复尚待确认。
 
 Host 结构化错误日志保存在 `%LOCALAPPDATA%/RelaxDesk/logs/host-日期.log`，不记录启动配对凭证或输入内容。双击启动的 Host 会在会话结束后等待 Enter，便于读取原始错误；命令行/自动测试启动方式正常退出。
+
+v0.3.2：修正仅鼠标更新时复用桌面图像的处理，并显式协商 BGRA。若仍出现 capture-frame 错误，请回传完整 producer_error，保留 width/height/format/dupl_format/api 字段，并说明 Host 的 HDR 开关。不要只截取 HRESULT。24 项 WARP/契约测试不代表 NVIDIA 真机或 HDR 色调映射已验证。

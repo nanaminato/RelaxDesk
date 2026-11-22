@@ -70,6 +70,10 @@ static int gdi_test(){
     if(previous&&previous!=HGDI_ERROR)SelectObject(memory,previous);if(bitmap)DeleteObject(bitmap);DeleteDC(memory);ReleaseDC(nullptr,screen);return ok?0:1;
 }
 int main(int argc,char** argv){
+    if(argc==2&&!strcmp(argv[1],"--capture-contracts")){
+        const char* report=nullptr;HRESULT hr=rd_capture_self_test(&report);if(FAILED(hr)){printf("FAIL capture contracts HRESULT=0x%08lx operation=%s\n",hr,rd_last_error());return 1;}printf("%s\n",report);
+        rd_live_resources live{};rd_get_live_resources(&live);if(live.captures||live.encoders||live.decoders||live.frames||live.renderers||live.windows||live.callbacks){printf("FAIL capture test native resources not released\n");return 1;}printf("PASS capture test resources released\n");return 0;
+    }
     if(argc==2&&!strcmp(argv[1],"--present-contracts"))return present_contracts();
     if(argc==2&&!strcmp(argv[1],"--present-diagnose"))return present_diagnose();
     if(argc==2&&!strcmp(argv[1],"--render-test"))return render_test();

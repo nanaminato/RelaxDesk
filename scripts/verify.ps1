@@ -31,6 +31,8 @@ try {
     if ($LASTEXITCODE) { throw 'Windows contracts failed' }
     & $probe --present-contracts
     if ($LASTEXITCODE) { throw 'Present state contracts failed' }
+    & $probe --capture-contracts
+    if ($LASTEXITCODE) { throw 'Capture classification/WARP contracts failed' }
     foreach ($mode in @('--reject-token', '--reject-pin', '--deny-v2', '--reject-media', '--deny-approval')) {
         Run-App $smokeDll $hostDll $mode
         if ($LASTEXITCODE) { throw "Security smoke failed: $mode" }

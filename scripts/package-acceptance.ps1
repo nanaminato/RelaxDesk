@@ -6,7 +6,7 @@ try {
     $env:DOTNET_CLI_HOME = Join-Path $root '.dotnet'
     $revision = & git rev-parse HEAD
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $productVersion = '0.3.1-faultfix.' + $stamp + '.g' + $revision.Substring(0,7)
+    $productVersion = '0.3.2-capturefix.' + $stamp + '.g' + $revision.Substring(0,7)
     $fileVersion = '0.3.' + (Get-Date -Format 'MMdd') + '.' + (Get-Date -Format 'HHmm')
     if (!$OutputDirectory) { $OutputDirectory = 'build/RelaxDesk-acceptance-win-x64-' + (Get-Date -Format 'yyyyMMdd-HHmmss') }
     $output = [IO.Path]::GetFullPath((Join-Path $root $OutputDirectory))

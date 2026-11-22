@@ -101,6 +101,7 @@ internal sealed class PackageCollector
             }
             await Save("binary-hashes.json", hashes);
             await Exec("present-contracts", probe, ["--present-contracts"]);
+            await Exec("capture-contracts", probe, ["--capture-contracts"]);
             if (await Exec("capture-diagnostics", host, ["--capture-diagnose"]) != 0) throw new IOException("Cannot establish capture environment");
             using var environment = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(output, "capture-diagnostics.stdout.txt")));
             eligible = Eligible(edition, environment.RootElement, diagnostic);
