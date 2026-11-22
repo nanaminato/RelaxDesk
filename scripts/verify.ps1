@@ -15,6 +15,8 @@ try {
     if ($LASTEXITCODE) { throw 'Core/TLS checks failed' }
     dotnet $smokeDll --windows-contracts
     if ($LASTEXITCODE) { throw 'Windows contracts failed' }
+    & (Join-Path $root "$NativeBuildDirectory/Release/RelaxDesk.NativeProbe.exe") --present-contracts
+    if ($LASTEXITCODE) { throw 'Present state contracts failed' }
     foreach ($mode in @('--reject-token', '--reject-pin', '--deny-v2', '--reject-media')) {
         dotnet $smokeDll $hostDll $mode
         if ($LASTEXITCODE) { throw "Security smoke failed: $mode" }
@@ -28,6 +30,8 @@ try {
         if ($LASTEXITCODE) { throw 'Codec benchmark failed' }
     }
     if ($Wpf) {
+        dotnet (Join-Path $root 'src/RelaxDesk.Viewer/bin/Release/net11.0-windows/RelaxDesk.Viewer.dll') --hwnd-contracts
+        if ($LASTEXITCODE) { throw 'WPF HWND lifecycle contracts failed' }
         & (Join-Path $root "$NativeBuildDirectory/Release/RelaxDesk.NativeProbe.exe") --render-test
         if ($LASTEXITCODE) { throw 'Native render/pointer/resize/release test failed' }
         foreach ($mode in @('hardware-cpu','gpu','gpu-window','gpu-idle','gpu-resolution','gpu-recovery','gpu-device-fallback','gpu-fallback','gpu-close')) {

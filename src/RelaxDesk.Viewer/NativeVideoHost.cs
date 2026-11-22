@@ -42,6 +42,8 @@ public sealed class NativeVideoHost : HwndHost
         else if (message is LeftUp or RightUp) { Input?.Invoke(message == LeftUp ? 256 : 257, true, 0, 0); if (((long)wParam & 3) == 0) ReleaseCapture(); handled = true; }
         else if (message == Wheel) { Input?.Invoke((short)(((long)wParam >> 16) & 0xffff) > 0 ? 258 : 259, false, 0, 0); handled = true; }
         else if (message is 0x100 or 0x101 or 0x104 or 0x105) { Input?.Invoke((int)wParam, message is 0x101 or 0x105, 0, 0); handled = true; }
-        return 0;
+        // HwndHost enforces layout geometry on WM_WINDOWPOSCHANGING and clears
+        // its HWND on WM_NCDESTROY. Skipping the base loses both contracts.
+        return handled ? 0 : base.WndProc(hwnd, message, wParam, lParam, ref handled);
     }
 }

@@ -6,6 +6,7 @@
 #include <mutex>
 #include <sstream>
 #include <dwmapi.h>
+#include "present_state.h"
 
 namespace {
 struct window_dpi_scope {
@@ -57,11 +58,15 @@ struct renderer_context {
     rd_render_timing timing{};
     bool drawn=false;
     HRESULT last_present=S_OK;
-    bool occlusion_idle=false;
-    ULONGLONG next_occlusion_test=0;
+    present_state visibility;
+    HRESULT last_test=S_OK;
+    uint64_t test_calls=0;
+    DWORD window_thread=0,window_process=0;
 
     renderer_context(gpu_frame& frame,HWND window):hwnd(window) {
         if(!IsWindow(hwnd))check(E_HANDLE,"renderer requires a live child HWND");
+        window_thread=GetWindowThreadProcessId(hwnd,&window_process);
+        if(window_process!=GetCurrentProcessId())check(E_INVALIDARG,"renderer requires an in-process HWND");
         frame.texture->GetDevice(&graphics.device);graphics.device->GetImmediateContext(&graphics.commands);
         check(graphics.device.As(&video),"renderer video device");check(graphics.commands.As(&video_commands),"renderer video context");
         ComPtr<IDXGIDevice> device;check(graphics.device.As(&device),"renderer DXGI device");ComPtr<IDXGIAdapter> adapter;check(device->GetAdapter(&adapter),"renderer adapter");
@@ -79,15 +84,17 @@ struct renderer_context {
     }
 
     bool resize(){
-        lifetime.verify();if(!IsWindow(hwnd))check(E_HANDLE,"render window destroyed");
+        lifetime.verify();DWORD process=0;
+        if(!IsWindow(hwnd)||GetWindowThreadProcessId(hwnd,&process)!=window_thread||process!=window_process)check(E_HANDLE,"render window destroyed or replaced");
         window_dpi_scope dpi(hwnd);
         RECT client{};check(GetClientRect(hwnd,&client)?S_OK:HRESULT_FROM_WIN32(GetLastError()),"render client rectangle");
         if(!IsWindowVisible(hwnd)||IsIconic(GetAncestor(hwnd,GA_ROOT))||client.right<=0||client.bottom<=0){++timing.skipped;++timing.hidden;return false;}
-        if(occlusion_idle){
-            if(GetTickCount64()<next_occlusion_test){++timing.skipped;++timing.occluded;return false;}
-            HRESULT status=swap->Present(0,DXGI_PRESENT_TEST);last_present=status;
-            if(status==DXGI_STATUS_OCCLUDED){next_occlusion_test=GetTickCount64()+100;++timing.skipped;++timing.occluded;return false;}
-            check(status,"swapchain occlusion test");occlusion_idle=false;
+        if(visibility.idle){
+            if(!visibility.test_due(GetTickCount64())){++timing.skipped;++timing.occluded;return false;}
+            HRESULT status=swap->Present(0,DXGI_PRESENT_TEST);last_test=status;++test_calls;
+            check(status,"swapchain occlusion test");
+            if(status==DXGI_STATUS_MODE_CHANGED){width=height=0;visibility.idle=false;}
+            else if(!visibility.tested(status,GetTickCount64())){++timing.skipped;++timing.occluded;return false;}
         }
         UINT w=static_cast<UINT>(client.right),h=static_cast<UINT>(client.bottom);
         if(w>8192||h>8192)check(E_INVALIDARG,"render dimensions exceed cap");
@@ -171,9 +178,12 @@ struct renderer_context {
         lifetime.verify();if(!drawn)return S_FALSE;auto start=ticks();HRESULT hr=swap->Present(0,DXGI_PRESENT_DO_NOT_WAIT);last_present=hr;timing.present_ms=elapsed_ms(start);drawn=false;
         // Flip-model Present changes the backbuffer binding; do not retain a view to the previous buffer.
         graphics.commands->OMSetRenderTargets(0,nullptr,nullptr);output_view.Reset();render_target.Reset();backbuffer.Reset();
-        if(hr==DXGI_STATUS_OCCLUDED){occlusion_idle=true;next_occlusion_test=GetTickCount64()+100;++timing.skipped;++timing.occluded;return S_FALSE;}
+        if(hr==DXGI_STATUS_OCCLUDED){visibility.presented(hr,GetTickCount64());++timing.skipped;++timing.occluded;return S_FALSE;}
         if(hr==DXGI_ERROR_WAS_STILL_DRAWING){++timing.skipped;++timing.busy;return S_FALSE;}
-        check(hr,"swapchain Present");++timing.presents;return S_OK;
+        check(hr,"swapchain Present");
+        if(hr==DXGI_STATUS_MODE_CHANGED){width=height=0;++timing.skipped;return S_FALSE;}
+        if(hr!=S_OK)check(E_UNEXPECTED,"unexpected successful swapchain Present status");
+        ++timing.presents;return S_OK;
     }
 };
 LRESULT CALLBACK child_proc(HWND hwnd,UINT message,WPARAM wparam,LPARAM lparam){if(message==WM_ERASEBKGND)return 1;return DefWindowProcW(hwnd,message,wparam,lparam);}
@@ -192,8 +202,9 @@ RD int32_t rd_renderer_diagnostics(void* renderer,const char** json){if(!rendere
     bool found=false,match=false;ComPtr<IDXGIFactory1> factory;check(adapter->GetParent(IID_PPV_ARGS(&factory)),"render diagnostic factory");
     for(UINT i=0;i<64&&!found;++i){ComPtr<IDXGIAdapter1> candidate;if(factory->EnumAdapters1(i,&candidate)==DXGI_ERROR_NOT_FOUND)break;DXGI_ADAPTER_DESC1 d{};candidate->GetDesc1(&d);
         for(UINT o=0;o<64;++o){ComPtr<IDXGIOutput> output;if(candidate->EnumOutputs(o,&output)==DXGI_ERROR_NOT_FOUND)break;DXGI_OUTPUT_DESC od{};output->GetDesc(&od);if(od.Monitor==target){found=true;match=d.AdapterLuid.HighPart==desc.AdapterLuid.HighPart&&d.AdapterLuid.LowPart==desc.AdapterLuid.LowPart;break;}}}
+    DXGI_SWAP_CHAIN_DESC1 chain{};check(r.swap->GetDesc1(&chain),"render diagnostic swap desc");
     auto rect=[](RECT v){std::ostringstream s;s<<'['<<v.left<<','<<v.top<<','<<v.right<<','<<v.bottom<<']';return s.str();};std::ostringstream s;
-    s<<"{\"device_luid_high\":"<<desc.AdapterLuid.HighPart<<",\"device_luid_low\":"<<desc.AdapterLuid.LowPart<<",\"window_output_found\":"<<found<<",\"device_window_adapter_match\":"<<match<<",\"window_rect\":"<<rect(window)<<",\"child_rect\":"<<rect(child)<<",\"monitor_rect\":"<<rect(monitor)<<",\"visible\":"<<IsWindowVisible(root)<<",\"iconic\":"<<IsIconic(root)<<",\"cloaked\":"<<cloaked<<",\"dpi\":"<<GetDpiForWindow(root)<<",\"dwm_enabled\":"<<composition<<",\"last_present_hr\":"<<static_cast<uint32_t>(r.last_present)<<'}';text=s.str();*json=text.c_str();});}
+    s<<"{\"device_luid_high\":"<<desc.AdapterLuid.HighPart<<",\"device_luid_low\":"<<desc.AdapterLuid.LowPart<<",\"window_output_found\":"<<found<<",\"device_window_adapter_match\":"<<match<<",\"window_rect\":"<<rect(window)<<",\"child_rect\":"<<rect(child)<<",\"monitor_rect\":"<<rect(monitor)<<",\"visible\":"<<IsWindowVisible(root)<<",\"iconic\":"<<IsIconic(root)<<",\"cloaked\":"<<cloaked<<",\"dpi\":"<<GetDpiForWindow(root)<<",\"dwm_enabled\":"<<composition<<",\"last_present_hr\":"<<static_cast<uint32_t>(r.last_present)<<",\"last_test_hr\":"<<static_cast<uint32_t>(r.last_test)<<",\"test_calls\":"<<r.test_calls<<",\"occlusion_idle\":"<<r.visibility.idle<<",\"hwnd_thread\":"<<r.window_thread<<",\"render_thread\":"<<GetCurrentThreadId()<<",\"swap_effect\":"<<chain.SwapEffect<<",\"swap_width\":"<<chain.Width<<",\"swap_height\":"<<chain.Height<<",\"buffer_count\":"<<chain.BufferCount<<",\"factory_current\":"<<factory->IsCurrent()<<",\"device_removed_hr\":"<<static_cast<uint32_t>(r.graphics.device->GetDeviceRemovedReason())<<'}';text=s.str();*json=text.c_str();});}
 RD int32_t rd_renderer_probe_pixel(void* renderer,uint32_t x,uint32_t y,uint32_t* bgra){if(!renderer||!bgra)return E_INVALIDARG;return guarded([&]{auto& r=*static_cast<renderer_context*>(renderer);r.lifetime.verify();if(!r.drawn||x>=r.width||y>=r.height)check(E_INVALIDARG,"probe requires a drawn, unpresented frame");
     D3D11_TEXTURE2D_DESC desc{};desc.Width=desc.Height=desc.MipLevels=desc.ArraySize=1;desc.Format=DXGI_FORMAT_B8G8R8A8_UNORM;desc.SampleDesc.Count=1;desc.Usage=D3D11_USAGE_STAGING;desc.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
     ComPtr<ID3D11Texture2D> pixel;check(r.graphics.device->CreateTexture2D(&desc,nullptr,&pixel),"explicit test pixel probe");D3D11_BOX box{x,y,0,x+1,y+1,1};r.graphics.commands->CopySubresourceRegion(pixel.Get(),0,0,0,0,r.backbuffer.Get(),0,&box);D3D11_MAPPED_SUBRESOURCE mapped{};check(r.graphics.commands->Map(pixel.Get(),0,D3D11_MAP_READ,0,&mapped),"test pixel Map");memcpy(bgra,mapped.pData,4);r.graphics.commands->Unmap(pixel.Get(),0);});}

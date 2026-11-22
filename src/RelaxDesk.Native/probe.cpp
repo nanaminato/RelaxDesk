@@ -4,6 +4,8 @@
 #include <cstring>
 #include <stdexcept>
 #include "api.h"
+int present_contracts();
+int present_diagnose();
 
 static void require(HRESULT hr,const char* step){if(FAILED(hr)){printf("FAIL %s HRESULT=0x%08lx operation=%s\n",step,hr,rd_last_error());throw std::runtime_error(step);}}
 static int render_test(){
@@ -68,6 +70,8 @@ static int gdi_test(){
     if(previous&&previous!=HGDI_ERROR)SelectObject(memory,previous);if(bitmap)DeleteObject(bitmap);DeleteDC(memory);ReleaseDC(nullptr,screen);return ok?0:1;
 }
 int main(int argc,char** argv){
+    if(argc==2&&!strcmp(argv[1],"--present-contracts"))return present_contracts();
+    if(argc==2&&!strcmp(argv[1],"--present-diagnose"))return present_diagnose();
     if(argc==2&&!strcmp(argv[1],"--render-test"))return render_test();
     if(argc==2&&!strcmp(argv[1],"--diagnose")){const char* json=nullptr;HRESULT hr=rd_capture_diagnostics(&json);if(FAILED(hr)){printf("diagnostics HRESULT=0x%08lx operation=%s\n",hr,rd_last_error());return 1;}printf("%s\n",json);return 0;}
     if(argc==2&&!strcmp(argv[1],"--gdi"))return gdi_test();

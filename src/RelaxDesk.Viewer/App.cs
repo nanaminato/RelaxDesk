@@ -31,7 +31,12 @@ public sealed class App : Application
             if (!IPAddress.TryParse(smoke.Host, out var address) || !IPAddress.IsLoopback(address)) throw new InvalidDataException("Render smoke is loopback-only");
         }
         nint previousDpi = SetThreadDpiAwarenessContext(-4);
-        try { new App().Run(new ViewerWindow(smoke)); }
+        try
+        {
+            var app = new App();
+            if (args is ["--hwnd-contracts"]) HwndLifecycleVerification.Run(app);
+            else app.Run(new ViewerWindow(smoke));
+        }
         finally { if (previousDpi != 0) SetThreadDpiAwarenessContext(previousDpi); }
     }
 }
@@ -182,6 +187,22 @@ public sealed class ViewerWindow : Window
                     cancellation.Token.WaitHandle.WaitOne();
                 }
                 int generation = -1, retries = 0, lastRendererResizes = 0; bool gpu = preferGpu; bool simulatedGap = false;
+                bool reportedOcclusion = false;
+                void CollectRenderState()
+                {
+                    if (renderer is null) return;
+                    var timing = renderer.Timing;
+                    hiddenPresents += timing.Hidden - lastHidden; occludedPresents += timing.Occluded - lastOccluded; busyPresents += timing.Busy - lastBusy;
+                    lastHidden = timing.Hidden; lastOccluded = timing.Occluded; lastBusy = timing.Busy;
+                    int sizes = checked((int)timing.Resizes); resizeCount += sizes - lastRendererResizes; lastRendererResizes = sizes;
+                    if (!reportedOcclusion && timing.Occluded > 0)
+                    {
+                        reportedOcclusion = true;
+                        Diagnostic("GPU output occluded; waiting for visibility without rebuilding the device");
+                        string details = "render_environment=" + renderer.Diagnostics();
+                        if (smoke is not null) Console.WriteLine(details); else Debug.WriteLine(details);
+                    }
+                }
                 void RecoverGpu(Exception error)
                 {
                     retained?.Dispose(); retained = null; renderer?.Dispose(); renderer = null; decoder.Dispose();
@@ -206,7 +227,7 @@ public sealed class ViewerWindow : Window
                             try
                             {
                                 if (renderer.Present(retained.Surface, retained.Frame.Metadata)) Interlocked.Increment(ref idleRepaints);
-                                int sizes = checked((int)renderer.Timing.Resizes); resizeCount += sizes - lastRendererResizes; lastRendererResizes = sizes;
+                                CollectRenderState();
                             }
                             catch (System.Runtime.InteropServices.ExternalException e) { RecoverGpu(e); }
                         }
@@ -223,15 +244,14 @@ public sealed class ViewerWindow : Window
                                 if (smoke?.SimulateDeviceLoss == true && simulatedLosses < 3 && gpuFrames >= 10 * (simulatedLosses + 1)) { simulatedLosses++; throw new System.Runtime.InteropServices.ExternalException("Simulated device removal for recovery test", unchecked((int)0x887A0005)); }
                                 retained?.Dispose(); retained = null;
                                 var surface = decoder.DecodeSurface(frame); if (surface is null) continue; retained = surface;
-                                if (generation != decoder.Generation) { renderer?.Dispose(); renderer = null; lastRendererResizes = 0; lastHidden = lastOccluded = lastBusy = 0; generation = decoder.Generation; }
+                                if (generation != decoder.Generation) { renderer?.Dispose(); renderer = null; lastRendererResizes = 0; lastHidden = lastOccluded = lastBusy = 0; reportedOcclusion = false; generation = decoder.Generation; }
                                 if (renderer is null) { renderer = new(surface.Surface, hwnd); rendererGenerations++; }
                                 nativeView!.SetVideoSize(frame.Width, frame.Height);
                                 bool shown = renderer.Present(surface.Surface, frame.Metadata);
-                                if(smoke is not null && (renderer.Timing.Occluded==1 || receivedFrames==1))Console.WriteLine("render_environment="+renderer.Diagnostics());
+                                if(smoke is not null && receivedFrames==1)Console.WriteLine("render_environment="+renderer.Diagnostics());
                                 metrics.Add("decode", surface.DecodeMilliseconds); metrics.Add("gpu_draw_submit", renderer.Timing.DrawMs); metrics.Add("present_call", renderer.Timing.PresentMs);
                                 metrics.Add("readback", surface.Timing.ReadbackMs); Interlocked.Add(ref readbackBytes, checked((long)surface.Timing.ReadbackBytes));
-                                hiddenPresents += renderer.Timing.Hidden - lastHidden; occludedPresents += renderer.Timing.Occluded - lastOccluded; busyPresents += renderer.Timing.Busy - lastBusy; lastHidden = renderer.Timing.Hidden; lastOccluded = renderer.Timing.Occluded; lastBusy = renderer.Timing.Busy;
-                                int currentResizes = checked((int)renderer.Timing.Resizes); resizeCount += currentResizes - lastRendererResizes; lastRendererResizes = currentResizes;
+                                CollectRenderState();
                                 if (shown) Presented(true, frame, surface.DecodeMilliseconds); else Interlocked.Increment(ref skipped);
                                 BudgetReached(); continue;
                             }
