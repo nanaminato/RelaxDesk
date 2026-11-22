@@ -1,0 +1,39 @@
+# .NET / Visual Studio
+**/bin/
+**/obj/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# CMake / C++ build artifacts
+build/
+out/
+CMakeFiles/
+CMakeCache.txt
+*.obj
+*.pdb
+*.ilk
+*.idb
+*.pch
+
+# OS and editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local config, keys and secrets
+.env
+.env.*
+!.env.example
+**/appsettings.Development.local.json
+*.pfx
+*.p12
+*.pem
+*.key
