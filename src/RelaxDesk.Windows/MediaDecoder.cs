@@ -4,7 +4,11 @@ using System.Runtime.InteropServices;
 using RelaxDesk.Core;
 namespace RelaxDesk.Windows;
 
-public sealed record DecodedMedia(MediaFrame Frame, byte[] Pixels, CaptureMetadata Metadata, double DecodeMilliseconds, long DecodedAt, bool HardwareDecoded);
+public sealed record DecodedMedia(MediaFrame Frame, byte[] Pixels, CaptureMetadata Metadata, double DecodeMilliseconds, long DecodedAt, bool HardwareDecoded, DecodeTiming Timing = default);
+public sealed record DecodedSurface(MediaFrame Frame, GpuVideoFrame Surface, CaptureMetadata Metadata, double DecodeMilliseconds, DecodeTiming Timing) : IDisposable
+{
+    public void Dispose() => Surface.Dispose();
+}
 
 public sealed class MediaDecoder : IDisposable
 {
@@ -15,22 +19,37 @@ public sealed class MediaDecoder : IDisposable
     int width, height;
     MediaCodec codec;
     bool requested, disableHardware;
-    public MediaDecoder(Action requestKeyFrame, Action<string>? diagnostic = null)
-    { this.requestKeyFrame = requestKeyFrame; this.diagnostic = diagnostic ?? (_ => { }); }
-    public DecodedMedia? Decode(MediaFrame frame)
+    public int Generation { get; private set; }
+    public MediaDecoder(Action requestKeyFrame, Action<string>? diagnostic = null, bool preferHardware = true)
+    { this.requestKeyFrame = requestKeyFrame; this.diagnostic = diagnostic ?? (_ => { }); disableHardware = !preferHardware; }
+    bool Prepare(MediaFrame frame)
     {
         bool reset = continuity.NeedsKeyFrame;
         if (!continuity.Accept(frame))
         {
             if (!requested) { requestKeyFrame(); requested = true; }
-            return null;
+            return false;
         }
         if (frame.Width != width || frame.Height != height || frame.Codec != codec)
         {
-            if (!frame.KeyFrame) { continuity.RequireKeyFrame(); requestKeyFrame(); return null; }
+            if (!frame.KeyFrame) { continuity.RequireKeyFrame(); requestKeyFrame(); return false; }
             reset = true; width = frame.Width; height = frame.Height; codec = frame.Codec;
         }
-        if (reset) { decoder?.Dispose(); decoder = null; requested = false; }
+        if (reset) { decoder?.Dispose(); decoder = null; requested = false; Generation++; }
+        return true;
+    }
+    public DecodedSurface? DecodeSurface(MediaFrame frame)
+    {
+        if (!Prepare(frame)) return null;
+        if (frame.Codec != MediaCodec.H264) throw new NotSupportedException("GPU rendering requires negotiated H264");
+        var metadata = CaptureMetadataCodec.Decode(frame.Metadata); PointerCompositor.Validate(metadata);
+        decoder ??= new(width, height, true);
+        var timer = Stopwatch.StartNew(); var surface = decoder.DecodeGpu(frame.Data, frame.Timestamp100ns);
+        return surface is null ? null : new(frame, surface, metadata, timer.Elapsed.TotalMilliseconds, decoder.Timing);
+    }
+    public DecodedMedia? Decode(MediaFrame frame)
+    {
+        if (!Prepare(frame)) return null;
         var timer = Stopwatch.StartNew();
         byte[]? pixels;
         if (frame.Codec == MediaCodec.DeflateBgra)
@@ -59,7 +78,7 @@ public sealed class MediaDecoder : IDisposable
         }
         var metadata = CaptureMetadataCodec.Decode(frame.Metadata);
         PointerCompositor.Validate(metadata);
-        return pixels is null ? null : new(frame, pixels, metadata, timer.Elapsed.TotalMilliseconds, Stopwatch.GetTimestamp(), decoder?.Hardware == true);
+        return pixels is null ? null : new(frame, pixels, metadata, timer.Elapsed.TotalMilliseconds, Stopwatch.GetTimestamp(), decoder?.Hardware == true, decoder?.Timing ?? default);
     }
     public void Dispose() => decoder?.Dispose();
 }

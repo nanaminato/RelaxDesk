@@ -1,6 +1,7 @@
 #include "internal.h"
 thread_local std::string rd_error;
-RD uint32_t rd_abi_version(){return 1;}
+RD uint32_t rd_abi_version(){return 2;}
+RD void rd_get_live_resources(rd_live_resources* resources){if(resources)*resources={live_resources[0].load(),live_resources[1].load(),live_resources[2].load(),live_resources[3].load(),live_resources[4].load(),live_resources[5].load(),live_resources[6].load()};}
 RD const char* rd_last_error(){return rd_error.c_str();}
 void gpu::create(IDXGIAdapter* adapter) {
     check(D3D11CreateDevice(adapter,adapter?D3D_DRIVER_TYPE_UNKNOWN:D3D_DRIVER_TYPE_HARDWARE,nullptr,
@@ -10,6 +11,7 @@ void gpu::create(IDXGIAdapter* adapter) {
 }
 void capture_context::initialize() {
     duplication.Reset();texture.Reset();staging.Reset();graphics={};
+    dirty.clear();moves.clear();pointer.clear();shape={};pointer_position={};
     ComPtr<IDXGIFactory1> factory;check(CreateDXGIFactory1(IID_PPV_ARGS(&factory)),"CreateDXGIFactory1");
     // Choose the attached primary physical output and its adapter, never a different logon session.
     for(UINT a=0;;++a){ComPtr<IDXGIAdapter1> adapter;HRESULT hr=factory->EnumAdapters1(a,&adapter);if(hr==DXGI_ERROR_NOT_FOUND)break;check(hr,"EnumAdapters1");
@@ -31,6 +33,7 @@ void capture_context::acquire(uint32_t timeout,rd_frame& result) {
     if(hr==DXGI_ERROR_ACCESS_LOST||hr==DXGI_ERROR_DEVICE_REMOVED||hr==DXGI_ERROR_DEVICE_RESET){duplication.Reset();texture.Reset();staging.Reset();check(hr,"duplication lost; recreate capture and encoder");}
     check(hr,"AcquireNextFrame");
     struct frame_guard{IDXGIOutputDuplication* d;~frame_guard(){if(d)d->ReleaseFrame();}} release{duplication.Get()};
+    if(info.TotalMetadataBufferSize>1024*1024||info.PointerShapeBufferSize>1024*1024)check(E_INVALIDARG,"capture metadata cap exceeded");
     ComPtr<ID3D11Texture2D> source;check(resource.As(&source),"desktop texture");D3D11_TEXTURE2D_DESC desc{};source->GetDesc(&desc);
     if(desc.Width>7680||desc.Height>4320||desc.Format!=DXGI_FORMAT_B8G8R8A8_UNORM)check(DXGI_ERROR_UNSUPPORTED,"unsupported capture dimensions/format");
     if(!texture){desc.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_RENDER_TARGET;desc.MiscFlags=0;desc.Usage=D3D11_USAGE_DEFAULT;desc.CPUAccessFlags=0;check(graphics.device->CreateTexture2D(&desc,nullptr,&texture),"create owned desktop texture");}

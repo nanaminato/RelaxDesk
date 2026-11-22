@@ -5,6 +5,13 @@ namespace RelaxDesk.Windows;
 
 public static class CodecVerification
 {
+    static void StampTemporalMarker(byte[] pixels, int width, int index)
+    {
+        for (int y = 8; y < 72; y++) for (int x = 16; x < 80; x++)
+        {
+            int at = (y * width + x) * 4; pixels[at] = (byte)(index % 2 == 0 ? 32 : 220); pixels[at + 1] = (byte)(40 + index * 31 % 180); pixels[at + 2] = (byte)(40 + index * 73 % 180);
+        }
+    }
     // Synthetic codec validation is deliberately independent of screen capture and remote input.
     public static void Run(bool hardware, int width = 1280, int height = 720)
     {
@@ -15,18 +22,23 @@ public static class CodecVerification
         for (int index = 0; index < 60; index++)
         {
             byte[] pixels = Pattern(width, height, index);
+            // A per-frame marker catches stale GPU uploads/conversions that static-band PSNR cannot detect.
+            StampTemporalMarker(pixels, width, index);
             var timer = Stopwatch.StartNew();
             EncodedVideo? packet;
             try { packet = encoder.EncodeBgra(pixels, index * 333333L); }
             catch (ExternalException e) { throw new InvalidDataException($"Encode failed at synthetic frame {index}: {e.Message}", e); }
             encode.Add(timer.Elapsed.TotalMilliseconds);
             if (packet is null) continue;
+            if (packet.Timestamp != index * 333333L) throw new InvalidDataException("Encoder added sample delay/reordering despite low-latency request");
             bytes += packet.Data.Length; timer.Restart();
             byte[]? output;
             try { output = decoder.Decode(packet.Data, packet.Timestamp); }
             catch (ExternalException e) { throw new InvalidDataException($"Decode failed at synthetic frame {index}, bytes={packet.Data.Length}, keyframe={packet.KeyFrame}: {e.Message}", e); }
             decode.Add(timer.Elapsed.TotalMilliseconds);
             if (output is null) continue;
+            int marker = (40 * width + 48) * 4;
+            for (int c = 0; c < 3; c++) if (Math.Abs(pixels[marker + c] - output[marker + c]) > 25) throw new InvalidDataException($"Stale/corrupt temporal marker at frame {index}; hardware={hardware}");
             decoded++;
             // Stable color bands are compared away from the moving square/4:2:0 boundaries.
             for (int y = 100; y < height - 100; y += 13)
@@ -42,14 +54,14 @@ public static class CodecVerification
         double psnr = 10 * Math.Log10(255 * 255 / Math.Max(squared / compared, 0.000001));
         if (psnr < 25) throw new InvalidDataException($"Decoded color PSNR too low: {psnr:F2}");
         encode.Sort(); decode.Sort();
-        Console.WriteLine($"PASS synthetic H264 hardware_encode={hardware} hardware_decode={decoder.Hardware} resolution={width}x{height} encoded={encode.Count} decoded={decoded} encode_p50_ms={Percentile(encode, .50):F2} encode_p95_ms={Percentile(encode, .95):F2} decode_p50_ms={Percentile(decode, .50):F2} decode_p95_ms={Percentile(decode, .95):F2} encoded_bytes={bytes} sampled_psnr_db={psnr:F2}");
+        Console.WriteLine($"PASS synthetic H264 hardware_encode={hardware} hardware_decode={decoder.Hardware} resolution={width}x{height} encoded={encode.Count} decoded={decoded} temporal_marker_verified={decoded} encode_p50_ms={Percentile(encode, .50):F2} encode_p95_ms={Percentile(encode, .95):F2} decode_p50_ms={Percentile(decode, .50):F2} decode_p95_ms={Percentile(decode, .95):F2} encoded_bytes={bytes} sampled_psnr_db={psnr:F2}");
     }
     public static void Compare1080p()
     {
         var encode = new List<double>(); var decode = new List<double>(); long bytes = 0;
         for (int i = 0; i < 60; i++)
         {
-            byte[] pixels = Pattern(1920, 1080, i); var timer = Stopwatch.StartNew();
+            byte[] pixels = Pattern(1920, 1080, i); StampTemporalMarker(pixels, 1920, i); var timer = Stopwatch.StartNew();
             using var output = new MemoryStream(); using (var zip = new DeflateStream(output, CompressionLevel.Fastest, true)) zip.Write(pixels);
             encode.Add(timer.Elapsed.TotalMilliseconds); bytes += output.Length; output.Position = 0; timer.Restart();
             using var unzip = new DeflateStream(output, CompressionMode.Decompress); byte[] decoded = new byte[pixels.Length]; unzip.ReadExactly(decoded);

@@ -2,6 +2,13 @@ using System.Runtime.InteropServices;
 namespace RelaxDesk.Windows;
 
 public sealed record EncodedVideo(byte[] Data, bool KeyFrame, long Timestamp);
+[StructLayout(LayoutKind.Sequential)]
+public struct EncodeTiming
+{
+    public double UploadSubmitMs, SurfaceSetupMs, ColorSubmitMs, InputWaitMs, SubmitMs, OutputWaitMs, PackMs, TotalMs, GpuUploadMs, GpuColorMs;
+    public ulong UploadBytes;
+    public uint AcceptedSettings, GpuTimingValid;
+}
 
 public sealed class H264Encoder : IDisposable
 {
@@ -15,6 +22,7 @@ public sealed class H264Encoder : IDisposable
     readonly Context context;
     public bool Hardware { get; }
     public string Name => Marshal.PtrToStringUTF8(NativeMethods.rd_encoder_name(context.Value)) ?? "unknown";
+    public EncodeTiming Timing { get { NativeMethods.Check(NativeMethods.rd_encoder_timing(context.Value, out var timing)); return timing; } }
     public H264Encoder(DxgiCaptureBackend? capture, int width, int height, bool hardware, int fps = 30, int bitrate = 8_000_000)
     {
         context = new(capture, width, height, hardware, fps, bitrate); Hardware = hardware;
@@ -49,6 +57,15 @@ public sealed class H264Decoder : IDisposable
     public H264Decoder(int width, int height, bool hardware = false)
     {
         size = checked(width * height * 4); context = new(width, height, hardware); Hardware = hardware;
+    }
+    public DecodeTiming Timing
+    {
+        get { NativeMethods.Check(NativeMethods.rd_decoder_timing(context.Value, out var timing)); return timing; }
+    }
+    public GpuVideoFrame? DecodeGpu(byte[] data, long timestamp)
+    {
+        int hr = NativeMethods.rd_decoder_gpu_frame(context.Value, data, (uint)data.Length, timestamp, out var surface);
+        NativeMethods.Check(hr); return hr == 1 ? null : new(surface);
     }
     public byte[]? Decode(byte[] data, long timestamp)
     {

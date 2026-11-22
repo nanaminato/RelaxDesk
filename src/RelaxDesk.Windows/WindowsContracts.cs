@@ -8,6 +8,10 @@ public static class WindowsContracts
         int count = 0;
         void Check(bool result) { if (!result) throw new InvalidDataException($"Windows contract {count + 1} failed"); count++; }
         Check(Marshal.SizeOf<NativeMethods.FrameInfo>() == 72);
+        Check(Marshal.SizeOf<EncodeTiming>() == 96);
+        Check(Marshal.SizeOf<DecodeTiming>() == 48);
+        Check(Marshal.SizeOf<RenderTiming>() == 80);
+        Check(Marshal.SizeOf<NativeResources>() == 56);
         var metadata = new CaptureMetadata(123, 1, new byte[16], new byte[24], 0, 0, true, 2, 1, 1, 4, 0, 0, [10, 20, 30, 255]);
         var roundtrip = CaptureMetadataCodec.Decode(CaptureMetadataCodec.Encode(metadata));
         Check(roundtrip.Timestamp == 123 && roundtrip.DirtyRectangles.Length == 16 && roundtrip.MoveRectangles.Length == 24 && roundtrip.PointerShape.SequenceEqual(metadata.PointerShape));

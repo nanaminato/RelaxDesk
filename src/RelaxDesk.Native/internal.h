@@ -15,7 +15,17 @@
 #include <stdexcept>
 #include <memory>
 #include <cstring>
+#include <atomic>
+#include <chrono>
 using Microsoft::WRL::ComPtr;
+inline std::atomic<int64_t> live_resources[7]{};
+struct resource_counter {
+    size_t index;
+    explicit resource_counter(size_t i):index(i){++live_resources[index];}
+    ~resource_counter(){--live_resources[index];}
+};
+inline int64_t ticks(){LARGE_INTEGER value;QueryPerformanceCounter(&value);return value.QuadPart;}
+inline double elapsed_ms(int64_t start){static double frequency=[](){LARGE_INTEGER f;QueryPerformanceFrequency(&f);return static_cast<double>(f.QuadPart);}();return (ticks()-start)*1000.0/frequency;}
 extern thread_local std::string rd_error;
 struct failure { HRESULT hr; };
 inline void check(HRESULT hr, const char* operation) { if(FAILED(hr)) {rd_error=operation; throw failure{hr};} }
@@ -33,6 +43,7 @@ struct gpu {
     void create(IDXGIAdapter* adapter=nullptr);
 };
 struct capture_context {
+    resource_counter tracked{0};
     runtime lifetime; gpu graphics;
     ComPtr<IDXGIOutputDuplication> duplication;
     ComPtr<ID3D11Texture2D> texture, staging;
@@ -41,6 +52,12 @@ struct capture_context {
     DXGI_OUTDUPL_POINTER_POSITION pointer_position{};
     DXGI_OUTPUT_DESC output{};
     void initialize(); void acquire(uint32_t timeout, rd_frame& info);
+};
+struct gpu_frame {
+    resource_counter tracked{3};
+    ComPtr<IMFSample> sample;
+    ComPtr<ID3D11Texture2D> texture;
+    UINT subresource=0,width=0,height=0;
 };
 inline ComPtr<IMFMediaType> video_type(GUID subtype, uint32_t width, uint32_t height, uint32_t fps) {
     ComPtr<IMFMediaType> type;check(MFCreateMediaType(&type),"MFCreateMediaType");
