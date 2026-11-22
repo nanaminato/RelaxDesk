@@ -129,7 +129,7 @@ internal static class VideoHostSession
                     if (encoder is null && codec == MediaCodec.H264)
                     {
                         try { encoder = new(capture as DxgiCaptureBackend, frame.Width, frame.Height, hardware: !forceSoftware && backend != "test-software" && (synthetic || capture is DxgiCaptureBackend)); }
-                        catch (Exception e) when (e is ExternalException or DllNotFoundException or BadImageFormatException)
+                        catch (Exception e) when (!forceSoftware && e is (ExternalException or DllNotFoundException or BadImageFormatException))
                         {
                             Console.WriteLine($"hardware_encoder_unavailable={e.Message}; trying explicit software H264 fallback");
                             try { encoder = new(null, frame.Width, frame.Height, hardware: false); }
