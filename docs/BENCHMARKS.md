@@ -41,3 +41,8 @@ Frame capture P95 <=5ms, encode/decode P95 <=8ms, and LAN input-to-photon P95 <=
 ## Integrity
 
 Do not compare native MSTSC RDP sessions with physical-desktop streaming without labeling that fundamental architectural difference. Publish failed results and limitations. Automated microbenchmarks cannot replace actual home-edition interactive tests.
+
+
+## 2026-11-22 implementation update
+
+Initial local capture samples are recorded, without matched workloads or input-to-photon/MSTSC claims. See [implementation evidence](IMPLEMENTATION.md).

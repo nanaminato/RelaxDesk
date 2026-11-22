@@ -47,3 +47,8 @@
 
 ## Milestone evidence
 Each phase must report: implemented commits/files, build/test commands and results, actual hardware and Windows versions, benchmark conditions, open bugs, and tasks that were NOT verified. Never mark manual UAC or real-network testing complete without the requisite environment.
+
+
+## 2026-11-22 implementation update
+
+Phase 0 Windows build/test exit is met here. Phase 1 is implemented but its dual-PC Windows Home demonstration and 1080p interaction measurements remain open. See [implementation evidence](IMPLEMENTATION.md).

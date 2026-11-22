@@ -76,3 +76,8 @@ All core state transitions, protocol parsing, input authorization and reconnect 
 ## Dependency boundaries
 
 RelaxDesk is a standalone product. RelaxKonOS may later use a separately maintained adapter, but no code in the base host/viewer or protocol should depend on RelaxKonOS.
+
+
+## 2026-11-22 implementation update
+
+Current software baseline uses an in-process unprivileged Windows adapter, GDI/Deflate and pinned TLS; DXGI/H.264 remains planned. See [implementation evidence](IMPLEMENTATION.md).

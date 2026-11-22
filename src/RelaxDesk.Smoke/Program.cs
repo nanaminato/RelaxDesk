@@ -1,0 +1,41 @@
+using System.Diagnostics;
+using System.IO.Compression;
+using System.Net;
+using System.Net.Security;
+using System.Net.Sockets;
+using System.Security.Cryptography;
+using RelaxDesk.Core;
+bool rejectToken = args.Length == 2 && args[1] == "--reject-token";
+if (args.Length is < 1 or > 2) throw new ArgumentException("Pass the absolute path to built RelaxDesk.Host.dll");
+var reservation = new TcpListener(IPAddress.Loopback, 0); reservation.Start(); int port = ((IPEndPoint)reservation.LocalEndpoint).Port; reservation.Stop();
+var start = new ProcessStartInfo("dotnet") { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+foreach (var arg in new[] { Path.GetFullPath(args[0]), "127.0.0.1", port.ToString() }) start.ArgumentList.Add(arg);
+using var host = Process.Start(start) ?? throw new Exception("Could not start host");
+using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+try
+{
+    string fingerprint = (await host.StandardOutput.ReadLineAsync(timeout.Token) ?? throw new Exception("No fingerprint")).Split(": ")[1];
+    string token = (await host.StandardOutput.ReadLineAsync(timeout.Token) ?? throw new Exception("No token")).Split(": ")[1];
+    await host.StandardOutput.ReadLineAsync(timeout.Token);
+    using var client = new TcpClient { NoDelay = true };
+    // Output can precede listener startup by a few milliseconds.
+    for (int attempt = 0; ; attempt++) { try { await client.ConnectAsync(IPAddress.Loopback, port, timeout.Token); break; } catch (SocketException) when (attempt < 20) { await Task.Delay(50, timeout.Token); } }
+    using var tls = new SslStream(client.GetStream(), false, (_, cert, _, _) => cert?.GetCertHashString(HashAlgorithmName.SHA256) == fingerprint);
+    await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = "RelaxDesk" }, timeout.Token);
+    await Wire.Write(tls, new Packet("hello-v1", Text: rejectToken ? "wrong-token" : token), timeout.Token);
+    if (rejectToken) { try { await Wire.Read(tls, timeout.Token); throw new Exception("Wrong token accepted"); } catch (EndOfStreamException) { } await host.WaitForExitAsync(timeout.Token); if (host.ExitCode != 0) throw new Exception("Host crashed"); Console.WriteLine("PASS production host rejects wrong token before approval/capture"); return; }
+    string prompt = await host.StandardOutput.ReadLineAsync(timeout.Token) ?? throw new Exception("Missing consent prompt");
+    if (!prompt.Contains("APPROVE")) throw new Exception("Unexpected host prompt");
+    await host.StandardInput.WriteLineAsync("APPROVE"); await host.StandardInput.FlushAsync();
+    if ((await Wire.Read(tls, timeout.Token)).Kind != "approved-v1") throw new Exception("Not approved");
+    var frame = await Wire.Read(tls, timeout.Token);
+    if (frame.Kind != "frame-v1" || frame.Data is null || frame.Width <= 0 || frame.Height <= 0) throw new Exception("No frame");
+    using var zip = new DeflateStream(new MemoryStream(frame.Data), CompressionMode.Decompress);
+    byte[] pixels = new byte[checked(frame.Width * frame.Height * 4)]; zip.ReadExactly(pixels); if (zip.ReadByte() != -1) throw new Exception("Frame length mismatch");
+    Console.WriteLine($"PASS real host TLS + pairing + console consent + desktop frame {frame.Width}x{frame.Height}; bytes={frame.Data.Length}; capture_ms={frame.CaptureMs:F2}; encode_ms={frame.EncodeMs:F2}");
+    client.Close(); await host.WaitForExitAsync(timeout.Token); if (host.ExitCode != 0) throw new Exception(await host.StandardError.ReadToEndAsync());
+    Console.WriteLine("PASS peer disconnect / host clean exit; no input injected");
+}
+catch { await host.WaitForExitAsync(timeout.Token); if (host.HasExited) { Console.Error.WriteLine(await host.StandardOutput.ReadToEndAsync()); Console.Error.WriteLine(await host.StandardError.ReadToEndAsync()); } throw; }
+finally { if (!host.HasExited) host.Kill(true); }
+

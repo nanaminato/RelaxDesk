@@ -1,0 +1,63 @@
+using System.Diagnostics;
+using System.IO.Compression;
+using System.Net;
+using System.Net.Security;
+using System.Net.Sockets;
+using System.Security.Authentication;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+using RelaxDesk.Core;
+using RelaxDesk.Windows;
+if (args is ["--capture-test"])
+{
+    try
+    {
+        using var desktop = new Desktop(); var times = new List<double>(); long bytes = 0;
+        for (int i = 0; i < 30; i++) { var timer = Stopwatch.StartNew(); var pixels = desktop.Capture(); times.Add(timer.Elapsed.TotalMilliseconds); using var buffer = new MemoryStream(); using (var zip = new DeflateStream(buffer, CompressionLevel.Fastest, true)) zip.Write(pixels); bytes += buffer.Length; }
+        times.Sort(); Console.WriteLine($"capture_samples=30 resolution={desktop.Width}x{desktop.Height} capture_p50_ms={times[14]:F2} capture_p95_ms={times[28]:F2} mean_compressed_bytes={bytes / 30} OS={Environment.OSVersion}"); return;
+    }
+    catch (IOException e) { Console.Error.WriteLine($"Capture test failed: {e.Message}"); Environment.ExitCode = 1; return; }
+}
+if (args.Length != 2 || !IPAddress.TryParse(args[0], out var address) || !int.TryParse(args[1], out int port) || port is < 1 or > 65535 || IPAddress.Any.Equals(address) || IPAddress.IPv6Any.Equals(address))
+{ Console.WriteLine("Usage: RelaxDesk.Host <specific LAN IP> <port>"); return; }
+using var cert = SessionCertificate.Create();
+string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+Console.WriteLine($"SHA256 fingerprint: {cert.GetCertHashString(HashAlgorithmName.SHA256)}\nOne-session pairing token: {token}\nShare both over a trusted channel. No automatic reconnect.");
+var listener = new TcpListener(address, port); listener.Start(1);
+using var stop = new CancellationTokenSource();
+Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Cancel(); listener.Stop(); };
+try
+{
+    using var client = await listener.AcceptTcpClientAsync(stop.Token); listener.Stop(); client.NoDelay = true;
+    using var tls = new SslStream(client.GetStream(), false);
+    using (var auth = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
+    {
+        await tls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = cert, EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, auth.Token);
+        var hello = await Wire.Read(tls, auth.Token);
+        if (hello.Kind != "hello-v1" || hello.Text is null || !CryptographicOperations.FixedTimeEquals(System.Text.Encoding.UTF8.GetBytes(hello.Text), System.Text.Encoding.UTF8.GetBytes(token))) throw new AuthenticationException("Pairing rejected");
+    }
+    Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests screen + input. Type APPROVE to allow this session:");
+    if (await Console.In.ReadLineAsync(stop.Token) != "APPROVE") return;
+    var gate = new AccessGate(); gate.Approve();
+    using var desktop = new Desktop();
+    await Wire.Write(tls, new Packet("approved-v1"), stop.Token);
+    using var session = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
+    var input = Task.Run(async () => { try { while (true) { var p = await Wire.Read(tls, session.Token); if (!gate.Accept(p)) throw new InvalidDataException("Unauthorized/invalid input"); desktop.Inject(p.Code, p.Up, p.X, p.Y); } } finally { session.Cancel(); } });
+    try
+    {
+        long id = 0;
+        while (!session.IsCancellationRequested)
+        {
+            var timer = Stopwatch.StartNew(); var pixels = desktop.Capture(); double capture = timer.Elapsed.TotalMilliseconds; timer.Restart();
+            using var output = new MemoryStream(); using (var zip = new DeflateStream(output, CompressionLevel.Fastest, true)) zip.Write(pixels);
+            double encode = timer.Elapsed.TotalMilliseconds; timer.Restart();
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(session.Token); deadline.CancelAfter(TimeSpan.FromSeconds(5));
+            await Wire.Write(tls, new Packet("frame-v1", ++id, desktop.Width, desktop.Height, output.ToArray(), CaptureMs: capture, EncodeMs: encode), deadline.Token);
+            Console.WriteLine($"frame={id} capture_ms={capture:F2} encode_ms={encode:F2} send_ms={timer.Elapsed.TotalMilliseconds:F2} compressed_bytes={output.Length}");
+            await Task.Delay(100, session.Token);
+        }
+    }
+    finally { gate.Revoke(); session.Cancel(); client.Close(); try { await input; } catch (Exception e) when (e is IOException or OperationCanceledException or ObjectDisposedException or InvalidDataException) { } desktop.ReleaseAll(); }
+}
+catch (Exception e) when (e is IOException or AuthenticationException or OperationCanceledException or SocketException or InvalidDataException) { Console.WriteLine($"Session ended: {e.Message}"); }
+finally { listener.Stop(); }

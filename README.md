@@ -4,7 +4,7 @@
 
 RelaxDesk aims to provide responsive, pixel-based remote control of an existing Windows desktop, with an office-productivity experience approaching Microsoft Remote Desktop (MSTSC)—without requiring Windows Pro, enabling Microsoft's RDP host, or modifying Windows system files.
 
-> **Status: planning / pre-implementation.** This repository does not yet provide a working remote-control application. The “80% of MSTSC” target is an engineering hypothesis to validate through reproducible benchmarks, not a measured result.
+> **Status: experimental LAN baseline implemented; dual-PC Windows Home validation pending.** Host and WPF viewer implement pairing, consent, software desktop frames and input. See [implementation evidence](docs/IMPLEMENTATION.md). The “80% of MSTSC” target is an engineering hypothesis to validate through reproducible benchmarks, not a measured result.
 
 ## Goals
 
@@ -30,7 +30,7 @@ RelaxDesk aims to provide responsive, pixel-based remote control of an existing 
 | Transport | Versioned protocol, authenticated encrypted channel, low-latency media path; benchmark TCP/UDP/QUIC before committing |
 | Diagnostics | Capture/encode/network/decode/present timing and resource-use metrics |
 
-These choices are proposals, not implemented features. The API availability, codec path, GPU driver combinations and Windows Home compatibility require hands-on validation.
+DXGI and hardware codecs remain planned; the implemented software baseline uses GDI + Deflate. The API availability, codec path, GPU driver combinations and Windows Home compatibility require hands-on validation.
 
 ## Architecture
 
@@ -71,7 +71,7 @@ See [Architecture](docs/ARCHITECTURE.md), [Roadmap](docs/ROADMAP.md), [Benchmark
 
 ## Build
 
-No application solution has been committed yet. The development agent will document actual build commands once there is buildable code. Do not interpret this README as evidence that implementation or testing is complete.
+Build with stable SDK 10.0.400: `dotnet build RelaxDesk.sln -c Release`. Run checks: `dotnet run --project src/RelaxDesk.Tests -c Release`. .NET 11 is unavailable here. See [run instructions, protocol and validation status](docs/IMPLEMENTATION.md).
 
 ## License
 
