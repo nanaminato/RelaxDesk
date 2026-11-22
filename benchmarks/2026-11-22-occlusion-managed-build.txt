@@ -1,0 +1,12 @@
+  RelaxDesk.Core -> E:\RelaxDesk\src\RelaxDesk.Core\bin\Release\net11.0\RelaxDesk.Core.dll
+  RelaxDesk.Windows -> E:\RelaxDesk\src\RelaxDesk.Windows\bin\Release\net11.0-windows\RelaxDesk.Windows.dll
+  RelaxDesk.Tests -> E:\RelaxDesk\src\RelaxDesk.Tests\bin\Release\net11.0\RelaxDesk.Tests.dll
+  RelaxDesk.Smoke -> E:\RelaxDesk\src\RelaxDesk.Smoke\bin\Release\net11.0-windows\RelaxDesk.Smoke.dll
+  RelaxDesk.Host -> E:\RelaxDesk\src\RelaxDesk.Host\bin\Release\net11.0-windows\RelaxDesk.Host.dll
+  RelaxDesk.Viewer -> E:\RelaxDesk\src\RelaxDesk.Viewer\bin\Release\net11.0-windows\RelaxDesk.Viewer.dll
+
+已成功生成。
+    0 个警告
+    0 个错误
+
+已用时间 00:00:00.14

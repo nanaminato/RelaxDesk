@@ -1,0 +1,8 @@
+Exception: E:\RelaxDesk\scripts\accept-home.ps1:103
+Line |
+ 103 |  … tStop=$true;throw 'Not an unlocked Home local console. Logs collected …
+     |                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | Not an unlocked Home local console. Logs collected; run -DiagnosticOnly for a bounded presentation comparison
+     | without claiming acceptance.
+
+

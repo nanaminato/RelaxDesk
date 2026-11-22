@@ -73,3 +73,10 @@ Phase 0 Windows build/test exit is met here. Phase 1/1.5 and Phase 2 exits remai
 - Next exit: reproduce on unlocked Home local console; rerun the strict four-profile benchmark and full verification, real driver loss/DPI/long soak, then dual-PC office/input measurements. Phase 1/1.5/2 and main merge acceptance remain open.
 
 See [detailed evidence and limitations](../benchmarks/2026-11-22-gpu-display-report.md).
+
+
+## Occlusion follow-up — 2026-11-22
+
+Fixed a confirmed HwndHost WndProc base-call omission (layout/destruction contract), tightened real Present vs TEST/mode-change status handling, and added independent bounded top-level/child SwapChain lifecycle diagnostics. Both targets remain occluded in the current RDP environment, including after recreation; this excludes a HwndHost-only explanation but does not identify the exact compositor/driver cause. Real WPF lifecycle tests pass; an old-behavior negative control fails as expected. Home/physical GPU acceptance remains pending.
+
+One-command Home local-console validation and evidence collection: `powershell.exe -NoProfile -File scripts/accept-home.ps1`. The runner checks edition/session, matches DLL hashes, preserves logs/results, applies per-step timeouts and stops after a blocked independent comparison. An RDP/Server run cannot report Home acceptance. See [diagnosis, tests, commands and limitations](../benchmarks/2026-11-22-occlusion-report.md).

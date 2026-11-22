@@ -1,0 +1,22 @@
+﻿[
+    {
+        "Algorithm":  "SHA256",
+        "Hash":  "1BA9324B6CB61687618F26F5B0861A4B18BDC66EFF9EC1EBF5A99D78AC470289",
+        "Path":  "E:\\RelaxDesk\\build\\native-desktop\\Release\\RelaxDesk.NativeProbe.exe"
+    },
+    {
+        "Algorithm":  "SHA256",
+        "Hash":  "F12ADF7EBE87B3EA5D1579C24E6C74254357BBE08A80DE52CDAD5CB8ED52EE4B",
+        "Path":  "E:\\RelaxDesk\\build\\native-desktop\\Release\\RelaxDesk.Native.dll"
+    },
+    {
+        "Algorithm":  "SHA256",
+        "Hash":  "F12ADF7EBE87B3EA5D1579C24E6C74254357BBE08A80DE52CDAD5CB8ED52EE4B",
+        "Path":  "E:\\RelaxDesk\\src\\RelaxDesk.Viewer\\bin\\Release\\net11.0-windows\\RelaxDesk.Native.dll"
+    },
+    {
+        "Algorithm":  "SHA256",
+        "Hash":  "F12ADF7EBE87B3EA5D1579C24E6C74254357BBE08A80DE52CDAD5CB8ED52EE4B",
+        "Path":  "E:\\RelaxDesk\\src\\RelaxDesk.Host\\bin\\Release\\net11.0-windows\\RelaxDesk.Native.dll"
+    }
+]

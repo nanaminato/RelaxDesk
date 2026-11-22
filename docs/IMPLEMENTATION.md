@@ -156,3 +156,10 @@ python scripts/summarize-renderers.py benchmarks/home-renderers
 ```
 
 Remaining: physical Home console, dual-PC LAN office workloads, real input, actual driver removal, physical DPI transitions, extended resource soak and external input-to-photon measurements. Phase exits and main merge acceptance remain open.
+
+
+## Occlusion follow-up — 2026-11-22
+
+Fixed a confirmed HwndHost WndProc base-call omission (layout/destruction contract), tightened real Present vs TEST/mode-change status handling, and added independent bounded top-level/child SwapChain lifecycle diagnostics. Both targets remain occluded in the current RDP environment, including after recreation; this excludes a HwndHost-only explanation but does not identify the exact compositor/driver cause. Real WPF lifecycle tests pass; an old-behavior negative control fails as expected. Home/physical GPU acceptance remains pending.
+
+One-command Home local-console validation and evidence collection: `powershell.exe -NoProfile -File scripts/accept-home.ps1`. The runner checks edition/session, matches DLL hashes, preserves logs/results, applies per-step timeouts and stops after a blocked independent comparison. An RDP/Server run cannot report Home acceptance. See [diagnosis, tests, commands and limitations](../benchmarks/2026-11-22-occlusion-report.md).

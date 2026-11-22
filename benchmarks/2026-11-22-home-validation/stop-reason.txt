@@ -1,0 +1,10 @@
+﻿Not an unlocked Home local console. Logs collected; run -DiagnosticOnly for a bounded presentation comparison without c
+laiming acceptance.
+At E:\RelaxDesk\scripts\accept-home.ps1:104 char:68
++ ... tStop=$true;throw 'Not an unlocked Home local console. Logs collected ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (Not an unlocked...ing acceptance.:String) [], RuntimeException
+    + FullyQualifiedErrorId : Not an unlocked Home local console. Logs collected; run -DiagnosticOnly for a bounded pr 
+   esentation comparison without claiming acceptance.
+ 
+

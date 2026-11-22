@@ -1,0 +1,2 @@
+PASS 4 real WPF HWND contracts: layout proposal, hide, resize/restore, destruction; no GPU Present claim
+

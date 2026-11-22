@@ -1,0 +1,33 @@
+{
+  "status": "NOT_ACCEPTED_ENVIRONMENT",
+  "home_console_eligible": false,
+  "steps": [
+    {
+      "name": "sdk",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.1100114
+    },
+    {
+      "name": "present-contracts",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.1094176
+    },
+    {
+      "name": "capture-diagnostics",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.1736046
+    },
+    {
+      "name": "security-and-contracts",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 2.821286
+    }
+  ],
+  "physical_scanout": "NOT_TESTED",
+  "input_to_photon": "NOT_TESTED",
+  "dual_pc_lan": "NOT_TESTED"
+}

@@ -1,0 +1,83 @@
+﻿.NET SDK:
+ Version:           11.0.100
+ Commit:            297acf930f
+ Workload version:  11.0.100-manifests.08e30c08
+ MSBuild version:   18.12.2-1.26529.118+297acf930
+
+Runtime Environment:
+ OS Name:     Windows
+ OS Version:  10.0.20348
+ OS Platform: Windows
+ RID:         win-x64
+ Base Path:   C:\Program Files\dotnet\sdk\11.0.100
+
+.NET workloads installed:
+ [maui-windows]
+   安装源文件: VS 18.9.12120.119
+   清单版本:    11.0.0-preview.6.26360.8/11.0.100-preview.6
+   清单路径:       C:\Program Files\dotnet\sdk-manifests\11.0.100-preview.6\microsoft.net.sdk.maui\11.0.0-preview.6.26360.8\WorkloadManifest.json
+   安装类型:              Msi
+
+ [maccatalyst]
+   安装源文件: VS 18.9.12120.119
+   清单版本:    26.5.11720-net11-p6/11.0.100-preview.6
+   清单路径:       C:\Program Files\dotnet\sdk-manifests\11.0.100-preview.6\microsoft.net.sdk.maccatalyst\26.5.11720-net11-p6\WorkloadManifest.json
+   安装类型:              Msi
+
+ [ios]
+   安装源文件: VS 18.9.12120.119
+   清单版本:    26.5.11720-net11-p6/11.0.100-preview.6
+   清单路径:       C:\Program Files\dotnet\sdk-manifests\11.0.100-preview.6\microsoft.net.sdk.ios\26.5.11720-net11-p6\WorkloadManifest.json
+   安装类型:              Msi
+
+ [android]
+   安装源文件: VS 18.9.12120.119
+   清单版本:    37.0.0-preview.6.59/11.0.100-preview.6
+   清单路径:       C:\Program Files\dotnet\sdk-manifests\11.0.100-preview.6\microsoft.net.sdk.android\37.0.0-preview.6.59\WorkloadManifest.json
+   安装类型:              Msi
+
+已配置为在安装新清单时使用 workload sets。
+未安装任何 workload sets。运行 “dotnet workload restore” 以安装工作负载集。
+
+Host:
+  Version:      11.0.0
+  Architecture: x64
+  Commit:       297acf930f
+
+.NET SDKs installed:
+  9.0.316 [C:\Program Files\dotnet\sdk]
+  10.0.302 [C:\Program Files\dotnet\sdk]
+  10.0.400 [C:\Program Files\dotnet\sdk]
+  11.0.100 [C:\Program Files\dotnet\sdk]
+
+.NET runtimes installed:
+  Microsoft.AspNetCore.App 9.0.18 [C:\Program Files\dotnet\shared\Microsoft.AspNetCore.App]
+  Microsoft.AspNetCore.App 10.0.10 [C:\Program Files\dotnet\shared\Microsoft.AspNetCore.App]
+  Microsoft.AspNetCore.App 10.0.11 [C:\Program Files\dotnet\shared\Microsoft.AspNetCore.App]
+  Microsoft.AspNetCore.App 11.0.0 [C:\Program Files\dotnet\shared\Microsoft.AspNetCore.App]
+  Microsoft.NETCore.App 8.0.14 [C:\Program Files\dotnet\shared\Microsoft.NETCore.App]
+  Microsoft.NETCore.App 9.0.18 [C:\Program Files\dotnet\shared\Microsoft.NETCore.App]
+  Microsoft.NETCore.App 10.0.10 [C:\Program Files\dotnet\shared\Microsoft.NETCore.App]
+  Microsoft.NETCore.App 10.0.11 [C:\Program Files\dotnet\shared\Microsoft.NETCore.App]
+  Microsoft.NETCore.App 11.0.0 [C:\Program Files\dotnet\shared\Microsoft.NETCore.App]
+  Microsoft.WindowsDesktop.App 9.0.18 [C:\Program Files\dotnet\shared\Microsoft.WindowsDesktop.App]
+  Microsoft.WindowsDesktop.App 10.0.10 [C:\Program Files\dotnet\shared\Microsoft.WindowsDesktop.App]
+  Microsoft.WindowsDesktop.App 10.0.11 [C:\Program Files\dotnet\shared\Microsoft.WindowsDesktop.App]
+  Microsoft.WindowsDesktop.App 11.0.0 [C:\Program Files\dotnet\shared\Microsoft.WindowsDesktop.App]
+
+Other architectures found:
+  x86   [C:\Program Files (x86)\dotnet]
+    registered at [HKLM\SOFTWARE\dotnet\Setup\InstalledVersions\x86\InstallLocation]
+
+Environment variables:
+  DOTNET_CLI_HOME                          [E:\RelaxDesk\.dotnet]
+
+global.json file:
+  E:\RelaxDesk\global.json
+
+Learn more:
+  https://aka.ms/dotnet/info
+
+Download .NET:
+  https://aka.ms/dotnet/download
+

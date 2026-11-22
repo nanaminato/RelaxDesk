@@ -82,3 +82,5 @@ Build with stable SDK 11.0.100 (run `./scripts/build-native.ps1` first): `dotnet
 Independent project, with potential future integration into RelaxKonOS via an adapter; RelaxDesk must not depend on RelaxKonOS.
 
 Current GPU display implementation, final RDP occlusion failures and Home validation commands: [GPU display acceptance report](benchmarks/2026-11-22-gpu-display-report.md).
+
+Windows Home local-console one-command validation: `powershell.exe -NoProfile -File scripts/accept-home.ps1`. See [occlusion diagnosis and log collection](benchmarks/2026-11-22-occlusion-report.md).
