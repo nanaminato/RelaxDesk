@@ -4,7 +4,7 @@
 
 RelaxDesk aims to provide responsive, pixel-based remote control of an existing Windows desktop, with an office-productivity experience approaching Microsoft Remote Desktop (MSTSC)—without requiring Windows Pro, enabling Microsoft's RDP host, or modifying Windows system files.
 
-> **Status: experimental LAN baseline implemented; dual-PC Windows Home validation pending.** Host and WPF viewer implement pairing, consent, software desktop frames and input. See [implementation evidence](docs/IMPLEMENTATION.md). The “80% of MSTSC” target is an engineering hypothesis to validate through reproducible benchmarks, not a measured result.
+> **Status: experimental DXGI/H.264 architecture implemented; physical-desktop capture is blocked in the current remote test session.** GPU H.264 encode/decode, authenticated binary video and actual WPF render submissions pass synthetic-video tests. Dual-PC Windows Home validation remains pending. See [implementation evidence](docs/IMPLEMENTATION.md). The “80% of MSTSC” target is an engineering hypothesis to validate through reproducible benchmarks, not a measured result.
 
 ## Goals
 
@@ -30,7 +30,7 @@ RelaxDesk aims to provide responsive, pixel-based remote control of an existing 
 | Transport | Versioned protocol, authenticated encrypted channel, low-latency media path; benchmark TCP/UDP/QUIC before committing |
 | Diagnostics | Capture/encode/network/decode/present timing and resource-use metrics |
 
-DXGI and hardware codecs remain planned; the implemented software baseline uses GDI + Deflate. The API availability, codec path, GPU driver combinations and Windows Home compatibility require hands-on validation.
+DXGI Desktop Duplication and Media Foundation H.264 are implemented in a C++20 module. GPU codecs are tested with synthetic images; DXGI capture is compiled but denied in the current remote session. The GDI + Deflate compatibility baseline remains available. The API availability, codec path, GPU driver combinations and Windows Home compatibility require hands-on validation.
 
 ## Architecture
 
@@ -71,7 +71,7 @@ See [Architecture](docs/ARCHITECTURE.md), [Roadmap](docs/ROADMAP.md), [Benchmark
 
 ## Build
 
-Build with stable SDK 10.0.400: `dotnet build RelaxDesk.sln -c Release`. Run checks: `dotnet run --project src/RelaxDesk.Tests -c Release`. .NET 11 is unavailable here. See [run instructions, protocol and validation status](docs/IMPLEMENTATION.md).
+Build with stable SDK 11.0.100 (run `./scripts/build-native.ps1` first): `dotnet build RelaxDesk.sln -c Release`. Run checks: `dotnet run --project src/RelaxDesk.Tests -c Release`. .NET 11 is now installed and pinned. See [run instructions, protocol and validation status](docs/IMPLEMENTATION.md).
 
 ## License
 

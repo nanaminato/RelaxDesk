@@ -80,4 +80,4 @@ RelaxDesk is a standalone product. RelaxKonOS may later use a separately maintai
 
 ## 2026-11-22 implementation update
 
-Current software baseline uses an in-process unprivileged Windows adapter, GDI/Deflate and pinned TLS; DXGI/H.264 remains planned. See [implementation evidence](IMPLEMENTATION.md).
+Current implementation adds C++20 Desktop Duplication/D3D11 and Media Foundation H.264 through a thread-affine C ABI. Hardware encode/decode is actually exercised with synthetic images; duplication capture is denied in the current remote session. Core has no graphics/UI dependencies. Host capture+encode uses one dedicated worker, two pinned TLS connections separate control from binary media, and WPF uses a latest-decoded-frame slot. GPU decode has one explicit CPU readback for WriteableBitmap; zero-copy presentation is not claimed. GDI/Deflate v1 remains a compatibility benchmark baseline. See [implementation evidence](IMPLEMENTATION.md).

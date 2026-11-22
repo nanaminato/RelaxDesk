@@ -5,6 +5,11 @@ using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using RelaxDesk.Core;
+if (args is ["--windows-contracts"]) { RelaxDesk.Windows.WindowsContracts.Run(); return; }
+if (args is [var hostPath, "--wpf", var viewerPath]) { await WpfSmoke.Run(hostPath, viewerPath); return; }
+if (args is [var perfHost, "--video-hardware", var frames]) { await VideoSmoke.Run(perfHost, "--video-hardware", int.Parse(frames)); return; }
+if (args.Length == 2 && args[1].StartsWith("--video-", StringComparison.Ordinal)) { await VideoSmoke.Run(args[0], args[1]); return; }
+if (args.Length == 2 && args[1] is "--reject-pin" or "--deny-v2" or "--reject-media") { await SecuritySmoke.Run(args[0], args[1]); return; }
 bool rejectToken = args.Length == 2 && args[1] == "--reject-token";
 if (args.Length is < 1 or > 2) throw new ArgumentException("Pass the absolute path to built RelaxDesk.Host.dll");
 var reservation = new TcpListener(IPAddress.Loopback, 0); reservation.Start(); int port = ((IPEndPoint)reservation.LocalEndpoint).Port; reservation.Stop();

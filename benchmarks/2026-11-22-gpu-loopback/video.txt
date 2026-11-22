@@ -1,0 +1,7 @@
+PASS authenticated production Host -> shared Viewer decoder; mode=--video-hardware hardware_encode=True hardware_decode=True frames=300 elapsed_s=10.38 fps=28.91 wire_mbps=6.970 process_cpu_pct=0.80 gpu_pct=unavailable dropped=0 queue_depth=0 capture_or_test_generation_p50_ms=2.85 capture_or_test_generation_p95_ms=5.53 encode_p50_ms=7.04 encode_p95_ms=7.77 decode_with_readback_p50_ms=5.26 decode_with_readback_p95_ms=7.80 frame_interval_p50_ms=33.79 frame_interval_p95_ms=38.31
+PASS concurrent TLS control; samples=992 rtt_p50_ms=0.20 rtt_p95_ms=0.36 rtt_max_ms=1.20; physical Present/input injection not tested
+backend=synthetic-test codec=H264 hardware_encode=True
+media frames=301 elapsed_s=10.42 fps=28.89 wire_mbps=6.968 process_cpu_pct=1.04 gpu_pct=unavailable dropped=0 queue_depth=0 send_p50_ms=0.11 send_p95_ms=0.16 capture_p50_ms=2.86 capture_p95_ms=5.53 encode_p50_ms=7.04 encode_p95_ms=7.77 frame_interval_p50_ms=33.60 frame_interval_p95_ms=36.60
+Session ended: Unable to read beyond the end of the stream.
+
+PASS v2 peer disconnect / host clean exit

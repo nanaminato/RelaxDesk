@@ -46,3 +46,8 @@ Do not compare native MSTSC RDP sessions with physical-desktop streaming without
 ## 2026-11-22 implementation update
 
 Initial local capture samples are recorded, without matched workloads or input-to-photon/MSTSC claims. See [implementation evidence](IMPLEMENTATION.md).
+
+
+## Phase 1.5 measured evidence
+
+See [2026-11-22 report](../benchmarks/2026-11-22-report.md) and its raw CPU/GPU/transport samples. GPU codecs and actual WPF submission are exercised on synthetic video. Report macroblock cropping, decode readback, application-vs-NIC bandwidth and per-engine GPU counter labels explicitly. Current GDI/DXGI capture is denied; no matched desktop capture comparison or physical Present/input-to-photon result exists. Hardware H.264 was slower than software on the low-entropy codec-only input; do not claim a speedup from API choice.

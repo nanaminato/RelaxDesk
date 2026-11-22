@@ -8,6 +8,19 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using RelaxDesk.Core;
 using RelaxDesk.Windows;
+using RelaxDesk.Host;
+if (args is ["--codec-benchmark"])
+{
+    try { CodecVerification.Compare1080p(); }
+    catch (Exception e) { Console.Error.WriteLine(e.Message); Environment.ExitCode = 1; }
+    return;
+}
+if (args is ["--codec-test", var mode])
+{
+    try { if (mode is not ("hardware" or "software")) throw new ArgumentException("Use hardware or software"); CodecVerification.Run(mode == "hardware"); }
+    catch (Exception e) { Console.Error.WriteLine(e.Message); Environment.ExitCode = 1; }
+    return;
+}
 if (args is ["--capture-test"])
 {
     try
@@ -18,8 +31,11 @@ if (args is ["--capture-test"])
     }
     catch (IOException e) { Console.Error.WriteLine($"Capture test failed: {e.Message}"); Environment.ExitCode = 1; return; }
 }
-if (args.Length != 2 || !IPAddress.TryParse(args[0], out var address) || !int.TryParse(args[1], out int port) || port is < 1 or > 65535 || IPAddress.Any.Equals(address) || IPAddress.IPv6Any.Equals(address))
+if (args.Length is < 2 or > 3 || !IPAddress.TryParse(args[0], out var address) || !int.TryParse(args[1], out int port) || port is < 1 or > 65535 || IPAddress.Any.Equals(address) || IPAddress.IPv6Any.Equals(address))
 { Console.WriteLine("Usage: RelaxDesk.Host <specific LAN IP> <port>"); return; }
+string backend = args.Length == 3 ? args[2] : "auto";
+if (backend is not ("auto" or "dxgi" or "gdi" or "test-software" or "test-hardware")) throw new ArgumentException("Unknown capture backend");
+if (backend.StartsWith("test-", StringComparison.Ordinal) && !IPAddress.IsLoopback(address)) throw new ArgumentException("Synthetic test is loopback-only");
 using var cert = SessionCertificate.Create();
 string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
 Console.WriteLine($"SHA256 fingerprint: {cert.GetCertHashString(HashAlgorithmName.SHA256)}\nOne-session pairing token: {token}\nShare both over a trusted channel. No automatic reconnect.");
@@ -28,16 +44,24 @@ using var stop = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Cancel(); listener.Stop(); };
 try
 {
-    using var client = await listener.AcceptTcpClientAsync(stop.Token); listener.Stop(); client.NoDelay = true;
+    using var client = await listener.AcceptTcpClientAsync(stop.Token); client.NoDelay = true;
+    Packet hello;
     using var tls = new SslStream(client.GetStream(), false);
     using (var auth = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
     {
         await tls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = cert, EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, auth.Token);
-        var hello = await Wire.Read(tls, auth.Token);
-        if (hello.Kind != "hello-v1" || hello.Text is null || !CryptographicOperations.FixedTimeEquals(System.Text.Encoding.UTF8.GetBytes(hello.Text), System.Text.Encoding.UTF8.GetBytes(token))) throw new AuthenticationException("Pairing rejected");
+        hello = await Wire.Read(tls, auth.Token);
+        if (hello.Kind is not ("hello-v1" or "hello-v2") || hello.Text is null || !CryptographicOperations.FixedTimeEquals(System.Text.Encoding.UTF8.GetBytes(hello.Text), System.Text.Encoding.UTF8.GetBytes(token))) throw new AuthenticationException("Pairing rejected");
     }
     Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests screen + input. Type APPROVE to allow this session:");
     if (await Console.In.ReadLineAsync(stop.Token) != "APPROVE") return;
+    if (hello.Kind == "hello-v2")
+    {
+        await VideoHostSession.Run(listener, client, tls, cert, hello, backend, stop.Token);
+        return;
+    }
+    listener.Stop();
+    if (backend.StartsWith("test-", StringComparison.Ordinal)) throw new AuthenticationException("Synthetic mode requires v2");
     var gate = new AccessGate(); gate.Approve();
     using var desktop = new Desktop();
     await Wire.Write(tls, new Packet("approved-v1"), stop.Token);
@@ -59,5 +83,5 @@ try
     }
     finally { gate.Revoke(); session.Cancel(); client.Close(); try { await input; } catch (Exception e) when (e is IOException or OperationCanceledException or ObjectDisposedException or InvalidDataException) { } desktop.ReleaseAll(); }
 }
-catch (Exception e) when (e is IOException or AuthenticationException or OperationCanceledException or SocketException or InvalidDataException) { Console.WriteLine($"Session ended: {e.Message}"); }
+catch (Exception e) when (e is IOException or AuthenticationException or OperationCanceledException or SocketException or InvalidDataException or System.Runtime.InteropServices.ExternalException or System.Threading.Channels.ChannelClosedException) { Console.WriteLine($"Session ended: {e.Message}"); }
 finally { listener.Stop(); }

@@ -19,6 +19,17 @@
 
 **Exit:** demonstration on two real Windows systems, reproducible build/run steps, measured performance and known limitations.
 
+## Phase 1.5 — GPU media bring-up (current)
+
+- Implemented/compiled: ICaptureBackend, GDI fallback, real Desktop Duplication GPU texture/metadata, bounded capture recreation, native C ABI.
+- Implemented and actually GPU-tested: Media Foundation hardware H.264 encode, D3D11 GPU decode/color conversion; explicit software H.264/Deflate fallbacks.
+- Implemented and automatically exercised: v2 binary media, separate pinned TLS control/media sockets, one-use expiring binding tickets, bounded queues, gap-to-IDR recovery, production Host to shared Viewer decoder, actual WPF rendering submissions.
+- Build now uses installed stable .NET 11.0.100; native C++20 uses installed MSVC/Windows SDK. Core remains platform neutral.
+- BLOCKED: current Server 2022 remote session has valid GDI handles but first BitBlt returns access denied, and DuplicateOutput returns E_ACCESSDENIED. Independent native reproducer records session/console mismatch. No security bypass or repeated speculative GDI repairs.
+- NOT ACCEPTED: real desktop DXGI capture -> H.264 -> Viewer on two Home PCs, actual input, physical Present, 60-second office workload measurements and fair GDI comparison. Synthetic GPU tests do not satisfy these exits.
+
+**Next exit:** run on an authorized Home local console, prove real DXGI frames and the complete desktop pipeline, then address measured WPF readback/CPU costs and perform matched workloads. See [implementation and commands](IMPLEMENTATION.md) and [measured results](../benchmarks/2026-11-22-report.md).
+
 ## Phase 2 — Performance and fidelity
 - Compare full-frame baseline vs dirty/move rect approaches.
 - Add hardware codec capability detection/fallback, low-copy D3D11 pipeline, latency-aware buffering, quality/rate adaptation and crisp text handling.
@@ -51,4 +62,4 @@ Each phase must report: implemented commits/files, build/test commands and resul
 
 ## 2026-11-22 implementation update
 
-Phase 0 Windows build/test exit is met here. Phase 1 is implemented but its dual-PC Windows Home demonstration and 1080p interaction measurements remain open. See [implementation evidence](IMPLEMENTATION.md).
+Phase 0 Windows build/test exit is met here. Phase 1/1.5 and Phase 2 exits remain open. GPU codecs, binary authenticated video, recovery and WPF synthetic tests now pass, while current-session desktop capture is denied and dual-PC Home/office validation is pending. See [implementation evidence](IMPLEMENTATION.md).

@@ -1,57 +1,120 @@
-# Implementation evidence — 2026-11-22
+# RelaxDesk implementation and evidence
 
-Phase 0 Windows build/test exit is met in this environment. Phase 1 is implemented but its exit is NOT met: two stock Windows Home PCs, WPF rendering/input and 1080p LAN workloads remain unverified.
+Updated 2026-11-22. Starting point: GitHub main `6e683b7eb2f9161cf0a7d028720769ec47b519c8`, verified against the GitHub branch API. Phase 0 build/test exit is met. Phase 1/1.5 and Phase 2 exits remain OPEN: physical-desktop capture and two-PC Home office workloads have not been demonstrated in this environment.
 
-## Build and run
+## Status by evidence level
 
-Stable SDK 10.0.400 is pinned. .NET 11/C# 15 are unavailable; no preview SDK or external NuGet package is used. No license was selected.
+| Path | Implemented | Compiled | Automated execution | Windows Home validation |
+| --- | --- | --- | --- | --- |
+| GDI capture / legacy JSON+Deflate | Yes; corrected diagnostics/lifetime checks | Yes | Capture denied here; independent native reproducer confirms | Pending |
+| Desktop Duplication / D3D11 capture | Yes; GPU texture, dirty/move rectangles, pointer metadata | Yes | DuplicateOutput returns E_ACCESSDENIED here; no successful frame acquisition claimed | Pending |
+| H.264 software fallback | Real inbox Media Foundation MFT | Yes | 60/60 frames encoded/decoded at 720p and 1080p, pixel checks | Pending |
+| H.264 GPU encode | Hardware MFT enumeration, D3D11 manager, GPU BGRA to NV12 | Yes | Real hardware MFT emits H.264, 60/60 codec tests and 300-frame network test | Pending |
+| H.264 GPU decode | D3D11-aware MFT, actual DXGI output texture, GPU color conversion | Yes | Actual DXGI surfaces required by test; 60/60 and 300-frame tests | Pending |
+| WPF display | Dedicated decode worker, latest-frame slot, WriteableBitmap / CompositionTarget | Yes | Real Viewer process submits 60 frames; physical Present/visual quality not measured | Pending |
+| Authenticated binary video / separate control | Two pinned TLS connections, session-bound one-use ticket | Yes | Production Host to shared Viewer decoder, concurrent pings, wrong pin/token/ticket, denial, clean exit | Pending |
+| Keyframe recovery / bounded buffering | Yes | Yes | Queue/continuity unit checks; actual simulated sequence-gap to IDR recovery | Driver loss/network shaping pending |
+| Keyboard/mouse | Existing SendInput with per-event consent/sequence checks, separate control socket | Yes | Authorization checked; no real input injected in this run | Pending |
+
+The GPU tests use a clearly labeled generated image source. They exercise real codecs and production transport, not mock encoders. They do not establish DXGI capture success. Host, capture, protocol, transport and UI remain separate; Core contains no WPF/DXGI/Win32 references. There is no RDP server, policy modification, cloud/account system or installed service.
+
+## Build and run (Windows x64)
+
+Stable .NET SDK **11.0.100** is installed and pinned, without preview roll-forward. Managed targets are net11.0 / net11.0-windows. Windows binaries target x64. MSVC 19.51.36256, C++20 and Windows SDK 10.0.26100.0 built the native module. No external NuGet dependency or project license was added.
 
 ```powershell
 $env:DOTNET_CLI_HOME = "$PWD/.dotnet"
+./scripts/build-native.ps1
 dotnet build RelaxDesk.sln -c Release
-dotnet run --project src/RelaxDesk.Tests -c Release --no-build
-# Host: replace address with its actual LAN address
-dotnet run --project src/RelaxDesk.Host -c Release --no-build -- 192.168.1.10 48200
+dotnet src/RelaxDesk.Tests/bin/Release/net11.0/RelaxDesk.Tests.dll
+# Host: replace with actual authorized LAN interface address
+# Last option: auto (default), dxgi, or gdi
+dotnet src/RelaxDesk.Host/bin/Release/net11.0-windows/RelaxDesk.Host.dll 192.168.1.10 48200 auto
 # Other Windows PC
-dotnet run --project src/RelaxDesk.Viewer -c Release --no-build
+dotnet src/RelaxDesk.Viewer/bin/Release/net11.0-windows/RelaxDesk.Viewer.dll
 ```
 
-Transfer displayed SHA256 fingerprint and random token through a trusted channel. Enter both in viewer, connect, then type APPROVE in host console. Click the displayed desktop for input focus. Disconnect/close viewer, lose viewer window activation, or press host Ctrl+C to stop. Restart host for each new session. If needed, explicitly allow inbound access only on private networks/local subnet for this program and port; no firewall rule is automatically installed. Run as ordinary user.
+Native DLL is copied through the Windows project to Host/Viewer/Smoke output and publish directories. `Directory.Build.targets` also recognizes `build/native-desktop/Release` for this environment's separate native build identity. `-p:RelaxDeskNativePath=<absolute DLL>` can override its path. Missing native dependencies are reported; auto capture can use GDI and explicitly negotiate a Deflate fallback if native codecs are unavailable. Selecting dxgi deliberately fails rather than silently changing backend. Native build is required for H.264.
+
+Transfer the SHA256 fingerprint and per-run 128-bit token over a trusted channel, enter both in Viewer, connect, then type APPROVE in the Host console. A fresh host run serves one session. No frames/input before approval and media binding. No persistent trust. Restart host for another connection. Firewall changes are not installed automatically; scope any manually allowed inbound rule to private LAN/program/port. Run in the authorized interactive session at ordinary privilege. Secure desktop/UAC/lock/login/elevated-target control remains unsupported. Viewer deactivation, Disconnect, closing Viewer or host Ctrl+C ends sharing. Held input is released on normal teardown where desktop permissions allow it; crash/desktop-change release is not guaranteed.
+
+The Viewer defaults to v2; its Legacy checkbox preserves v1 GDI+JSON/Base64+Deflate. For a like-for-like original baseline, select Legacy rather than assuming the v2 GDI backend also forces Deflate (v2 negotiates H.264 first).
+
+## GDI fault localization
+
+Reproducer, independent of .NET/PInvoke:
 
 ```powershell
-# Read-only capture/performance check, 30 samples
-dotnet run --project src/RelaxDesk.Host -c Release --no-build -- --capture-test
-# Launch actual host on loopback, approve only that child session, receive real pixels
-# No input injection, screenshot file, or persistent screen storage
-dotnet run --project src/RelaxDesk.Smoke -c Release --no-build -- "$PWD/src/RelaxDesk.Host/bin/Release/net10.0-windows/RelaxDesk.Host.dll"
+./build/native/Release/RelaxDesk.NativeProbe.exe --gdi
+./build/native/Release/RelaxDesk.NativeProbe.exe
+# Actual build used here: replace native with native-desktop
 ```
 
-For sandbox-safe protocol/access checks alone, append `-- --core` to the Tests command (15 checks). Append `--reject-token` to the Smoke command to verify production host rejection before approval.
+Native output in this environment:
 
-Tests is an executable assertion harness, not dotnet test discovery. Native Schannel and capture checks require access to the user key provider and interactive desktop; sandbox execution cannot supply this access.
+```text
+session=2 active_console=1 desktop=Default remote_session=1
+GetDC type=3 expected=3
+CreateCompatibleDC type=10 expected=10
+CreateCompatibleBitmap type=7 expected=7
+SelectObject current == capture bitmap; previous object valid
+BitBlt CAPTUREBLT result=0 error=5
+BitBlt SRCCOPY result=0 error=6
+Deselect removed == capture bitmap
+DXGI create HRESULT=0x80070005 operation=DuplicateOutput primary display
+```
 
-## Boundaries and protocol
+Thus the observed Error 6 was a *secondary* fallback error masking the first access denial. Native reproduction with valid typed handles excludes a C# P/Invoke-only explanation. The remote process session differs from the active console, and both capture APIs reject access. Current session/capture-environment restrictions are demonstrated; the exact OS policy/driver responsible is not established. We did not move into another user's session, weaken security, or keep retrying the same GDI change.
 
-Core contains framing, authorization and session certificate generation without WPF/Win32 dependencies. Windows contains GDI capture/SendInput. Host is an unprivileged console coordinator with no UI framework dependency; its Windows adapter runs in-process in the launching interactive session. Viewer is WPF. No service, installer, cloud or account system exists.
+Managed GDI now validates each allocation before dependent calls, checks SelectObject/current bitmap, keeps DC use/release on the same synchronous thread, immediately stores each failing call's error, does not retry after access denial, deselects before GetDIBits, and cleans up partial allocations in reverse order. BITMAPINFO is 44 bytes with a 40-byte header (no palette needed for BI_RGB/32bpp); HWND/HDC/HBITMAP use pointer-sized types and BOOL uses standard Win32 marshalling. Native pointer-size GDI handles may be sign-extended; nonzero alone is insufficient, hence GetObjectType checks. GetDIBits uses the source DC after deselection. Earlier historical capture samples from the first implementation are not current passing results and are not used as the new baseline.
 
-One TCP connection uses TLS 1.2/1.3 only, no plaintext fallback. Out-of-band SHA256 pin authenticates host; a random 128-bit per-run token authenticates viewer. Explicit console approval grants screen+input only on this connection. No persistent device trust; peer address is not a permanent identity. A failed attempt consumes the host run. Token theft and denial of service remain risks; do not expose prototype on the internet. Wildcard binding is refused. Host exits after a single session. Revocation closes connection. No screen pixels are logged.
+## Capture and GPU lifetime contracts
 
-Schannel on this Windows environment rejects ephemeral private keys. Each launch generates a certificate and imports its in-memory PFX through the current user's key provider without PersistKeySet; certificate disposal owns key cleanup. No certificate trust-store installation. PFX bytes are cleared; password is random. Crash/key cleanup requires further validation.
+`ICaptureBackend`, `GdiCaptureBackend`, `DxgiCaptureBackend` reside in Windows; Core is platform neutral. The DXGI backend chooses the attached primary output and creates D3D11 on the corresponding adapter. AcquireNextFrame timeout is a no-frame result. Every successfully acquired frame has one ReleaseFrame, including exceptional exits. An owned BGRA texture receives one GPU-to-GPU copy before releasing the duplication surface; no CPU map occurs in the hardware encode path. Dirty rectangles, move rectangles and pointer position/shape/hotspot/type are copied as metadata. Cursor-only updates retain previous shape/position when appropriate. Color, monochrome AND/XOR and masked-color pointer compositing are implemented with bounds tests in the Viewer.
 
-Framing is 4-byte little-endian length plus UTF-8 JSON, capped at 32 MiB. hello-v1 carries token, approved-v1 acknowledges console approval, frame-v1 carries sequence/dimensions/Deflate BGR32 data/capture+encode milliseconds. input carries increasing per-connection sequence, normalized primary-monitor coordinates, virtual-key/button code and up/down. TLS connection is the session boundary. Input authorization is checked on every event; replay, wrong kind and invalid ranges are rejected. Codes: 0 move, 1..255 Windows virtual keys, 256/257 left/right mouse, 258/259 wheel. Scan codes, keyboard layout/IME and fine wheel deltas remain future work.
+Borrowed capture textures stay valid until the next Capture/Dispose. Capture/encode contexts are created, used and disposed on the same dedicated MTA worker. Native contexts never cross a C++ exception through the C ABI; HRESULTs and operation names are surfaced. COM resources use RAII. Access-lost/device-removed/reset triggers at most three capture+encoder recreations, with a fresh keyframe; resolution changes re-negotiate via frame dimensions and keyframe. This recovery implementation is compiled, not real-driver fault-injection verified. Access denied fails closed. Rotation, multi-display, HDR, headless and cross-adapter scenarios remain unsupported/unverified.
 
-The explicit software baseline uses BitBlt/GetDIBits + Deflate, NOT DXGI/H.264. Planned DXGI/D3D11/hardware codec direction is unchanged; this temporary path establishes a measurable working link. No media frame queue: capture/compress/send synchronously with 100 ms minimum delay and 5-second send deadline. Input reader is separate; media and input share reliable TLS/TCP. Viewer input queue cap is 256, disconnect on overflow. TCP head-of-line blocking, CPU copies and JSON/base64 costs remain. High-entropy 4K can exceed packet cap. Primary monitor only, at most 8,294,400 pixels; display hotplug/recovery unsupported. Aspect-ratio letterboxing is accounted for; remote cursor metadata is absent. No clipboard/audio.
+Media Foundation hardware encoder selection uses MFT_ENUM_FLAG_HARDWARE; candidates must activate and accept the capture device's IMFDXGIDeviceManager with MF_SA_D3D11_AWARE. BGRA is converted to NV12 by the D3D11 video processor. Each async input owns its surface so encoder retention cannot race texture reuse. NeedInput/HaveOutput/stream-change events are handled with a bounded two-second event deadline. Low-latency/no-B-frame/CBR/GOP properties are requested; optional vendor property acceptance does not itself prove low latency. The activated encoder friendly name is logged. If initialization fails, the host explicitly tries the tested software H.264 path, then negotiated Deflate. Runtime driver/device failures can still end a session.
 
-Input-desktop/name checks reject unavailable/non-default desktops. Capture failure disconnects. SendInput obeys UIPI. UAC/secure desktop/lock/login/elevated-target control is unsupported, never verified. Key/button releases are attempted on normal disconnect; permissions changes can prevent release, and process kill/crash cleanup is not guaranteed.
+Decoder uses the D3D11 manager and requires IMFDXGIBuffer output to count as hardware decode. GPU NV12 to BGRA conversion is followed by one explicit staging readback for WPF Image. The CPU decoder and color conversion are a selectable fallback. This is **not zero-copy GPU presentation**. Native HWND/swapchain or a validated shared D3D9Ex/D3D11 WPF bridge is future work. No cross-process D3D shared-handle compatibility claim is made. H.264 1088-line macroblock surfaces are cropped to their 1080-line display area with the correct UV plane offset.
 
-## Automated evidence
+## Transport, bounds and security
 
-Release solution: zero errors/warnings. 17 protocol/access/TLS assertions passed: length bounds/truncation, missing type, round trip, consent/revocation/replay/coordinates, real Schannel loopback packets. An earlier actual host smoke passed: pinned TLS, token, console approval, real desktop frame/decompression and peer disconnect/clean host exit. No input injected. Final capture regression later failed with BitBlt Win32 error 6 (invalid handle), both in standalone capture and real-host smoke, even after making GDI resource lifetime synchronous and trying SRCCOPY without CAPTUREBLT. Cause is unresolved; desktop/session/driver compatibility and capture reliability remain blockers. Earlier successful timings are historical observations, not a current passing capture guarantee. TLS/access and wrong-token tests still pass. WPF rendering/input are compiled, not visually/manually verified.
+v1 is retained. v2 starts on the original bound port with hello-v2, token and advertised h264/deflate capabilities. After host approval, approved-v2 returns the intersection and a fresh 256-bit media ticket over the encrypted control socket. A second TLS connection on the same listener sends media-v2 with the one-use, 15-second ticket. Both connections verify the same out-of-band certificate pin. Invalid ticket/expiry/replay cannot create an authorized media session. Inputs remain on the authorized control connection, each with a strictly increasing sequence and access check. Ping and keyframe requests are authorized control events too. There is no unauthenticated input interface and no plaintext fallback.
 
-Available desktop: Windows NT 10.0.20348.0, 2560x1440; this is not Home compatibility evidence. Exact edition/CPU/GPU/driver unrecorded: sandbox CIM inventory was denied. Initial capture n=30: P50 56.00 ms, P95 61.43 ms, mean compressed bytes 776574. Separate real-host TLS first frame: capture 40.73 ms, encode 28.14 ms, compressed bytes 4017444. Content uncontrolled; not comparable workloads. No LAN/render/input-to-photon latency, resource usage, FPS or MSTSC percentage is established. Viewer decode/update timing is not physical display presentation.
+Native Windows certificate key-provider import is retained for Schannel compatibility; no trust-store entry or PersistKeySet is installed. Token theft and denial of service remain prototype risks. One connection attempt can consume a host run. This is a LAN prototype, not an internet-hardened server.
 
-The capture resource lifetime now stays within one synchronous call to avoid cross-thread GDI handle reuse. The subsequent standalone failure shows that this does not establish the cause of the observed regression. Investigate desktop availability and DC validity on a stable local console before claiming the capture path reliable. The plain SRCCOPY fallback may omit layered windows.
+Binary media header: 72 bytes, little endian, magic RDM2; u16 version=2 at offset 4; codec at 6 (1 Deflate BGR32, 2 H.264); flags at 8 (keyframe/hardware-encoded); width/height at 12/16; metadata/payload lengths at 20/24; reserved at 28; sequence/PTS in 100ns/capture microseconds/encode microseconds at 32/40/48/56; reserved at 64. Media dimensions cap at 8,294,400 pixels, payload at 32 MiB and metadata at 1 MiB. Unsupported versions, flags, codecs, replay, truncation and invalid sizes are rejected. The Windows metadata block is versioned, length-checked binary rectangles/moves/pointer fields and shape bytes, without Base64 for video.
 
-## Required manual Windows Home validation
+Host media queue holds two newest frames, drops oldest and requests IDR on gaps. Sender skips frames queued over 250ms, limits requested TCP send buffer to 64 KiB, and disconnects on a two-second write timeout. Viewer refuses delta frames after sequence gaps, sends a keyframe request and resets decoding at the next IDR. Its decoded display slot holds one newest frame. Control socket is separate, so media bytes do not cause TCP head-of-line blocking of input. These are bounds/policies, not an input latency guarantee under network saturation. Existing v1 input queue remains capped at 256 events. No UDP/QUIC choice was made without a transport benchmark.
 
-Use two stock Windows 10/11 Home x64 PCs. Record CPU/GPU/driver, OS edition/build, 1080p resolution/scaling, power mode, LAN topology/RTT. Verify incorrect fingerprint/token and denied approval expose neither frames nor input. Test Notepad typing, window drag, left/right click, wheel, scaling/letterboxing, held-key/button disconnect, viewer deactivation and host cancellation. Record virtual-key/IME limitations. Test lock/UAC fails safely without claiming support. Restart host for reconnection; interrupt network and confirm bounded teardown. Complete WPF visual QA. Run BENCHMARKS workloads, especially 60-second scrolling; report P50/P95 stages, bandwidth, CPU, text quality and externally measured input-to-photon. Phase 1 remains open until this evidence exists.
+## Reproducible verification
+
+```powershell
+# Pure portable protocol/access/media checks (225 assertions)
+dotnet src/RelaxDesk.Tests/bin/Release/net11.0/RelaxDesk.Tests.dll --core
+# Include actual Schannel loopback (227 assertions)
+dotnet src/RelaxDesk.Tests/bin/Release/net11.0/RelaxDesk.Tests.dll
+$hostDll = "$PWD/src/RelaxDesk.Host/bin/Release/net11.0-windows/RelaxDesk.Host.dll"
+$smokeDll = "$PWD/src/RelaxDesk.Smoke/bin/Release/net11.0-windows/RelaxDesk.Smoke.dll"
+dotnet $smokeDll --windows-contracts # 11 ABI/metadata/pointer checks
+# wrong-token v1 plus v2 pin/consent/media binding checks
+'--reject-token','--reject-pin','--deny-v2','--reject-media' | ForEach-Object { dotnet $smokeDll $hostDll $_ }
+# Real H264 with explicitly synthetic image source, not a capture claim
+'--video-software','--video-hardware','--video-recovery' | ForEach-Object { dotnet $smokeDll $hostDll $_ }
+dotnet $smokeDll $hostDll --wpf "$PWD/src/RelaxDesk.Viewer/bin/Release/net11.0-windows/RelaxDesk.Viewer.dll"
+dotnet $hostDll --codec-benchmark
+./scripts/benchmark-video.ps1 -Frames 300
+# Full local verification on an interactive machine with GPU
+./scripts/verify.ps1 -Graphics -Wpf
+```
+
+Synthetic host modes bind only loopback and reject actual input. Smoke drives explicit approval only for its own child host. WPF smoke uses its real connection/decoder/render code, passes secrets via redirected stdin, disables input and closes its window automatically. It does not weaken production consent. Tests are executable assertion programs, not dotnet test discovery. Native MSBuild FileTracker and Schannel/desktop access require running outside this tool sandbox; build directories were separated to avoid sandbox/desktop identity ACL conflicts. No such workaround changes runtime Windows privileges.
+
+Current results: managed Release build zero warnings/errors; native Release compiled; 227 Core/TLS and 11 Windows contracts passed. All four security smokes passed. Software/GPU network video, simulated media gap recovery, peer disconnect and WPF submission tests passed. Exact observations and raw resource samples: [benchmark report](../benchmarks/2026-11-22-report.md).
+
+## Remaining acceptance work
+
+On two stock Home x64 PCs, run in the authorized local interactive session, record OS edition/build, GPU/driver, resolution/scaling, topology/RTT and power mode. First demonstrate native duplication then DXGI texture -> hardware H.264 -> physical Viewer display with real desktop pixels. Exercise primary-display size changes/device lost, denied consent/pin/token, Notepad typing, IDE/browser scroll, drag, 1080p dynamic content, held-key disconnect, packet shaping and host restart. Capture Acquire waiting separately from GPU copy, measure input-to-photon externally, and inspect text/IME quality. Physical Present, actual input, 60-second office workloads and fair MSTSC comparison remain unverified. Do not claim Phase 1/2 exit or 80% achievement.
+
+References: [Desktop Duplication](https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/desktop-dup-api), [GetDIBits deselection requirement](https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-getdibits), [asynchronous MFT event contract](https://learn.microsoft.com/en-us/windows/win32/medfound/asynchronous-mfts), [H.264 low-latency property type exception](https://learn.microsoft.com/en-us/windows/win32/medfound/codecapi-avlowlatencymode), [D3D11 decoder device manager](https://learn.microsoft.com/en-us/windows/win32/medfound/supporting-direct3d-11-video-decoding-in-media-foundation).

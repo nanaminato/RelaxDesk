@@ -8,7 +8,8 @@ Check(!gate.Accept(input)); gate.Approve(); Check(gate.Accept(input)); Check(!ga
 using var stream = new MemoryStream(); var packet = new Packet("frame-v1", 7, 2, 2, [1, 2, 3]); await Wire.Write(stream, packet); stream.Position = 0; var read = await Wire.Read(stream); Check(read.Kind == packet.Kind && read.Sequence == 7 && read.Data!.SequenceEqual(packet.Data!));
 await Reject([]); await Reject([1, 0, 0, 0]); await Reject([255, 255, 255, 255]); byte[] oversized = new byte[4]; BinaryPrimitives.WriteInt32LittleEndian(oversized, Wire.Limit + 1); await Reject(oversized); await Reject([5, 0, 0, 0, 123]); await Reject([2, 0, 0, 0, 123, 125, 0]);
 
-if (args is ["--core"]) { Console.WriteLine($"PASS {count} protocol/access checks (TLS not run)"); return; }
+count += await MediaChecks.Run();
+if (args is ["--core"]) { Console.WriteLine($"PASS {count} protocol/access/media checks (TLS not run)"); return; }
 using var certificate = SessionCertificate.Create();
 var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0); listener.Start();
 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));

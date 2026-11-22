@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <RelaxDeskNativePath Condition="'$(RelaxDeskNativePath)' == '' And Exists('$(MSBuildThisFileDirectory)build/native/Release/RelaxDesk.Native.dll')">$(MSBuildThisFileDirectory)build/native/Release/RelaxDesk.Native.dll</RelaxDeskNativePath>
+    <RelaxDeskNativePath Condition="'$(RelaxDeskNativePath)' == ''">$(MSBuildThisFileDirectory)build/native-desktop/Release/RelaxDesk.Native.dll</RelaxDeskNativePath>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'RelaxDesk.Windows' And Exists('$(RelaxDeskNativePath)')">
+    <Content Include="$(RelaxDeskNativePath)" Link="RelaxDesk.Native.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
