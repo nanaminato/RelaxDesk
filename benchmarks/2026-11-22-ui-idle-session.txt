@@ -1,0 +1,7 @@
+backend=synthetic-test codec=H264 hardware_encode=True encoder=Intel? Quick Sync Video H.264 Encoder MFT
+session_end worker=control-read state=Faulted error_type=EndOfStreamException hresult=0x80070026 reason=Unable to read beyond the end of the stream.
+media frames=1 elapsed_s=25.50 fps=0.04 wire_mbps=0.000 process_cpu_pct=0.15 gpu_pct=unavailable dropped=0 queue_depth=0 send_p50_ms=0.72 send_p95_ms=0.72 capture_p50_ms=3.06 capture_p95_ms=3.06 encode_p50_ms=428.11 encode_p95_ms=428.11
+encode_stages upload_bytes=3686400 accepted_setting_mask=15 gpu_timestamp_samples=0 frames=1 elapsed_s=25.66 fps=0.04 wire_mbps=0.000 process_cpu_pct=0.15 gpu_pct=unavailable dropped=0 queue_depth=0 generate_p50_ms=3.06 generate_p95_ms=3.06 upload_submit_p50_ms=1.18 upload_submit_p95_ms=1.18 surface_setup_p50_ms=0.52 surface_setup_p95_ms=0.52 color_submit_p50_ms=4.24 color_submit_p95_ms=4.24 input_wait_p50_ms=0.00 input_wait_p95_ms=0.00 mft_submit_p50_ms=9.08 mft_submit_p95_ms=9.08 output_wait_p50_ms=1.93 output_wait_p95_ms=1.93 packet_pack_p50_ms=0.00 packet_pack_p95_ms=0.00 native_encode_total_p50_ms=17.25 native_encode_total_p95_ms=17.25
+Session ended: Unable to read beyond the end of the stream.
+
+PASS idle media + authenticated control remains alive 25.26s beyond 15s binding deadline; pings=100; no input, no physical desktop/GPU Present claim

@@ -9,6 +9,12 @@ using var stream = new MemoryStream(); var packet = new Packet("frame-v1", 7, 2,
 await Reject([]); await Reject([1, 0, 0, 0]); await Reject([255, 255, 255, 255]); byte[] oversized = new byte[4]; BinaryPrimitives.WriteInt32LittleEndian(oversized, Wire.Limit + 1); await Reject(oversized); await Reject([5, 0, 0, 0, 123]); await Reject([2, 0, 0, 0, 123, 125, 0]);
 
 count += await MediaChecks.Run();
+var invitation = new ConnectionInvitation("192.168.1.2", 48200, new string('A', 64), new string('B', 32));
+Check(ConnectionInvitation.Parse(invitation.Encode()) == invitation);
+Check(ConnectionInvitation.Parse((invitation with { Host = "::1" }).Encode()).Host == "::1");
+Check(!invitation.ToString().Contains(invitation.Token));
+foreach (string invalid in new[] { "anything", "https://localhost/", invitation.Encode()+"&token="+invitation.Token, invitation.Encode().Replace("192.168.1.2", "0.0.0.0"), invitation.Encode().Replace("48200", "0"), invitation.Encode().Replace("token=", "other="), invitation.Encode().Replace("fingerprint=", "fingerprint=x"), invitation.Encode()+"#secret" })
+{ try { ConnectionInvitation.Parse(invalid); throw new Exception("Invalid invitation accepted"); } catch (FormatException) { Check(true); } }
 if (args is ["--core"]) { Console.WriteLine($"PASS {count} protocol/access/media checks (TLS not run)"); return; }
 using var certificate = SessionCertificate.Create();
 var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0); listener.Start();

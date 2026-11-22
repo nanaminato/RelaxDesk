@@ -112,6 +112,7 @@ internal sealed class PackageCollector
             using var deployment = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(output, "deployment.stdout.txt")));
             if (!deployment.RootElement.GetProperty("x64").GetBoolean() || !Path.GetFullPath(deployment.RootElement.GetProperty("runtime").GetString()!).StartsWith(App("Host") + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) throw new IOException("Host did not load packaged x64 runtime");
             await Exec("wpf-hwnd-contracts", viewer, ["--hwnd-contracts"], 30);
+            await Exec("viewer-ui-contracts", viewer, ["--ui-contracts"], 30);
             if (!eligible && !diagnostic) { status = "NOT_ACCEPTED_ENVIRONMENT"; await File.WriteAllTextAsync(Path.Combine(output, "stop-reason.txt"), "Not an unlocked Windows Home local console. No repeated GPU attempts."); }
             else
             {

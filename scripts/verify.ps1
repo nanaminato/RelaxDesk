@@ -44,11 +44,13 @@ try {
         if ($LASTEXITCODE) { throw 'Codec benchmark failed' }
     }
     if ($Wpf) {
+        Run-App $viewer --ui-contracts
+        if ($LASTEXITCODE) { throw 'Viewer connection/preview contracts failed' }
         Run-App $viewer --hwnd-contracts
         if ($LASTEXITCODE) { throw 'WPF HWND lifecycle contracts failed' }
         & $probe --render-test
         if ($LASTEXITCODE) { throw 'Native render/pointer/resize/release test failed' }
-        foreach ($mode in @('hardware-cpu','gpu','gpu-window','gpu-idle','gpu-resolution','gpu-recovery','gpu-device-fallback','gpu-fallback','gpu-close')) {
+        foreach ($mode in @('hardware-cpu','cpu-idle-long','gpu','gpu-window','gpu-idle','gpu-resolution','gpu-recovery','gpu-device-fallback','gpu-fallback','gpu-close')) {
             Run-App $smokeDll $hostDll --wpf $viewer $mode
             if ($LASTEXITCODE) { throw "WPF render smoke failed: $mode" }
         }

@@ -172,3 +172,12 @@ Implemented a win-x64 self-contained publisher (`scripts/package-acceptance.ps1`
 Server/RDP tests with development tools removed from PATH demonstrate app-local .NET runtime loading, authenticated self-contained EXE child processes, safety tests and WPF lifecycle; full Home local-console GPU acceptance remains pending. This is packaging progress, not a completed phase exit or latency improvement claim. See [package instructions](../packaging/RUN-ME.zh-CN.md).
 
 Bundle publication, isolated-PATH tests, exact ZIP SHA256 and explicit untested Home coverage: [delivery report](../benchmarks/2026-11-22-package-report.md).
+
+
+## Viewer usability / disconnect diagnostics — 2026-11-22
+
+Connection UI now accepts one Host-issued `relaxdesk://` invitation; manual IP/port/pin/token and render settings are folded away. Invitations retain existing fingerprint/token/consent checks, are length/field/IP/hex validated, are redacted by ToString, and are not persisted. After media approval the form is hidden; disconnect restores it. PasswordBox masks manually entered tokens. A clearly labelled offline preview accepts arbitrary text but creates only local synthetic pixels, no socket or input endpoint. Fullscreen/window toggle and a compact toolbar retain session controls.
+
+Authenticated v2 pings run every five seconds on the same bounded serialized control channel; disconnect stops the timer. Host logs first worker completion/failure with operation/type/HRESULT, Viewer writes credential-free operation/type/HRESULT to LocalAppData/RelaxDesk/logs. No transport timeout was increased or security gate removed. The user's delayed disconnect is **not yet reproduced or declared fixed**. A headless one-frame-then-idle test passes 25 seconds beyond the 15-second media-binding deadline; a separate real WPF one-frame test checks automatic heartbeat replies and timely close. These do not prove longer physical LAN stability.
+
+HDR diagnostics add output color space, active HDR flag, bit depth and luminance. Native SwapChain explicitly declares SDR BT.709. Capture/encoding remains the existing 8-bit SDR pipeline; no PQ/scRGB tone mapping or HDR output claim. Current diagnostics observe SDR in RDP, so reported HDR brightness remains pending physical Host/Viewer comparison. See Microsoft [Advanced Color](https://learn.microsoft.com/en-us/windows/win32/direct3darticles/high-dynamic-range) and [HDR duplication formats](https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/dxgi-1-5-improvements).

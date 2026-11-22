@@ -30,7 +30,7 @@ Host 电脑在普通终端运行（替换为自己网卡的具体局域网 IP，
 .\Host\RelaxDesk.Host.exe 192.168.1.10 48200 dxgi
 ```
 
-Viewer 电脑启动 `Viewer/RelaxDesk.Viewer.exe`，填写 Host IP、端口及本次 Host 窗口显示的 SHA256 指纹和一次性 token；通过可信渠道核对指纹。保留 D3D11 GPU display 选项。Host 用户看到连接请求后，只有明确同意才输入 `APPROVE`。测试期间会共享真实桌面并允许远程输入；关闭 Viewer 或按 Ctrl+C 结束 Host。每次重新启动都使用新的凭证。不要为了连通而关闭防火墙；按已有可信局域网策略授权必要的专用网络访问即可。
+Viewer 电脑启动 `Viewer/RelaxDesk.Viewer.exe`，将 Host 第三行 `Connection code:` 后的整条 `relaxdesk://...` 信息粘贴到主输入框。也可展开“手动填写与显示选项”，分别填写地址、端口、指纹及一次性凭证。连接信息包含本次秘密，请通过可信渠道传递并核对指纹，不要回传该行。保留 D3D11 GPU display 选项。Host 用户看到连接请求后，只有明确同意才输入 `APPROVE`。测试期间会共享真实桌面并允许远程输入；关闭 Viewer 或按 Ctrl+C 结束 Host。每次重新启动都使用新的凭证。不要为了连通而关闭防火墙；按已有可信局域网策略授权必要的专用网络访问即可。
 
 Host 启动需要参数，直接双击 Host EXE 不会自动监听。不要把 Host 控制台整体转存到回传日志，因为其中含有 token。自动化回环测试不会注入远程输入，测试授权仍由测试子进程执行，与手动真实桌面共享不同。
 
@@ -51,3 +51,5 @@ Host 启动需要参数，直接双击 Host EXE 不会自动监听。不要把 H
 第三方 .NET 运行时的许可与声明保存在各发布目录及 ThirdParty/；本包不替 RelaxDesk 项目选择软件许可证。
 
 若日志归档因磁盘空间或权限失败，可直接回传本次 logs/home-* 文件夹。默认入口不会自动重试；已有日志不会覆盖。可选 PowerShell 入口 Collect-Logs.ps1 使用同样安全门禁，并可执行额外资源采样；只有策略允许时使用。
+
+新界面提供本机预览，可忽略输入内容查看布局；它不联网、不发送远程输入。授权连接成功后收起连接表单；断开后恢复表单。v2 控制连接每 5 秒发送已认证心跳。若自动断开，请提供 Host 的 session_end 行及前后日志（删除指纹/token/Connection code），并附 `%LOCALAPPDATA%/RelaxDesk/logs/viewer-日期.log`。当前为 SDR BT.709 传输，HDR 色调映射未实现；请分别记录 Host/Viewer 的 HDR 开关及 SDR 内容亮度设置。

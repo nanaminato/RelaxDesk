@@ -1,4 +1,5 @@
 #include "internal.h"
+#include <dxgi1_6.h>
 #include <wtsapi32.h>
 #include <sstream>
 #include <iomanip>
@@ -52,6 +53,8 @@ RD int32_t rd_capture_diagnostics(const char** json) {
             s<<"{\"index\":"<<a<<",\"description\":"<<quote(utf8(desc.Description))<<",\"luid_high\":"<<desc.AdapterLuid.HighPart<<",\"luid_low\":"<<desc.AdapterLuid.LowPart<<",\"software\":"<<((desc.Flags&DXGI_ADAPTER_FLAG_SOFTWARE)?"true":"false")<<",\"outputs\":[";
             bool first_output=true;for(UINT o=0;o<64;++o){ComPtr<IDXGIOutput> output;hr=adapter->EnumOutputs(o,&output);if(hr==DXGI_ERROR_NOT_FOUND)break;check(hr,"diagnostic EnumOutputs");DXGI_OUTPUT_DESC d{};check(output->GetDesc(&d),"diagnostic output desc");if(!first_output)s<<',';first_output=false;
                 s<<"{\"index\":"<<o<<",\"name\":"<<quote(utf8(d.DeviceName))<<",\"attached\":"<<(d.AttachedToDesktop?"true":"false")<<",\"rotation\":"<<d.Rotation<<",\"rect\":["<<d.DesktopCoordinates.left<<','<<d.DesktopCoordinates.top<<','<<d.DesktopCoordinates.right<<','<<d.DesktopCoordinates.bottom<<']';
+                ComPtr<IDXGIOutput6> output6;DXGI_OUTPUT_DESC1 color{};
+                if(SUCCEEDED(output.As(&output6))&&SUCCEEDED(output6->GetDesc1(&color)))s<<",\"color_space\":"<<color.ColorSpace<<",\"hdr_active\":"<<(color.ColorSpace==DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020?"true":"false")<<",\"bits_per_color\":"<<color.BitsPerColor<<",\"min_luminance\":"<<color.MinLuminance<<",\"max_luminance\":"<<color.MaxLuminance<<",\"max_full_frame_luminance\":"<<color.MaxFullFrameLuminance;
                 gpu device;hr=guarded([&]{device.create(adapter.Get());});s<<",\"device\":"<<result(hr);
                 if(SUCCEEDED(hr)){ComPtr<IDXGIDevice> dxgi;check(device.device.As(&dxgi),"diagnostic device adapter");ComPtr<IDXGIAdapter> actual;check(dxgi->GetAdapter(&actual),"diagnostic GetAdapter");DXGI_ADAPTER_DESC actual_desc{};check(actual->GetDesc(&actual_desc),"diagnostic actual desc");bool matches=actual_desc.AdapterLuid.HighPart==desc.AdapterLuid.HighPart&&actual_desc.AdapterLuid.LowPart==desc.AdapterLuid.LowPart;
                     s<<",\"device_output_adapter_match\":"<<(matches?"true":"false");ComPtr<IDXGIOutput1> output1;hr=output.As(&output1);ComPtr<IDXGIOutputDuplication> duplication;

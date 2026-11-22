@@ -1,5 +1,6 @@
 #include "internal.h"
 #include <dxgi1_3.h>
+#include <dxgi1_4.h>
 #include <d3dcompiler.h>
 #include <algorithm>
 #include <cmath>
@@ -73,6 +74,10 @@ struct renderer_context {
         ComPtr<IDXGIFactory2> factory;check(adapter->GetParent(IID_PPV_ARGS(&factory)),"renderer factory");
         DXGI_SWAP_CHAIN_DESC1 desc{};desc.Width=desc.Height=1;desc.Format=DXGI_FORMAT_B8G8R8A8_UNORM;desc.SampleDesc.Count=1;desc.BufferUsage=DXGI_USAGE_RENDER_TARGET_OUTPUT;desc.BufferCount=2;desc.SwapEffect=DXGI_SWAP_EFFECT_FLIP_DISCARD;desc.Scaling=DXGI_SCALING_STRETCH;desc.AlphaMode=DXGI_ALPHA_MODE_IGNORE;
         check(factory->CreateSwapChainForHwnd(graphics.device.Get(),hwnd,&desc,nullptr,nullptr,&swap),"CreateSwapChainForHwnd");
+        // This media protocol carries SDR BT.709, never PQ/HDR. Let Windows map
+        // SDR to an HDR display; do not label 8-bit SDR values as HDR luminance.
+        ComPtr<IDXGISwapChain3> color_swap;
+        if(SUCCEEDED(swap.As(&color_swap)))check(color_swap->SetColorSpace1(DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709),"SDR swapchain color space");
         check(factory->MakeWindowAssociation(hwnd,DXGI_MWA_NO_ALT_ENTER),"swapchain window association");
         ComPtr<IDXGIDevice1> latency;if(SUCCEEDED(device.As(&latency)))latency->SetMaximumFrameLatency(1);
     }

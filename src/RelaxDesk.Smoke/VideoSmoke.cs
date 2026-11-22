@@ -11,11 +11,11 @@ internal static class VideoSmoke
     {
         if (mode == "--video-desktop") targetFrames = 1;
         if (targetFrames is < 1 or > 1800) throw new ArgumentOutOfRangeException(nameof(targetFrames));
-        string backend = mode == "--video-software" ? "test-software" : mode is "--video-hardware" or "--video-recovery" or "--video-stalled" ? "test-hardware" : "dxgi";
+        string backend = mode == "--video-idle-control" ? "test-idle" : mode == "--video-software" ? "test-software" : mode is "--video-hardware" or "--video-recovery" or "--video-stalled" ? "test-hardware" : "dxgi";
         var reservation = new TcpListener(IPAddress.Loopback, 0); reservation.Start(); int port = ((IPEndPoint)reservation.LocalEndpoint).Port; reservation.Stop();
         var start = ChildProcess.Create(hostPath, "127.0.0.1", port.ToString(), backend);
         using var process = Process.Start(start) ?? throw new IOException("Host launch failed");
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(Math.Max(30, targetFrames / 15 + 10)));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(mode == "--video-idle-control" ? 40 : Math.Max(30, targetFrames / 15 + 10)));
         using var client = new SessionClient();
         try
         {
@@ -29,6 +29,22 @@ internal static class VideoSmoke
             if (!consent.Contains("APPROVE")) throw new InvalidDataException("Host did not request consent");
             await process.StandardInput.WriteLineAsync("APPROVE"); await process.StandardInput.FlushAsync();
             await connecting;
+            if (mode == "--video-idle-control")
+            {
+                _ = await MediaProtocol.Read(client.Media, timeout.Token); // exactly one synthetic frame, then idle
+                var idle = Stopwatch.StartNew(); long sequence = 0;
+                while (idle.Elapsed.TotalSeconds < 25)
+                {
+                    await Wire.Write(client.Control, new Packet("ping-v2", ++sequence), timeout.Token);
+                    var pong = await Wire.Read(client.Control, timeout.Token);
+                    if (pong.Kind != "pong-v2" || pong.Sequence != sequence || process.HasExited) throw new IOException("Idle authenticated session ended unexpectedly");
+                    await Task.Delay(250, timeout.Token);
+                }
+                client.Dispose(); await process.WaitForExitAsync(timeout.Token);
+                Console.WriteLine(await process.StandardOutput.ReadToEndAsync(timeout.Token));
+                if (process.ExitCode != 0) throw new IOException("Idle peer cleanup failed");
+                Console.WriteLine($"PASS idle media + authenticated control remains alive {idle.Elapsed.TotalSeconds:F2}s beyond 15s binding deadline; pings={sequence}; no input, no physical desktop/GPU Present claim"); return;
+            }
             if (mode == "--video-stalled")
             {
                 var stall = Stopwatch.StartNew(); int pings = 0; var rtt = new List<double>();

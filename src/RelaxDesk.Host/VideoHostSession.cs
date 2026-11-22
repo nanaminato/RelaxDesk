@@ -74,6 +74,9 @@ internal static class VideoHostSession
             finally { Console.WriteLine("media " + metrics.Report(queue.Dropped + stale, queue.Depth)); }
         }, session.Token);
         Task first = await Task.WhenAny(input, sender, producer);
+        string worker = first == input ? "control-read" : first == sender ? "media-send" : "capture-encode";
+        var failure = first.Exception?.GetBaseException();
+        Console.WriteLine($"session_end worker={worker} state={first.Status} error_type={failure?.GetType().Name ?? "none"} hresult=0x{failure?.HResult ?? 0:X8} reason={failure?.Message ?? "worker completed/cancelled"}");
         gate.Revoke(); session.Cancel(); controlSocket.Close(); mediaSocket.Close(); queue.Complete();
         try { await first; }
         finally

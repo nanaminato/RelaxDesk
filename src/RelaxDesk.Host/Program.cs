@@ -54,7 +54,7 @@ if (backend is not ("auto" or "dxgi" or "gdi" or "test-software" or "test-hardwa
 if (backend.StartsWith("test-", StringComparison.Ordinal) && !IPAddress.IsLoopback(address)) throw new ArgumentException("Synthetic test is loopback-only");
 using var cert = SessionCertificate.Create();
 string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
-Console.WriteLine($"SHA256 fingerprint: {cert.GetCertHashString(HashAlgorithmName.SHA256)}\nOne-session pairing token: {token}\nShare both over a trusted channel. No automatic reconnect.");
+Console.WriteLine($"SHA256 fingerprint: {cert.GetCertHashString(HashAlgorithmName.SHA256)}\nOne-session pairing token: {token}\nConnection code: {new ConnectionInvitation(address.ToString(), port, cert.GetCertHashString(HashAlgorithmName.SHA256), token).Encode()}");
 var listener = new TcpListener(address, port); listener.Start(1);
 using var stop = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Cancel(); listener.Stop(); };
