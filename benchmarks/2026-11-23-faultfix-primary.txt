@@ -1,0 +1,8 @@
+backend=synthetic-test codec=H264 hardware_encode=True encoder=Intel? Quick Sync Video H.264 Encoder MFT
+producer_error stage=encode-submit completed_frames=4 error_type=InvalidDataException hresult=0x80131501 reason=Injected producer failure after four frames
+media frames=4 elapsed_s=0.50 fps=7.98 wire_mbps=0.066 process_cpu_pct=3.12 gpu_pct=unavailable dropped=0 queue_depth=0 send_p50_ms=0.10 send_p95_ms=1.01 capture_p50_ms=3.87 capture_p95_ms=4.99 encode_p50_ms=6.10 encode_p95_ms=383.27 frame_interval_p50_ms=31.56 frame_interval_p95_ms=35.74
+session_end worker=capture-encode stage=encode-submit completed_frames=4 state=Faulted error_type=InvalidDataException hresult=0x80131501 reason=Injected producer failure after four frames
+encode_stages upload_bytes=14745600 accepted_setting_mask=15 gpu_timestamp_samples=2 frames=4 elapsed_s=0.65 fps=6.13 wire_mbps=0.044 process_cpu_pct=2.63 gpu_pct=unavailable dropped=0 queue_depth=0 generate_p50_ms=3.87 generate_p95_ms=4.99 upload_submit_p50_ms=0.22 upload_submit_p95_ms=6.66 surface_setup_p50_ms=0.57 surface_setup_p95_ms=0.78 color_submit_p50_ms=0.52 color_submit_p95_ms=5.36 input_wait_p50_ms=0.00 input_wait_p95_ms=0.00 mft_submit_p50_ms=1.50 mft_submit_p95_ms=10.84 output_wait_p50_ms=3.11 output_wait_p95_ms=5.04 packet_pack_p50_ms=0.00 packet_pack_p95_ms=0.00 native_encode_total_p50_ms=6.07 native_encode_total_p95_ms=28.98 gpu_upload_p50_ms=0.24 gpu_upload_p95_ms=0.25 gpu_color_p50_ms=20.13 gpu_color_p95_ms=32.05
+Session ended: Injected producer failure after four frames
+
+PASS four-frame producer fault preserves original stage/type/message instead of ChannelClosedException; joined and cleanly disconnected
