@@ -1,0 +1,29 @@
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  RelaxDesk.Core -> E:\RelaxDesk\build\package-artifacts\bin\RelaxDesk.Core\release\RelaxDesk.Core.dll
+  RelaxDesk.Windows -> E:\RelaxDesk\build\package-artifacts\bin\RelaxDesk.Windows\release\RelaxDesk.Windows.dll
+  RelaxDesk.Host -> E:\RelaxDesk\build\package-artifacts\bin\RelaxDesk.Host\release_win-x64\RelaxDesk.Host.dll
+  RelaxDesk.Host -> E:\RelaxDesk\build\delivery\RelaxDesk-acceptance-win-x64\Host\
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  RelaxDesk.Core -> E:\RelaxDesk\build\package-artifacts\bin\RelaxDesk.Core\release\RelaxDesk.Core.dll
+  RelaxDesk.Windows -> E:\RelaxDesk\build\package-artifacts\bin\RelaxDesk.Windows\release\RelaxDesk.Windows.dll
+  RelaxDesk.Viewer -> E:\RelaxDesk\build\package-artifacts\bin\RelaxDesk.Viewer\release_win-x64\RelaxDesk.Viewer.dll
+  RelaxDesk.Viewer -> E:\RelaxDesk\build\delivery\RelaxDesk-acceptance-win-x64\Viewer\
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  RelaxDesk.Core -> E:\RelaxDesk\build\package-artifacts\bin\RelaxDesk.Core\release\RelaxDesk.Core.dll
+  RelaxDesk.Windows -> E:\RelaxDesk\build\package-artifacts\bin\RelaxDesk.Windows\release\RelaxDesk.Windows.dll
+  RelaxDesk.Smoke -> E:\RelaxDesk\build\package-artifacts\bin\RelaxDesk.Smoke\release_win-x64\RelaxDesk.Smoke.dll
+  RelaxDesk.Smoke -> E:\RelaxDesk\build\delivery\RelaxDesk-acceptance-win-x64\Tools\Smoke\
+  正在确定要还原的项目…
+  所有项目均是最新的，无法还原。
+  RelaxDesk.Core -> E:\RelaxDesk\build\package-artifacts\bin\RelaxDesk.Core\release\RelaxDesk.Core.dll
+  RelaxDesk.Tests -> E:\RelaxDesk\build\package-artifacts\bin\RelaxDesk.Tests\release_win-x64\RelaxDesk.Tests.dll
+  RelaxDesk.Tests -> E:\RelaxDesk\build\delivery\RelaxDesk-acceptance-win-x64\Tools\Tests\
+
+Algorithm : SHA256
+Hash      : EEBB2B8593F182CFAA55584811730816EB700A623AA5530F2CE10785879497A8
+Path      : E:\RelaxDesk\build\delivery\RelaxDesk-acceptance-win-x64.zip
+
+PACKAGE=E:\RelaxDesk\build\delivery\RelaxDesk-acceptance-win-x64.zip

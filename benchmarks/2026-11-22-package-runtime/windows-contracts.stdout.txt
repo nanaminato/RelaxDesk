@@ -1,0 +1,1 @@
+PASS 15 native ABI/metadata/pointer contracts; no capture or input

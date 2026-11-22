@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "revision": "17c369a54ad33a4c7a84a879ca8140c1f376c5df",
+  "working_tree_dirty": false,
+  "built_at": "2026-11-22T22:49:50.0509513+09:00",
+  "rid": "win-x64",
+  "self_contained": true,
+  "trimmed": false,
+  "native_abi": 2,
+  "minimum_os": "Windows 10 x64 (supported .NET 11 build) / Windows 11 x64",
+  "home_physical_console": "NOT_TESTED",
+  "signature": "UNSIGNED_EXPERIMENTAL"
+}

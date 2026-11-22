@@ -1,0 +1,76 @@
+{
+  "status": "NOT_ACCEPTED_ENVIRONMENT",
+  "home_console_eligible": false,
+  "steps": [
+    {
+      "name": "display-drivers",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.4078243
+    },
+    {
+      "name": "present-contracts",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.3426236
+    },
+    {
+      "name": "capture-diagnostics",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.8117114
+    },
+    {
+      "name": "core-tls",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 1.9524209
+    },
+    {
+      "name": "windows-contracts",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.2542967
+    },
+    {
+      "name": "reject-token",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.6626397
+    },
+    {
+      "name": "reject-pin",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.6247982
+    },
+    {
+      "name": "deny-v2",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.7164531
+    },
+    {
+      "name": "reject-media",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.5846921
+    },
+    {
+      "name": "deployment",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.1114993
+    },
+    {
+      "name": "wpf-hwnd-contracts",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 3.2636623
+    }
+  ],
+  "physical_scanout": "NOT_TESTED",
+  "input_to_photon": "NOT_TESTED",
+  "dual_pc_lan": "NOT_TESTED",
+  "resource_sampling": "Per-stage application metrics; no external GPU counters in EXE collector"
+}
