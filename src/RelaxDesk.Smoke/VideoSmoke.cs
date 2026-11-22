@@ -13,8 +13,7 @@ internal static class VideoSmoke
         if (targetFrames is < 1 or > 1800) throw new ArgumentOutOfRangeException(nameof(targetFrames));
         string backend = mode == "--video-software" ? "test-software" : mode is "--video-hardware" or "--video-recovery" or "--video-stalled" ? "test-hardware" : "dxgi";
         var reservation = new TcpListener(IPAddress.Loopback, 0); reservation.Start(); int port = ((IPEndPoint)reservation.LocalEndpoint).Port; reservation.Stop();
-        var start = new ProcessStartInfo("dotnet") { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
-        foreach (string arg in new[] { Path.GetFullPath(hostPath), "127.0.0.1", port.ToString(), backend }) start.ArgumentList.Add(arg);
+        var start = ChildProcess.Create(hostPath, "127.0.0.1", port.ToString(), backend);
         using var process = Process.Start(start) ?? throw new IOException("Host launch failed");
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(Math.Max(30, targetFrames / 15 + 10)));
         using var client = new SessionClient();

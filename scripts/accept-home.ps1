@@ -2,6 +2,7 @@ param(
     [string]$OutputDirectory = '',
     [string]$NativeBuildDirectory = 'build/native-home',
     [switch]$SkipBuild,
+    [string]$PackageRoot = '',
     [switch]$DiagnosticOnly,
     [switch]$SelfTest,
     [ValidateRange(60,1800)][int]$Frames = 300
@@ -40,7 +41,8 @@ if ($SelfTest) {
     exit 0
 }
 $root = Split-Path $PSScriptRoot -Parent
-if (!$OutputDirectory) { $OutputDirectory = 'benchmarks/home-' + (Get-Date -Format 'yyyyMMdd-HHmmss') }
+if ($PackageRoot) { $root = [IO.Path]::GetFullPath($PackageRoot); $SkipBuild = $true }
+if (!$OutputDirectory) { $OutputDirectory = $(if ($PackageRoot) { 'logs/home-' } else { 'benchmarks/home-' }) + (Get-Date -Format 'yyyyMMdd-HHmmss') }
 $output = [IO.Path]::GetFullPath((Join-Path $root $OutputDirectory))
 if (Test-Path -LiteralPath $output) { throw 'Choose a new output directory; prior evidence will not be overwritten.' }
 [IO.Directory]::CreateDirectory($output) | Out-Null
@@ -78,9 +80,9 @@ try {
     $shell = (Get-Process -Id $PID).Path
     $os = Get-CimInstance Win32_OperatingSystem
     $gpu = @(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion,PNPDeviceID,CurrentHorizontalResolution,CurrentVerticalResolution)
-    $revision = & git rev-parse HEAD
+    $revision = if ($PackageRoot) { (Get-Content -Raw (Join-Path $root 'package.json') | ConvertFrom-Json).revision } else { & git rev-parse HEAD }
     [pscustomobject]@{collected_at=(Get-Date -Format o);revision=$revision;os=$os.Caption;version=$os.Version;build=$os.BuildNumber;gpu=$gpu;diagnostic_only=[bool]$DiagnosticOnly;manual_physical_scanout='NOT_TESTED';manual_input='NOT_TESTED';dual_pc_lan='NOT_TESTED'} | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $output 'machine.json') -Encoding utf8
-    $null = Run-Step 'sdk' 'dotnet' @('--info')
+    if (!$PackageRoot) { $null = Run-Step 'sdk' 'dotnet' @('--info') }
     if (!$SkipBuild) {
         if ((Run-Step 'native-build' $shell @('-NoProfile','-File',"$PSScriptRoot/build-native.ps1",'-BuildDirectory',$NativeBuildDirectory) 300) -ne 'PASS') { throw 'Native build failed; dependent tests not run.' }
         $native = Join-Path $root "$NativeBuildDirectory/Release/RelaxDesk.Native.dll"
@@ -90,25 +92,40 @@ try {
     $hostDll = Join-Path $root 'src/RelaxDesk.Host/bin/Release/net11.0-windows/RelaxDesk.Host.dll'
     $smoke = Join-Path $root 'src/RelaxDesk.Smoke/bin/Release/net11.0-windows/RelaxDesk.Smoke.dll'
     $viewer = Join-Path $root 'src/RelaxDesk.Viewer/bin/Release/net11.0-windows/RelaxDesk.Viewer.dll'
+    if ($PackageRoot) {
+        $probe = Join-Path $root 'Tools/Native/RelaxDesk.NativeProbe.exe'; $hostDll = Join-Path $root 'Host/RelaxDesk.Host.exe'
+        $viewer = Join-Path $root 'Viewer/RelaxDesk.Viewer.exe'; $smoke = Join-Path $root 'Tools/Smoke/RelaxDesk.Smoke.exe'
+        Copy-Item -LiteralPath (Join-Path $root 'package.json') -Destination (Join-Path $output 'package.json')
+        Copy-Item -LiteralPath (Join-Path $root 'SHA256SUMS.json') -Destination (Join-Path $output 'package-hashes.json')
+    }
+    $managedLauncher = if ($PackageRoot) { $hostDll } else { 'dotnet' }
+    $diagnosticArguments = if ($PackageRoot) { @('--capture-diagnose') } else { @($hostDll,'--capture-diagnose') }
+    $packageArguments = if ($PackageRoot) { @('-PackageRoot',$root) } else { @() }
     $hashes = @(Get-FileHash -Algorithm SHA256 -LiteralPath $probe,(Join-Path (Split-Path $probe) 'RelaxDesk.Native.dll'),(Join-Path (Split-Path $viewer) 'RelaxDesk.Native.dll'),(Join-Path (Split-Path $hostDll) 'RelaxDesk.Native.dll'))
     $hashes | ConvertTo-Json | Set-Content (Join-Path $output 'binary-hashes.json') -Encoding utf8
     if (@($hashes | Select-Object -Skip 1 | Select-Object -ExpandProperty Hash -Unique).Count -ne 1) { throw 'Native Probe/Host/Viewer DLL hashes differ; rebuild with explicit RelaxDeskNativePath.' }
     $null = Run-Step 'present-contracts' $probe @('--present-contracts')
-    if ((Run-Step 'capture-diagnostics' 'dotnet' @($hostDll,'--capture-diagnose')) -ne 'PASS') { throw 'Cannot establish session environment.' }
+    if ((Run-Step 'capture-diagnostics' $managedLauncher $diagnosticArguments) -ne 'PASS') { throw 'Cannot establish session environment.' }
     $environment = Get-Content -Raw (Join-Path $output 'capture-diagnostics.stdout.txt') | ConvertFrom-Json
     # Core/Home/CoreSingleLanguage/Home China. Caption is localized: use registry EditionID.
     $edition = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').EditionID
     $eligible = Test-HomeConsole $edition $environment ([bool]$DiagnosticOnly)
     [pscustomobject]@{edition=$edition;eligible=$eligible;environment=$environment} | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $output 'eligibility.json') -Encoding utf8
-    $null = Run-Step 'security-and-contracts' $shell @('-NoProfile','-File',"$PSScriptRoot/verify.ps1",'-SkipBuild','-NativeBuildDirectory',$NativeBuildDirectory)
-    $null = Run-Step 'wpf-hwnd-contracts' 'dotnet' @($viewer,'--hwnd-contracts') 30
+    $null = Run-Step 'security-and-contracts' $shell (@('-NoProfile','-File',"$PSScriptRoot/verify.ps1",'-SkipBuild','-NativeBuildDirectory',$NativeBuildDirectory) + $packageArguments)
+    if ($PackageRoot) {
+        if ((Run-Step 'deployment' $hostDll @('--deployment-info')) -ne 'PASS') { throw 'Packaged runtime launch failed' }
+        $deployment = Get-Content -Raw (Join-Path $output 'deployment.stdout.txt') | ConvertFrom-Json
+        if (!$deployment.x64 -or !([IO.Path]::GetFullPath($deployment.runtime)).StartsWith((Join-Path $root 'Host')+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) { throw 'Host did not load the packaged x64 runtime' }
+        $null = Run-Step 'wpf-hwnd-contracts' $viewer @('--hwnd-contracts') 30
+    }
+    else { $null = Run-Step 'wpf-hwnd-contracts' 'dotnet' @($viewer,'--hwnd-contracts') 30 }
     if (!$eligible -and !$DiagnosticOnly) { $environmentStop=$true;throw 'Not an unlocked Home local console. Logs collected; run -DiagnosticOnly for a bounded presentation comparison without claiming acceptance.' }
     $comparison = Run-Step 'present-comparison' $probe @('--present-diagnose') 45 @(2)
     if ($DiagnosticOnly) { Write-Host 'Diagnostic-only run: Home acceptance and full graphics suite intentionally not claimed.' }
     elseif ($comparison -ne 'PASS') { $environmentStop=$true;throw 'Independent presentation blocked/failed; no repeated WPF/benchmark attempts.' }
     else {
-        if ((Run-Step 'graphics-wpf-capture' $shell @('-NoProfile','-File',"$PSScriptRoot/verify.ps1",'-SkipBuild','-Graphics','-Wpf','-Capture','-NativeBuildDirectory',$NativeBuildDirectory) 300) -eq 'PASS') {
-            $null = Run-Step 'renderer-benchmark' $shell @('-NoProfile','-File',"$PSScriptRoot/benchmark-renderers.ps1",'-Frames',"$Frames",'-OutputDirectory',"$OutputDirectory/renderers") 600
+        if ((Run-Step 'graphics-wpf-capture' $shell (@('-NoProfile','-File',"$PSScriptRoot/verify.ps1",'-SkipBuild','-Graphics','-Wpf','-Capture','-NativeBuildDirectory',$NativeBuildDirectory) + $packageArguments) 300) -eq 'PASS') {
+            $null = Run-Step 'renderer-benchmark' $shell (@('-NoProfile','-File',"$PSScriptRoot/benchmark-renderers.ps1",'-Frames',"$Frames",'-OutputDirectory',"$OutputDirectory/renderers") + $packageArguments) 600
             # Summaries are optional when Python is unavailable; raw logs are always retained.
             if (Get-Command python -ErrorAction SilentlyContinue) { $null = Run-Step 'renderer-summary' 'python' @("$PSScriptRoot/summarize-renderers.py",(Join-Path $output 'renderers')) }
         }
@@ -120,6 +137,7 @@ try {
 } finally {
     $status = Get-AcceptanceStatus $eligible @($steps.ToArray())
     [pscustomobject]@{status=$status;home_console_eligible=$eligible;steps=$steps.ToArray();physical_scanout='NOT_TESTED';input_to_photon='NOT_TESTED';dual_pc_lan='NOT_TESTED'} | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $output 'result.json') -Encoding utf8
+    if ($PackageRoot) { Compress-Archive -LiteralPath $output -DestinationPath ($output + '.zip') -CompressionLevel Optimal }
     Pop-Location
 }
 Write-Host "Result: $status; logs: $output"

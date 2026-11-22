@@ -5,6 +5,7 @@ using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using RelaxDesk.Core;
+if (args is ["--collect-package", var packageRoot, .. var collectorArguments]) { Environment.ExitCode = await PackageCollector.Run(packageRoot, collectorArguments); return; }
 if (args is ["--windows-contracts"]) { RelaxDesk.Windows.WindowsContracts.Run(); return; }
 if (args is [var budgetHost, "--wpf-budget", var budgetViewer, var budgetMode, var budgetFrames]) { await WpfSmoke.Run(budgetHost, budgetViewer, budgetMode, int.Parse(budgetFrames), true); return; }
 if (args is [var renderHost, "--wpf", var renderViewer, var mode]) { await WpfSmoke.Run(renderHost, renderViewer, mode); return; }
@@ -16,8 +17,7 @@ if (args.Length == 2 && args[1] is "--reject-pin" or "--deny-v2" or "--reject-me
 bool rejectToken = args.Length == 2 && args[1] == "--reject-token";
 if (args.Length is < 1 or > 2) throw new ArgumentException("Pass the absolute path to built RelaxDesk.Host.dll");
 var reservation = new TcpListener(IPAddress.Loopback, 0); reservation.Start(); int port = ((IPEndPoint)reservation.LocalEndpoint).Port; reservation.Stop();
-var start = new ProcessStartInfo("dotnet") { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
-foreach (var arg in new[] { Path.GetFullPath(args[0]), "127.0.0.1", port.ToString() }) start.ArgumentList.Add(arg);
+var start = ChildProcess.Create(args[0], "127.0.0.1", port.ToString());
 using var host = Process.Start(start) ?? throw new Exception("Could not start host");
 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 try

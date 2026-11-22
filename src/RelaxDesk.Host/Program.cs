@@ -9,6 +9,16 @@ using System.Security.Cryptography.X509Certificates;
 using RelaxDesk.Core;
 using RelaxDesk.Windows;
 using RelaxDesk.Host;
+if (args is ["--deployment-info"])
+{
+    Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new {
+        process = Environment.ProcessPath,
+        runtime = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory(),
+        framework = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+        x64 = Environment.Is64BitProcess
+    }));
+    return;
+}
 if (args is ["--capture-diagnose"])
 {
     try { Console.WriteLine(GraphicsDiagnostics.CaptureJson()); }

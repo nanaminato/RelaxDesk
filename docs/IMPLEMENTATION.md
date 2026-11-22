@@ -163,3 +163,10 @@ Remaining: physical Home console, dual-PC LAN office workloads, real input, actu
 Fixed a confirmed HwndHost WndProc base-call omission (layout/destruction contract), tightened real Present vs TEST/mode-change status handling, and added independent bounded top-level/child SwapChain lifecycle diagnostics. Both targets remain occluded in the current RDP environment, including after recreation; this excludes a HwndHost-only explanation but does not identify the exact compositor/driver cause. Real WPF lifecycle tests pass; an old-behavior negative control fails as expected. Home/physical GPU acceptance remains pending.
 
 One-command Home local-console validation and evidence collection: `powershell.exe -NoProfile -File scripts/accept-home.ps1`. The runner checks edition/session, matches DLL hashes, preserves logs/results, applies per-step timeouts and stops after a blocked independent comparison. An RDP/Server run cannot report Home acceptance. See [diagnosis, tests, commands and limitations](../benchmarks/2026-11-22-occlusion-report.md).
+
+
+## Self-contained Home acceptance bundle — 2026-11-22
+
+Implemented a win-x64 self-contained publisher (`scripts/package-acceptance.ps1`), native static MSVC CRT linkage, EXE-aware Smoke child launch, and default EXE log collector. Complete ZIP includes Host, WPF Viewer, native DLL/Probe, Core/TLS and security tests, runtime redistribution notices, per-file SHA256 manifest and Chinese run/return checklist. Default Collect-Logs.cmd invokes the bundled tool directly; no SDK, dotnet CLI, Git, Python or .ps1 execution-policy bypass is needed. PowerShell scripts remain optional. Logs/results are archived separately from binaries, with no pairing credentials saved by the automated collector.
+
+Server/RDP tests with development tools removed from PATH demonstrate app-local .NET runtime loading, authenticated self-contained EXE child processes, safety tests and WPF lifecycle; full Home local-console GPU acceptance remains pending. This is packaging progress, not a completed phase exit or latency improvement claim. See [package instructions](../packaging/RUN-ME.zh-CN.md).

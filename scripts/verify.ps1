@@ -1,6 +1,12 @@
-param([switch]$Graphics, [switch]$Wpf, [switch]$Capture, [switch]$SkipBuild, [string]$NativeBuildDirectory = 'build/native')
+param([switch]$Graphics, [switch]$Wpf, [switch]$Capture, [switch]$SkipBuild, [string]$NativeBuildDirectory = 'build/native', [string]$PackageRoot = '')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
+if ($PackageRoot) { $root = [IO.Path]::GetFullPath($PackageRoot); $SkipBuild = $true }
+function Run-App([string]$Application, [Parameter(ValueFromRemainingArguments=$true)][string[]]$Arguments) {
+    if ([IO.Path]::GetExtension($Application) -eq '.exe') { & $Application @Arguments }
+    else { & dotnet $Application @Arguments }
+    $global:LASTEXITCODE = $LASTEXITCODE
+}
 Push-Location $root
 try {
     $env:DOTNET_CLI_HOME = Join-Path $root '.dotnet'
@@ -11,40 +17,48 @@ try {
     }
     $hostDll = Join-Path $root 'src/RelaxDesk.Host/bin/Release/net11.0-windows/RelaxDesk.Host.dll'
     $smokeDll = Join-Path $root 'src/RelaxDesk.Smoke/bin/Release/net11.0-windows/RelaxDesk.Smoke.dll'
-    dotnet src/RelaxDesk.Tests/bin/Release/net11.0/RelaxDesk.Tests.dll
+    $viewer = Join-Path $root 'src/RelaxDesk.Viewer/bin/Release/net11.0-windows/RelaxDesk.Viewer.dll'
+    $tests = Join-Path $root 'src/RelaxDesk.Tests/bin/Release/net11.0/RelaxDesk.Tests.dll'
+    $probe = Join-Path $root "$NativeBuildDirectory/Release/RelaxDesk.NativeProbe.exe"
+    if ($PackageRoot) {
+        $hostDll = Join-Path $root 'Host/RelaxDesk.Host.exe'; $viewer = Join-Path $root 'Viewer/RelaxDesk.Viewer.exe'
+        $smokeDll = Join-Path $root 'Tools/Smoke/RelaxDesk.Smoke.exe'; $tests = Join-Path $root 'Tools/Tests/RelaxDesk.Tests.exe'
+        $probe = Join-Path $root 'Tools/Native/RelaxDesk.NativeProbe.exe'
+    }
+    Run-App $tests
     if ($LASTEXITCODE) { throw 'Core/TLS checks failed' }
-    dotnet $smokeDll --windows-contracts
+    Run-App $smokeDll --windows-contracts
     if ($LASTEXITCODE) { throw 'Windows contracts failed' }
-    & (Join-Path $root "$NativeBuildDirectory/Release/RelaxDesk.NativeProbe.exe") --present-contracts
+    & $probe --present-contracts
     if ($LASTEXITCODE) { throw 'Present state contracts failed' }
     foreach ($mode in @('--reject-token', '--reject-pin', '--deny-v2', '--reject-media')) {
-        dotnet $smokeDll $hostDll $mode
+        Run-App $smokeDll $hostDll $mode
         if ($LASTEXITCODE) { throw "Security smoke failed: $mode" }
     }
     if ($Graphics) {
         foreach ($mode in @('--video-software', '--video-hardware', '--video-recovery', '--video-stalled')) {
-            dotnet $smokeDll $hostDll $mode
+            Run-App $smokeDll $hostDll $mode
             if ($LASTEXITCODE) { throw "Video smoke failed: $mode" }
         }
-        dotnet $hostDll --codec-benchmark
+        Run-App $hostDll --codec-benchmark
         if ($LASTEXITCODE) { throw 'Codec benchmark failed' }
     }
     if ($Wpf) {
-        dotnet (Join-Path $root 'src/RelaxDesk.Viewer/bin/Release/net11.0-windows/RelaxDesk.Viewer.dll') --hwnd-contracts
+        Run-App $viewer --hwnd-contracts
         if ($LASTEXITCODE) { throw 'WPF HWND lifecycle contracts failed' }
-        & (Join-Path $root "$NativeBuildDirectory/Release/RelaxDesk.NativeProbe.exe") --render-test
+        & $probe --render-test
         if ($LASTEXITCODE) { throw 'Native render/pointer/resize/release test failed' }
         foreach ($mode in @('hardware-cpu','gpu','gpu-window','gpu-idle','gpu-resolution','gpu-recovery','gpu-device-fallback','gpu-fallback','gpu-close')) {
-            dotnet $smokeDll $hostDll --wpf (Join-Path $root 'src/RelaxDesk.Viewer/bin/Release/net11.0-windows/RelaxDesk.Viewer.dll') $mode
+            Run-App $smokeDll $hostDll --wpf $viewer $mode
             if ($LASTEXITCODE) { throw "WPF render smoke failed: $mode" }
         }
     }
     if ($Capture) {
-        dotnet $hostDll --capture-diagnose
+        Run-App $hostDll --capture-diagnose
         if ($LASTEXITCODE) { throw 'Capture diagnostics failed' }
-        & (Join-Path $root "$NativeBuildDirectory/Release/RelaxDesk.NativeProbe.exe")
+        & $probe
         if ($LASTEXITCODE) { throw 'Real capture unavailable; inspect diagnostics and run on authorized local console' }
-        dotnet $smokeDll $hostDll --wpf (Join-Path $root 'src/RelaxDesk.Viewer/bin/Release/net11.0-windows/RelaxDesk.Viewer.dll') desktop-gpu
+        Run-App $smokeDll $hostDll --wpf $viewer desktop-gpu
         if ($LASTEXITCODE) { throw 'Real desktop-to-GPU-display proof failed' }
     }
 }

@@ -13,8 +13,7 @@ internal static class WpfSmoke
         if (mode == "gpu-close") frames = 10;
         if (mode == "gpu-idle") frames = 1;
         var reservation = new TcpListener(IPAddress.Loopback, 0); reservation.Start(); int port = ((IPEndPoint)reservation.LocalEndpoint).Port; reservation.Stop();
-        var start = new ProcessStartInfo("dotnet") { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
-        foreach (string arg in new[] { Path.GetFullPath(hostPath), "127.0.0.1", port.ToString(), backend }) start.ArgumentList.Add(arg);
+        var start = ChildProcess.Create(hostPath, "127.0.0.1", port.ToString(), backend);
         using var host = Process.Start(start) ?? throw new IOException("Host launch failed");
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(Math.Max(30, frames / 10 + 15)));
         Process? viewer = null;
@@ -23,8 +22,7 @@ internal static class WpfSmoke
             string fingerprint = (await host.StandardOutput.ReadLineAsync(timeout.Token) ?? throw new IOException("No fingerprint")).Split(": ")[1];
             string token = (await host.StandardOutput.ReadLineAsync(timeout.Token) ?? throw new IOException("No token")).Split(": ")[1];
             await host.StandardOutput.ReadLineAsync(timeout.Token); await Task.Delay(100, timeout.Token);
-            var viewerStart = new ProcessStartInfo("dotnet") { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
-            viewerStart.ArgumentList.Add(Path.GetFullPath(viewerPath)); viewerStart.ArgumentList.Add("--render-smoke");
+            var viewerStart = ChildProcess.Create(viewerPath, "--render-smoke");
             viewer = Process.Start(viewerStart) ?? throw new IOException("Viewer launch failed");
             await viewer.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new { Host = "127.0.0.1", Port = port, Fingerprint = fingerprint, Token = token, Renderer = gpu ? "gpu" : "cpu", HardwareDecode = mode != "software", Frames = frames, ExerciseWindow = mode == "gpu-window", RequireGpu = gpu && mode is not ("gpu-fallback" or "gpu-device-fallback"), SimulateDeviceLoss = mode == "gpu-device-fallback", SimulateGap = mode == "gpu-recovery", IdleRepaintTest = mode == "gpu-idle", FixedMediaBudget = fixedBudget, CloseWhileStreaming = mode == "gpu-close" })); await viewer.StandardInput.FlushAsync();
             string prompt = await host.StandardOutput.ReadLineAsync(timeout.Token) ?? throw new IOException("Missing approval request");

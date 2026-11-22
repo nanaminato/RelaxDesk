@@ -84,3 +84,6 @@ Independent project, with potential future integration into RelaxKonOS via an ad
 Current GPU display implementation, final RDP occlusion failures and Home validation commands: [GPU display acceptance report](benchmarks/2026-11-22-gpu-display-report.md).
 
 Windows Home local-console one-command validation: `powershell.exe -NoProfile -File scripts/accept-home.ps1`. See [occlusion diagnosis and log collection](benchmarks/2026-11-22-occlusion-report.md).
+
+
+免 SDK 的 Windows Home 验收包：在开发机运行 `powershell.exe -NoProfile -File scripts/package-acceptance.ps1`，目标机完整解压 ZIP 后双击 `Collect-Logs.cmd`。包内包含自包含 Host/Viewer、原生模块及测试工具。见 [运行说明与日志回传清单](packaging/RUN-ME.zh-CN.md)。Windows Home 物理真机仍待验证。

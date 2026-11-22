@@ -11,8 +11,7 @@ internal static class SecuritySmoke
     public static async Task Run(string path, string mode)
     {
         var reservation = new TcpListener(IPAddress.Loopback, 0); reservation.Start(); int port = ((IPEndPoint)reservation.LocalEndpoint).Port; reservation.Stop();
-        var start = new ProcessStartInfo("dotnet") { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
-        foreach (string arg in new[] { Path.GetFullPath(path), "127.0.0.1", port.ToString(), "test-hardware" }) start.ArgumentList.Add(arg);
+        var start = ChildProcess.Create(path, "127.0.0.1", port.ToString(), "test-hardware");
         using var process = Process.Start(start) ?? throw new IOException("Host launch failed");
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         async Task<SslStream> Open(TcpClient socket, string fingerprint)
