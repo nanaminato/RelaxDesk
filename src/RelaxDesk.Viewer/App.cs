@@ -168,7 +168,7 @@ public sealed partial class ViewerWindow : Window
             int count = Interlocked.Increment(ref smokeFrames);
             void Update()
             {
-                status.Text = $"{(gpu ? "D3D11 SwapChain" : "CPU bitmap")} {frame.Width}x{frame.Height} frame {frame.Sequence} | decode {decodeMs:F2}ms";
+                status.Text = $"已连接 · {frame.Width} × {frame.Height} · {(gpu ? "GPU 显示" : "兼容显示")}";
                 ExerciseWindow(count);
                 if (smoke is not null && !smoke.IdleSessionTest && !smoke.IdleRepaintTest && !smoke.FixedMediaBudget && count >= smoke.Frames && !smoke.CloseWhileStreaming) cancellation.Cancel();
             }
@@ -186,11 +186,12 @@ public sealed partial class ViewerWindow : Window
         try
         {
             if (smoke is null) ViewerSessionLog.Record("connect-start");
-            status.Text = "Connecting; waiting for explicit host approval";
+            status.Text = "正在连接，等待被控端允许…";
             if (!IPAddress.TryParse(host.Text.Trim(), out var target) || target.Equals(IPAddress.Any) || target.Equals(IPAddress.IPv6Any) || !int.TryParse(port.Text, out int targetPort) || targetPort is < 1 or > 65535) throw new FormatException("请输入有效的远程 IP 和端口。");
             if (pinnedConnection.IsChecked == true) await connection.Connect(target.ToString(), targetPort, fingerprint.Text, token.Password, cancellation.Token);
             else await connection.ConnectByApproval(target.ToString(), targetPort, cancellation.Token);
             token.Clear();
+            status.Text = "已获授权，正在接收桌面…";
             ShowConnectedView(true);
             heartbeat = new() { Interval = TimeSpan.FromSeconds(5) };
             heartbeat.Tick += (_, _) =>

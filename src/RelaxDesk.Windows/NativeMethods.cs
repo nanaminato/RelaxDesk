@@ -20,6 +20,7 @@ internal static class NativeMethods
         public int HotspotX, HotspotY;
     }
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_capture_create(out nint context);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_capture_color_status(nint context, out nint json);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_capture_next(nint context, uint timeout, out FrameInfo frame);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_capture_blob(nint context, uint kind, out nint data, out uint bytes);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_capture_pixels(nint context, [Out] byte[] data, uint bytes);

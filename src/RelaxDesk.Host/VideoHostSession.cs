@@ -107,6 +107,7 @@ internal static class VideoHostSession
         string stage = "capture-init";
         Exception? producerFailure = null;
         bool forceSoftware = false, forceNextKeyFrame = false;
+        string? lastColor = null; long colorPoll = 0;
         try
         {
             while (!ct.IsCancellationRequested)
@@ -121,6 +122,11 @@ internal static class VideoHostSession
                     var frame = synthetic ? new CapturedFrame(testWidth, testHeight, CodecVerification.Pattern(testWidth, testHeight, (int)(sequence % 200)), new(Stopwatch.GetTimestamp(), 1, [], [], 0, 0, false, 0, 0, 0, 0, 0, 0, [])) : capture!.Capture();
                     double captureMs = timer.Elapsed.TotalMilliseconds;
                     if (frame is null) continue;
+                    if (capture is DxgiCaptureBackend dxgi && clock.ElapsedMilliseconds >= colorPoll)
+                    {
+                        colorPoll = clock.ElapsedMilliseconds + 1000; string status = dxgi.ColorStatus;
+                        if (status != lastColor) { Console.WriteLine("capture_color " + status); lastColor = status; }
+                    }
                     long timestamp = (long)(clock.Elapsed.TotalSeconds * 10_000_000);
                     bool force = requestedKeyFrame() || queue.Dropped != previousDrops || sequence == 0 || forceNextKeyFrame;
                     previousDrops = queue.Dropped; timer.Restart();

@@ -37,6 +37,12 @@ try {
         Run-App $smokeDll $hostDll $mode
         if ($LASTEXITCODE) { throw "Security smoke failed: $mode" }
     }
+    if ($Wpf) {
+        $shell = Join-Path $root 'src/RelaxDesk.HostShell/bin/Release/net11.0-windows/RelaxDesk.HostShell.dll'
+        if ($PackageRoot) { $shell = Join-Path $root 'HostUi/RelaxDesk.HostShell.exe' }
+        Run-App $shell --shell-contracts $hostDll (Join-Path $root 'build/host-shell-verification')
+        if ($LASTEXITCODE) { throw 'WPF Host approval/stop contracts failed' }
+    }
     if ($Graphics) {
         foreach ($mode in @('--video-software', '--video-hardware', '--video-recovery', '--video-stalled', '--video-producer-failure', '--video-runtime-fallback')) {
             Run-App $smokeDll $hostDll $mode

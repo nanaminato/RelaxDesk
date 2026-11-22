@@ -4,7 +4,7 @@
 #include <windows.h>
 #include <d3d11.h>
 #include <d3d10.h>
-#include <dxgi1_2.h>
+#include <dxgi1_6.h>
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mferror.h>
@@ -42,6 +42,19 @@ struct gpu {
     ComPtr<ID3D11Device> device; ComPtr<ID3D11DeviceContext> commands;
     void create(IDXGIAdapter* adapter=nullptr);
 };
+struct desktop_color {
+    bool hdr=false,white_known=false;
+    DXGI_COLOR_SPACE_TYPE output_space=DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+    float white_nits=80;
+};
+struct desktop_converter {
+    ComPtr<ID3D11Texture2D> readable;
+    ComPtr<ID3D11ShaderResourceView> view;
+    ComPtr<ID3D11VertexShader> vertex;
+    ComPtr<ID3D11PixelShader> pixel;
+    ComPtr<ID3D11Buffer> constants;
+    void convert(gpu& graphics,ID3D11Texture2D* source,ID3D11Texture2D* target,const desktop_color& color);
+};
 struct capture_context {
     resource_counter tracked{0};
     runtime lifetime; gpu graphics;
@@ -54,6 +67,12 @@ struct capture_context {
     DXGI_OUTDUPL_DESC duplication_desc{};
     bool format_negotiated=false;
     int64_t last_desktop_time=0;
+    desktop_color color;
+    ComPtr<IDXGIOutput6> color_output;
+    std::unique_ptr<desktop_converter> converter;
+    DXGI_FORMAT source_format=DXGI_FORMAT_UNKNOWN;
+    ULONGLONG color_checked=0;
+    void refresh_color();
     bool accept_surface(const DXGI_OUTDUPL_FRAME_INFO& info,IDXGIResource* resource);
     void initialize(); void acquire(uint32_t timeout, rd_frame& info);
 };

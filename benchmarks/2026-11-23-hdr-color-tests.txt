@@ -1,0 +1,2 @@
+PASS 42 capture/color/release WARP contracts; scRGB/PQ/SDR white/transfer validated on GPU textures; no physical HDR desktop validation
+PASS capture test resources released

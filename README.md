@@ -87,3 +87,5 @@ Windows Home local-console one-command validation: `powershell.exe -NoProfile -F
 
 
 免 SDK 的 Windows Home 验收包：在开发机运行 `powershell.exe -NoProfile -File scripts/package-acceptance.ps1`，目标机完整解压 ZIP 后双击 `Collect-Logs.cmd`。包内包含自包含 Host/Viewer、原生模块及测试工具。见 [运行说明与日志回传清单](packaging/RUN-ME.zh-CN.md)。Windows Home 物理真机仍待验证。
+
+Windows acceptance package: run `Start-Host.cmd` on the shared PC and `Start-Viewer.cmd` on the client. Host approval is a WPF button; IP and port are sufficient. HDR-to-SDR GPU mapping is implemented and synthetic-color tested; physical HDR appearance remains pending. See [package instructions](packaging/RUN-ME.zh-CN.md).

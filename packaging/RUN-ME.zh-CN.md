@@ -24,17 +24,17 @@
 
 ## 实际双机 LAN：只填 IP 和端口
 
-请两端都使用本 ZIP 内的新版本，解压到新的文件夹，不要覆盖旧目录或使用旧快捷方式。窗口顶部应显示 `v0.3.2-capturefix.构建时间.g提交号`，也可核对根目录 BUILD-INFO.txt 和 package.json。运行库文件时间戳可能保持 SDK 的原始时间，不能据此判断应用版本。
+请两端都使用本 ZIP 内的新版本，解压到新的文件夹，不要覆盖旧目录或使用旧快捷方式。窗口顶部应显示 `v0.4.0-hdrui.构建时间.g提交号`，也可核对根目录 BUILD-INFO.txt 和 package.json。运行库文件时间戳可能保持 SDK 的原始时间，不能据此判断应用版本。
 
-1. Host 电脑双击 `Host/RelaxDesk.Host.exe`，输入本机网卡的具体局域网 IP、端口（回车默认 48200）。也可在普通终端运行：
+1. Host 电脑双击根目录 `Start-Host.cmd`，在 WPF 窗口选择本机局域网 IP、端口，点击「开始共享」。无需终端。保留的命令行入口：
 
 ```powershell
 .\Host\RelaxDesk.Host.exe 192.168.1.10 48200 dxgi
 ```
 
-2. Viewer 电脑启动 `Viewer/RelaxDesk.Viewer.exe`，主界面只填写 Host IP 和端口，点击连接。
-3. Host 会显示请求来源；确认是本次期望的连接后输入 `APPROVE`。只有批准后才开放画面和输入。拒绝或关闭 Host 不会共享桌面。
-4. 连接后表单自动隐藏，只保留桌面及工具栏。关闭 Viewer 或按 Ctrl+C 结束 Host。
+2. Viewer 电脑双击根目录 `Start-Viewer.cmd`，主界面只填写 Host IP 和端口，点击连接。
+3. Host 窗口会显示请求来源；确认是本次期望的连接后点击「允许本次连接」。只有批准后才开放画面和输入。拒绝或关闭 Host 不会共享桌面。
+4. 连接后表单自动隐藏，只保留桌面及工具栏。关闭 Viewer 或在 Host 点击「停止共享」。
 
 **不需要复制指纹、token 或长连接码。** Host 控制台保留的这些行用于可选旧式固定指纹连接，可以忽略。高级选项仍保留固定指纹方式；不会从校验失败自动降级为 IP 连接。
 
@@ -60,10 +60,16 @@ IP/端口方式采用本次首次接触信任：控制与媒体连接仍使用 T
 
 若日志归档因磁盘空间或权限失败，可直接回传本次 logs/home-* 文件夹。默认入口不会自动重试；已有日志不会覆盖。可选 PowerShell 入口 Collect-Logs.ps1 使用同样安全门禁，并可执行额外资源采样；只有策略允许时使用。
 
-新界面提供本机预览，可忽略输入内容查看布局；它不联网、不发送远程输入。授权连接成功后收起连接表单；断开后恢复表单。v2 控制连接每 5 秒发送已认证心跳。若自动断开，请提供 Host 的 session_end 行及前后日志（删除指纹/token/Connection code），并附 `%LOCALAPPDATA%/RelaxDesk/logs/viewer-日期.log`。当前为 SDR BT.709 传输，HDR 色调映射未实现；请分别记录 Host/Viewer 的 HDR 开关及 SDR 内容亮度设置。
+新界面提供本机预览，可忽略输入内容查看布局；它不联网、不发送远程输入。授权连接成功后收起连接表单；断开后恢复表单。v2 控制连接每 5 秒发送已认证心跳。若自动断开，请提供 Host 的 session_end 行及前后日志（删除指纹/token/Connection code），并附 `%LOCALAPPDATA%/RelaxDesk/logs/viewer-日期.log`。当前为 SDR BT.709 传输，Host 的 FP16/scRGB、HDR10/PQ 已实现 GPU 色调映射（真机颜色待验收）；请分别记录 Host/Viewer 的 HDR 开关及 SDR 内容亮度设置。
 
 v0.3.1：若批准后立即断开，请回传 `producer_error` 或 `recoverable_encoder_error` 行及 `session_end`，并附 Viewer 本地日志。新的编码故障回退只尝试一次软件 H.264；仍保持 DXGI 捕获和已授权加密连接。该回退已经过注入测试，但 NVIDIA 真机根因与恢复尚待确认。
 
 Host 结构化错误日志保存在 `%LOCALAPPDATA%/RelaxDesk/logs/host-日期.log`，不记录启动配对凭证或输入内容。双击启动的 Host 会在会话结束后等待 Enter，便于读取原始错误；命令行/自动测试启动方式正常退出。
 
 v0.3.2：修正仅鼠标更新时复用桌面图像的处理，并显式协商 BGRA。若仍出现 capture-frame 错误，请回传完整 producer_error，保留 width/height/format/dupl_format/api 字段，并说明 Host 的 HDR 开关。不要只截取 HRESULT。24 项 WARP/契约测试不代表 NVIDIA 真机或 HDR 色调映射已验证。
+
+## v0.4.0 HDR 验收重点
+
+先关闭 Viewer 的 HDR，分别开启／关闭 Host HDR，对照记事本白底、灰阶、彩色图片和高光。记录两端 HDR 开关、Windows SDR 内容亮度、显示器型号、分辨率、缩放与显卡驱动。Host 诊断中的 capture_color 包含真实 source_format、hdr_active、sdr_white_nits、white_level_known 与 transform；请与两端日志一起回传。白位获取失败会明确回退80nit，8bit HDR 捕获也会提示精度限制。不要把合成 WARP 数值测试当作真机观感通过。
+
+Host 窗口只控制独立普通权限 Host 子进程，关闭窗口会停止共享；不安装服务，不自动批准连接。CLI 仍使用 APPROVE。新版按钮、输入框与授权卡片使用自定义 WPF 样式。

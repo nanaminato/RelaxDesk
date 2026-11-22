@@ -29,6 +29,7 @@ struct rd_encode_timing {
 RD uint32_t rd_abi_version();
 RD int32_t rd_capture_diagnostics(const char** json);
 RD int32_t rd_capture_self_test(const char** report);
+RD int32_t rd_capture_color_status(void* context,const char** json);
 RD int32_t rd_capture_create(void** context);
 RD int32_t rd_capture_next(void* context, uint32_t timeout_ms, rd_frame* frame);
 RD int32_t rd_capture_blob(void* context, uint32_t kind, const void** data, uint32_t* bytes);

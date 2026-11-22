@@ -118,6 +118,9 @@ internal sealed class PackageCollector
             {
                 if (deployment.RootElement.GetProperty("version").GetString() != version.GetString()) throw new IOException("Host version does not match package manifest");
                 if (await Exec("viewer-version", viewer, ["--version"], 30) != 0 || (await File.ReadAllTextAsync(Path.Combine(output,"viewer-version.stdout.txt"))).Trim() != version.GetString()) throw new IOException("Viewer version does not match package manifest");
+                string shell = App("HostUi/RelaxDesk.HostShell.exe");
+                if (await Exec("host-ui-version", shell, ["--version"], 30) != 0 || (await File.ReadAllTextAsync(Path.Combine(output,"host-ui-version.stdout.txt"))).Trim() != version.GetString()) throw new IOException("Host UI version does not match package manifest");
+                await Exec("host-ui-contracts", shell, ["--shell-contracts",host,Path.Combine(output,"host-ui")], 75);
             }
             await Exec("wpf-hwnd-contracts", viewer, ["--hwnd-contracts"], 30);
             await Exec("viewer-ui-contracts", viewer, ["--ui-contracts"], 30);

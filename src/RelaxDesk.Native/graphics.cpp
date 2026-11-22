@@ -13,9 +13,10 @@ void gpu::create(IDXGIAdapter* adapter) {
     if(SUCCEEDED(commands.As(&multithread)))multithread->SetMultithreadProtected(TRUE);
 }
 void capture_context::initialize() {
-    duplication.Reset();texture.Reset();staging.Reset();graphics={};
+    duplication.Reset();texture.Reset();staging.Reset();converter.reset();color_output.Reset();graphics={};
     dirty.clear();moves.clear();pointer.clear();shape={};pointer_position={};
     duplication_desc={};format_negotiated=false;last_desktop_time=0;
+    source_format=DXGI_FORMAT_UNKNOWN;color={};color_checked=0;
     ComPtr<IDXGIFactory1> factory;check(CreateDXGIFactory1(IID_PPV_ARGS(&factory)),"CreateDXGIFactory1");
     // Choose the attached primary physical output and its adapter, never a different logon session.
     for(UINT a=0;;++a){ComPtr<IDXGIAdapter1> adapter;HRESULT hr=factory->EnumAdapters1(a,&adapter);if(hr==DXGI_ERROR_NOT_FOUND)break;check(hr,"EnumAdapters1");
@@ -23,15 +24,18 @@ void capture_context::initialize() {
             DXGI_OUTPUT_DESC desc{};check(candidate->GetDesc(&desc),"GetDesc output");
             if(!desc.AttachedToDesktop||desc.DesktopCoordinates.left!=0||desc.DesktopCoordinates.top!=0)continue;
             if(desc.Rotation!=DXGI_MODE_ROTATION_IDENTITY)check(DXGI_ERROR_UNSUPPORTED,"rotated output unsupported");
+            output=desc;candidate.As(&color_output);refresh_color();
             graphics.create(adapter.Get());ComPtr<IDXGIOutput5> output5;
             HRESULT newer=candidate.As(&output5);
             if(SUCCEEDED(newer)){
-                DXGI_FORMAT supported[]={DXGI_FORMAT_B8G8R8A8_UNORM};
-                newer=output5->DuplicateOutput1(graphics.device.Get(),0,1,supported,&duplication);
+                // Keep HDR/scRGB precision until our GPU tone mapper, rather
+                // than asking DXGI to clip it into an eight-bit SDR surface.
+                DXGI_FORMAT supported[]={DXGI_FORMAT_R16G16B16A16_FLOAT,DXGI_FORMAT_R10G10B10A2_UNORM,DXGI_FORMAT_B8G8R8A8_UNORM,DXGI_FORMAT_R8G8B8A8_UNORM};
+                newer=output5->DuplicateOutput1(graphics.device.Get(),0,4,supported,&duplication);
                 if(SUCCEEDED(newer))format_negotiated=true;
             }
             if(!format_negotiated){
-                if(newer!=E_NOINTERFACE&&newer!=E_NOTIMPL&&newer!=DXGI_ERROR_UNSUPPORTED)check(newer,"DuplicateOutput1 BGRA primary display");
+                if(newer!=E_NOINTERFACE&&newer!=E_NOTIMPL&&newer!=DXGI_ERROR_UNSUPPORTED)check(newer,"DuplicateOutput1 HDR/SDR primary display");
                 ComPtr<IDXGIOutput1> output1;check(candidate.As(&output1),"IDXGIOutput1");
                 check(output1->DuplicateOutput(graphics.device.Get(),&duplication),"DuplicateOutput primary display");
             }
@@ -50,13 +54,17 @@ bool capture_context::accept_surface(const DXGI_OUTDUPL_FRAME_INFO& info,IDXGIRe
     }
     if(!resource)check(E_POINTER,"desktop update has no texture resource");
     ComPtr<ID3D11Texture2D> source;check(resource->QueryInterface(IID_PPV_ARGS(&source)),"desktop texture");D3D11_TEXTURE2D_DESC desc{};source->GetDesc(&desc);
-    auto detail=[&](const char* reason){std::ostringstream s;s<<reason<<" width="<<desc.Width<<" height="<<desc.Height<<" format="<<desc.Format<<" expected_format="<<DXGI_FORMAT_B8G8R8A8_UNORM<<" mips="<<desc.MipLevels<<" array="<<desc.ArraySize<<" samples="<<desc.SampleDesc.Count<<" present_qpc="<<info.LastPresentTime.QuadPart<<" mouse_qpc="<<info.LastMouseUpdateTime.QuadPart<<" accumulated="<<info.AccumulatedFrames<<" metadata_bytes="<<info.TotalMetadataBufferSize<<" dupl_width="<<duplication_desc.ModeDesc.Width<<" dupl_height="<<duplication_desc.ModeDesc.Height<<" dupl_format="<<duplication_desc.ModeDesc.Format<<" api="<<(format_negotiated?"DuplicateOutput1-BGRA":"DuplicateOutput");return s.str();};
+    auto detail=[&](const char* reason){std::ostringstream s;s<<reason<<" width="<<desc.Width<<" height="<<desc.Height<<" format="<<desc.Format<<" output_format="<<DXGI_FORMAT_B8G8R8A8_UNORM<<" mips="<<desc.MipLevels<<" array="<<desc.ArraySize<<" samples="<<desc.SampleDesc.Count<<" present_qpc="<<info.LastPresentTime.QuadPart<<" mouse_qpc="<<info.LastMouseUpdateTime.QuadPart<<" accumulated="<<info.AccumulatedFrames<<" metadata_bytes="<<info.TotalMetadataBufferSize<<" dupl_width="<<duplication_desc.ModeDesc.Width<<" dupl_height="<<duplication_desc.ModeDesc.Height<<" dupl_format="<<duplication_desc.ModeDesc.Format<<" api="<<(format_negotiated?"DuplicateOutput1-HDR-SDR":"DuplicateOutput");return s.str();};
     if(!capture_dimensions(desc.Width,desc.Height))check(DXGI_ERROR_UNSUPPORTED,detail("unsupported capture dimensions (pixel cap 8294400)").c_str());
-    if(desc.Format!=DXGI_FORMAT_B8G8R8A8_UNORM)check(DXGI_ERROR_UNSUPPORTED,detail("unsupported capture format (SDR BGRA required; HDR tone mapping not implemented)").c_str());
+    bool supported=desc.Format==DXGI_FORMAT_B8G8R8A8_UNORM||desc.Format==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB||desc.Format==DXGI_FORMAT_B8G8R8X8_UNORM||desc.Format==DXGI_FORMAT_B8G8R8X8_UNORM_SRGB||desc.Format==DXGI_FORMAT_R8G8B8A8_UNORM||desc.Format==DXGI_FORMAT_R8G8B8A8_UNORM_SRGB||desc.Format==DXGI_FORMAT_R10G10B10A2_UNORM||desc.Format==DXGI_FORMAT_R16G16B16A16_FLOAT;
+    if(!supported)check(DXGI_ERROR_UNSUPPORTED,detail("unsupported capture format (supported: BGRA/RGBA8, RGB10, FP16 scRGB)").c_str());
     if(desc.MipLevels!=1||desc.ArraySize!=1||desc.SampleDesc.Count!=1)check(DXGI_ERROR_UNSUPPORTED,detail("unsupported capture texture layout").c_str());
-    if(!texture){auto owned=desc;owned.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_RENDER_TARGET;owned.MiscFlags=0;owned.Usage=D3D11_USAGE_DEFAULT;owned.CPUAccessFlags=0;check(graphics.device->CreateTexture2D(&owned,nullptr,&texture),"create owned desktop texture");}
+    if(!texture){auto owned=desc;owned.Format=DXGI_FORMAT_B8G8R8A8_UNORM;owned.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_RENDER_TARGET;owned.MiscFlags=0;owned.Usage=D3D11_USAGE_DEFAULT;owned.CPUAccessFlags=0;check(graphics.device->CreateTexture2D(&owned,nullptr,&texture),"create owned desktop texture");}
     D3D11_TEXTURE2D_DESC owned{};texture->GetDesc(&owned);if(owned.Width!=desc.Width||owned.Height!=desc.Height)check(DXGI_ERROR_ACCESS_LOST,detail("resolution changed; recreate capture and encoder").c_str());
-    graphics.commands->CopyResource(texture.Get(),source.Get());last_desktop_time=info.LastPresentTime.QuadPart;return true;
+    if(color_output&&(source_format!=desc.Format||GetTickCount64()-color_checked>=1000))refresh_color();
+    if(desc.Format==DXGI_FORMAT_B8G8R8A8_UNORM)graphics.commands->CopyResource(texture.Get(),source.Get());
+    else {if(!converter)converter=std::make_unique<desktop_converter>();converter->convert(graphics,source.Get(),texture.Get(),color);}
+    source_format=desc.Format;last_desktop_time=info.LastPresentTime.QuadPart;return true;
 }
 void capture_context::acquire(uint32_t timeout,rd_frame& result) {
     lifetime.verify();if(!duplication)initialize();

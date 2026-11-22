@@ -9,6 +9,8 @@ using System.Security.Cryptography.X509Certificates;
 using RelaxDesk.Core;
 using RelaxDesk.Windows;
 using RelaxDesk.Host;
+bool shellMode = args is ["--shell", _, _, _];
+if (shellMode) args = args[1..];
 bool interactiveLaunch = args.Length == 0;
 if (args is ["--version"]) { Console.WriteLine(BuildIdentity.Display); return; }
 if (args.Length == 0)
@@ -64,9 +66,11 @@ if (backend is not ("auto" or "dxgi" or "gdi" or "test-software" or "test-hardwa
 if (backend.StartsWith("test-", StringComparison.Ordinal) && !IPAddress.IsLoopback(address)) throw new ArgumentException("Synthetic test is loopback-only");
 using var cert = SessionCertificate.Create();
 string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
-Console.WriteLine($"SHA256 fingerprint: {cert.GetCertHashString(HashAlgorithmName.SHA256)}\nOne-session pairing token: {token}\nConnection code: {new ConnectionInvitation(address.ToString(), port, cert.GetCertHashString(HashAlgorithmName.SHA256), token).Encode()}");
+if (!shellMode) Console.WriteLine($"SHA256 fingerprint: {cert.GetCertHashString(HashAlgorithmName.SHA256)}\nOne-session pairing token: {token}\nConnection code: {new ConnectionInvitation(address.ToString(), port, cert.GetCertHashString(HashAlgorithmName.SHA256), token).Encode()}");
 var listener = new TcpListener(address, port); listener.Start(1);
 using var stop = new CancellationTokenSource();
+using var shell = shellMode ? new ShellBridge(stop) : null;
+if (shellMode) ShellBridge.Emit("listening", address.ToString(), port);
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Cancel(); listener.Stop(); };
 try
 {
@@ -80,12 +84,14 @@ try
         if (hello.Kind == "request-v2")
         {
             if (hello.Text is not { Length: 32 } || !hello.Text.All(char.IsAsciiHexDigit) || hello.Capabilities is not { Length: > 0 and <= 2 } || hello.Capabilities.Any(c => c is not ("h264" or "deflate"))) throw new AuthenticationException("Invalid consent request");
-            Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests screen + input via IP/port approval. First-contact identity is not independently verified. Type APPROVE only if you expect this connection:");
+            if (!shellMode) Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests screen + input via IP/port approval. First-contact identity is not independently verified. Type APPROVE only if you expect this connection:");
         }
         else if (hello.Kind is not ("hello-v1" or "hello-v2") || hello.Text is null || !CryptographicOperations.FixedTimeEquals(System.Text.Encoding.UTF8.GetBytes(hello.Text), System.Text.Encoding.UTF8.GetBytes(token))) throw new AuthenticationException("Pairing rejected");
     }
-    if (hello.Kind != "request-v2") Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests screen + input. Type APPROVE to allow this session:");
-    if (await Console.In.ReadLineAsync(stop.Token) != "APPROVE") return;
+    if (!shellMode && hello.Kind != "request-v2") Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests screen + input. Type APPROVE to allow this session:");
+    string? approval = shell is null ? await Console.In.ReadLineAsync(stop.Token) : await shell.Request(client.Client.RemoteEndPoint?.ToString() ?? "unknown");
+    if (approval != "APPROVE") { if (shellMode) ShellBridge.Emit("denied"); return; }
+    if (shellMode) ShellBridge.Emit("approved");
     if (hello.Kind is "hello-v2" or "request-v2")
     {
         await VideoHostSession.Run(listener, client, tls, cert, hello, backend, stop.Token);
@@ -118,5 +124,6 @@ catch (Exception e) when (e is IOException or AuthenticationException or Operati
 finally
 {
     listener.Stop();
+    if (shellMode) ShellBridge.Emit("ended");
     if (interactiveLaunch) { Console.WriteLine($"会话已结束。诊断日志：{HostSessionLog.FilePath}\n按 Enter 关闭窗口。"); Console.ReadLine(); }
 }

@@ -36,6 +36,7 @@ public sealed class DxgiCaptureBackend : ICaptureBackend
     readonly Context context = new();
     internal nint NativeContext => context.Value;
     public string Name => "dxgi";
+    public string ColorStatus { get { NativeMethods.Check(NativeMethods.rd_capture_color_status(context.Value, out var json)); return System.Runtime.InteropServices.Marshal.PtrToStringUTF8(json) ?? "{}"; } }
     byte[] Blob(uint kind)
     {
         NativeMethods.Check(NativeMethods.rd_capture_blob(context.Value, kind, out var data, out var bytes));
