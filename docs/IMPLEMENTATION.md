@@ -76,7 +76,7 @@ Borrowed capture textures stay valid until the next Capture/Dispose. Capture/enc
 
 Media Foundation hardware encoder selection uses MFT_ENUM_FLAG_HARDWARE; candidates must activate and accept the capture device's IMFDXGIDeviceManager with MF_SA_D3D11_AWARE. BGRA is converted to NV12 by the D3D11 video processor. Each async input owns its surface so encoder retention cannot race texture reuse. NeedInput/HaveOutput/stream-change events are handled with a bounded two-second event deadline. Low-latency/no-B-frame/CBR/GOP properties are requested; optional vendor property acceptance does not itself prove low latency. The activated encoder friendly name is logged. If initialization fails, the host explicitly tries the tested software H.264 path, then negotiated Deflate. Runtime driver/device failures can still end a session.
 
-Decoder uses the D3D11 manager and requires IMFDXGIBuffer output to count as hardware decode. GPU NV12 to BGRA conversion is followed by one explicit staging readback for WPF Image. The CPU decoder and color conversion are a selectable fallback. This is **not zero-copy GPU presentation**. Native HWND/swapchain or a validated shared D3D9Ex/D3D11 WPF bridge is future work. No cross-process D3D shared-handle compatibility claim is made. H.264 1088-line macroblock surfaces are cropped to their 1080-line display area with the correct UV plane offset.
+Decoder uses the D3D11 manager and requires IMFDXGIBuffer output to count as hardware decode. The selectable CpuBitmapRenderer retains GPU NV12-to-BGRA conversion and full staging readback. The new D3D11Renderer uses the decoder device directly, converting NV12 into its flip-discard SwapChain backbuffer hosted by WPF HwndHost, without full-frame CPU readback. GPU video processing and a small pointer-background copy still occur; this is not a claim of zero GPU copies. No cross-process D3D shared-handle compatibility claim is made. H.264 1088-line macroblock surfaces are cropped to their 1080-line display area with the correct UV plane offset.
 
 ## Transport, bounds and security
 
@@ -91,13 +91,13 @@ Host media queue holds two newest frames, drops oldest and requests IDR on gaps.
 ## Reproducible verification
 
 ```powershell
-# Pure portable protocol/access/media checks (225 assertions)
+# Pure portable protocol/access/media checks (234 assertions)
 dotnet src/RelaxDesk.Tests/bin/Release/net11.0/RelaxDesk.Tests.dll --core
-# Include actual Schannel loopback (227 assertions)
+# Include actual Schannel loopback (236 assertions)
 dotnet src/RelaxDesk.Tests/bin/Release/net11.0/RelaxDesk.Tests.dll
 $hostDll = "$PWD/src/RelaxDesk.Host/bin/Release/net11.0-windows/RelaxDesk.Host.dll"
 $smokeDll = "$PWD/src/RelaxDesk.Smoke/bin/Release/net11.0-windows/RelaxDesk.Smoke.dll"
-dotnet $smokeDll --windows-contracts # 11 ABI/metadata/pointer checks
+dotnet $smokeDll --windows-contracts # 15 ABI/metadata/pointer checks
 # wrong-token v1 plus v2 pin/consent/media binding checks
 '--reject-token','--reject-pin','--deny-v2','--reject-media' | ForEach-Object { dotnet $smokeDll $hostDll $_ }
 # Real H264 with explicitly synthetic image source, not a capture claim
@@ -111,10 +111,48 @@ dotnet $hostDll --codec-benchmark
 
 Synthetic host modes bind only loopback and reject actual input. Smoke drives explicit approval only for its own child host. WPF smoke uses its real connection/decoder/render code, passes secrets via redirected stdin, disables input and closes its window automatically. It does not weaken production consent. Tests are executable assertion programs, not dotnet test discovery. Native MSBuild FileTracker and Schannel/desktop access require running outside this tool sandbox; build directories were separated to avoid sandbox/desktop identity ACL conflicts. No such workaround changes runtime Windows privileges.
 
-Current results: managed Release build zero warnings/errors; native Release compiled; 227 Core/TLS and 11 Windows contracts passed. All four security smokes passed. Software/GPU network video, simulated media gap recovery, peer disconnect and WPF submission tests passed. Exact observations and raw resource samples: [benchmark report](../benchmarks/2026-11-22-report.md).
+Earlier baseline results (superseded by the update below): managed Release build zero warnings/errors; native Release compiled; 227 Core/TLS and 11 Windows contracts passed. All four security smokes passed. Software/GPU network video, simulated media gap recovery, peer disconnect and WPF submission tests passed. Exact observations and raw resource samples: [benchmark report](../benchmarks/2026-11-22-report.md).
 
 ## Remaining acceptance work
 
 On two stock Home x64 PCs, run in the authorized local interactive session, record OS edition/build, GPU/driver, resolution/scaling, topology/RTT and power mode. First demonstrate native duplication then DXGI texture -> hardware H.264 -> physical Viewer display with real desktop pixels. Exercise primary-display size changes/device lost, denied consent/pin/token, Notepad typing, IDE/browser scroll, drag, 1080p dynamic content, held-key disconnect, packet shaping and host restart. Capture Acquire waiting separately from GPU copy, measure input-to-photon externally, and inspect text/IME quality. Physical Present, actual input, 60-second office workloads and fair MSTSC comparison remain unverified. Do not claim Phase 1/2 exit or 80% achievement.
 
 References: [Desktop Duplication](https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/desktop-dup-api), [GetDIBits deselection requirement](https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-getdibits), [asynchronous MFT event contract](https://learn.microsoft.com/en-us/windows/win32/medfound/asynchronous-mfts), [H.264 low-latency property type exception](https://learn.microsoft.com/en-us/windows/win32/medfound/codecapi-avlowlatencymode), [D3D11 decoder device manager](https://learn.microsoft.com/en-us/windows/win32/medfound/supporting-direct3d-11-video-decoding-in-media-foundation).
+
+
+## GPU display acceptance update — 2026-11-22
+
+Implemented and compiled with stable .NET 11.0.100 / C++20: independent capture diagnostics, native GPU renderer and selectable CPU fallback, same-device decoder texture leases, GPU pointer composition, resize/minimize/restore/idle repaint, bounded renderer recreation, async MFT event notifications, detailed encoder stages and GPU timestamp queries. Native ABI is now **2**; rebuild/deploy the managed and native components together.
+
+The decoder, retained surface and renderer share one dedicated MTA and the same D3D11 device; no cross-device shared handles are needed. UI owns HWND creation/destruction and waits for receiver completion before destruction. Only one decoded texture is retained for resize/idle repaint. GPU loss permits two recreations, then CPU decoding/display fallback and an authenticated keyframe request. Callback, codec, renderer, capture, surface lease and HWND live counters are checked at teardown. Counters are ownership checks, not a full driver memory leak proof. Occluded presentation uses bounded 100ms Present(TEST) probes; hidden/minimized frames are skipped. There is no busy retry loop.
+
+**Observed environment:** Server 2022, RDP session 2, console session 1, WinSta0/Default, medium integrity, no elevation. Earlier E_ACCESSDENIED was real, but later diagnostics and Desktop Duplication captured 2560x1440 in this same RDP session. Actual DXGI → Intel hardware H.264 → two authenticated TLS connections → GPU decode → native SwapChain succeeded for two displayed frames. This proves an RDP desktop path only, not physical-console or Windows Home acceptance. The environment state change responsible for the earlier denial is unknown.
+
+**Automated evidence:** managed Release 0 warnings/errors; native Release built; final 236 Core/TLS assertions, 15 Windows ABI/pointer contracts and all four security denial smokes passed. Recorded GPU self-test produced 65 Presents/5 minimized skips/2 resizes, zero full-frame readback and zero owned live resources. Recorded WPF tests passed GPU streaming, resize, idle cached repaint, resolution change, sequence-gap recovery, simulated device failures with CPU fallback and mid-stream close. Hardware/software codec temporal-marker tests passed 60 frames each. These recorded successes precede the final occlusion-handling patch; the current build is compiled but visible GPU presentation could not be reaccepted afterward; final native render assertions also failed in the blocked presentation state.
+
+**Current blocker:** later matched performance runs received video but SwapChain reported DXGI_STATUS_OCCLUDED (0x087A0001). A separate 120-frame run after Present(TEST) recovery still displayed 0 frames, with visible/uncloaked/onscreen HWND, DWM enabled and matching output/device LUID. This is an unresolved RDP/compositor presentation condition, not a proven driver root cause. The test correctly fails; do not call the final GPU performance matrix passed. No UAC, policy, session or privilege changes were made. See [current report and raw evidence](../benchmarks/2026-11-22-gpu-display-report.md).
+
+Input teardown now revokes authorization under the injection gate before cancellation/close, releases recorded keys/buttons, and preserves modifier state on ordinary mouse capture loss. Protocol/access tests cover these decisions; real keyboard/mouse injection and held-key disconnect remain manual coverage.
+
+### Local-console validation commands
+
+Run as the authorizing user in an unlocked **Windows Home local console**, not a service/session 0. No elevation is required. Install supported GPU drivers; record edition, session, scaling and adapter details.
+
+```powershell
+./scripts/build-native.ps1 -BuildDirectory build/native-desktop
+dotnet build RelaxDesk.sln -c Release
+$h = "$PWD/src/RelaxDesk.Host/bin/Release/net11.0-windows/RelaxDesk.Host.dll"
+$s = "$PWD/src/RelaxDesk.Smoke/bin/Release/net11.0-windows/RelaxDesk.Smoke.dll"
+$v = "$PWD/src/RelaxDesk.Viewer/bin/Release/net11.0-windows/RelaxDesk.Viewer.dll"
+dotnet $h --capture-diagnose
+./build/native-desktop/Release/RelaxDesk.NativeProbe.exe --diagnose
+./build/native-desktop/Release/RelaxDesk.NativeProbe.exe
+./build/native-desktop/Release/RelaxDesk.NativeProbe.exe --render-test
+./scripts/verify.ps1 -SkipBuild -Graphics -Wpf -Capture -NativeBuildDirectory build/native-desktop
+./scripts/benchmark-renderers.ps1 -Frames 300 -OutputDirectory benchmarks/home-renderers
+python scripts/summarize-renderers.py benchmarks/home-renderers
+# For an actual LAN session use the existing Host/Viewer pairing commands in README;
+# select DXGI and GPU display, approve explicitly, and verify the certificate pin.
+```
+
+Remaining: physical Home console, dual-PC LAN office workloads, real input, actual driver removal, physical DPI transitions, extended resource soak and external input-to-photon measurements. Phase exits and main merge acceptance remain open.

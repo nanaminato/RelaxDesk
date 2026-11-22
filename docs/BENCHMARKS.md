@@ -51,3 +51,8 @@ Initial local capture samples are recorded, without matched workloads or input-t
 ## Phase 1.5 measured evidence
 
 See [2026-11-22 report](../benchmarks/2026-11-22-report.md) and its raw CPU/GPU/transport samples. GPU codecs and actual WPF submission are exercised on synthetic video. Report macroblock cropping, decode readback, application-vs-NIC bandwidth and per-engine GPU counter labels explicitly. Current GDI/DXGI capture is denied; no matched desktop capture comparison or physical Present/input-to-photon result exists. Hardware H.264 was slower than software on the low-entropy codec-only input; do not claim a speedup from API choice.
+
+
+## GPU display update (2026-11-22)
+
+Same-device GPU decoder→HwndHost SwapChain and stage instrumentation are implemented. Final visibility/performance acceptance is blocked by RDP DXGI_STATUS_OCCLUDED; physical Home validation is pending. See [current evidence and timing definitions](../benchmarks/2026-11-22-gpu-display-report.md).

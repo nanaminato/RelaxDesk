@@ -1,0 +1,7 @@
+PASS WPF renderer=cpu-or-fallback gpu_frames=0 cpu_frames=260 full_frame_readback_bytes=0 received_frames=300 resizes=0 renderer_generations=0 keyframe_requests=0 simulated_device_losses=0 idle_repaints=0 frames=260 elapsed_s=10.14 fps=25.63 wire_mbps=15.012 process_cpu_pct=2.55 gpu_pct=unavailable dropped=40 queue_depth=0 render_submit_p50_ms=0.42 render_submit_p95_ms=0.69 decode_p50_ms=1.41 decode_p95_ms=1.94 readback_p50_ms=0.00 readback_p95_ms=0.00 decode_to_render_submit_p50_ms=13.14 decode_to_render_submit_p95_ms=30.88 frame_interval_p50_ms=31.36 frame_interval_p95_ms=71.01 native_live_resources=0
+
+host_after_viewer_exit_ms=0.07
+encode_stages upload_bytes=0 accepted_setting_mask=0 gpu_timestamp_samples=0 frames=300 elapsed_s=10.03 fps=29.90 wire_mbps=15.146 process_cpu_pct=0.55 gpu_pct=unavailable dropped=0 queue_depth=0 generate_p50_ms=1.93 generate_p95_ms=3.19
+media frames=300 elapsed_s=10.03 fps=29.91 wire_mbps=15.179 process_cpu_pct=0.55 gpu_pct=unavailable dropped=0 queue_depth=0 send_p50_ms=0.11 send_p95_ms=0.17 capture_p50_ms=1.93 capture_p95_ms=3.19 encode_p50_ms=0.69 encode_p95_ms=1.03 frame_interval_p50_ms=33.58 frame_interval_p95_ms=34.89
+Session ended: Unable to read beyond the end of the stream.
+

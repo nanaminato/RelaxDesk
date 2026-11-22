@@ -1,0 +1,12 @@
+[
+  {
+    "ProcessId": 11088,
+    "Name": "dotnet.exe",
+    "CommandLine": "\"dotnet\" E:\\RelaxDesk\\src\\RelaxDesk.Host\\bin\\Release\\net11.0-windows\\RelaxDesk.Host.dll 127.0.0.1 23788 test-software"
+  },
+  {
+    "ProcessId": 31708,
+    "Name": "dotnet.exe",
+    "CommandLine": "\"dotnet\" E:\\RelaxDesk\\src\\RelaxDesk.Viewer\\bin\\Release\\net11.0-windows\\RelaxDesk.Viewer.dll --render-smoke"
+  }
+]

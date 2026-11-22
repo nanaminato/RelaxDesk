@@ -4,7 +4,7 @@
 
 RelaxDesk aims to provide responsive, pixel-based remote control of an existing Windows desktop, with an office-productivity experience approaching Microsoft Remote Desktop (MSTSC)—without requiring Windows Pro, enabling Microsoft's RDP host, or modifying Windows system files.
 
-> **Status: experimental DXGI/H.264 architecture implemented; physical-desktop capture is blocked in the current remote test session.** GPU H.264 encode/decode, authenticated binary video and actual WPF render submissions pass synthetic-video tests. Dual-PC Windows Home validation remains pending. See [implementation evidence](docs/IMPLEMENTATION.md). The “80% of MSTSC” target is an engineering hypothesis to validate through reproducible benchmarks, not a measured result.
+> **Status: experimental DXGI/H.264 architecture implemented; Windows Home physical-console acceptance is pending.** GPU H.264 encode/decode, authenticated binary video and actual WPF render submissions pass synthetic-video tests. Dual-PC Windows Home validation remains pending. See [implementation evidence](docs/IMPLEMENTATION.md). The “80% of MSTSC” target is an engineering hypothesis to validate through reproducible benchmarks, not a measured result.
 
 ## Goals
 
@@ -30,7 +30,7 @@ RelaxDesk aims to provide responsive, pixel-based remote control of an existing 
 | Transport | Versioned protocol, authenticated encrypted channel, low-latency media path; benchmark TCP/UDP/QUIC before committing |
 | Diagnostics | Capture/encode/network/decode/present timing and resource-use metrics |
 
-DXGI Desktop Duplication and Media Foundation H.264 are implemented in a C++20 module. GPU codecs are tested with synthetic images; DXGI capture is compiled but denied in the current remote session. The GDI + Deflate compatibility baseline remains available. The API availability, codec path, GPU driver combinations and Windows Home compatibility require hands-on validation.
+DXGI Desktop Duplication and Media Foundation H.264 are implemented in a C++20 module. GPU codecs are tested with synthetic images; DXGI capture and GPU display have succeeded in the RDP session, but later SwapChain occlusion blocks repeatable GPU presentation. The GDI + Deflate compatibility baseline remains available. The API availability, codec path, GPU driver combinations and Windows Home compatibility require hands-on validation.
 
 ## Architecture
 
@@ -80,3 +80,5 @@ Build with stable SDK 11.0.100 (run `./scripts/build-native.ps1` first): `dotnet
 ## Project status
 
 Independent project, with potential future integration into RelaxKonOS via an adapter; RelaxDesk must not depend on RelaxKonOS.
+
+Current GPU display implementation, final RDP occlusion failures and Home validation commands: [GPU display acceptance report](benchmarks/2026-11-22-gpu-display-report.md).

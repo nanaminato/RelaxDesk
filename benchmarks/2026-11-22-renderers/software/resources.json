@@ -1,0 +1,146 @@
+[
+  {
+    "WorkingSetBytes": 83697664,
+    "ProcessId": 11088,
+    "GpuMemory": [],
+    "GpuError": null,
+    "GpuEngines": [],
+    "Utc": "2026-11-22T12:55:28.3552197Z",
+    "CpuPercent": null
+  },
+  {
+    "WorkingSetBytes": 81215488,
+    "ProcessId": 31708,
+    "GpuMemory": [],
+    "GpuError": null,
+    "GpuEngines": [],
+    "Utc": "2026-11-22T12:55:28.3620480Z",
+    "CpuPercent": null
+  },
+  {
+    "WorkingSetBytes": 100581376,
+    "ProcessId": 11088,
+    "GpuMemory": [],
+    "GpuError": null,
+    "GpuEngines": [],
+    "Utc": "2026-11-22T12:55:29.6709180Z",
+    "CpuPercent": 1.8403115286954481
+  },
+  {
+    "WorkingSetBytes": 130228224,
+    "ProcessId": 31708,
+    "GpuMemory": [],
+    "GpuError": null,
+    "GpuEngines": [],
+    "Utc": "2026-11-22T12:55:29.6778241Z",
+    "CpuPercent": 3.7407633783188907
+  },
+  {
+    "WorkingSetBytes": 101904384,
+    "ProcessId": 11088,
+    "GpuMemory": [],
+    "GpuError": null,
+    "GpuEngines": [],
+    "Utc": "2026-11-22T12:55:30.9817366Z",
+    "CpuPercent": 1.4297837762778052
+  },
+  {
+    "WorkingSetBytes": 130859008,
+    "ProcessId": 31708,
+    "GpuMemory": [],
+    "GpuError": null,
+    "GpuEngines": [],
+    "Utc": "2026-11-22T12:55:30.9884429Z",
+    "CpuPercent": 3.874498484916112
+  },
+  {
+    "WorkingSetBytes": 98271232,
+    "ProcessId": 11088,
+    "GpuMemory": [],
+    "GpuError": null,
+    "GpuEngines": [],
+    "Utc": "2026-11-22T12:55:32.2934034Z",
+    "CpuPercent": 0.7740981665849345
+  },
+  {
+    "WorkingSetBytes": 129601536,
+    "ProcessId": 31708,
+    "GpuMemory": [],
+    "GpuError": null,
+    "GpuEngines": [],
+    "Utc": "2026-11-22T12:55:32.3000129Z",
+    "CpuPercent": 2.8590624044120134
+  },
+  {
+    "WorkingSetBytes": 94781440,
+    "ProcessId": 11088,
+    "GpuMemory": [],
+    "GpuError": null,
+    "GpuEngines": [],
+    "Utc": "2026-11-22T12:55:33.6070432Z",
+    "CpuPercent": 1.3083812064466065
+  },
+  {
+    "WorkingSetBytes": 126087168,
+    "ProcessId": 31708,
+    "GpuMemory": [],
+    "GpuError": null,
+    "GpuEngines": [],
+    "Utc": "2026-11-22T12:55:33.6133572Z",
+    "CpuPercent": 3.212142572761168
+  },
+  {
+    "WorkingSetBytes": 89260032,
+    "ProcessId": 11088,
+    "GpuMemory": [],
+    "GpuError": null,
+    "GpuEngines": [],
+    "Utc": "2026-11-22T12:55:34.9216143Z",
+    "CpuPercent": 1.1887158042600074
+  },
+  {
+    "WorkingSetBytes": 116883456,
+    "ProcessId": 31708,
+    "GpuMemory": [],
+    "GpuError": null,
+    "GpuEngines": [],
+    "Utc": "2026-11-22T12:55:34.9288026Z",
+    "CpuPercent": 2.079109691299116
+  },
+  {
+    "WorkingSetBytes": 98938880,
+    "ProcessId": 11088,
+    "GpuMemory": [],
+    "GpuError": null,
+    "GpuEngines": [],
+    "Utc": "2026-11-22T12:55:36.2360011Z",
+    "CpuPercent": 1.2485308715595917
+  },
+  {
+    "WorkingSetBytes": 127815680,
+    "ProcessId": 31708,
+    "GpuMemory": [],
+    "GpuError": null,
+    "GpuEngines": [],
+    "Utc": "2026-11-22T12:55:36.2426644Z",
+    "CpuPercent": 2.5566161821142535
+  },
+  {
+    "WorkingSetBytes": 99004416,
+    "ProcessId": 11088,
+    "GpuMemory": [],
+    "GpuError": null,
+    "GpuEngines": [],
+    "Utc": "2026-11-22T12:55:37.5509902Z",
+    "CpuPercent": 1.4254027446947068
+  },
+  {
+    "WorkingSetBytes": 127848448,
+    "ProcessId": 31708,
+    "GpuMemory": [],
+    "GpuError": null,
+    "GpuEngines": [],
+    "Utc": "2026-11-22T12:55:37.5574416Z",
+    "CpuPercent": 2.7928457815944574
+  }
+]

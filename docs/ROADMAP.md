@@ -62,4 +62,14 @@ Each phase must report: implemented commits/files, build/test commands and resul
 
 ## 2026-11-22 implementation update
 
-Phase 0 Windows build/test exit is met here. Phase 1/1.5 and Phase 2 exits remain open. GPU codecs, binary authenticated video, recovery and WPF synthetic tests now pass, while current-session desktop capture is denied and dual-PC Home/office validation is pending. See [implementation evidence](IMPLEMENTATION.md).
+Phase 0 Windows build/test exit is met here. Phase 1/1.5 and Phase 2 exits remain open. GPU codecs, binary authenticated video, recovery and WPF synthetic tests now pass, with a later successful RDP-desktop capture/display proof; dual-PC Home/office validation is pending. See [implementation evidence](IMPLEMENTATION.md).
+
+
+## GPU display milestone update — 2026-11-22
+
+- Implemented/compiled: same-device NV12 decoder → native D3D11 SwapChain via HwndHost, CPU renderer fallback, independent pointer composition, idle resize redraw, bounded recovery and stage instrumentation.
+- Recorded automated GPU execution: native 65 Presents, WPF streaming/recovery/resize and actual RDP-desktop end-to-end proof. Final Core/TLS 236 and Windows contracts 15 pass.
+- **Not accepted:** final matched GPU display benchmark fails with DXGI_STATUS_OCCLUDED despite visible matching-adapter window. Earlier successful tests do not establish current-environment stability. Hardware H.264 total latency improvement is unproven.
+- Next exit: reproduce on unlocked Home local console; rerun the strict four-profile benchmark and full verification, real driver loss/DPI/long soak, then dual-PC office/input measurements. Phase 1/1.5/2 and main merge acceptance remain open.
+
+See [detailed evidence and limitations](../benchmarks/2026-11-22-gpu-display-report.md).
