@@ -7,6 +7,12 @@ public static class WindowsContracts
     {
         int count = 0;
         void Check(bool result) { if (!result) throw new InvalidDataException($"Windows contract {count + 1} failed"); count++; }
+        Check(KeyboardInjectionFlags.ForVirtualKey(0x41, false) == 0);
+        Check(KeyboardInjectionFlags.ForVirtualKey(0x08, true) == 2);
+        Check(KeyboardInjectionFlags.ForVirtualKey(0xA2, false) == 0);
+        Check(KeyboardInjectionFlags.ForVirtualKey(0xA3, false) == 1);
+        Check(KeyboardInjectionFlags.ForVirtualKey(0xA5, true) == 3);
+        Check(KeyboardInjectionFlags.ForVirtualKey(0x25, false) == 1);
         Check(Marshal.SizeOf<NativeMethods.FrameInfo>() == 72);
         Check(Marshal.SizeOf<EncodeTiming>() == 96);
         Check(Marshal.SizeOf<DecodeTiming>() == 48);

@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
+using System.Windows.Input;
 using RelaxDesk.Windows;
 namespace RelaxDesk.Viewer;
 
@@ -10,6 +11,13 @@ public sealed class NativeVideoHost : HwndHost
     public Action? InputCaptureLost;
     public Action? RenderInvalidated;
     int videoWidth, videoHeight;
+    nint previousIme;
+    bool keyboardAttached, keyboardOwned;
+    [DllImport("user32.dll")] static extern nint GetFocus();
+    [DllImport("user32.dll")] static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] static extern nint GetAncestor(nint hwnd, uint flags);
+    [DllImport("imm32.dll")] static extern nint ImmAssociateContext(nint hwnd, nint context);
+    [DllImport("imm32.dll")] static extern uint ImmGetVirtualKey(nint hwnd);
     public void SetVideoSize(int width, int height) { Volatile.Write(ref videoWidth, width); Volatile.Write(ref videoHeight, height); }
     [StructLayout(LayoutKind.Sequential)] struct Rect { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")] static extern bool GetClientRect(nint hwnd, out Rect rect);
@@ -18,12 +26,51 @@ public sealed class NativeVideoHost : HwndHost
     [DllImport("user32.dll")] static extern bool ReleaseCapture();
     [DllImport("user32.dll")] static extern nint GetCapture();
     public void ReleaseInputCapture() { if (GetCapture() == Handle) ReleaseCapture(); }
-    protected override HandleRef BuildWindowCore(HandleRef parent) => new(this, GraphicsDiagnostics.CreateChildWindow(parent.Handle));
-    protected override void DestroyWindowCore(HandleRef hwnd) => GraphicsDiagnostics.DestroyChildWindow(hwnd.Handle);
+    protected override HandleRef BuildWindowCore(HandleRef parent)
+    {
+        Focusable = true;
+        InputMethod.SetIsInputMethodEnabled(this, false);
+        nint child = GraphicsDiagnostics.CreateChildWindow(parent.Handle);
+        previousIme = ImmAssociateContext(child, 0); // Only this remote surface, never a system IME setting.
+        ComponentDispatcher.ThreadFilterMessage += FilterKeyboard;
+        keyboardAttached = true;
+        return new(this, child);
+    }
+    protected override void DestroyWindowCore(HandleRef hwnd)
+    {
+        if (keyboardAttached) { ComponentDispatcher.ThreadFilterMessage -= FilterKeyboard; keyboardAttached = false; }
+        keyboardOwned = false;
+        if (previousIme != 0) { ImmAssociateContext(hwnd.Handle, previousIme); previousIme = 0; }
+        GraphicsDiagnostics.DestroyChildWindow(hwnd.Handle);
+    }
+    void FocusRemoteKeyboard()
+    {
+        Keyboard.Focus(this);
+        SetFocus(Handle);
+        keyboardOwned = GetFocus() == Handle;
+    }
+    protected override bool TabIntoCore(TraversalRequest request) { SetFocus(Handle); keyboardOwned = GetFocus() == Handle; return keyboardOwned; }
+    protected override bool TranslateAcceleratorCore(ref MSG message, ModifierKeys modifiers) => RouteKeyboard(message) || base.TranslateAcceleratorCore(ref message, modifiers);
+    void FilterKeyboard(ref MSG message, ref bool handled) { if (!handled && RouteKeyboard(message)) handled = true; }
+    bool RouteKeyboard(MSG message)
+    {
+        nint root = Handle == 0 ? 0 : GetAncestor(Handle, 2);
+        if (Input is null || !keyboardOwned || Handle == 0 || GetFocus() != Handle || GetForegroundWindow() != root || (message.hwnd != Handle && message.hwnd != root)) return false;
+        if (message.message is 0x100 or 0x101 or 0x104 or 0x105)
+        {
+            int key = (int)message.wParam;
+            if (key == 0xE5) key = (int)ImmGetVirtualKey(Handle);
+            key = RemoteKeyboardKeys.Resolve(key, message.lParam);
+            if (key is > 0 and < 256 && key != 0xE5) Input.Invoke(key, message.message is 0x101 or 0x105, 0, 0);
+            return true; // Never also translate this into local text/accelerators.
+        }
+        return message.message is 0x102 or 0x103 or 0x106 or 0x107 or 0x286;
+    }
     protected override nint WndProc(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
         const int MouseMove = 0x200, LeftDown = 0x201, LeftUp = 0x202, RightDown = 0x204, RightUp = 0x205, Wheel = 0x20A;
-        if (message == 0x8) InputFocusLost?.Invoke();
+        if (message == 0x8) { keyboardOwned = false; InputFocusLost?.Invoke(); }
+        if (message == 0x7) keyboardOwned = true;
         if (message == 0x215) InputCaptureLost?.Invoke();
         if (message is 0x5 or 0xF or 0x18 or 0x2E0) RenderInvalidated?.Invoke();
         if (message == MouseMove)
@@ -38,10 +85,10 @@ public sealed class NativeVideoHost : HwndHost
             }
             handled = true;
         }
-        else if (message is LeftDown or RightDown) { SetFocus(hwnd); SetCapture(hwnd); Input?.Invoke(message == LeftDown ? 256 : 257, false, 0, 0); handled = true; }
+        else if (message is LeftDown or RightDown) { FocusRemoteKeyboard(); SetCapture(hwnd); Input?.Invoke(message == LeftDown ? 256 : 257, false, 0, 0); handled = true; }
         else if (message is LeftUp or RightUp) { Input?.Invoke(message == LeftUp ? 256 : 257, true, 0, 0); if (((long)wParam & 3) == 0) ReleaseCapture(); handled = true; }
         else if (message == Wheel) { Input?.Invoke((short)(((long)wParam >> 16) & 0xffff) > 0 ? 258 : 259, false, 0, 0); handled = true; }
-        else if (message is 0x100 or 0x101 or 0x104 or 0x105) { Input?.Invoke((int)wParam, message is 0x101 or 0x105, 0, 0); handled = true; }
+        else if (message is 0x100 or 0x101 or 0x104 or 0x105 or 0x102 or 0x103 or 0x106 or 0x107 or 0x286) handled = RouteKeyboard(new MSG { hwnd = hwnd, message = message, wParam = wParam, lParam = lParam });
         // HwndHost enforces layout geometry on WM_WINDOWPOSCHANGING and clears
         // its HWND on WM_NCDESTROY. Skipping the base loses both contracts.
         return handled ? 0 : base.WndProc(hwnd, message, wParam, lParam, ref handled);

@@ -89,7 +89,7 @@ public sealed class Desktop : IDisposable
         if (code == 0) input = new() { Type = 0, Value = new() { Mouse = new() { X = x, Y = y, Flags = 0x8001 } } };
         else if (code is 256 or 257) input = new() { Type = 0, Value = new() { Mouse = new() { Flags = code == 256 ? (up ? 4u : 2u) : (up ? 16u : 8u) } } };
         else if (code is 258 or 259) input = new() { Type = 0, Value = new() { Mouse = new() { Data = unchecked((uint)(code == 258 ? 120 : -120)), Flags = 0x800 } } };
-        else if (code is > 0 and < 256) input = new() { Type = 1, Value = new() { Keyboard = new() { Key = (ushort)code, Flags = up ? 2u : 0u } } };
+        else if (code is > 0 and < 256) input = new() { Type = 1, Value = new() { Keyboard = new() { Key = (ushort)code, Flags = KeyboardInjectionFlags.ForVirtualKey(code, up) } } };
         else throw new InvalidDataException("Unsupported input");
         if (SendInput(1, [input], Marshal.SizeOf<Input>()) != 1) throw new IOException("Input unavailable (UIPI/desktop restriction)");
         if (code is > 0 and < 258) { if (up) held.Remove(code); else held.Add(code); }
