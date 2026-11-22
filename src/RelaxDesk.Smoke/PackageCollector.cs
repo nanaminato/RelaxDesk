@@ -129,7 +129,7 @@ internal sealed class PackageCollector
                 else
                 {
                     bool good = true;
-                    foreach (string mode in new[] { "--video-software", "--video-hardware", "--video-recovery", "--video-stalled" }) { if (await Exec(mode[2..], smoke, [host, mode]) != 0) { good = false; break; } }
+                    foreach (string mode in new[] { "--video-software", "--video-hardware", "--video-recovery", "--video-stalled", "--video-producer-failure", "--video-runtime-fallback" }) { if (await Exec(mode[2..], smoke, [host, mode]) != 0) { good = false; break; } }
                     if (good) good = await Exec("native-render", probe, ["--render-test"], 45) == 0;
                     if (good)
                         foreach (string mode in new[] { "approval-cpu", "hardware-cpu", "gpu", "gpu-window", "gpu-idle", "gpu-resolution", "gpu-recovery", "gpu-device-fallback", "gpu-fallback", "gpu-close", "desktop-gpu" })

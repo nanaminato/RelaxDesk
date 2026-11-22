@@ -34,6 +34,7 @@ internal static class VideoHostSession
         var queue = new LatestQueue<QueuedFrame>();
         var gate = new AccessGate(); gate.Approve();
         int forceKeyFrame = 1;
+        var failures = new FirstSessionFailure();
         using var inputDesktop = synthetic ? null : new Desktop();
         var input = Task.Run(async () =>
         {
@@ -51,7 +52,8 @@ internal static class VideoHostSession
                 else if (packet.Kind == "ping-v2") await Wire.Write(control, new Packet("pong-v2", packet.Sequence), session.Token);
             }
         }, session.Token);
-        var producer = Task.Factory.StartNew(() => Produce(queue, backend, capabilities, () => Interlocked.Exchange(ref forceKeyFrame, 0) != 0, session.Token),
+        var producer = Task.Factory.StartNew(() => Produce(queue, backend, capabilities, () => Interlocked.Exchange(ref forceKeyFrame, 0) != 0,
+            (stage, frames, error) => { if (!session.IsCancellationRequested) failures.Record("capture-encode", stage, frames, error); }, session.Token),
             session.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         var sender = Task.Run(async () =>
         {
@@ -73,26 +75,38 @@ internal static class VideoHostSession
             }
             finally { Console.WriteLine("media " + metrics.Report(queue.Dropped + stale, queue.Depth)); }
         }, session.Token);
-        Task first = await Task.WhenAny(input, sender, producer);
-        string worker = first == input ? "control-read" : first == sender ? "media-send" : "capture-encode";
-        var failure = first.Exception?.GetBaseException();
-        Console.WriteLine($"session_end worker={worker} state={first.Status} error_type={failure?.GetType().Name ?? "none"} hresult=0x{failure?.HResult ?? 0:X8} reason={failure?.Message ?? "worker completed/cancelled"}");
+        Task observedInput = Observe(input, "control-read", failures, session.Token);
+        Task observedSender = Observe(sender, "media-send", failures, session.Token);
+        Task observedProducer = Observe(producer, "capture-encode", failures, session.Token);
+        Task first = await Task.WhenAny(observedInput, observedSender, observedProducer);
+        string worker = failures.First?.Worker ?? (first == observedInput ? "control-read" : first == observedSender ? "media-send" : "capture-encode");
+        var failure = failures.First;
+        HostSessionLog.Write($"session_end worker={worker} stage={failure?.Stage ?? "shutdown"} completed_frames={failure?.CompletedFrames ?? 0} state={first.Status} error_type={failure?.Error.GetType().Name ?? "none"} hresult=0x{failure?.Error.HResult ?? 0:X8} reason={failure?.Error.Message ?? "worker completed/cancelled"}");
         gate.Revoke(); session.Cancel(); controlSocket.Close(); mediaSocket.Close(); queue.Complete();
-        try { await first; }
+        try { if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure.Error).Throw(); await first; }
         finally
         {
-            try { await Task.WhenAll(input, sender, producer); } catch (Exception) { /* The first failure is reported above. All workers are joined before revocation/cleanup. */ }
+            try { await Task.WhenAll(observedInput, observedSender, observedProducer); } catch (Exception) { /* Causal failure is reported above; join all workers. */ }
             gate.Revoke(); inputDesktop?.ReleaseAll();
         }
     }
 
-    static void Produce(LatestQueue<QueuedFrame> queue, string backend, string[] capabilities, Func<bool> requestedKeyFrame, CancellationToken ct)
+    static async Task Observe(Task task, string worker, FirstSessionFailure failures, CancellationToken ct)
+    {
+        try { await task; }
+        catch (Exception error) { if (!ct.IsCancellationRequested) failures.Record(worker, worker, 0, error); throw; }
+    }
+
+    static void Produce(LatestQueue<QueuedFrame> queue, string backend, string[] capabilities, Func<bool> requestedKeyFrame, Action<string, long, Exception> failed, CancellationToken ct)
     {
         bool synthetic = backend.StartsWith("test-", StringComparison.Ordinal);
         ICaptureBackend? capture = null; H264Encoder? encoder = null;
         var clock = Stopwatch.StartNew(); long sequence = 0, previousDrops = 0; int recoveries = 0; int encoderWidth = 0, encoderHeight = 0;
         MediaCodec codec = backend != "test-deflate" && capabilities.Contains("h264") ? MediaCodec.H264 : MediaCodec.DeflateBgra;
         var encodeMetrics = new PipelineMetrics(); long uploaded = 0; uint accepted = 0; int gpuSamples = 0;
+        string stage = "capture-init";
+        Exception? producerFailure = null;
+        bool forceSoftware = false, forceNextKeyFrame = false;
         try
         {
             while (!ct.IsCancellationRequested)
@@ -100,19 +114,21 @@ internal static class VideoHostSession
                 try
                 {
                     if (backend == "test-idle" && sequence >= 1) { ct.WaitHandle.WaitOne(); break; }
-                    capture ??= synthetic ? null : CreateCapture(backend);
+                    stage = "capture-init"; capture ??= synthetic ? null : CreateCapture(backend);
+                    stage = "capture-frame";
                     var timer = Stopwatch.StartNew();
                     int testWidth = backend == "test-resolution" && sequence >= 30 ? 1920 : 1280; int testHeight = backend == "test-resolution" && sequence >= 30 ? 1080 : 720;
                     var frame = synthetic ? new CapturedFrame(testWidth, testHeight, CodecVerification.Pattern(testWidth, testHeight, (int)(sequence % 200)), new(Stopwatch.GetTimestamp(), 1, [], [], 0, 0, false, 0, 0, 0, 0, 0, 0, [])) : capture!.Capture();
                     double captureMs = timer.Elapsed.TotalMilliseconds;
                     if (frame is null) continue;
                     long timestamp = (long)(clock.Elapsed.TotalSeconds * 10_000_000);
-                    bool force = requestedKeyFrame() || queue.Dropped != previousDrops || sequence == 0;
+                    bool force = requestedKeyFrame() || queue.Dropped != previousDrops || sequence == 0 || forceNextKeyFrame;
                     previousDrops = queue.Dropped; timer.Restart();
                     if (encoder is not null && (encoderWidth != frame.Width || encoderHeight != frame.Height)) { encoder.Dispose(); encoder = null; force = true; }
+                    stage = "encoder-init";
                     if (encoder is null && codec == MediaCodec.H264)
                     {
-                        try { encoder = new(capture as DxgiCaptureBackend, frame.Width, frame.Height, hardware: backend != "test-software" && (synthetic || capture is DxgiCaptureBackend)); }
+                        try { encoder = new(capture as DxgiCaptureBackend, frame.Width, frame.Height, hardware: !forceSoftware && backend != "test-software" && (synthetic || capture is DxgiCaptureBackend)); }
                         catch (Exception e) when (e is ExternalException or DllNotFoundException or BadImageFormatException)
                         {
                             Console.WriteLine($"hardware_encoder_unavailable={e.Message}; trying explicit software H264 fallback");
@@ -127,6 +143,9 @@ internal static class VideoHostSession
                         Console.WriteLine($"backend={capture?.Name ?? "synthetic-test"} codec={codec} hardware_encode={encoder?.Hardware == true} encoder={encoder?.Name ?? "Deflate"}");
                     }
                     EncodedVideo? encoded;
+                    stage = "encode-submit";
+                    if (backend == "test-producer-failure" && sequence >= 4) throw new InvalidDataException("Injected producer failure after four frames");
+                    if (backend == "test-runtime-fallback" && encoder?.Hardware == true && sequence >= 4) throw new ExternalException("Injected hardware encoder runtime failure", unchecked((int)0x80004005));
                     if (encoder is { Hardware: true } && capture is DxgiCaptureBackend) encoded = encoder.EncodeGpu(timestamp, force);
                     else if (encoder is not null) encoded = encoder.EncodeBgra(frame.Bgra ?? capture!.ReadPixels(frame), timestamp, force);
                     else
@@ -135,6 +154,7 @@ internal static class VideoHostSession
                         encoded = new(output.ToArray(), true, timestamp);
                     }
                     if (encoded is null) continue;
+                    forceNextKeyFrame = false;
                     encodeMetrics.Add(synthetic ? "generate" : "acquire", captureMs);
                     if (encoder is not null)
                     {
@@ -144,9 +164,10 @@ internal static class VideoHostSession
                         if (t.GpuTimingValid != 0) { gpuSamples++; encodeMetrics.Add("gpu_upload", t.GpuUploadMs); encodeMetrics.Add("gpu_color", t.GpuColorMs); }
                     }
                     encodeMetrics.Frame(encoded.Data.Length);
+                    stage = "frame-metadata";
                     var packet = new MediaFrame(codec, ++sequence, encoded.Timestamp, frame.Width, frame.Height, encoded.KeyFrame, encoder?.Hardware == true,
                         (long)(captureMs * 1000), (long)(timer.Elapsed.TotalMilliseconds * 1000), CaptureMetadataCodec.Encode(frame.Metadata), encoded.Data);
-                    queue.Write(new(packet, Stopwatch.GetTimestamp()));
+                    stage = "queue-publish"; queue.Write(new(packet, Stopwatch.GetTimestamp()));
                     int delay = Math.Max(0, 33 - (int)(captureMs + timer.Elapsed.TotalMilliseconds));
                     if (ct.WaitHandle.WaitOne(delay)) break;
                 }
@@ -156,9 +177,39 @@ internal static class VideoHostSession
                     Console.WriteLine($"capture_reset={recoveries} reason={e.Message}");
                     if (ct.WaitHandle.WaitOne(250)) break;
                 }
+                catch (ExternalException error) when (stage == "encode-submit" && encoder?.Hardware == true && !forceSoftware && !ct.IsCancellationRequested && error.HResult is not (unchecked((int)0x887A0026) or unchecked((int)0x887A0005) or unchecked((int)0x887A0007)))
+                {
+                    HostSessionLog.Write($"recoverable_encoder_error stage={stage} completed_frames={sequence} accepted_setting_mask={accepted} error_type={error.GetType().Name} hresult=0x{error.HResult:X8} reason={error.Message} fallback=software-h264");
+                    forceSoftware = true; forceNextKeyFrame = true; stage = "encoder-runtime-dispose";
+                    encoder.Dispose(); encoder = null;
+                    // Keep DXGI capture and authenticated transport; reinitialize
+                    // software H264 on the next frame, once per session only.
+                }
             }
         }
-        finally { encoder?.Dispose(); capture?.Dispose(); queue.Complete(); Console.WriteLine($"encode_stages upload_bytes={uploaded} accepted_setting_mask={accepted} gpu_timestamp_samples={gpuSamples} " + encodeMetrics.Report(0, queue.Depth)); }
+        catch (Exception error)
+        {
+            producerFailure = error;
+            failed(stage, sequence, error); // MUST precede queue completion and sibling cancellation
+            HostSessionLog.Write($"producer_error stage={stage} completed_frames={sequence} error_type={error.GetType().Name} hresult=0x{error.HResult:X8} reason={error.Message}");
+            queue.Complete(error); throw;
+        }
+        finally
+        {
+            Exception? cleanupFailure = null;
+            void Release(IDisposable? resource, string resourceStage)
+            {
+                try { resource?.Dispose(); }
+                catch (Exception error)
+                {
+                    cleanupFailure ??= error; failed(resourceStage, sequence, error); queue.Complete(error);
+                    HostSessionLog.Write($"cleanup_error stage={resourceStage} error_type={error.GetType().Name} hresult=0x{error.HResult:X8} reason={error.Message}");
+                }
+            }
+            Release(encoder, "encoder-dispose"); Release(capture, "capture-dispose");
+            queue.Complete(); Console.WriteLine($"encode_stages upload_bytes={uploaded} accepted_setting_mask={accepted} gpu_timestamp_samples={gpuSamples} " + encodeMetrics.Report(0, queue.Depth));
+            if (producerFailure is null && cleanupFailure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(cleanupFailure).Throw();
+        }
     }
     static ICaptureBackend CreateCapture(string backend)
     {

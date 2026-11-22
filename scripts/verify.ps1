@@ -36,7 +36,7 @@ try {
         if ($LASTEXITCODE) { throw "Security smoke failed: $mode" }
     }
     if ($Graphics) {
-        foreach ($mode in @('--video-software', '--video-hardware', '--video-recovery', '--video-stalled')) {
+        foreach ($mode in @('--video-software', '--video-hardware', '--video-recovery', '--video-stalled', '--video-producer-failure', '--video-runtime-fallback')) {
             Run-App $smokeDll $hostDll $mode
             if ($LASTEXITCODE) { throw "Video smoke failed: $mode" }
         }

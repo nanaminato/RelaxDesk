@@ -7,6 +7,14 @@ internal static class MediaChecks
     {
         int count = 0;
         void Check(bool condition) { if (!condition) throw new Exception($"Media assertion {count + 1} failed"); count++; }
+        var fault = new IOException("original capture/encode failure");
+        var failures = new FirstSessionFailure();
+        Check(failures.Record("capture-encode", "encode-submit", 4, fault));
+        Check(!failures.Record("media-send", "queue-read", 4, new System.Threading.Channels.ChannelClosedException()));
+        Check(ReferenceEquals(failures.First!.Error, fault) && failures.First.CompletedFrames == 4);
+        var failedQueue = new LatestQueue<int>(); failedQueue.Complete(fault);
+        try { await failedQueue.Read(default); throw new Exception("Failed queue did not close"); }
+        catch (System.Threading.Channels.ChannelClosedException error) { var propagated = new FirstSessionFailure(); propagated.Record("media-send", "queue-read", 0, error); Check(ReferenceEquals(propagated.First!.Error, fault)); }
         var frame = new MediaFrame(MediaCodec.H264, 12, 12345, 1920, 1080, true, true, 15, 30, [1, 2], [0, 0, 0, 1, 5]);
         using var stream = new MemoryStream(); await MediaProtocol.Write(stream, frame);
         byte[] valid = stream.ToArray(); stream.Position = 0; var decoded = await MediaProtocol.Read(stream);

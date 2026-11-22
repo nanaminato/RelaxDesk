@@ -7,7 +7,8 @@ internal static class WpfSmoke
 {
     public static async Task Run(string hostPath, string viewerPath, string mode = "hardware-cpu", int frames = 60, bool fixedBudget = false)
     {
-        string backend = mode is "deflate" or "gpu-fallback" ? "test-deflate" : mode == "software" ? "test-software" : mode == "desktop-gpu" ? "dxgi" : mode == "gpu-resolution" ? "test-resolution" : mode is "gpu-idle" or "cpu-idle-long" ? "test-idle" : "test-hardware";
+        bool approvalOnly = mode.StartsWith("approval-", StringComparison.Ordinal);
+        string backend = mode == "approval-fallback-cpu" ? "test-runtime-fallback" : mode is "deflate" or "gpu-fallback" ? "test-deflate" : mode == "software" ? "test-software" : mode == "desktop-gpu" ? "dxgi" : mode == "gpu-resolution" ? "test-resolution" : mode is "gpu-idle" or "cpu-idle-long" ? "test-idle" : "test-hardware";
         bool gpu = mode.StartsWith("gpu", StringComparison.Ordinal) || mode == "desktop-gpu";
         if (mode == "desktop-gpu") frames = 1;
         if (mode == "gpu-close") frames = 10;
@@ -25,14 +26,15 @@ internal static class WpfSmoke
             string connectionLine = await host.StandardOutput.ReadLineAsync(timeout.Token) ?? ""; await Task.Delay(100, timeout.Token);
             var viewerStart = ChildProcess.Create(viewerPath, "--render-smoke");
             viewer = Process.Start(viewerStart) ?? throw new IOException("Viewer launch failed");
-            await viewer.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new { Host = "127.0.0.1", Port = port, Fingerprint = mode == "approval-cpu" ? "" : fingerprint, Token = mode == "approval-cpu" ? "" : token, ConnectionCode = mode != "approval-cpu" && connectionLine.StartsWith("Connection code: ", StringComparison.Ordinal) ? connectionLine[17..] : null, Renderer = gpu ? "gpu" : "cpu", HardwareDecode = mode != "software", Frames = frames, ExerciseWindow = mode == "gpu-window", RequireGpu = gpu && mode is not ("gpu-fallback" or "gpu-device-fallback"), SimulateDeviceLoss = mode == "gpu-device-fallback", SimulateGap = mode == "gpu-recovery", IdleRepaintTest = mode == "gpu-idle", IdleSessionTest = mode == "cpu-idle-long", FixedMediaBudget = fixedBudget, CloseWhileStreaming = mode == "gpu-close" })); await viewer.StandardInput.FlushAsync();
+            await viewer.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new { Host = "127.0.0.1", Port = port, Fingerprint = approvalOnly ? "" : fingerprint, Token = approvalOnly ? "" : token, ConnectionCode = !approvalOnly && connectionLine.StartsWith("Connection code: ", StringComparison.Ordinal) ? connectionLine[17..] : null, Renderer = gpu ? "gpu" : "cpu", HardwareDecode = mode != "software", Frames = frames, ExerciseWindow = mode == "gpu-window", RequireGpu = gpu && mode is not ("gpu-fallback" or "gpu-device-fallback"), SimulateDeviceLoss = mode == "gpu-device-fallback", SimulateGap = mode == "gpu-recovery", IdleRepaintTest = mode == "gpu-idle", IdleSessionTest = mode == "cpu-idle-long", FixedMediaBudget = fixedBudget, CloseWhileStreaming = mode == "gpu-close" })); await viewer.StandardInput.FlushAsync();
             string prompt = await host.StandardOutput.ReadLineAsync(timeout.Token) ?? throw new IOException("Missing approval request");
             if (!prompt.Contains("APPROVE")) throw new IOException("No consent");
             await host.StandardInput.WriteLineAsync("APPROVE"); await host.StandardInput.FlushAsync();
             await viewer.WaitForExitAsync(timeout.Token);
             string output = await viewer.StandardOutput.ReadToEndAsync(timeout.Token); Console.WriteLine(output);
             if (viewer.ExitCode != 0 || !output.Contains("PASS WPF")) throw new IOException(await viewer.StandardError.ReadToEndAsync(timeout.Token));
-            var disconnect = Stopwatch.StartNew(); await host.WaitForExitAsync(timeout.Token); Console.WriteLine($"host_after_viewer_exit_ms={disconnect.Elapsed.TotalMilliseconds:F2}"); Console.WriteLine(await host.StandardOutput.ReadToEndAsync(timeout.Token));
+            var disconnect = Stopwatch.StartNew(); await host.WaitForExitAsync(timeout.Token); Console.WriteLine($"host_after_viewer_exit_ms={disconnect.Elapsed.TotalMilliseconds:F2}"); string hostOutput = await host.StandardOutput.ReadToEndAsync(timeout.Token); Console.WriteLine(hostOutput);
+            if (mode == "approval-fallback-cpu" && (!hostOutput.Contains("recoverable_encoder_error") || !hostOutput.Contains("hardware_encode=False") || hostOutput.Split("recoverable_encoder_error").Length != 2)) throw new IOException("WPF path did not exercise one hardware-to-software fallback");
             if (host.ExitCode != 0) throw new IOException(await host.StandardError.ReadToEndAsync(timeout.Token));
         }
         finally { if (viewer is { HasExited: false }) viewer.Kill(true); viewer?.Dispose(); if (!host.HasExited) host.Kill(true); }

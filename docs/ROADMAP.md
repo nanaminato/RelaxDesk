@@ -93,3 +93,6 @@ Viewer usability follow-up: single invitation, folded credentials after approval
 
 
 Usability correction v0.3: actual IP/port → explicit Host approval is now the default connection flow, with session certificate/media binding and strict pinned compatibility mode. Publication identity must be visible and verified from a fresh ZIP extraction. Dual-PC physical Home validation, delayed disconnect and HDR tone mapping remain open.
+
+
+v0.3.1 fixes producer fault masking and adds one software-H264 fallback with decoder reinitialization; injected four-frame and WPF recovery tests pass. Await operator NVIDIA root-error logs and real DXGI fallback validation. This does not close HDR, Home GPU or physical input acceptance.

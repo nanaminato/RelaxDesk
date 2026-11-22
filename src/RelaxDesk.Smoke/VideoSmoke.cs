@@ -11,7 +11,7 @@ internal static class VideoSmoke
     {
         if (mode == "--video-desktop") targetFrames = 1;
         if (targetFrames is < 1 or > 1800) throw new ArgumentOutOfRangeException(nameof(targetFrames));
-        string backend = mode == "--video-idle-control" ? "test-idle" : mode == "--video-software" ? "test-software" : mode is "--video-hardware" or "--video-recovery" or "--video-stalled" ? "test-hardware" : "dxgi";
+        string backend = mode == "--video-producer-failure" ? "test-producer-failure" : mode == "--video-runtime-fallback" ? "test-runtime-fallback" : mode == "--video-idle-control" ? "test-idle" : mode == "--video-software" ? "test-software" : mode is "--video-hardware" or "--video-recovery" or "--video-stalled" ? "test-hardware" : "dxgi";
         var reservation = new TcpListener(IPAddress.Loopback, 0); reservation.Start(); int port = ((IPEndPoint)reservation.LocalEndpoint).Port; reservation.Stop();
         var start = ChildProcess.Create(hostPath, "127.0.0.1", port.ToString(), backend);
         using var process = Process.Start(start) ?? throw new IOException("Host launch failed");
@@ -29,6 +29,16 @@ internal static class VideoSmoke
             if (!consent.Contains("APPROVE")) throw new InvalidDataException("Host did not request consent");
             await process.StandardInput.WriteLineAsync("APPROVE"); await process.StandardInput.FlushAsync();
             await connecting;
+            if (mode == "--video-producer-failure")
+            {
+                int frames = 0;
+                try { while (true) { _ = await MediaProtocol.Read(client.Media, timeout.Token); frames++; } }
+                catch (IOException) { }
+                client.Dispose(); await process.WaitForExitAsync(timeout.Token);
+                string text = await process.StandardOutput.ReadToEndAsync(timeout.Token); Console.WriteLine(text);
+                if (process.ExitCode != 0 || frames != 4 || !text.Contains("session_end worker=capture-encode stage=encode-submit completed_frames=4") || !text.Contains("error_type=InvalidDataException") || !text.Contains("Session ended: Injected producer failure after four frames")) throw new IOException("Producer failure was lost/misattributed");
+                Console.WriteLine("PASS four-frame producer fault preserves original stage/type/message instead of ChannelClosedException; joined and cleanly disconnected"); return;
+            }
             if (mode == "--video-idle-control")
             {
                 _ = await MediaProtocol.Read(client.Media, timeout.Token); // exactly one synthetic frame, then idle
@@ -75,7 +85,7 @@ internal static class VideoSmoke
             {
                 using var decoder = new MediaDecoder(() => Interlocked.Exchange(ref requestKeyframe, 1), Console.WriteLine);
                 var metrics = new PipelineMetrics(); var interval = Stopwatch.StartNew(); double last = 0;
-                int decoded = 0; bool gpuEncoder = false, gpuDecoder = false, gap = false, recovered = false;
+                int decoded = 0; bool gpuEncoder = false, gpuDecoder = false, gap = false, recovered = false, sawHardware = false, sawSoftwareAfterHardware = false; int lastGeneration = 0;
                 while (decoded < targetFrames)
                 {
                     var frame = MediaProtocol.Read(client.Media, running.Token).GetAwaiter().GetResult();
@@ -85,6 +95,8 @@ internal static class VideoSmoke
                     if (pixels is null) continue;
                     if (gap && !recovered) { if (!frame.KeyFrame) throw new InvalidDataException("Decoded delta frame after a gap"); recovered = true; }
                     decoded++; gpuEncoder = frame.HardwareEncoded; gpuDecoder = pixels.HardwareDecoded;
+                    if (gpuEncoder) sawHardware = true; else if (sawHardware) sawSoftwareAfterHardware = true;
+                    lastGeneration = decoder.Generation;
                     if (mode == "--video-hardware" && (!gpuEncoder || !gpuDecoder)) throw new InvalidDataException("Hardware test silently fell back to software");
                     metrics.Add("capture_or_test_generation", frame.CaptureMicroseconds / 1000d); metrics.Add("encode", frame.EncodeMicroseconds / 1000d); metrics.Add("decode_with_readback", pixels.DecodeMilliseconds);
                     double now = interval.Elapsed.TotalMilliseconds; if (last > 0) metrics.Add("frame_interval", now - last); last = now;
@@ -92,6 +104,11 @@ internal static class VideoSmoke
                     if (pixels.Pixels.Length != checked(frame.Width * frame.Height * 4)) throw new InvalidDataException("Decoded size mismatch");
                 }
                 Console.WriteLine($"PASS authenticated production Host -> shared Viewer decoder; mode={mode} hardware_encode={gpuEncoder} hardware_decode={gpuDecoder} " + metrics.Report(0, 0));
+                if (mode == "--video-runtime-fallback")
+                {
+                    if (!sawHardware || !sawSoftwareAfterHardware || lastGeneration < 2) throw new IOException("Hardware runtime failure did not recover via a fresh software H264 stream");
+                    Console.WriteLine("PASS hardware encoder runtime failure -> one software H264 fallback -> decoder reinitialization -> continued authenticated video");
+                }
                 if (mode == "--video-recovery") { if (!recovered) throw new InvalidDataException("No recovery after simulated gap"); Console.WriteLine("PASS simulated media sequence gap -> authenticated keyframe request -> decoder reset/IDR recovery"); }
             }, running.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
             var first = await Task.WhenAny(receive, ping);
