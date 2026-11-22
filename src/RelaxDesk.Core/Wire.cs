@@ -26,19 +26,32 @@ public static class Wire
 }
 public sealed class AccessGate
 {
-    public bool Approved { get; private set; }
+    readonly object sync = new();
+    bool approved;
+    public bool Approved { get { lock (sync) return approved; } }
     private long sequence;
-    public void Approve() { Approved = true; sequence = 0; }
-    public void Revoke() => Approved = false;
+    public void Approve() { lock (sync) { approved = true; sequence = 0; } }
+    public void Revoke() { lock (sync) approved = false; }
     public bool Accept(Packet p)
     {
-        if (!Approved || p.Sequence <= sequence || p.Kind != "input" || p.Code < 0 || p.Code > 511 || p.X < 0 || p.X > 65535 || p.Y < 0 || p.Y > 65535) return false;
-        sequence = p.Sequence; return true;
+        lock (sync)
+        {
+            if (!approved || p.Sequence <= sequence || p.Kind != "input" || p.Code < 0 || p.Code > 259 || p.X < 0 || p.X > 65535 || p.Y < 0 || p.Y > 65535) return false;
+            sequence = p.Sequence; return true;
+        }
     }
     public bool AcceptControl(Packet p)
     {
-        if (p.Kind == "input") return Accept(p);
-        if (!Approved || p.Sequence <= sequence || p.Kind is not ("keyframe-v2" or "ping-v2")) return false;
-        sequence = p.Sequence; return true;
+        lock (sync)
+        {
+            if (p.Kind == "input") return Accept(p);
+            if (!approved || p.Sequence <= sequence || p.Kind is not ("keyframe-v2" or "ping-v2")) return false;
+            sequence = p.Sequence; return true;
+        }
+    }
+    // Revoke cannot return while a previously authorized injection is still running.
+    public bool TryExecuteInput(Packet packet, Action inject)
+    {
+        lock (sync) { if (!Accept(packet)) return false; inject(); return true; }
     }
 }

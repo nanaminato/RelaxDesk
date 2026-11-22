@@ -6,6 +6,9 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using RelaxDesk.Core;
 if (args is ["--windows-contracts"]) { RelaxDesk.Windows.WindowsContracts.Run(); return; }
+if (args is [var budgetHost, "--wpf-budget", var budgetViewer, var budgetMode, var budgetFrames]) { await WpfSmoke.Run(budgetHost, budgetViewer, budgetMode, int.Parse(budgetFrames), true); return; }
+if (args is [var renderHost, "--wpf", var renderViewer, var mode]) { await WpfSmoke.Run(renderHost, renderViewer, mode); return; }
+if (args is [var matrixHost, "--wpf", var matrixViewer, var matrixMode, var renderFrames]) { await WpfSmoke.Run(matrixHost, matrixViewer, matrixMode, int.Parse(renderFrames)); return; }
 if (args is [var hostPath, "--wpf", var viewerPath]) { await WpfSmoke.Run(hostPath, viewerPath); return; }
 if (args is [var perfHost, "--video-hardware", var frames]) { await VideoSmoke.Run(perfHost, "--video-hardware", int.Parse(frames)); return; }
 if (args.Length == 2 && args[1].StartsWith("--video-", StringComparison.Ordinal)) { await VideoSmoke.Run(args[0], args[1]); return; }

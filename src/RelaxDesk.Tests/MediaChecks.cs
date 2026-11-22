@@ -52,6 +52,15 @@ internal static class MediaChecks
         Check(gate.AcceptControl(new("ping-v2", 1))); Check(!gate.AcceptControl(new("keyframe-v2", 1)));
         Check(gate.AcceptControl(new("keyframe-v2", 2))); Check(!gate.AcceptControl(new("unknown-v2", 3)));
         gate.Revoke(); Check(!gate.AcceptControl(new("keyframe-v2", 3)));
+        int injections = 0;
+        Check(!gate.TryExecuteInput(new("input", 4, Code: 65), () => injections++));
+        gate.Approve(); Check(gate.TryExecuteInput(new("input", 1, Code: 65), () => injections++));
+        gate.Revoke(); Check(!gate.TryExecuteInput(new("input", 2, Code: 65), () => injections++)); Check(injections == 1);
+        gate.Approve(); Check(!gate.Accept(new("input", 1, Code: 260)));
+        var pressed = new PressedInputs(); pressed.Update(17, false); pressed.Update(65, false); pressed.Update(65, false); pressed.Update(256, false); pressed.Update(0, false); pressed.Update(258, false);
+        Check(pressed.ReleaseAll().SequenceEqual(new[] { 256, 65, 17 })); Check(pressed.ReleaseAll().Length == 0);
+        pressed.Update(65, false); pressed.Update(65, true); Check(pressed.ReleaseAll().Length == 0);
+        pressed.Update(17, false); pressed.Update(256, false); Check(pressed.ReleaseButtons().SequenceEqual(new[] { 256 }) && pressed.ReleaseAll().SequenceEqual(new[] { 17 }));
         return count;
     }
 }

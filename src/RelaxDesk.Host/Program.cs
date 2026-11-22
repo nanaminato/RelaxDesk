@@ -9,6 +9,12 @@ using System.Security.Cryptography.X509Certificates;
 using RelaxDesk.Core;
 using RelaxDesk.Windows;
 using RelaxDesk.Host;
+if (args is ["--capture-diagnose"])
+{
+    try { Console.WriteLine(GraphicsDiagnostics.CaptureJson()); }
+    catch (Exception e) { Console.Error.WriteLine(e.Message); Environment.ExitCode = 1; }
+    return;
+}
 if (args is ["--codec-benchmark"])
 {
     try { CodecVerification.Compare1080p(); }
@@ -34,7 +40,7 @@ if (args is ["--capture-test"])
 if (args.Length is < 2 or > 3 || !IPAddress.TryParse(args[0], out var address) || !int.TryParse(args[1], out int port) || port is < 1 or > 65535 || IPAddress.Any.Equals(address) || IPAddress.IPv6Any.Equals(address))
 { Console.WriteLine("Usage: RelaxDesk.Host <specific LAN IP> <port>"); return; }
 string backend = args.Length == 3 ? args[2] : "auto";
-if (backend is not ("auto" or "dxgi" or "gdi" or "test-software" or "test-hardware")) throw new ArgumentException("Unknown capture backend");
+if (backend is not ("auto" or "dxgi" or "gdi" or "test-software" or "test-hardware" or "test-deflate" or "test-resolution" or "test-idle")) throw new ArgumentException("Unknown capture backend");
 if (backend.StartsWith("test-", StringComparison.Ordinal) && !IPAddress.IsLoopback(address)) throw new ArgumentException("Synthetic test is loopback-only");
 using var cert = SessionCertificate.Create();
 string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
@@ -66,7 +72,7 @@ try
     using var desktop = new Desktop();
     await Wire.Write(tls, new Packet("approved-v1"), stop.Token);
     using var session = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
-    var input = Task.Run(async () => { try { while (true) { var p = await Wire.Read(tls, session.Token); if (!gate.Accept(p)) throw new InvalidDataException("Unauthorized/invalid input"); desktop.Inject(p.Code, p.Up, p.X, p.Y); } } finally { session.Cancel(); } });
+    var input = Task.Run(async () => { try { while (true) { var p = await Wire.Read(tls, session.Token); if (!gate.TryExecuteInput(p, () => { session.Token.ThrowIfCancellationRequested(); desktop.Inject(p.Code, p.Up, p.X, p.Y); })) throw new InvalidDataException("Unauthorized/invalid input"); } } finally { session.Cancel(); } });
     try
     {
         long id = 0;

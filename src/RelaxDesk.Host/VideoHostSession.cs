@@ -40,11 +40,15 @@ internal static class VideoHostSession
             while (true)
             {
                 var packet = await Wire.Read(control, session.Token);
+                if (packet.Kind == "input")
+                {
+                    if (synthetic) throw new AuthenticationException("Input disabled in synthetic video test");
+                    if (!gate.TryExecuteInput(packet, () => { session.Token.ThrowIfCancellationRequested(); inputDesktop!.Inject(packet.Code, packet.Up, packet.X, packet.Y); })) throw new AuthenticationException("Input authorization revoked");
+                    continue;
+                }
                 if (!gate.AcceptControl(packet)) throw new InvalidDataException("Unauthorized control event");
                 if (packet.Kind == "keyframe-v2") Interlocked.Exchange(ref forceKeyFrame, 1);
                 else if (packet.Kind == "ping-v2") await Wire.Write(control, new Packet("pong-v2", packet.Sequence), session.Token);
-                else if (synthetic) throw new AuthenticationException("Input disabled in synthetic video test");
-                else inputDesktop!.Inject(packet.Code, packet.Up, packet.X, packet.Y);
             }
         }, session.Token);
         var producer = Task.Factory.StartNew(() => Produce(queue, backend, capabilities, () => Interlocked.Exchange(ref forceKeyFrame, 0) != 0, session.Token),
@@ -70,7 +74,7 @@ internal static class VideoHostSession
             finally { Console.WriteLine("media " + metrics.Report(queue.Dropped + stale, queue.Depth)); }
         }, session.Token);
         Task first = await Task.WhenAny(input, sender, producer);
-        session.Cancel(); controlSocket.Close(); mediaSocket.Close(); queue.Complete();
+        gate.Revoke(); session.Cancel(); controlSocket.Close(); mediaSocket.Close(); queue.Complete();
         try { await first; }
         finally
         {
@@ -83,22 +87,26 @@ internal static class VideoHostSession
     {
         bool synthetic = backend.StartsWith("test-", StringComparison.Ordinal);
         ICaptureBackend? capture = null; H264Encoder? encoder = null;
-        var clock = Stopwatch.StartNew(); long sequence = 0, previousDrops = 0; int recoveries = 0;
-        MediaCodec codec = capabilities.Contains("h264") ? MediaCodec.H264 : MediaCodec.DeflateBgra;
+        var clock = Stopwatch.StartNew(); long sequence = 0, previousDrops = 0; int recoveries = 0; int encoderWidth = 0, encoderHeight = 0;
+        MediaCodec codec = backend != "test-deflate" && capabilities.Contains("h264") ? MediaCodec.H264 : MediaCodec.DeflateBgra;
+        var encodeMetrics = new PipelineMetrics(); long uploaded = 0; uint accepted = 0; int gpuSamples = 0;
         try
         {
             while (!ct.IsCancellationRequested)
             {
                 try
                 {
+                    if (backend == "test-idle" && sequence >= 1) { ct.WaitHandle.WaitOne(); break; }
                     capture ??= synthetic ? null : CreateCapture(backend);
                     var timer = Stopwatch.StartNew();
-                    var frame = synthetic ? new CapturedFrame(1280, 720, CodecVerification.Pattern(1280, 720, (int)(sequence % 200)), new(Stopwatch.GetTimestamp(), 1, [], [], 0, 0, false, 0, 0, 0, 0, 0, 0, [])) : capture!.Capture();
+                    int testWidth = backend == "test-resolution" && sequence >= 30 ? 1920 : 1280; int testHeight = backend == "test-resolution" && sequence >= 30 ? 1080 : 720;
+                    var frame = synthetic ? new CapturedFrame(testWidth, testHeight, CodecVerification.Pattern(testWidth, testHeight, (int)(sequence % 200)), new(Stopwatch.GetTimestamp(), 1, [], [], 0, 0, false, 0, 0, 0, 0, 0, 0, [])) : capture!.Capture();
                     double captureMs = timer.Elapsed.TotalMilliseconds;
                     if (frame is null) continue;
                     long timestamp = (long)(clock.Elapsed.TotalSeconds * 10_000_000);
                     bool force = requestedKeyFrame() || queue.Dropped != previousDrops || sequence == 0;
                     previousDrops = queue.Dropped; timer.Restart();
+                    if (encoder is not null && (encoderWidth != frame.Width || encoderHeight != frame.Height)) { encoder.Dispose(); encoder = null; force = true; }
                     if (encoder is null && codec == MediaCodec.H264)
                     {
                         try { encoder = new(capture as DxgiCaptureBackend, frame.Width, frame.Height, hardware: backend != "test-software" && (synthetic || capture is DxgiCaptureBackend)); }
@@ -112,6 +120,7 @@ internal static class VideoHostSession
                                 Console.WriteLine($"software_encoder_unavailable={software.Message}; codec=deflate"); codec = MediaCodec.DeflateBgra;
                             }
                         }
+                        encoderWidth = frame.Width; encoderHeight = frame.Height;
                         Console.WriteLine($"backend={capture?.Name ?? "synthetic-test"} codec={codec} hardware_encode={encoder?.Hardware == true} encoder={encoder?.Name ?? "Deflate"}");
                     }
                     EncodedVideo? encoded;
@@ -123,6 +132,15 @@ internal static class VideoHostSession
                         encoded = new(output.ToArray(), true, timestamp);
                     }
                     if (encoded is null) continue;
+                    encodeMetrics.Add(synthetic ? "generate" : "acquire", captureMs);
+                    if (encoder is not null)
+                    {
+                        var t = encoder.Timing; uploaded += checked((long)t.UploadBytes); accepted = t.AcceptedSettings;
+                        encodeMetrics.Add("upload_submit", t.UploadSubmitMs); encodeMetrics.Add("surface_setup", t.SurfaceSetupMs); encodeMetrics.Add("color_submit", t.ColorSubmitMs);
+                        encodeMetrics.Add("input_wait", t.InputWaitMs); encodeMetrics.Add("mft_submit", t.SubmitMs); encodeMetrics.Add("output_wait", t.OutputWaitMs); encodeMetrics.Add("packet_pack", t.PackMs); encodeMetrics.Add("native_encode_total", t.TotalMs);
+                        if (t.GpuTimingValid != 0) { gpuSamples++; encodeMetrics.Add("gpu_upload", t.GpuUploadMs); encodeMetrics.Add("gpu_color", t.GpuColorMs); }
+                    }
+                    encodeMetrics.Frame(encoded.Data.Length);
                     var packet = new MediaFrame(codec, ++sequence, encoded.Timestamp, frame.Width, frame.Height, encoded.KeyFrame, encoder?.Hardware == true,
                         (long)(captureMs * 1000), (long)(timer.Elapsed.TotalMilliseconds * 1000), CaptureMetadataCodec.Encode(frame.Metadata), encoded.Data);
                     queue.Write(new(packet, Stopwatch.GetTimestamp()));
@@ -137,7 +155,7 @@ internal static class VideoHostSession
                 }
             }
         }
-        finally { encoder?.Dispose(); capture?.Dispose(); queue.Complete(); }
+        finally { encoder?.Dispose(); capture?.Dispose(); queue.Complete(); Console.WriteLine($"encode_stages upload_bytes={uploaded} accepted_setting_mask={accepted} gpu_timestamp_samples={gpuSamples} " + encodeMetrics.Report(0, queue.Depth)); }
     }
     static ICaptureBackend CreateCapture(string backend)
     {

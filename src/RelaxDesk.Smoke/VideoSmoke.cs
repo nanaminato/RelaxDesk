@@ -9,8 +9,9 @@ internal static class VideoSmoke
 {
     public static async Task Run(string hostPath, string mode, int targetFrames = 60)
     {
-        if (targetFrames is < 60 or > 1800) throw new ArgumentOutOfRangeException(nameof(targetFrames));
-        string backend = mode == "--video-software" ? "test-software" : mode is "--video-hardware" or "--video-recovery" ? "test-hardware" : "dxgi";
+        if (mode == "--video-desktop") targetFrames = 1;
+        if (targetFrames is < 1 or > 1800) throw new ArgumentOutOfRangeException(nameof(targetFrames));
+        string backend = mode == "--video-software" ? "test-software" : mode is "--video-hardware" or "--video-recovery" or "--video-stalled" ? "test-hardware" : "dxgi";
         var reservation = new TcpListener(IPAddress.Loopback, 0); reservation.Start(); int port = ((IPEndPoint)reservation.LocalEndpoint).Port; reservation.Stop();
         var start = new ProcessStartInfo("dotnet") { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
         foreach (string arg in new[] { Path.GetFullPath(hostPath), "127.0.0.1", port.ToString(), backend }) start.ArgumentList.Add(arg);
@@ -29,6 +30,15 @@ internal static class VideoSmoke
             if (!consent.Contains("APPROVE")) throw new InvalidDataException("Host did not request consent");
             await process.StandardInput.WriteLineAsync("APPROVE"); await process.StandardInput.FlushAsync();
             await connecting;
+            if (mode == "--video-stalled")
+            {
+                var stall = Stopwatch.StartNew(); int pings = 0; var rtt = new List<double>();
+                try { while (stall.Elapsed.TotalSeconds < 12) { var timer = Stopwatch.StartNew(); await Wire.Write(client.Control, new Packet("ping-v2", ++pings), timeout.Token); var pong = await Wire.Read(client.Control, timeout.Token); if (pong.Kind != "pong-v2") throw new IOException("Wrong control response"); rtt.Add(timer.Elapsed.TotalMilliseconds); await Task.Delay(20, timeout.Token); } }
+                catch (IOException) { }
+                client.Dispose(); await process.WaitForExitAsync(timeout.Token); string text = await process.StandardOutput.ReadToEndAsync(timeout.Token); Console.WriteLine(text);
+                if (process.ExitCode != 0 || pings < 10 || stall.Elapsed.TotalSeconds >= 12 || !text.Contains("media ")) throw new IOException("Stalled media did not disconnect within bounded time");
+                rtt.Sort(); Console.WriteLine($"PASS unread media -> bounded host disconnect {stall.Elapsed.TotalSeconds:F2}s; concurrent control samples={rtt.Count} p95_ms={rtt[(int)Math.Ceiling(rtt.Count * .95) - 1]:F2}; no remote input injected"); return;
+            }
             using var running = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
             int requestKeyframe = 0;
             var pingTimes = new ConcurrentBag<double>();
