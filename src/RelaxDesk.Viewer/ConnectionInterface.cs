@@ -38,7 +38,7 @@ public sealed partial class ViewerWindow
         void Field(string name, FrameworkElement control) { advanced.Children.Add(new TextBlock { Text = name }); advanced.Children.Add(control); }
         advanced.Children.Add(pinnedConnection);
         Field("固定指纹连接信息（可选）", invitation); Field("SHA256 指纹", fingerprint); Field("一次性凭证", token);
-        advanced.Children.Add(legacy); advanced.Children.Add(gpuRendering);
+        advanced.Children.Add(legacy); advanced.Children.Add(gpuRendering);advanced.Children.Add(requestTopology);
         advanced.Children.Add(new TextBlock { Text = "HDR 桌面由 Host 转为 SDR 后传输；屏幕观感仍需真机确认。", TextWrapping = TextWrapping.Wrap, Foreground = Brushes.DimGray, FontSize = 12 });
         legacy.Content = "兼容模式（旧协议）"; gpuRendering.Content = "GPU 显示（不支持时回退）";
         form.Children.Add(new Expander { Header = "手动填写与显示选项", Content = advanced, Margin = new Thickness(0, 4, 0, 12) });

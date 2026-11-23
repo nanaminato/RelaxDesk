@@ -23,8 +23,8 @@ internal static class VideoHostSession
         if (synthetic && !IPAddress.IsLoopback(((IPEndPoint)controlSocket.Client.LocalEndPoint!).Address))
             throw new AuthenticationException("Synthetic video testing is loopback-only");
         var displaySelection=synthetic?null:new WindowsDisplaySelection(selectedDisplay);
-        var displays=hello.DisplayVersion==DisplayProtocol.Version&&(!synthetic||backend=="test-displays")?new HostDisplaySession(displaySelection,synthetic?selectedDisplay:null):null;
-        int displayVersion=displays is null?0:DisplayProtocol.Version;
+        var displays=hello.DisplayVersion!=0&&(!synthetic||backend is "test-displays" or "test-topology" or "test-topology-init-race")?new HostDisplaySession(displaySelection,synthetic?selectedDisplay:null,hello.DisplayVersion,backend=="test-topology"):null;
+        int displayVersion=displays?.Version??0;
         var features = SessionCapabilities.ValidateGrant(hello.Features, grantedFeatures);
         if (synthetic && backend is not ("test-clipboard" or "test-clipboard-failure" or "test-clipboard-rich" or "test-clipboard-rich-failure" or "test-clipboard-files")) features = features.Where(feature=>!SessionCapabilities.IsClipboard(feature)).ToArray();
         if (clipboardRevoked.IsCancellationRequested) features = features.Where(feature=>!SessionCapabilities.IsClipboard(feature)).ToArray();
@@ -142,12 +142,15 @@ internal static class VideoHostSession
                     if (!gate.TryExecuteInput(packet, () => {
                         session.Token.ThrowIfCancellationRequested();
                         void Inject(){if(synthetic)HostSessionLog.Write($"test_display_input generation={packet.DisplayGeneration}");else if(packet.Input is {} rich)inputDesktop!.Inject(rich);else inputDesktop!.InjectLegacy(packet.Code,packet.Up,packet.X,packet.Y);}
-                        if(displays is null)Inject();else if(!displays.Switch.TryInput(packet.DisplayGeneration,Inject)&&Interlocked.Increment(ref ignoredDisplayInputs)==1)HostSessionLog.Write("display_input_ignored reason=stale-or-switching");
+                        try{if(displays is null)Inject();else if(!displays.Switch.TryInput(packet.DisplayGeneration,Inject)&&Interlocked.Increment(ref ignoredDisplayInputs)==1)HostSessionLog.Write("display_input_ignored reason=stale-or-switching");}
+                        catch(DisplayTopologyChangedException changed)when(displays?.TopologyEnabled==true){displays.Observe(changed.Displays,()=>inputDesktop?.ReleaseAll());}
+                        catch(DisplayMetadataUnavailableException)when(displays?.TopologyEnabled==true){displays.MetadataUnavailable(()=>inputDesktop?.ReleaseAll());}
                     })) throw new AuthenticationException("Input authorization revoked");
                     continue;
                 }
                 if (!gate.AcceptControl(packet)) throw new InvalidDataException("Unauthorized control event");
-                if(packet.Kind=="display-select-v2")displays!.Switch.Request(packet.DisplayId!,packet.DisplayGeneration,()=>inputDesktop?.ReleaseAll());
+                if(packet.Kind=="display-select-v2")displays!.Request(packet.DisplayId!,packet.DisplayGeneration,()=>inputDesktop?.ReleaseAll());
+                else if(packet.Kind=="display-configured-v2")displays!.Switch.ConfirmConfiguration(packet.DisplayGeneration);
                 else if(packet.Kind=="display-ready-v2")displays!.Switch.Confirm(packet.DisplayGeneration);
                 else if (packet.Kind == "clipboard-text-v2")
                 {
@@ -169,7 +172,7 @@ internal static class VideoHostSession
             }
         }, session.Token);
         var producer = Task.Factory.StartNew(() => Produce(queue, backend, capabilities, () => Interlocked.Exchange(ref forceKeyFrame, 0) != 0,
-            (stage, frames, error) => { if (!session.IsCancellationRequested) failures.Record("capture-encode", stage, frames, error); }, session.Token,displaySelection,displays,state=>WriteControl(new("display-state-v2",DisplayState:state)).GetAwaiter().GetResult()),
+            (stage, frames, error) => { if (!session.IsCancellationRequested) failures.Record("capture-encode", stage, frames, error); }, session.Token,displaySelection,displays,(state,topology)=>WriteControl(new(topology?"display-topology-v2":"display-state-v2",DisplayState:state)).GetAwaiter().GetResult(),()=>inputDesktop?.ReleaseAll()),
             session.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         var sender = Task.Run(async () =>
         {
@@ -236,13 +239,13 @@ internal static class VideoHostSession
         catch (Exception error) { if (!ct.IsCancellationRequested) failures.Record(worker, worker, 0, error); throw; }
     }
 
-    static void Produce(LatestQueue<QueuedFrame> queue, string backend, string[] capabilities, Func<bool> requestedKeyFrame, Action<string, long, Exception> failed, CancellationToken ct,WindowsDisplaySelection? displaySelection,HostDisplaySession? displays,Action<DisplaySessionInfo> displayChanged)
+    static void Produce(LatestQueue<QueuedFrame> queue, string backend, string[] capabilities, Func<bool> requestedKeyFrame, Action<string, long, Exception> failed, CancellationToken ct,WindowsDisplaySelection? displaySelection,HostDisplaySession? displays,Action<DisplaySessionInfo,bool> displayChanged,Action releaseInput)
     {
         bool synthetic = backend.StartsWith("test-", StringComparison.Ordinal);
         ICaptureBackend? capture = null; H264Encoder? encoder = null;
         var clock = Stopwatch.StartNew(); long sequence = 0, previousDrops = 0; int encoderWidth = 0, encoderHeight = 0;
         var recovery = new PipelineRecovery();
-        bool injectedCaptureLoss = false;
+        bool injectedCaptureLoss = false,injectedTopologyRace=false;
         MediaCodec codec = backend != "test-deflate" && capabilities.Contains("h264") ? MediaCodec.H264 : MediaCodec.DeflateBgra;
         var encodeMetrics = new PipelineMetrics(); long uploaded = 0; uint accepted = 0; int gpuSamples = 0;
         string stage = "capture-init";
@@ -256,12 +259,27 @@ internal static class VideoHostSession
                 try
                 {
                     if (backend == "test-idle" && sequence >= 1) { ct.WaitHandle.WaitOne(); break; }
+                    if(displays?.TopologyEnabled==true)
+                    {
+                        stage="display-topology-probe";
+                        var observed=displays.CurrentTopology();displays.Observe(observed,releaseInput);
+                        if(displays.NeedsRefresh)
+                        {
+                            stage="display-topology";encoder?.Dispose();encoder=null;capture?.Dispose();capture=null;
+                            var refreshed=displays.Refresh(observed);displaySelection=displays.Active;forceNextKeyFrame=true;
+                            displayChanged(refreshed,true);HostSessionLog.Write($"display_topology generation={refreshed.Generation} unavailable={refreshed.Unavailable} allowed={refreshed.Allowed.Length}");
+                        }
+                    }
                     if(displays?.Switch.Pending is{} requestedDisplay)
                     {
                         stage="display-switch";encoder?.Dispose();encoder=null;capture?.Dispose();capture=null;
-                        var changed=displays.Commit(requestedDisplay);displaySelection=displays.Active;forceNextKeyFrame=true;
-                        displayChanged(changed);HostSessionLog.Write($"display_switch generation={changed.Generation} selected={changed.Selected}");
+                        var changed=displays.Commit(requestedDisplay);if(changed is null)continue;displaySelection=displays.Active;forceNextKeyFrame=true;
+                        displayChanged(changed,false);HostSessionLog.Write($"display_switch generation={changed.Generation} selected={changed.Selected}");
                     }
+                    if(displays?.Switch.Unavailable==true){ct.WaitHandle.WaitOne(250);continue;}
+                    if(displays is not null&&!displays.Switch.Configured){ct.WaitHandle.WaitOne(50);continue;}
+                    stage="capture-init";
+                    if(backend=="test-topology-init-race"&&sequence>=4&&!injectedTopologyRace&&displays?.Switch.Ready==true){injectedTopologyRace=true;throw new ExternalException("Injected output disappeared during initialization",unchecked((int)0x887A0002));}
                     stage = "capture-init"; capture ??= synthetic ? null : CreateCapture(backend,displaySelection);
                     if(capture is DxgiCaptureBackend)displaySelection?.EnsureCurrent();
                     stage = "capture-frame";
@@ -332,6 +350,15 @@ internal static class VideoHostSession
                         HostSessionLog.Write($"pipeline_recovery state=Recovered attempt={recovery.Attempts} completed_frames={sequence} keyframe={encoded.KeyFrame}");
                     int delay = Math.Max(0, 33 - (int)(captureMs + timer.Elapsed.TotalMilliseconds));
                     if (ct.WaitHandle.WaitOne(delay)) break;
+                }
+                catch(DisplayTopologyChangedException changed)when(displays?.TopologyEnabled==true&&!ct.IsCancellationRequested)
+                {displays.Observe(changed.Displays,releaseInput);}
+                catch(ExternalException error)when(displays?.TopologyEnabled==true&&stage=="capture-init"&&PipelineRecovery.IsTopologyInitializationRace(error)&&!ct.IsCancellationRequested)
+                {
+                    if(!recovery.TryBegin(stage,sequence,error))throw;
+                    HostSessionLog.Write($"topology_capture_retry attempt={recovery.Attempts} hresult=0x{error.HResult:X8}");
+                    displays.Invalidate(releaseInput);var oldEncoder=encoder;encoder=null;var oldCapture=capture;capture=null;
+                    try{oldEncoder?.Dispose();}finally{oldCapture?.Dispose();}forceNextKeyFrame=true;if(ct.WaitHandle.WaitOne(250))break;
                 }
                 catch (ExternalException e) when (PipelineRecovery.IsDeviceLoss(e) && !ct.IsCancellationRequested)
                 {

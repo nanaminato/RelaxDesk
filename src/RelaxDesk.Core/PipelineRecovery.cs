@@ -12,6 +12,7 @@ public sealed class PipelineRecovery(int maximumAttempts = 3)
     public SessionFailure? First { get; private set; }
     public static bool IsDeviceLoss(Exception error) => error is System.Runtime.InteropServices.ExternalException &&
         error.HResult is unchecked((int)0x887A0026) or unchecked((int)0x887A0005) or unchecked((int)0x887A0007);
+    public static bool IsTopologyInitializationRace(Exception error)=>error is System.Runtime.InteropServices.ExternalException&&error.HResult is unchecked((int)0x887A0002) or unchecked((int)0x887A0004);
 
     public bool TryBegin(string stage, long frames, Exception error)
     {

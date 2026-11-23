@@ -13,9 +13,9 @@ public static class WindowsDisplays
     }
     [DllImport("RelaxDesk.Native.dll",CallingConvention=CallingConvention.Cdecl)]
     static extern int rd_display_list([Out] NativeDisplay[] displays,uint capacity,out uint count,int includeHdr);
-    public static DisplayInfo[] Enumerate(bool includeHdr=true)
+    public static DisplayInfo[] Enumerate(bool includeHdr=true,bool allowEmpty=false)
     {
-        if(!includeHdr)return WindowsMonitorMetadata.Enumerate();
+        if(!includeHdr||allowEmpty)return WindowsMonitorMetadata.Enumerate(allowEmpty);
         try{return EnumerateNative();}
         catch(Exception error)when(error is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException){return WindowsMonitorMetadata.Enumerate();}
     }
@@ -23,7 +23,8 @@ public static class WindowsDisplays
     {
         var buffer=new NativeDisplay[DisplayTopology.MaximumDisplays];NativeMethods.Check(rd_display_list(buffer,(uint)buffer.Length,out uint count,1));
         if(count is 0 or >DisplayTopology.MaximumDisplays)throw new InvalidDataException("Invalid native display count");
-        return DisplayTopology.Validate(buffer.Take((int)count).Select(d=>new DisplayInfo(d.Name,new(d.X,d.Y,d.Width,d.Height),d.Rotation,d.DpiX,d.DpiY,d.Primary!=0,d.Hdr<0?null:d.Hdr!=0)).ToArray());
+        var identities=DisplayDeviceIdentities.Read(out _);
+        return DisplayTopology.Validate(buffer.Take((int)count).Select(d=>new DisplayInfo(d.Name,new(d.X,d.Y,d.Width,d.Height),d.Rotation,d.DpiX,d.DpiY,d.Primary!=0,d.Hdr<0?null:d.Hdr!=0,identities.GetValueOrDefault(d.Name))).ToArray());
     }
 }
 
@@ -39,7 +40,7 @@ public sealed class WindowsDisplaySelection
     public DisplayInfo[] Topology=>snapshot.ToArray();
     public WindowsDisplaySelection Select(string device)=>new(snapshot,device);
     public WindowsDisplaySelection(string? device):this(WindowsDisplays.Enumerate(),device){}
-    internal WindowsDisplaySelection(DisplayInfo[] displays,string? device)
+    public WindowsDisplaySelection(DisplayInfo[] displays,string? device)
     {
         snapshot=DisplayTopology.Validate(displays);Bounds=DisplayTopology.Select(snapshot,device);
         Device=device=="all"?"all":device is null?snapshot.Single(d=>d.Primary).Id:snapshot.Single(d=>d.Id.Equals(device,StringComparison.OrdinalIgnoreCase)).Id;
@@ -49,12 +50,14 @@ public sealed class WindowsDisplaySelection
     public InputGeometry InputGeometry=>new(new(Bounds.X,Bounds.Y,Bounds.Width,Bounds.Height),new(VirtualDesktop.X,VirtualDesktop.Y,VirtualDesktop.Width,VirtualDesktop.Height));
     public void EnsureCurrent()
     {
-        EnsureCurrent(WindowsDisplays.Enumerate(false));
+        EnsureCurrent(WindowsDisplays.Enumerate(false,true));
     }
     internal void EnsureCurrent(DisplayInfo[] now)
     {
-        DisplayTopology.Validate(now);
+        DisplayTopology.Validate(now,true);
         now=now.Select(d=>d with{Hdr=null}).ToArray();
-        if(!snapshot.Select(d=>d with{Hdr=null}).OrderBy(d=>d.Id,StringComparer.OrdinalIgnoreCase).SequenceEqual(now.OrderBy(d=>d.Id,StringComparer.OrdinalIgnoreCase)))throw new IOException("Display topology changed; reconnect to refresh screen and input geometry");
+        if(!snapshot.Select(d=>d with{Hdr=null}).OrderBy(d=>d.Id,StringComparer.OrdinalIgnoreCase).SequenceEqual(now.OrderBy(d=>d.Id,StringComparer.OrdinalIgnoreCase)))throw new DisplayTopologyChangedException(now);
     }
 }
+public sealed class DisplayTopologyChangedException(DisplayInfo[] displays):IOException("Display topology changed; old capture/input geometry is paused")
+{public DisplayInfo[] Displays{get;}=DisplayTopology.Validate(displays,true);}

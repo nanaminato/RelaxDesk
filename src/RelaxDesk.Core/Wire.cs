@@ -42,7 +42,7 @@ public sealed class AccessGate
     public void Approve(IEnumerable<string>? grantedFeatures = null,int inputVersion=0,int displayVersion=0)
     {
         if(inputVersion is not (0 or InputProtocol.Version))throw new InvalidDataException("Unsupported input version");
-        if(displayVersion is not (0 or DisplayProtocol.Version)||displayVersion!=0&&inputVersion!=InputProtocol.Version)throw new InvalidDataException("Unsupported display version");
+        if(!DisplayProtocol.Supported(displayVersion)||displayVersion!=0&&inputVersion!=InputProtocol.Version)throw new InvalidDataException("Unsupported display version");
         var grants = SessionCapabilities.Validate(grantedFeatures?.ToArray());
         lock (sync) { approved = true;this.inputVersion=inputVersion;this.displayVersion=displayVersion; sequence = 0; features.Clear(); originalFeatures.Clear(); foreach (string feature in grants) { features.Add(feature); originalFeatures.Add(feature); } }
     }
@@ -64,8 +64,8 @@ public sealed class AccessGate
         lock (sync)
         {
             if (p.Kind is "input" or "input-v2") return Accept(p);
-            if(p.Kind is "display-select-v2" or "display-ready-v2")
-            {if(!approved||displayVersion!=DisplayProtocol.Version||p.Sequence<=sequence||!DisplayProtocol.ValidCommand(p))return false;sequence=p.Sequence;return true;}
+            if(p.Kind is "display-select-v2" or "display-ready-v2" or "display-configured-v2")
+            {if(!approved||displayVersion==0||p.Kind=="display-configured-v2"&&displayVersion!=DisplayProtocol.TopologyVersion||p.Sequence<=sequence||!DisplayProtocol.ValidCommand(p))return false;sequence=p.Sequence;return true;}
             if(p.Input is not null||p.InputVersion!=0||p.ClipboardTicket is not null||!DisplayProtocol.Empty(p))return false;
             if (p.Kind == "file-state-v2")
             {

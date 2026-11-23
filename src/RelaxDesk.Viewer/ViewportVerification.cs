@@ -11,6 +11,7 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
+    [System.Runtime.InteropServices.DllImport("user32.dll",EntryPoint="IsWindowVisible")]static extern bool ViewportWindowVisible(nint hwnd);
     internal static void VerifyViewport(Application app)
     {
         var window=new ViewerWindow{Width=860,Height=640,ShowActivated=false};int count=0;NativeVideoHost? child=null;
@@ -47,6 +48,11 @@ public sealed partial class ViewerWindow
                 var dpi=VisualTreeHelper.GetDpi(window.videoPanel);int width=(int)Math.Round(window.videoPanel.ActualWidth*dpi.DpiScaleX),height=(int)Math.Round(window.videoPanel.ActualHeight*dpi.DpiScaleY);
                 Check(child.TryPosition(0,0,width,height,false,out nx,out ny)&&nx==(int)((1200-Math.Round(width/2d,MidpointRounding.AwayFromZero))/1199*65535)&&ny==(int)((800-Math.Round(height/2d,MidpointRounding.AwayFromZero))/799*65535));
                 Check(!child.TryPosition(-1,-1,width,height,false,out _,out _));Check(child.TryPosition(-1,-1,width,height,true,out _,out _));
+                var known=new DisplayInfo("fixture",new(0,0,1200,800),0,96,96,true,false,new string('A',64));var initial=new DisplaySessionInfo([known],[known.Id],known.Id,1);var scope=new DisplayTopologyAuthorization(initial);
+                window.displaySession=new(initial,true);window.nativeView=child;window.gpuViewportActive=true;
+                var paused=scope.Reconcile([],2);window.displaySession.ReceiveTopology(paused);window.ApplyDisplayTopology(paused,new CpuBitmapRenderer(window.image));window.UpdateLayout();await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);Check(child.Visibility==Visibility.Collapsed&&!ViewportWindowVisible(child.Handle)&&window.displayUnavailable.IsVisible);
+                var available=scope.Reconcile([known],3);window.displaySession.ReceiveTopology(available);window.ApplyDisplayTopology(available,new CpuBitmapRenderer(window.image));window.UpdateLayout();await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);Check(child.Visibility==Visibility.Visible&&ViewportWindowVisible(child.Handle)&&!window.displayUnavailable.IsVisible);
+                window.EndDisplaySession();window.nativeView=null;window.gpuViewportActive=false;
                 window.videoPanel.Children.Remove(child);child.Dispose();child=null;
                 window.StopLocalPreview();Check(window.viewportVideoWidth==0&&!window.viewportInputReady&&!window.horizontalPan.IsVisible&&!window.verticalPan.IsVisible);Check(GraphicsDiagnostics.Resources().Empty);
                 Console.WriteLine($"PASS {count} actual WPF viewport menu/1:1/zoom/custom/pan/crop-pixel/fit/resize/fullscreen/HWND-map/teardown checks; synthetic bitmap and owned HWND only, no physical DPI/Present/input claim");

@@ -5,6 +5,7 @@ using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using RelaxDesk.Core;
+if(args is [var topologyHost,"--topology-session",var topologyFixtures]){try{await TopologySmoke.Run(topologyHost,topologyFixtures);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is ["--viewport-contracts"]){try{RelaxDesk.Windows.ViewportContracts.Run();}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is [var switchHost,"--display-switch"]){try{await DisplaySwitchSmoke.Run(switchHost);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is [var displayHost,"--display-denied"]){try{await DisplaySmoke.Run(displayHost);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}

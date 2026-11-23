@@ -18,9 +18,9 @@ internal static class WindowsMonitorMetadata
     [DllImport("user32.dll",EntryPoint="EnumDisplaySettingsExW",CharSet=CharSet.Unicode)]static extern bool EnumDisplaySettingsEx(string device,int mode,ref DisplayMode settings,uint flags);
     [DllImport("shcore.dll")]static extern int GetScaleFactorForMonitor(nint monitor,out uint scale);
     [DllImport("user32.dll",SetLastError=true)]static extern nint SetThreadDpiAwarenessContext(nint context);
-    public static DisplayInfo[] Enumerate()
+    public static DisplayInfo[] Enumerate(bool allowEmpty=false)
     {
-        nint previous=SetThreadDpiAwarenessContext(-4);if(previous==0)throw new IOException("Display DPI context unavailable");
+        nint previous=SetThreadDpiAwarenessContext(-4);if(previous==0)throw new DisplayMetadataUnavailableException();
         try
         {
             var displays=new List<DisplayInfo>();Exception? failure=null;
@@ -38,9 +38,12 @@ internal static class WindowsMonitorMetadata
                 }
                 catch(Exception error){failure=error;return false;}
             }
-            if(!EnumDisplayMonitors(0,0,Visit,0))throw new IOException("Display metadata enumeration failed",failure);
-            return DisplayTopology.Validate(displays.ToArray());
+            if(!EnumDisplayMonitors(0,0,Visit,0))throw new DisplayMetadataUnavailableException(failure);
+            var identities=DisplayDeviceIdentities.Read(out _);
+            try{return DisplayTopology.Validate(displays.Select(display=>display with{Identity=identities.GetValueOrDefault(display.Id)}).ToArray(),allowEmpty);}
+            catch(InvalidDataException error){throw new DisplayMetadataUnavailableException(error);}
         }
         finally{SetThreadDpiAwarenessContext(previous);}
     }
 }
+public sealed class DisplayMetadataUnavailableException(Exception? cause=null):IOException("Display metadata temporarily unavailable",cause);

@@ -61,7 +61,7 @@ public sealed class SessionClient : IDisposable
         VerifiedFingerprint = expected;
         var requestedFeatures = SessionCapabilities.Validate(RequestedFeatures);
         if(RequestedInputVersion is not (0 or InputProtocol.Version))throw new InvalidDataException("Unsupported requested input version");
-        if(RequestedDisplayVersion is not (0 or DisplayProtocol.Version)||RequestedDisplayVersion!=0&&RequestedInputVersion!=InputProtocol.Version)throw new InvalidDataException("Unsupported requested display version");
+        if(!DisplayProtocol.Supported(RequestedDisplayVersion)||RequestedDisplayVersion!=0&&RequestedInputVersion!=InputProtocol.Version)throw new InvalidDataException("Unsupported requested display version");
         bool requestResume=RequestFileResume&&requestedFeatures.Contains(SessionCapabilities.FileTransfer);
         await Wire.Write(Control, new Packet(approvalOnly ? "request-v2" : "hello-v2", Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], Features: requestedFeatures.Length == 0 ? null : requestedFeatures,FileResume:requestResume,InputVersion:RequestedInputVersion,DisplayVersion:RequestedDisplayVersion), ct);
         PhaseChanged?.Invoke(ConnectionPhase.AwaitingApproval);
@@ -70,8 +70,9 @@ public sealed class SessionClient : IDisposable
         if (approval.Kind != "approved-v2" || approval.Text is null || approval.Capabilities is not { Length: > 0 }) throw new AuthenticationException("Host approval/capabilities missing");
         if(approval.Input is not null||approval.InputVersion is not (0 or InputProtocol.Version)||approval.InputVersion!=0&&approval.InputVersion!=RequestedInputVersion)throw new AuthenticationException("Unrequested/invalid input version");
         InputVersion=approval.InputVersion;
-        if(approval.DisplayVersion is not (0 or DisplayProtocol.Version)||approval.DisplayVersion!=0&&(RequestedDisplayVersion!=approval.DisplayVersion||InputVersion!=InputProtocol.Version)||approval.DisplayId is not null||approval.DisplayGeneration!=0||approval.DisplayVersion==0&&approval.DisplayState is not null||approval.DisplayVersion!=0&&approval.DisplayState is null)throw new AuthenticationException("Unrequested or invalid display negotiation");
+        if(!DisplayProtocol.Supported(approval.DisplayVersion)||approval.DisplayVersion!=0&&(approval.DisplayVersion>RequestedDisplayVersion||InputVersion!=InputProtocol.Version)||approval.DisplayId is not null||approval.DisplayGeneration!=0||approval.DisplayVersion==0&&approval.DisplayState is not null||approval.DisplayVersion!=0&&approval.DisplayState is null)throw new AuthenticationException("Unrequested or invalid display negotiation");
         DisplayVersion=approval.DisplayVersion;DisplayState=approval.DisplayState is null?null:DisplayProtocol.Validate(approval.DisplayState);
+        if(DisplayVersion==DisplayProtocol.TopologyVersion&&!DisplayTopologyAuthorization.CanTrack(DisplayState!))throw new AuthenticationException("Display topology identity unavailable");
         if(DisplayState is not null&&DisplayState.Generation!=1)throw new AuthenticationException("Invalid initial display generation");
         Capabilities = approval.Capabilities;
         Features = SessionCapabilities.ValidateGrant(requestedFeatures, approval.Features);

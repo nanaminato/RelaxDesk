@@ -36,6 +36,9 @@ public sealed class App : Application
         {
             var app = new App();
             if(args is ["--viewport-contracts"])ViewerWindow.VerifyViewport(app);
+            else if(args is ["--display-legacy-session-contracts",var legacyDisplayHost])ViewerWindow.VerifyDisplaySession(app,legacyDisplayHost,false,true);
+            else if(args is ["--topology-race-contracts",var raceHost])ViewerWindow.VerifyDisplaySession(app,raceHost,false,false,true);
+            else if(args is ["--topology-session-contracts",var topologyHost])ViewerWindow.VerifyDisplaySession(app,topologyHost,true);
             else if(args is ["--display-session-contracts",var displayHost])ViewerWindow.VerifyDisplaySession(app,displayHost);
             else if(args is ["--file-clipboard-contracts",var fileClipboardHost,var fileClipboardOutput,var fileClipboardMode])ViewerWindow.VerifyFileClipboard(app,fileClipboardHost,fileClipboardOutput,fileClipboardMode);
             else if(args is ["--rich-clipboard-session-contracts",var clipboardHost,var clipboardConsent])RichClipboardSessionVerification.Run(app,clipboardHost,clipboardConsent=="denied");
@@ -164,7 +167,7 @@ public sealed partial class ViewerWindow : Window
         StopLocalPreview(); connectionCard.IsEnabled = false; disconnect.IsEnabled = true; connect.IsEnabled = false; using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime); session = cancellation; sequence = 0; ResetInputState();
         ++connectionGeneration; Exception? attemptError=null; bool established=false,restoreFullScreen=target.FullScreen; string[] retryFeatures=target.Features;long connectedAt=0;bool fileTransportInterrupted=false;
         while (outgoing.Reader.TryRead(out _)) { }
-        using var connection = new SessionClient { RequestedFeatures = target.Features,RequestedDisplayVersion=DisplayProtocol.Version }; using var abort = cancellation.Token.Register(connection.Dispose);
+        using var connection = new SessionClient { RequestedFeatures = target.Features,RequestedDisplayVersion=target.DisplayVersion }; using var abort = cancellation.Token.Register(connection.Dispose);
         connection.PhaseChanged+=phase=>{if(ReferenceEquals(session,cancellation)&&!cancellation.IsCancellationRequested)SetConnectionPhase(phase);};
         ClipboardSynchronizer? clipboard = null;
         Task? fileVerification = null;
@@ -248,10 +251,15 @@ public sealed partial class ViewerWindow : Window
             {
                 nativeView = new() { Input = Send, RichInput = inputVersion==2?SendRich:null, InputBacklogExceeded = ()=>cancellation.Cancel(), InputFocusLost = ReleaseHeldInputs, InputCaptureLost = ReleaseMouseButtons, RenderInvalidated = () => repaintSignal.Set() }; videoPanel.Children.Add(nativeView); nativeView.SetViewport(CurrentViewport);renderPanel.UpdateLayout();
                 nativeView.SetFilesDrop(fileQueue?.Enabled==true?FilesDropped:null);
-                hwnd = nativeView.Handle; if (hwnd == 0) throw new InvalidOperationException("Render child HWND not available");
+                gpuViewportActive=true;hwnd = nativeView.Handle; if (hwnd == 0) throw new InvalidOperationException("Render child HWND not available");
                 image.Visibility = Visibility.Collapsed;
             }
-            catch (Exception e) { preferGpu = false; status.Text = "GPU display unavailable: " + e.Message; }
+            catch (Exception e)
+            {
+                preferGpu=false;gpuViewportActive=false;
+                if(nativeView is not null){videoPanel.Children.Remove(nativeView);try{nativeView.Dispose();}catch(Exception cleanup){ViewerSessionLog.Record("gpu-child-cleanup",cleanup);}nativeView=null;}
+                image.Visibility=Visibility.Visible;status.Text="GPU display unavailable: "+e.Message;
+            }
         }
 
             var writer = Task.Run(async () => { await foreach (var packet in outgoing.Reader.ReadAllAsync(cancellation.Token)) await Wire.Write(connection.Control, packet, cancellation.Token); });
@@ -263,11 +271,23 @@ public sealed partial class ViewerWindow : Window
                     var packet = await SessionControl.Read(connection.Control, cancellation.Token);
                     if(ConnectionRecovery.IsExplicitEnd(packet))throw new RemoteSessionEndedException();
                     if (packet.Kind == "pong-v2") { Interlocked.Increment(ref heartbeatReplies); continue; }
-                    if(packet.Kind=="display-state-v2")
+                    if(packet.Kind is "display-state-v2" or "display-topology-v2")
                     {
-                        if(displaySession is null||packet.DisplayState is null||packet!=new Packet("display-state-v2",DisplayState:packet.DisplayState))throw new InvalidDataException("Unnegotiated or malformed display update");
-                        displaySession.Receive(packet.DisplayState);
-                        _ = Dispatcher.BeginInvoke(()=>{if(!ReferenceEquals(session,cancellation)||cancellation.IsCancellationRequested)return;RefreshDisplayMenu();if(!outgoing.TryWrite(new("keyframe-v2",++sequence)))cancellation.Cancel();});
+                        if(displaySession is null||packet.DisplayState is null||packet!=new Packet(packet.Kind,DisplayState:packet.DisplayState))throw new InvalidDataException("Unnegotiated or malformed display update");
+                        if(packet.Kind=="display-topology-v2")
+                        {
+                            if(connection.DisplayVersion!=DisplayProtocol.TopologyVersion)throw new InvalidDataException("Unnegotiated topology update");displaySession.ReceiveTopology(packet.DisplayState);
+                            _=Dispatcher.BeginInvoke(()=>{if(ReferenceEquals(session,cancellation)&&!cancellation.IsCancellationRequested)ApplyDisplayTopology(packet.DisplayState,cpu);});
+                        }
+                        else
+                        {
+                            displaySession.Receive(packet.DisplayState);
+                            _ = Dispatcher.BeginInvoke(()=>{
+                                if(!ReferenceEquals(session,cancellation)||cancellation.IsCancellationRequested||displaySession?.Generation!=packet.DisplayState.Generation)return;
+                                if(connection.DisplayVersion==DisplayProtocol.TopologyVersion)ApplyDisplayTopology(packet.DisplayState,cpu);
+                                else{RefreshDisplayMenu();if(!outgoing.TryWrite(new("keyframe-v2",++sequence)))cancellation.Cancel();}
+                            });
+                        }
                     }
                     else if (packet.Kind == "clipboard-text-v2")
                     {
@@ -331,7 +351,7 @@ public sealed partial class ViewerWindow : Window
                     if (lost && retries++ < 2) { Diagnostic("GPU device lost; recreating decoder and swapchain"); decoder = new(KeyFrame, Diagnostic); generation = -1; KeyFrame(); return; }
                     if (smoke?.RequireGpu == true) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
                     gpu = false; decoder = new(KeyFrame, Diagnostic, preferHardware: false); KeyFrame();
-                    Dispatcher.BeginInvoke(() => { if(!ReferenceEquals(session,cancellation)||cancellation.IsCancellationRequested)return; if (nativeView is not null) nativeView.Visibility = Visibility.Collapsed; image.Visibility = Visibility.Visible; status.Text = "Using CPU display fallback: " + error.Message; });
+                    Dispatcher.BeginInvoke(() => { if(!ReferenceEquals(session,cancellation)||cancellation.IsCancellationRequested)return; gpuViewportActive=false;if (nativeView is not null) nativeView.Visibility = Visibility.Collapsed; image.Visibility = Visibility.Visible; status.Text = "Using CPU display fallback: " + error.Message; });
                 }
                 try
                 {
@@ -422,7 +442,7 @@ public sealed partial class ViewerWindow : Window
             if(fileVerification is not null)await fileVerification;
             if(clipboardVerification is not null)await clipboardVerification;
             await EndFileSession(recoverFiles,connection.VerifiedFingerprint);
-            if (nativeView is not null) { videoPanel.Children.Remove(nativeView); nativeView.Dispose(); nativeView = null; }
+            gpuViewportActive=false;if (nativeView is not null) { videoPanel.Children.Remove(nativeView); nativeView.Dispose(); nativeView = null; }
             session = null; ShowConnectedView(false);
             string report = $"renderer={(gpuFrames > 0 && cpuFrames == 0 ? "d3d11" : "cpu-or-fallback")} gpu_frames={gpuFrames} cpu_frames={cpuFrames} full_frame_readback_bytes={readbackBytes} received_frames={receivedFrames} resizes={resizeCount} renderer_generations={rendererGenerations} keyframe_requests={keyframeRequests} simulated_device_losses={simulatedLosses} idle_repaints={idleRepaints} hidden={hiddenPresents} occluded={occludedPresents} gpu_busy={busyPresents} " + metrics.Report(decoded.Dropped + skipped, decoded.Depth);
             if (smoke is not null && !smoke.ReconnectTest)

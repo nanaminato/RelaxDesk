@@ -58,7 +58,7 @@ internal sealed class SessionToolbar : IDisposable
     public void SetRemoteInputReady(bool ready){foreach(var item in ShortcutMenu.Items.OfType<MenuItem>().Where(item=>item.Tag is RemoteShortcut))item.IsEnabled=ready;}
     public void SetDisplays(DisplaySessionInfo? state,bool ready,Action<string>? select)
     {
-        displays.Items.Clear();displays.IsEnabled=state is not null;displays.Header=state is null?"显示器（Host 未开放切换）":ready?"显示器":"显示器（等待新画面…）";
+        displays.Items.Clear();displays.IsEnabled=state is not null;displays.Header=state is null?"显示器（Host 未开放切换）":state.Unavailable?(state.Allowed.Length>0?"显示器（屏幕断开，可重新选择）":"显示器（等待授权屏幕恢复）"):ready?"显示器":"显示器（等待新画面…）";
         if(state is null)return;
         foreach(string id in state.Allowed)
         {

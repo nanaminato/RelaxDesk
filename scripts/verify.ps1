@@ -61,6 +61,8 @@ try {
     if ($LASTEXITCODE) { throw 'Missing display session rejection failed' }
     Run-App $smokeDll $hostDll --display-switch
     if ($LASTEXITCODE) { throw 'Display switch generation/scope failed' }
+    Run-App $smokeDll $hostDll --topology-session (Join-Path $root 'build/topology-verification')
+    if ($LASTEXITCODE) { throw 'Display topology/independent file channel failed' }
     Run-App $smokeDll --input-contracts
     if ($LASTEXITCODE) { throw 'Input contracts failed' }
     Run-App $smokeDll --clipboard-image-contracts
@@ -80,6 +82,12 @@ try {
         if ($LASTEXITCODE) { throw 'Viewer viewport/zoom contracts failed' }
         Run-App $viewer --display-session-contracts $hostDll
         if ($LASTEXITCODE) { throw 'Viewer live display switching failed' }
+        Run-App $viewer --display-legacy-session-contracts $hostDll
+        if ($LASTEXITCODE) { throw 'Viewer legacy display compatibility failed' }
+        Run-App $viewer --topology-session-contracts $hostDll
+        if ($LASTEXITCODE) { throw 'Viewer live topology recovery failed' }
+        Run-App $viewer --topology-race-contracts $hostDll
+        if ($LASTEXITCODE) { throw 'Topology initialization-race recovery failed' }
         foreach($consent in @('granted','deny-clipboard','deny-files')) {
             Run-App $viewer --file-clipboard-contracts $hostDll (Join-Path $root 'build/file-clipboard-verification') $consent
             if ($LASTEXITCODE) { throw "Viewer file clipboard failed: $consent" }

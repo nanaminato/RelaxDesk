@@ -1,4 +1,7 @@
 using System.Windows.Threading;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
 using RelaxDesk.Core;
 
 namespace RelaxDesk.Viewer;
@@ -7,9 +10,30 @@ public sealed partial class ViewerWindow
 {
     DisplayViewerSession? displaySession;
     DispatcherTimer? displayDeadline;
+    bool gpuViewportActive;
+    readonly CheckBox requestTopology=new(){Content="保持屏幕配置变化时的连接（需要新版 Host；旧版请取消）",IsChecked=true};
+    readonly Border displayUnavailable=new(){Visibility=Visibility.Collapsed,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center,MaxWidth=480,Padding=new(24),Background=Brushes.White,CornerRadius=new(10),Child=new TextBlock{Text="屏幕暂不可用，输入已暂停。\n\n可在顶部工具栏选择仍获授权的屏幕，或等待原屏幕恢复。新增屏幕需要重新连接并授权。",TextWrapping=TextWrapping.Wrap,Foreground=Brushes.DimGray}};
+    void ApplyDisplayTopology(DisplaySessionInfo state,CpuBitmapRenderer cpu)
+    {
+        if(displaySession?.Generation!=state.Generation)return;
+        ReleaseHeldInputs();CloseTextInput();ResetViewportPan();
+        if(state.Unavailable)
+        {
+            displayDeadline?.Stop();cpu.Clear();EndViewport();if(nativeView is not null)nativeView.Visibility=Visibility.Collapsed;
+            displayUnavailable.Visibility=Visibility.Visible;status.Text="屏幕暂不可用；文件与连接权限保持独立，输入已暂停。";
+        }
+        else
+        {
+            displayUnavailable.Visibility=Visibility.Collapsed;if(gpuViewportActive&&nativeView is not null)nativeView.Visibility=Visibility.Visible;
+            if(!displaySession.Ready)StartDisplayDeadline();else displayDeadline?.Stop();status.Text="屏幕配置已变化，正在等待新画面…";
+            if(!outgoing.TryWrite(new("display-configured-v2",++sequence,DisplayGeneration:state.Generation)))session?.Cancel();
+            if(!outgoing.TryWrite(new("keyframe-v2",++sequence)))session?.Cancel();
+        }
+        RefreshDisplayMenu();
+    }
     void StartDisplaySession(SessionClient connection)
     {
-        EndDisplaySession();displaySession=connection.DisplayState is{} state?new(state):null;
+        EndDisplaySession();displaySession=connection.DisplayState is{} state?new(state,connection.DisplayVersion==DisplayProtocol.TopologyVersion):null;
         if(displaySession is not null)StartDisplayDeadline();
     }
     void StartDisplayDeadline()
@@ -20,14 +44,14 @@ public sealed partial class ViewerWindow
     }
     void RefreshDisplayMenu()
     {
-        sessionToolbar?.SetDisplays(displaySession?.Snapshot,displaySession?.Ready==true,SelectRemoteDisplay);
+        sessionToolbar?.SetDisplays(displaySession?.Snapshot,displaySession?.CanSelect==true,SelectRemoteDisplay);
         bool inputReady=inputAuthorized&&viewportInputReady&&(displaySession is null||displaySession.Ready);
         sessionToolbar?.SetRemoteInputReady(inputReady);
         sessionToolbar?.SetTextInput(inputReady&&inputVersion==2?OpenTextInput:null);
     }
     void SelectRemoteDisplay(string id)
     {
-        if(displaySession?.Ready!=true||session is null||session.IsCancellationRequested)return;
+        if(displaySession?.CanSelect!=true||session is null||session.IsCancellationRequested)return;
         if(id==displaySession.Snapshot.Selected){RefreshDisplayMenu();return;}
         ReleaseHeldInputs();CloseTextInput();ResetViewportPan();long generation=displaySession.Begin(id);
         if(!outgoing.TryWrite(new("display-select-v2",++sequence,DisplayId:id,DisplayGeneration:generation))){session.Cancel();return;}
@@ -39,5 +63,5 @@ public sealed partial class ViewerWindow
         if(!outgoing.TryWrite(new("display-ready-v2",++sequence,DisplayGeneration:frame.DisplayGeneration))){session?.Cancel();return;}
         displayDeadline?.Stop();RefreshDisplayMenu();
     }
-    void EndDisplaySession(){displayDeadline?.Stop();displayDeadline=null;displaySession=null;sessionToolbar?.SetDisplays(null,false,null);sessionToolbar?.SetRemoteInputReady(false);sessionToolbar?.SetTextInput(null);}
+    void EndDisplaySession(){displayDeadline?.Stop();displayDeadline=null;displaySession=null;displayUnavailable.Visibility=Visibility.Collapsed;sessionToolbar?.SetDisplays(null,false,null);sessionToolbar?.SetRemoteInputReady(false);sessionToolbar?.SetTextInput(null);}
 }

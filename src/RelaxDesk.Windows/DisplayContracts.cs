@@ -30,12 +30,14 @@ public static class DisplayContracts
             try{input.Inject(new("move",X:65535));throw new InvalidOperationException("Stale input injected");}catch(IOException){Check(sends.Count==2);}
             input.ReleaseAll();Check(sends.Count==3&&input.HeldCount==0&&WindowsInputPlan.IsUp(sends[^1][0]));
         }
+        Check(DisplayDeviceIdentities.StructureSizes.SequenceEqual(new[]{72,64,20,84,420}));
+        var identities=DisplayDeviceIdentities.Read(out int identityStatus);Check(identities.Values.All(value=>value.Length==64&&value.All(char.IsAsciiHexDigit)));
         var before=GraphicsDiagnostics.Resources();var clock=Stopwatch.StartNew();var actual=WindowsDisplays.Enumerate();Check(actual.Length>0);var actualSelection=new WindowsDisplaySelection(actual,null);actualSelection.EnsureCurrent();Check(true);
         double enumerationMs=clock.Elapsed.TotalMilliseconds;clock.Restart();for(int i=0;i<100;i++)actualSelection.EnsureCurrent();double geometryMs=clock.Elapsed.TotalMilliseconds/100;
         Check(actual.Select(d=>d with{Hdr=null}).OrderBy(d=>d.Id).SequenceEqual(WindowsMonitorMetadata.Enumerate().OrderBy(d=>d.Id)));
         Check(GraphicsDiagnostics.Resources().Equals(before));
         try{using var missing=new DxgiCaptureBackend("RelaxDesk-Missing-Output");throw new IOException("Missing output captured");}catch(ExternalException error){Check(error.HResult==unchecked((int)0x887A0002));}
         Check(GraphicsDiagnostics.Resources().Equals(before));
-        Console.WriteLine($"PASS {count} Windows display contracts: real metadata enumeration displays={actual.Length} enum_ms={enumerationMs:F2} geometry_check_mean_ms={geometryMs:F3}; synthetic negative-origin/rotation/DPI/input guards and missing-output resource cleanup; no valid desktop capture, system input or physical monitor acceptance");
+        Console.WriteLine($"PASS {count} Windows display contracts: real metadata enumeration displays={actual.Length} identities={identities.Count} identity_status={identityStatus} enum_ms={enumerationMs:F2} geometry_check_mean_ms={geometryMs:F3}; synthetic negative-origin/rotation/DPI/input guards and missing-output resource cleanup; no valid desktop capture, system input or physical monitor acceptance");
     }
 }

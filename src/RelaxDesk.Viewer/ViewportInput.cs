@@ -21,7 +21,7 @@ public sealed partial class ViewerWindow
     {
         var layout=new Grid();layout.RowDefinitions.Add(new());layout.RowDefinitions.Add(new(){Height=GridLength.Auto});layout.ColumnDefinitions.Add(new());layout.ColumnDefinitions.Add(new(){Width=GridLength.Auto});
         image.Stretch=Stretch.Fill;image.HorizontalAlignment=HorizontalAlignment.Left;image.VerticalAlignment=VerticalAlignment.Top;
-        bitmapPanel.Children.Add(image);videoPanel.Children.Add(bitmapPanel);layout.Children.Add(videoPanel);Grid.SetRow(horizontalPan,1);Grid.SetColumn(verticalPan,1);layout.Children.Add(horizontalPan);layout.Children.Add(verticalPan);renderPanel.Children.Add(layout);
+        bitmapPanel.Children.Add(image);videoPanel.Children.Add(bitmapPanel);videoPanel.Children.Add(displayUnavailable);layout.Children.Add(videoPanel);Grid.SetRow(horizontalPan,1);Grid.SetColumn(verticalPan,1);layout.Children.Add(horizontalPan);layout.Children.Add(verticalPan);renderPanel.Children.Add(layout);
         videoPanel.SizeChanged+=(_,_)=>ViewportBoundsChanged();DpiChanged+=(_,_)=>ViewportBoundsChanged();
         horizontalPan.ValueChanged+=(_,_)=>PanViewport();verticalPan.ValueChanged+=(_,_)=>PanViewport();
     }
