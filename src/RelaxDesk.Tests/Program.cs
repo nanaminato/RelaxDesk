@@ -19,6 +19,7 @@ count += await ConsentChecks.Run();
 count += await SessionAgentChecks.Run();
 count += RecoveryChecks.Run();
 count += WorkerRestartChecks.Run();
+count += await AudioChecks.Run();
 count += DisplayChecks.Run();
 count += DisplayTopologyChecks.Run();
 count += ViewportChecks.Run();

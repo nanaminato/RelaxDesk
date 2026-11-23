@@ -5,6 +5,7 @@ using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using RelaxDesk.Core;
+if(args is ["--audio-device-contracts"]){try{await RelaxDesk.Windows.AudioDeviceContracts.Run().WaitAsync(TimeSpan.FromSeconds(15));}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is [var serviceSetupApplication,"--service-setup-contracts",var serviceSetupOutput]){try{await ServiceSetupSmoke.Run(serviceSetupApplication,serviceSetupOutput);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is [var brokerApplication,"--broker-contracts"]){try{await SessionBrokerSmoke.Run(brokerApplication);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is ["--session-contracts"]){await RelaxDesk.Windows.WindowsSessionContracts.Run();return;}

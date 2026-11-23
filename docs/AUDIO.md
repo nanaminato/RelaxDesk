@@ -1,0 +1,15 @@
+# System audio work in progress
+
+The fixed-format transport and Windows endpoint adapter are implemented; audio is **not yet advertised, authorized or connected by Host/Viewer**. This checkpoint is not an end-to-end audio feature. Next work is the independent pinned TLS ticket, separate Host grant/revoke and Viewer request/mute/volume, worker isolation, bounded device recovery and clock correlation with video. Microphone is optional later work; no microphone device is opened here.
+
+`AudioProtocol` uses 48 kHz stereo signed little-endian PCM16 (192,000 sample bytes/s, 1.536 Mbit/s before TLS/framing). A 40-byte versioned header carries sequence, QPC timestamp in 100ns units, discontinuity and exact frame/payload counts. At most 100ms/19,200 bytes is accepted before allocating a payload. Unknown flags, nonzero reserved fields, malformed sizes, nonpositive sequence and negative timestamps fail closed. This bounded uncompressed LAN baseline avoids adding a codec dependency before measurement.
+
+`AudioJitterBuffer` holds at most 200ms/9,600 sample frames and drops oldest complete packets on overflow. Sequence replay and timestamp regression fail; explicit discontinuity flushes old samples but does not reset sequence. Flush/mute retains replay state. `Gain` applies a finite 0–100% multiplier or silence to owned PCM samples; it does not change system endpoint volume.
+
+`WindowsAudio` uses managed COM interop to WASAPI shared mode, PCM conversion and the default console render endpoint. Capture uses the supported loopback flag on that render endpoint; playback uses a distinct shared render stream. Construction, device query, buffer IO and disposal belong to one STA. The session/ordinary-desktop guard runs before opening or accessing devices. Captured silent buffers become zeros; capture packet bounds, render alignment and endpoint padding are checked. All acquired capture/render buffers and COM references are released on the owning apartment. The caller must check the default endpoint and perform bounded recreation; that coordination is not yet connected at this checkpoint.
+
+Loopback represents the endpoint's system mix and can include other applications. It must be described as such in local consent. No application-isolated or microphone claim is made.
+
+API references: [WASAPI loopback](https://learn.microsoft.com/en-us/windows/win32/coreaudio/loopback-recording), [shared stream initialization](https://learn.microsoft.com/en-us/windows/win32/api/audioclient/nf-audioclient-iaudioclient-initialize), [capture buffer handling](https://learn.microsoft.com/en-us/windows/win32/coreaudio/capturing-a-stream), [render buffer handling](https://learn.microsoft.com/en-us/windows/win32/coreaudio/rendering-a-stream). These establish API contracts, not hardware acceptance.
+
+See [checkpoint evidence](../benchmarks/2026-11-24-audio-foundation-validation.md). Real sound capture/playback, default-device transitions, jitter/A-V sync, LAN behavior and listening quality remain unverified. No package was generated.
