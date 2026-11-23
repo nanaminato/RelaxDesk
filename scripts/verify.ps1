@@ -53,6 +53,10 @@ try {
     if ($LASTEXITCODE) { throw 'Core/TLS checks failed' }
     Run-App $smokeDll --windows-contracts
     if ($LASTEXITCODE) { throw 'Windows contracts failed' }
+    Run-App $smokeDll --session-contracts
+    if ($LASTEXITCODE) { throw 'Windows session contracts failed' }
+    Run-App $smokeDll $hostDll --session-unavailable
+    if ($LASTEXITCODE) { throw 'Windows session shutdown failed' }
     Run-App $smokeDll --display-contracts
     if ($LASTEXITCODE) { throw 'Display topology/input contracts failed' }
     Run-App $smokeDll --viewport-contracts

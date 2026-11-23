@@ -22,6 +22,7 @@ internal static class VideoHostSession
         bool synthetic = backend.StartsWith("test-", StringComparison.Ordinal);
         if (synthetic && !IPAddress.IsLoopback(((IPEndPoint)controlSocket.Client.LocalEndPoint!).Address))
             throw new AuthenticationException("Synthetic video testing is loopback-only");
+        if(!synthetic)WindowsSessionAccess.EnsureAllowed();
         var displaySelection=synthetic?null:new WindowsDisplaySelection(selectedDisplay);
         var displays=hello.DisplayVersion!=0&&(!synthetic||backend is "test-displays" or "test-topology" or "test-topology-init-race")?new HostDisplaySession(displaySelection,synthetic?selectedDisplay:null,hello.DisplayVersion,backend=="test-topology"):null;
         int displayVersion=displays?.Version??0;
@@ -198,12 +199,16 @@ internal static class VideoHostSession
         Task observedSender = Observe(sender, "media-send", failures, session.Token);
         Task observedProducer = Observe(producer, "capture-encode", failures, session.Token);
         Task observedClipboard = Observe(clipboardSender, "clipboard-send", failures, session.Token);
-        Task first = await Task.WhenAny(observedInput, observedSender, observedProducer, observedClipboard);
+        var sessionClock=Stopwatch.StartNew();
+        Task sessionWatch=backend=="test-session-unavailable"?WindowsSessionAccess.Watch(session.Token,()=>new WindowsSessionSnapshot(1,sessionClock.Elapsed<TimeSpan.FromSeconds(2)?0:4,true,"Default","Default")):
+            synthetic?Task.Delay(Timeout.Infinite,session.Token):WindowsSessionAccess.Watch(session.Token);
+        Task observedSession=Observe(sessionWatch,"windows-session",failures,session.Token);
+        Task first = await Task.WhenAny(observedInput, observedSender, observedProducer, observedClipboard,observedSession);
         string worker = failures.First?.Worker ?? (first == observedInput ? "control-read" : first == observedSender ? "media-send" : "capture-encode");
         var failure = failures.First;
         HostSessionLog.Write($"session_end worker={worker} stage={failure?.Stage ?? "shutdown"} completed_frames={failure?.CompletedFrames ?? 0} state={first.Status} error_type={failure?.Error.GetType().Name ?? "none"} hresult=0x{failure?.Error.HResult ?? 0:X8} reason={failure?.Error.Message ?? "worker completed/cancelled"}");
         gate.Revoke();
-        if (stop.IsCancellationRequested)
+        if (stop.IsCancellationRequested || failure?.Error is WindowsSessionUnavailableException)
         {
             // Bounded terminal notice distinguishes local stop from network loss.
             using var terminal = new CancellationTokenSource(TimeSpan.FromSeconds(1));
@@ -219,9 +224,9 @@ internal static class VideoHostSession
         try { if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure.Error).Throw(); await first; }
         finally
         {
-            try { await Task.WhenAll(observedInput, observedSender, observedProducer, observedClipboard); } catch (Exception) { /* Causal failure is reported above; join all workers. */ }
+            try { await Task.WhenAll(observedInput, observedSender, observedProducer, observedClipboard,observedSession); } catch (Exception) { /* Causal failure is reported above; join all workers. */ }
             try { await fileWorker; } catch (Exception error) { HostSessionLog.Write($"file_worker_shutdown error_type={error.GetType().Name} hresult=0x{error.HResult:X8}"); }
-            if(fileResumes is not null&&(stop.IsCancellationRequested||Volatile.Read(ref explicitFileRevocation)!=0))await fileResumes.Clear();
+            if(fileResumes is not null&&(stop.IsCancellationRequested||failure?.Error is WindowsSessionUnavailableException||Volatile.Read(ref explicitFileRevocation)!=0))await fileResumes.Clear();
             gate.Revoke(); try{inputDesktop?.ReleaseAll();}catch(IOException error){HostSessionLog.Write($"input_cleanup_deferred error_type={error.GetType().Name}");}
             try
             {

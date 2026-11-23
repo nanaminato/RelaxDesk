@@ -57,6 +57,25 @@ internal static class ShellVerification
                     if(!window.Host.Running)throw new IOException("Disconnect ended shared listener");
                 }
                 await window.StopSharing();await window.Host.Finished;
+                // The production session watch receives synthetic disconnection, without locking Windows.
+                port=Port();await window.StartSharing("127.0.0.1",port,"test-session-unavailable");await Until(()=>window.Status=="等待连接");
+                using(var lost=new SessionClient())
+                {
+                    var connecting=lost.ConnectByApproval("127.0.0.1",port,timeout.Token);await Until(()=>window.RequestVisible);await window.Decide(true);await connecting;
+                    _=await MediaProtocol.Read(lost.Media,timeout.Token);
+                    if(!ConnectionRecovery.IsExplicitEnd(await SessionControl.Read(lost.Control,timeout.Token)))throw new IOException("Session unavailable did not end authorization");
+                    await Until(()=>window.Status=="等待连接"&&window.DesktopUnavailableVisible);
+                    if(!window.Host.Running)throw new IOException("Session loss stopped persistent listener");
+                }
+                using(var fresh=new SessionClient())
+                {
+                    var connecting=fresh.ConnectByApproval("127.0.0.1",port,timeout.Token);await Until(()=>window.RequestVisible);
+                    if(connecting.IsCompleted||window.DesktopUnavailableVisible)throw new IOException("Session recovery bypassed new consent or retained old notice");
+                    await window.Decide(false);try{await connecting;throw new IOException("Recovery denial ignored");}catch(HostConsentRejectedException){}
+                    await Until(()=>window.Status=="等待连接");
+                }
+                await window.StopSharing();await window.Host.Finished;
+                Console.WriteLine("PASS WPF persistent Host session-unavailable notice, media teardown, listener recovery and fresh consent; injected state only, no real lock/UAC");
                 // Stop while still waiting, without a peer or an approval.
                 port=Port();await window.StartSharing("127.0.0.1",port,"test-hardware");await Until(()=>window.Status=="等待连接");await window.StopSharing();await window.Host.Finished.WaitAsync(TimeSpan.FromSeconds(10));
                 if(window.Host.Snapshot().Any(l=>l.Contains("pairing token:")||l.Contains("fingerprint:")||l.Contains("relaxdesk://")))throw new IOException("Shell diagnostic log exposed credentials");

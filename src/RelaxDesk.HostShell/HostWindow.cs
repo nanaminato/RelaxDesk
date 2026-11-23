@@ -20,7 +20,8 @@ internal sealed partial class HostWindow:Window
     readonly Button revokeClipboard=new(){Content="停止剪贴板同步",Visibility=Visibility.Collapsed};
     readonly TextBox logs=new(){IsReadOnly=true,TextWrapping=TextWrapping.Wrap,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,MaxHeight=180,FontFamily=new("Consolas"),FontSize=11};
     readonly string application;
-    bool closing;
+    bool closing,desktopUnavailable;
+    const string DesktopUnavailableNotice="不支持当前会话或安全桌面控制。请回到原用户的普通桌面后重新连接并授权；Host 继续等待连接。";
     string? displayedSessionId;
     readonly Button disconnectSession=new(){Content="断开本次连接",Visibility=Visibility.Collapsed};
     public HostWindow(string? hostApplication=null)
@@ -61,6 +62,7 @@ internal sealed partial class HostWindow:Window
     internal string ClipboardRequestDescription=>clipboardPermission.Content is TextBlock label?label.Text:clipboardPermission.Content.ToString()??"";
     internal async Task StopClipboard(){string? id=displayedSessionId;if(id is null)return;await Host.RevokeClipboard(id);if(displayedSessionId!=id)return;revokeClipboard.Visibility=Visibility.Collapsed;detail.Text="已停止剪贴板同步；重新开启需要新的连接授权。";}
     internal string Status=>state.Text;
+    internal bool DesktopUnavailableVisible=>desktopUnavailable&&detail.Text==DesktopUnavailableNotice;
     internal async Task StartSharing(string? address=null,int? number=null,string backend="dxgi")
     {
         try{if(address is not null)ip.Text=address;if(number.HasValue)port.Text=number.Value.ToString();if(!int.TryParse(port.Text,out int selected))throw new ArgumentException("端口应为 1–65535");ip.IsEnabled=port.IsEnabled=start.IsEnabled=false;SetFileConfigurationEnabled(false);SetDisplayConfigurationEnabled(false);stop.IsEnabled=true;state.Text="正在启动";await Host.Start(application,ip.Text.Trim(),selected,backend,selectedFileRoot,SelectedDisplay);}
@@ -73,8 +75,9 @@ internal sealed partial class HostWindow:Window
     {
         string kind=change.Kind;string? value=change.Address;
         switch(kind){
-            case "listening":request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=revokeFiles.Visibility=disconnectSession.Visibility=Visibility.Collapsed;displayedSessionId=null;state.Text="等待连接";detail.Text=$"Viewer 可连接 {ip.Text}:{port.Text}，收到请求后由你确认。";break;
-            case "approval-request":displayedSessionId=change.SessionId;disconnectSession.Visibility=Visibility.Visible;peer.Text="请求来源  "+value;request.Visibility=Visibility.Visible;allow.IsEnabled=deny.IsEnabled=true;clipboardPermission.IsChecked=false;clipboardPermission.Content=new TextBlock{Text="允许双向剪贴板："+SessionCapabilities.ClipboardDescription(change.Features??[])+"（读取/替换两端新复制的内容）",TextWrapping=TextWrapping.Wrap};clipboardPermission.Visibility=(change.Features??[]).Any(SessionCapabilities.IsClipboard)?Visibility.Visible:Visibility.Collapsed;ShowFileRequest((change.Features??[]).Contains(SessionCapabilities.FileTransfer));state.Text="等待你的授权";detail.Text="还未共享桌面或开放输入。";break;
+            case "listening":request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=revokeFiles.Visibility=disconnectSession.Visibility=Visibility.Collapsed;displayedSessionId=null;state.Text="等待连接";detail.Text=desktopUnavailable?DesktopUnavailableNotice:$"Viewer 可连接 {ip.Text}:{port.Text}，收到请求后由你确认。";break;
+            case "desktop-unavailable":desktopUnavailable=true;detail.Text=DesktopUnavailableNotice;break;
+            case "approval-request":desktopUnavailable=false;displayedSessionId=change.SessionId;disconnectSession.Visibility=Visibility.Visible;peer.Text="请求来源  "+value;request.Visibility=Visibility.Visible;allow.IsEnabled=deny.IsEnabled=true;clipboardPermission.IsChecked=false;clipboardPermission.Content=new TextBlock{Text="允许双向剪贴板："+SessionCapabilities.ClipboardDescription(change.Features??[])+"（读取/替换两端新复制的内容）",TextWrapping=TextWrapping.Wrap};clipboardPermission.Visibility=(change.Features??[]).Any(SessionCapabilities.IsClipboard)?Visibility.Visible:Visibility.Collapsed;ShowFileRequest((change.Features??[]).Contains(SessionCapabilities.FileTransfer));state.Text="等待你的授权";detail.Text="还未共享桌面或开放输入。";break;
             case "approved":state.Text="正在建立共享";detail.Text="已允许本次连接，正在准备屏幕。";request.Visibility=Visibility.Collapsed;break;
             case "denied":state.Text="已拒绝连接";detail.Text="没有共享桌面。";break;
             case "streaming":state.Text="正在共享";detail.Text="对方可查看并操作当前桌面。你可以随时停止共享。";break;

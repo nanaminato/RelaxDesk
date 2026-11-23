@@ -35,7 +35,7 @@ public sealed class DxgiCaptureBackend : ICaptureBackend
         protected override void Destroy(nint handle) => NativeMethods.rd_capture_destroy(handle);
     }
     readonly Context context;
-    public DxgiCaptureBackend(string? device=null)=>context=new(device);
+    public DxgiCaptureBackend(string? device=null){WindowsSessionAccess.EnsureAllowed();context=new(device);}
     internal nint NativeContext => context.Value;
     public string Name => "dxgi";
     public string ColorStatus { get { NativeMethods.Check(NativeMethods.rd_capture_color_status(context.Value, out var json)); return System.Runtime.InteropServices.Marshal.PtrToStringUTF8(json) ?? "{}"; } }
@@ -46,9 +46,11 @@ public sealed class DxgiCaptureBackend : ICaptureBackend
     }
     public CapturedFrame? Capture(int timeoutMilliseconds = 100)
     {
+        WindowsSessionAccess.EnsureAllowed();
         int hr = NativeMethods.rd_capture_next(context.Value, checked((uint)timeoutMilliseconds), out var info);
         NativeMethods.Check(hr);
         if (hr == 1) return null;
+        WindowsSessionAccess.EnsureAllowed();
         var metadata = new CaptureMetadata(info.Timestamp, info.Accumulated, Blob(0), Blob(1), info.PointerX, info.PointerY,
             info.PointerVisible != 0, info.PointerType, info.PointerWidth, info.PointerHeight, info.PointerPitch,
             info.HotspotX, info.HotspotY, Blob(2));

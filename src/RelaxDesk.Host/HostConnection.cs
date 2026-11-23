@@ -47,6 +47,7 @@ internal static class HostConnection
             }
             return;
         }
+        if (!backend.StartsWith("test-",StringComparison.Ordinal)) WindowsSessionAccess.EnsureAllowed();
         if (shell is not null) ShellBridge.Emit("approved", sessionId: shell.Id);
         if (hello.Kind is "hello-v2" or "request-v2")
         {

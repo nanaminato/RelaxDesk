@@ -31,16 +31,7 @@ public sealed class Desktop : IDisposable
         if (Width <= 0 || Height <= 0 || (long)Width * Height > 8_294_400) throw new InvalidOperationException("Unsupported primary display size");
 
     }
-    [DllImport("user32.dll", SetLastError = true)] static extern nint OpenInputDesktop(uint flags, bool inherit, uint access);
-    [DllImport("user32.dll")] static extern bool CloseDesktop(nint desktop);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool GetUserObjectInformation(nint obj, int index, System.Text.StringBuilder name, uint length, out uint needed);
-    internal static void EnsureInteractiveDesktop()
-    {
-        nint desktop = OpenInputDesktop(0, false, 1);
-        if (desktop == 0) throw new IOException("Interactive desktop unavailable or locked");
-        try { var name = new System.Text.StringBuilder(256); if (!GetUserObjectInformation(desktop, 2, name, 512, out _) || name.ToString() != "Default") throw new IOException("Secure/non-default desktop unsupported"); }
-        finally { CloseDesktop(desktop); }
-    }
+    internal static void EnsureInteractiveDesktop()=>WindowsSessionAccess.EnsureAllowed();
     public byte[] Capture()
     {
         nint previousDpi=SetThreadDpiAwarenessContext(-4);
