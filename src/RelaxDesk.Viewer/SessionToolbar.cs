@@ -13,6 +13,7 @@ namespace RelaxDesk.Viewer;
 internal sealed class SessionToolbar : IDisposable
 {
     readonly Window owner, window;
+    readonly Action? releaseInput;
     readonly StackPanel controls = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
     readonly TextBlock endpoint = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.White, Margin = new(14, 0, 12, 0), MaxWidth = 170, TextTrimming = TextTrimming.CharacterEllipsis };
     readonly Button full;
@@ -39,12 +40,17 @@ internal sealed class SessionToolbar : IDisposable
     internal ContextMenu ShortcutMenu { get; }
     readonly MenuItem clipboard = new() { Header = "剪贴板未授权 / 已关闭", IsEnabled = false };
     internal MenuItem ClipboardAction => clipboard;
+    readonly MenuItem textInput=new(){Header="本机输入法 → 发送已完成的文字",IsEnabled=false};
+    internal MenuItem TextInputAction=>textInput;
+    Action? openTextInput;
+    public void SetTextInput(Action? open){openTextInput=open;textInput.IsEnabled=open is not null;}
     Action? disableClipboard;
     public void SetClipboard(bool enabled, Action? disable)
     { clipboard.Header = enabled ? "停止文本剪贴板同步（重新开启需重新授权）" : "剪贴板未授权 / 已关闭"; clipboard.IsEnabled = enabled; disableClipboard = disable; }
-    public SessionToolbar(Window owner, Action toggle, Action disconnect, Action<RemoteShortcut>? shortcut = null)
+    public SessionToolbar(Window owner, Action toggle, Action disconnect, Action<RemoteShortcut>? shortcut = null,Action? releaseInput=null)
     {
         this.owner = owner;
+        this.releaseInput=releaseInput;
         window = new Window { Owner = owner, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false, ShowActivated = false, Background = Brushes.Transparent, AllowsTransparency = true, Width = 560, Height = 48, MinWidth = 0, MinHeight = 0, Focusable = false };
         RelaxDesk.Ui.ModernTheme.Apply(window);
         full = new Button { Content = "全屏", Focusable = false, Padding = new(14, 6, 14, 6), Margin = new(3) };
@@ -54,6 +60,7 @@ internal sealed class SessionToolbar : IDisposable
         FilesButton=new Button{Content="文件",Focusable=false,Padding=new(12,6,12,6),Margin=new(3),IsEnabled=false,ToolTip="上传、下载与任务队列（需Host授权）"};FilesButton.Click+=(_,_)=>openFiles?.Invoke();
         ShortcutsButton = new Button { Content = "快捷键", Focusable = false, Padding = new(12, 6, 12, 6), Margin = new(3), IsEnabled = shortcut is not null, ToolTip = "发送到远程电脑；仅对已授权会话生效" };
         ShortcutMenu = new ContextMenu();
+        textInput.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;openTextInput?.Invoke();};
         foreach (var (label, action) in new[] {
             ("复制  Ctrl+C", RemoteShortcut.Copy), ("粘贴  Ctrl+V", RemoteShortcut.Paste),
             ("剪切  Ctrl+X", RemoteShortcut.Cut), ("全选  Ctrl+A", RemoteShortcut.SelectAll),
@@ -71,6 +78,7 @@ internal sealed class SessionToolbar : IDisposable
         ShortcutMenu.Items.Add(new Separator());
         ShortcutMenu.Items.Add(new MenuItem { Header = "Ctrl+Alt+End / 安全注意序列：不支持", IsEnabled = false });
         ShortcutMenu.Items.Add(new Separator()); ShortcutMenu.Items.Add(clipboard);
+        ShortcutMenu.Items.Add(textInput);
         clipboard.Click += (_, _) => { ShortcutMenu.IsOpen = false; disableClipboard?.Invoke(); };
         ShortcutsButton.Click += (_, _) => { ShortcutMenu.PlacementTarget = ShortcutsButton; ShortcutMenu.IsOpen = true; Reveal(); };
         controls.Children.Add(endpoint); controls.Children.Add(FilesButton); controls.Children.Add(ShortcutsButton); controls.Children.Add(full); controls.Children.Add(DisconnectButton);
@@ -88,7 +96,7 @@ internal sealed class SessionToolbar : IDisposable
     public void SetFullScreen(bool value) => full.Content = value ? "返回窗口" : "全屏";
     void OwnerChanged(object? sender, EventArgs e) => UpdatePosition();
     void OwnerClosed(object? sender, EventArgs e) => Dispose();
-    void Reveal() { expanded = true; keepUntil = DateTime.UtcNow.AddSeconds(1.5); UpdatePosition(); }
+    void Reveal() { if(!expanded)releaseInput?.Invoke();expanded = true; keepUntil = DateTime.UtcNow.AddSeconds(1.5); UpdatePosition(); }
     void Tick(object? sender, EventArgs e)
     {
         if (disposed) return;

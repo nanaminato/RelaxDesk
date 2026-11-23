@@ -1,3 +1,4 @@
+using RelaxDesk.Core;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -25,12 +26,12 @@ public sealed partial class ViewerWindow
     void FilterBitmapKeyboard(ref MSG message, ref bool handled)
     {
         if (handled || !IsActive || !image.IsVisible || !image.IsKeyboardFocusWithin || session is null || session.IsCancellationRequested || message.hwnd != new WindowInteropHelper(this).Handle) return;
+        if(message.message==0x20E&&inputVersion==2){int delta=(short)((long)message.wParam>>16);if(delta!=0)SendRich(new("wheel",WheelX:delta));handled=true;return;}
         if (message.message is 0x100 or 0x101 or 0x104 or 0x105)
         {
             int code = (int)message.wParam;
             if (code == 0xE5) code = (int)ImmGetVirtualKey(message.hwnd);
-            code = RemoteKeyboardKeys.Resolve(code, message.lParam);
-            if (code is > 0 and < 256 && code != 0xE5) Send(code, message.message is 0x101 or 0x105);
+            if (code is > 0 and < 255 && code != 0xE5) SendRawKey(code,message.lParam,message.message is 0x101 or 0x105);
             handled = true;
         }
         else if (message.message is 0x102 or 0x103 or 0x106 or 0x107 or 0x286) handled = true;

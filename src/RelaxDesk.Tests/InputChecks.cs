@@ -27,6 +27,16 @@ static class InputChecks
         try{InputProtocol.KeyMessage(65,1025,false);throw new IOException("Unbounded repeats");}catch(InvalidDataException){count++;}
         var pressed=new PressedRemoteInputs();foreach(var key in repeats)pressed.Update(key);Check(pressed.Count==1);pressed.Update(new("button",Button:5));Check(pressed.ReleaseButtons() is[{Button:5,Up:true}]);Check(pressed.Count==1);Check(pressed.ReleaseAll() is[{Up:true,RepeatCount:1}]);Check(pressed.Count==0);
         var queue=new OutgoingControlQueue(5);Check(queue.TryWrite(new("input-v2",Input:samples[1])));Check(queue.TryWrite(new("input-v2",Input:new("move",X:9))));Check(queue.Depth==1);
-        Console.WriteLine($"PASS {count} extended input protocol/state contracts; no Windows input");return count;
+        Check(PointerPosition.TryNormalize(0,0,640,360,1920,1080,false,out int nx,out int ny)&&nx==0&&ny==0);
+        Check(PointerPosition.TryNormalize(639,359,640,360,1920,1080,false,out nx,out ny)&&nx==65535&&ny==65535);
+        Check(!PointerPosition.TryNormalize(640,360,640,360,1920,1080,false,out _,out _));
+        Check(!PointerPosition.TryNormalize(100,5,800,600,1920,1080,false,out _,out _));
+        Check(PointerPosition.TryNormalize(0,75,800,600,1920,1080,false,out nx,out ny)&&nx==0&&ny==0);
+        Check(PointerPosition.TryNormalize(799,524,800,600,1920,1080,false,out nx,out ny)&&nx==65535&&ny==65535);
+        Check(PointerPosition.TryNormalize(-10,999,800,600,1920,1080,true,out nx,out ny)&&nx==0&&ny==65535);
+        Check(!PointerPosition.TryNormalize(double.NaN,0,800,600,1920,1080,true,out _,out _));
+        Check(!PointerPosition.TryNormalize(0,0,0,600,1920,1080,false,out _,out _));
+        Check(!PointerPosition.TryNormalize(0,0,800,600,0,1080,false,out _,out _));
+        Console.WriteLine($"PASS {count} extended input protocol/state/letterbox contracts; no Windows input");return count;
     }
 }

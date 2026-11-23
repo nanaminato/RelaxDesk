@@ -43,9 +43,11 @@ internal static class ToolbarVerification
                 window.WindowState = WindowState.Normal; window.Activate(); await Task.Delay(250);
                 if (!bar.Surface.IsVisible) throw new Exception("Toolbar did not recover after restore");
                 var shortcuts = new List<RelaxDesk.Core.RemoteShortcut>();
-                using (var testBar = new SessionToolbar(window, () => { }, () => { }, shortcuts.Add))
+                int releaseRequests=0;
+                using (var testBar = new SessionToolbar(window, () => { }, () => { }, shortcuts.Add,()=>releaseRequests++))
                 {
                     testBar.SetSession("owned shortcut test", false);
+                    if(releaseRequests!=1||testBar.TextInputAction.IsEnabled)throw new Exception("Toolbar reveal must release input; text commit requires negotiation");
                     testBar.ShortcutsButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(100);
                     if (!testBar.ShortcutMenu.IsOpen) throw new Exception("Shortcut menu did not open");
                     foreach (var item in testBar.ShortcutMenu.Items.OfType<MenuItem>().Where(item => item.IsEnabled))
@@ -57,6 +59,9 @@ internal static class ToolbarVerification
                     testBar.ClipboardAction.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
                     testBar.SetClipboard(false, null);
                     if (stopped != 1 || testBar.ClipboardAction.IsEnabled) throw new Exception("Clipboard toolbar stop action failed");
+                    int textOpened=0;testBar.SetTextInput(()=>textOpened++);
+                    testBar.TextInputAction.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));testBar.SetTextInput(null);
+                    if(textOpened!=1||testBar.TextInputAction.IsEnabled)throw new Exception("Negotiated text action not reset");
                 }
                 child.Dispose(); child = null;
                 bar.DisconnectButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

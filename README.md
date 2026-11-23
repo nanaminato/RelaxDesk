@@ -6,7 +6,7 @@ Host now returns to Listening after each separately authorized session. HostShel
 
 File-transfer UI checkpoint: [scoped directory + third pinned TLS stream](docs/FILE-TRANSFER.md), Host folder consent, Viewer directory browser, recursive queue, confirmed drag-drop and live revoke are implemented. [Automated evidence](benchmarks/2026-11-23-file-ui-validation.md). Cross-session resume is implemented in memory; physical Home acceptance remains pending; no new package until the final milestone.
 
-Current development source adds [independently authorized bidirectional text clipboard](docs/CLIPBOARD.md). Integration is verified with isolated clipboard providers; real Home/Windows clipboard validation is pending. Packaging is deferred until the final milestone at the owner's request; the existing 0.4.2 ZIP predates clipboard support.
+Current development source adds [independently authorized bidirectional text clipboard](docs/CLIPBOARD.md) and [rich keyboard/pointer input with explicit local-IME text submission](docs/INPUT-PROTOCOL.md). Protocol, native-plan and owned-WPF tests do not establish real Home/remote application or IME acceptance. Packaging is deferred until the final milestone at the owner's request; the existing 0.4.2 ZIP predates these features.
 
 2026-11-23 continuation: bounded capture recovery/control liveness, remote shortcut menu and pointer-motion coalescing are delivered as a self-contained 0.4.2 acceptance slice. See [product readiness](docs/PRODUCT-READINESS.md) and [exact build/test evidence](benchmarks/2026-11-23-office-readiness.md). This historical package predates clipboard, file and reconnect development; physical Home acceptance remains open.
 

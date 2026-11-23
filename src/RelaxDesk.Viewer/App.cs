@@ -35,7 +35,8 @@ public sealed class App : Application
         try
         {
             var app = new App();
-            if (args is ["--hwnd-contracts"]) HwndLifecycleVerification.Run(app);
+            if(args is ["--input-ui-contracts"])ViewerWindow.VerifyInputUi(app);
+            else if (args is ["--hwnd-contracts"]) HwndLifecycleVerification.Run(app);
             else if (args is ["--toolbar-contracts"]) ToolbarVerification.Run(app);
             else if (args is ["--keyboard-contracts"]) KeyboardFocusVerification.Run(app);
             else if (args is ["--ui-contracts"]) ViewerUiVerification.Run(app, null);
@@ -94,18 +95,12 @@ public sealed partial class ViewerWindow : Window
         };
         disconnect.Click += (_, _) => { StopLocalPreview(); StopConnection(); };
         Closed += (_, _) => { StopLocalPreview(); StopConnection(); };
-        image.MouseMove += (_, e) => { if (image.Source is not BitmapSource bitmap) return; var p = e.GetPosition(image); double scale = Math.Min(image.ActualWidth / bitmap.PixelWidth, image.ActualHeight / bitmap.PixelHeight); double x = (p.X - (image.ActualWidth - bitmap.PixelWidth * scale) / 2) / (bitmap.PixelWidth * scale); double y = (p.Y - (image.ActualHeight - bitmap.PixelHeight * scale) / 2) / (bitmap.PixelHeight * scale); if (x >= 0 && x <= 1 && y >= 0 && y <= 1) Send(0, false, (int)(x * 65535), (int)(y * 65535)); };
-        image.MouseDown += (_, e) =>
-        {
-            image.Focus();
-            Mouse.Capture(image); if (e.ChangedButton is MouseButton.Left or MouseButton.Right) Send(e.ChangedButton == MouseButton.Left ? 256 : 257, false); e.Handled = true;
-        };
-        image.MouseUp += (_, e) => { if (e.LeftButton == MouseButtonState.Released && e.RightButton == MouseButtonState.Released) Mouse.Capture(null); if (e.ChangedButton is MouseButton.Left or MouseButton.Right) Send(e.ChangedButton == MouseButton.Left ? 256 : 257, true); e.Handled = true; };
-        image.MouseWheel += (_, e) => { Send(e.Delta > 0 ? 258 : 259, false); e.Handled = true; };
+        ConfigurePointerInput();
         image.KeyDown += (_, e) => { Send(KeyInterop.VirtualKeyFromKey(e.Key == Key.System ? e.SystemKey : e.Key), false); e.Handled = true; };
         image.KeyUp += (_, e) => { Send(KeyInterop.VirtualKeyFromKey(e.Key == Key.System ? e.SystemKey : e.Key), true); e.Handled = true; };
         image.LostKeyboardFocus += (_, _) => ReleaseHeldInputs();
         Deactivated += (_, _) => ReleaseHeldInputs();
+        StateChanged+=(_,_)=>{if(WindowState==WindowState.Minimized)ReleaseHeldInputs();};
         Closing += async (_, e) =>
         {
             if (session is null && connectionRun is null) return;
@@ -122,13 +117,15 @@ public sealed partial class ViewerWindow : Window
     }
     void Send(int code, bool up, int x = 0, int y = 0)
     {
-        if (smoke is not null || session is null || session.IsCancellationRequested) return;
+        if (smoke is not null || !inputAuthorized || session is null || session.IsCancellationRequested) return;
+        if(inputVersion==2){SendRich(code switch{0=>new("move",X:x,Y:y),256=>new("button",Button:1,Up:up),257=>new("button",Button:2,Up:up),258=>new("wheel",WheelY:120),259=>new("wheel",WheelY:-120),_=>new("key",VirtualKey:code,Up:up)});return;}
         if (!outgoing.Writer.TryWrite(new Packet("input", ++sequence, X: x, Y: y, Code: code, Up: up))) { session.Cancel(); return; }
         heldInputs.Update(code, up);
     }
-    void ReleaseMouseButtons() { foreach (int code in heldInputs.ReleaseButtons()) Send(code, true); }
+    void ReleaseMouseButtons() { foreach(var input in richHeld.ReleaseButtons())SendRich(input); foreach (int code in heldInputs.ReleaseButtons()) Send(code, true); }
     void ReleaseHeldInputs()
     {
+        foreach(var input in richHeld.ReleaseAll())SendRich(input);
         foreach (int code in heldInputs.ReleaseAll()) Send(code, true);
         Mouse.Capture(null); nativeView?.ReleaseInputCapture();
     }
@@ -159,7 +156,7 @@ public sealed partial class ViewerWindow : Window
     }
     async Task<AttemptResult> ConnectVideoAttempt(ConnectionTarget target, string? previousPin, CancellationToken lifetime, Action onConnected)
     {
-        StopLocalPreview(); connectionCard.IsEnabled = false; disconnect.IsEnabled = true; connect.IsEnabled = false; using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime); session = cancellation; sequence = 0;
+        StopLocalPreview(); connectionCard.IsEnabled = false; disconnect.IsEnabled = true; connect.IsEnabled = false; using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime); session = cancellation; sequence = 0; ResetInputState();
         ++connectionGeneration; Exception? attemptError=null; bool established=false,restoreFullScreen=target.FullScreen; string[] retryFeatures=target.Features;long connectedAt=0;bool fileTransportInterrupted=false;
         while (outgoing.Reader.TryRead(out _)) { }
         using var connection = new SessionClient { RequestedFeatures = target.Features }; using var abort = cancellation.Token.Register(connection.Dispose);
@@ -216,7 +213,7 @@ public sealed partial class ViewerWindow : Window
             }
             established=true;connectedAt=Stopwatch.GetTimestamp();onConnected();
             token.Clear();
-            var permissionGate = new AccessGate(); permissionGate.Approve(connection.Features); sessionPermissions = permissionGate;
+            var permissionGate = new AccessGate(); permissionGate.Approve(connection.Features); sessionPermissions = permissionGate; inputVersion=connection.InputVersion;inputAuthorized=true;
             await StartFileSession(connection,cancellation.Token);
             if (permissionGate.Allows(SessionCapabilities.ClipboardText))
                 clipboard = new ClipboardSynchronizer(() => new WindowsTextClipboard(), permissionGate, QueueClipboardUpdate, cancellation.Token,
@@ -237,7 +234,7 @@ public sealed partial class ViewerWindow : Window
         {
             try
             {
-                nativeView = new() { Input = Send, InputFocusLost = ReleaseHeldInputs, InputCaptureLost = ReleaseMouseButtons, RenderInvalidated = () => repaintSignal.Set() }; renderPanel.Children.Add(nativeView); renderPanel.UpdateLayout();
+                nativeView = new() { Input = Send, RichInput = inputVersion==2?SendRich:null, InputBacklogExceeded = ()=>cancellation.Cancel(), InputFocusLost = ReleaseHeldInputs, InputCaptureLost = ReleaseMouseButtons, RenderInvalidated = () => repaintSignal.Set() }; renderPanel.Children.Add(nativeView); renderPanel.UpdateLayout();
                 nativeView.SetFilesDrop(fileQueue?.Enabled==true?FilesDropped:null);
                 hwnd = nativeView.Handle; if (hwnd == 0) throw new InvalidOperationException("Render child HWND not available");
                 image.Visibility = Visibility.Collapsed;
@@ -392,7 +389,7 @@ public sealed partial class ViewerWindow : Window
         catch (Exception e) { attemptError=e; if (smoke is null) ViewerSessionLog.Record("connection-error", e); status.Text = "连接已断开：" + e.Message + "。请保留 Host 的 session_end 日志。"; }
         finally
         {
-            heartbeat?.Stop(); cancellation.Cancel(); CompositionTarget.Rendering -= Rendering; ReleaseHeldInputs(); cpu.Clear(); image.Visibility = Visibility.Visible;
+            heartbeat?.Stop(); cancellation.Cancel(); ResetInputState(); CompositionTarget.Rendering -= Rendering; ReleaseHeldInputs(); cpu.Clear(); image.Visibility = Visibility.Visible;
             restoreFullScreen=fullScreen;
             if(established)retryFeatures=connection.Features.Where(feature=>sessionPermissions?.Allows(feature)==true||feature==SessionCapabilities.FileTransfer&&fileTransportInterrupted&&!filePermissionStoppedByUser).ToArray();
             bool recoverFiles=attemptError is not null&&ConnectionRecovery.IsTransient(attemptError)&&connectionRun?.IsCancellationRequested==false&&retryFeatures.Contains(SessionCapabilities.FileTransfer);
@@ -417,7 +414,7 @@ public sealed partial class ViewerWindow : Window
     }
     async Task Connect()
     {
-        StopLocalPreview(); connectionCard.IsEnabled = false; disconnect.IsEnabled = true; connect.IsEnabled = false; using var cancellation = new CancellationTokenSource(); session = cancellation; sequence = 0;
+        StopLocalPreview(); connectionCard.IsEnabled = false; disconnect.IsEnabled = true; connect.IsEnabled = false; using var cancellation = new CancellationTokenSource(); session = cancellation; sequence = 0; ResetInputState();
         connectionEnded = new(TaskCreationOptions.RunContinuationsAsynchronously);
         while (outgoing.Reader.TryRead(out _)) { }
         try
@@ -430,6 +427,7 @@ public sealed partial class ViewerWindow : Window
             await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = "RelaxDesk", EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, cancellation.Token);
             await Wire.Write(tls, new Packet("hello-v1", Text: token.Password), cancellation.Token); token.Clear(); status.Text = "Waiting for host approval";
             if ((await Wire.Read(tls, cancellation.Token)).Kind != "approved-v1") throw new AuthenticationException("Host did not approve");
+            inputAuthorized=true;
             ShowConnectedView(true);
             var writer = Task.Run(async () => { try { await foreach (var p in outgoing.Reader.ReadAllAsync(cancellation.Token)) await Wire.Write(tls, p, cancellation.Token); } finally { cancellation.Cancel(); } });
             try
@@ -447,6 +445,6 @@ public sealed partial class ViewerWindow : Window
             finally { cancellation.Cancel(); client.Close(); try { await writer; } catch (Exception e) when (e is IOException or OperationCanceledException or ObjectDisposedException) { } }
         }
         catch (Exception e) { status.Text = $"Disconnected: {e.Message}"; }
-        finally { ReleaseHeldInputs(); session = null; image.Source = null; connect.IsEnabled = true; connectionCard.IsEnabled = true; disconnect.IsEnabled = false; ShowConnectedView(false); connectionEnded.TrySetResult(); }
+        finally { ReleaseHeldInputs(); ResetInputState(); session = null; image.Source = null; connect.IsEnabled = true; connectionCard.IsEnabled = true; disconnect.IsEnabled = false; ShowConnectedView(false); connectionEnded.TrySetResult(); }
     }
 }

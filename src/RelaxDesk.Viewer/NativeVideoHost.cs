@@ -2,11 +2,14 @@ using System.Runtime.InteropServices;
 using System.Windows.Interop;
 using System.Windows.Input;
 using RelaxDesk.Windows;
+using RelaxDesk.Core;
 namespace RelaxDesk.Viewer;
 
 public sealed class NativeVideoHost : HwndHost
 {
     public Action<int, bool, int, int>? Input;
+    public Action<RemoteInput>? RichInput;
+    public Action? InputBacklogExceeded;
     public Action? InputFocusLost;
     public Action? InputCaptureLost;
     public Action? RenderInvalidated;
@@ -56,19 +59,59 @@ public sealed class NativeVideoHost : HwndHost
         keyboardOwned = GetFocus() == Handle;
     }
     internal void FocusInput() => FocusRemoteKeyboard();
+    readonly HashSet<int> pointerButtons=[];
+    [StructLayout(LayoutKind.Sequential)] struct Point { public int X,Y; }
+    [DllImport("user32.dll")] static extern bool ScreenToClient(nint hwnd,ref Point point);
+    bool SendRichPosition(nint hwnd,nint packed,bool dragging,bool screen=false)
+    {
+        var point=new Point{X=(short)((long)packed&65535),Y=(short)((long)packed>>16)};
+        if(screen&&!ScreenToClient(hwnd,ref point))return false;
+        if(!GetClientRect(hwnd,out var rect)||!PointerPosition.TryNormalize(point.X,point.Y,rect.Right,rect.Bottom,Volatile.Read(ref videoWidth),Volatile.Read(ref videoHeight),dragging,out int x,out int y))return false;
+        RichInput?.Invoke(new("move",X:x,Y:y));return true;
+    }
+    bool RouteRichPointer(nint hwnd,int message,nint wParam,nint lParam)
+    {
+        if(message is <0x200 or >0x20E)return false;
+        if(GetForegroundWindow()!=GetAncestor(hwnd,2))return true;
+        if(message==0x200){SendRichPosition(hwnd,lParam,GetCapture()==hwnd&&pointerButtons.Count>0);return true;}
+        if(message is 0x20A or 0x20E)
+        {
+            if(GetFocus()!=hwnd||!SendRichPosition(hwnd,lParam,false,true))return true;
+            int delta=(short)((long)wParam>>16);if(delta!=0)RichInput?.Invoke(message==0x20A?new("wheel",WheelY:delta):new("wheel",WheelX:delta));return true;
+        }
+        int button=message switch{0x201 or 0x202 or 0x203=>1,0x204 or 0x205 or 0x206=>2,0x207 or 0x208 or 0x209=>3,0x20B or 0x20C or 0x20D=>3+(int)(((long)wParam>>16)&65535),_=>0};
+        if(button is <1 or >5)return true;
+        bool up=message is 0x202 or 0x205 or 0x208 or 0x20C;
+        if(up)
+        {
+            if(!pointerButtons.Remove(button))return true;
+            SendRichPosition(hwnd,lParam,true);RichInput?.Invoke(new("button",Button:button,Up:true));
+            if(pointerButtons.Count==0&&GetCapture()==hwnd)ReleaseCapture();
+        }
+        else
+        {
+            if(!SendRichPosition(hwnd,lParam,false))return true;
+            FocusRemoteKeyboard();SetCapture(hwnd);pointerButtons.Add(button);RichInput?.Invoke(new("button",Button:button));
+        }
+        return true;
+    }
     protected override bool TabIntoCore(TraversalRequest request) { SetFocus(Handle); keyboardOwned = GetFocus() == Handle; return keyboardOwned; }
     protected override bool TranslateAcceleratorCore(ref MSG message, ModifierKeys modifiers) => RouteKeyboard(message) || base.TranslateAcceleratorCore(ref message, modifiers);
     void FilterKeyboard(ref MSG message, ref bool handled) { if (!handled && RouteKeyboard(message)) handled = true; }
     bool RouteKeyboard(MSG message)
     {
         nint root = Handle == 0 ? 0 : GetAncestor(Handle, 2);
-        if (Input is null || !keyboardOwned || Handle == 0 || GetFocus() != Handle || GetForegroundWindow() != root || (message.hwnd != Handle && message.hwnd != root)) return false;
+        if (Input is null && RichInput is null || !keyboardOwned || Handle == 0 || GetFocus() != Handle || GetForegroundWindow() != root || (message.hwnd != Handle && message.hwnd != root)) return false;
         if (message.message is 0x100 or 0x101 or 0x104 or 0x105)
         {
             int key = (int)message.wParam;
             if (key == 0xE5) key = (int)ImmGetVirtualKey(Handle);
-            key = RemoteKeyboardKeys.Resolve(key, message.lParam);
-            if (key is > 0 and < 256 && key != 0xE5) Input.Invoke(key, message.message is 0x101 or 0x105, 0, 0);
+            if(RichInput is not null)
+            {
+                try{foreach(var input in InputProtocol.KeyMessage(key,(long)message.lParam,message.message is 0x101 or 0x105))RichInput(input);}
+                catch(System.IO.InvalidDataException){InputBacklogExceeded?.Invoke();}
+            }
+            else{key=RemoteKeyboardKeys.Resolve(key,message.lParam);if(key is >0 and <255&&key!=0xE5)Input?.Invoke(key,message.message is 0x101 or 0x105,0,0);}
             return true; // Never also translate this into local text/accelerators.
         }
         return message.message is 0x102 or 0x103 or 0x106 or 0x107 or 0x286;
@@ -95,8 +138,9 @@ public sealed class NativeVideoHost : HwndHost
         const int MouseMove = 0x200, LeftDown = 0x201, LeftUp = 0x202, RightDown = 0x204, RightUp = 0x205, Wheel = 0x20A;
         if (message == 0x8) { keyboardOwned = false; InputFocusLost?.Invoke(); }
         if (message == 0x7) keyboardOwned = true;
-        if (message == 0x215) InputCaptureLost?.Invoke();
+        if (message == 0x215) { pointerButtons.Clear();InputCaptureLost?.Invoke(); }
         if (message is 0x5 or 0xF or 0x18 or 0x2E0) RenderInvalidated?.Invoke();
+        if(RichInput is not null&&RouteRichPointer(hwnd,message,wParam,lParam)){handled=true;return message is 0x20B or 0x20C or 0x20D?1:0;}
         if (message == MouseMove)
         {
             int width = Volatile.Read(ref videoWidth), height = Volatile.Read(ref videoHeight);

@@ -66,6 +66,22 @@ internal static class KeyboardFocusVerification
                 Check(local.Text=="local unchanged","Remote keystrokes must not edit local textbox");
                 var character=new MSG { hwnd=viewport.Handle,message=0x102,wParam='中' };
                 int count=packets.Count;Check(ComponentDispatcher.RaiseThreadMessage(ref character)&&packets.Count==count,"Local char must be consumed without duplicate text forwarding");
+                var rich=new List<RemoteInput>();viewport.RichInput=rich.Add;viewport.SetVideoSize(640,360);
+                var raw=new MSG{hwnd=viewport.Handle,message=0x100,wParam=0x11,lParam=(nint)((29L<<16)|(1L<<24)|(1L<<30)|65)};
+                Check(ComponentDispatcher.RaiseThreadMessage(ref raw),"Rich raw key consumed");
+                Check(rich.Count==3&&rich.All(key=>key is{VirtualKey:0xA3,ScanCode:29,Extended:true,Repeat:true})&&rich.Sum(key=>key.RepeatCount)==65,"Rich scan/extended/repeat metadata preserved exactly once");
+                nint point=(nint)((100<<16)|100);
+                foreach(var (down,up,parameter,button) in new[]{(0x201,0x202,0,1),(0x204,0x205,0,2),(0x207,0x208,0,3),(0x20B,0x20C,1<<16,4),(0x20B,0x20C,2<<16,5)})
+                {
+                    int before=rich.Count;SendMessage(viewport.Handle,down,parameter,point);
+                    Check(rich.Count==before+2&&rich[^2].Kind=="move"&&rich[^1] is{Kind:"button",Up:false}&&rich[^1].Button==button,"Pointer position precedes each button down");
+                    SendMessage(viewport.Handle,up,parameter,point);Check(rich[^1] is{Kind:"button",Up:true}&&rich[^1].Button==button,"All five buttons release");
+                }
+                var screen=viewport.PointToScreen(new Point(100,100));nint screenPoint=(nint)(((long)(ushort)(short)screen.Y<<16)|(ushort)(short)screen.X);
+                SendMessage(viewport.Handle,0x20A,(nint)(17<<16),screenPoint);Check(rich[^1] is{Kind:"wheel",WheelY:17},"Precision vertical delta");
+                SendMessage(viewport.Handle,0x20E,(nint)(-7<<16),screenPoint);Check(rich[^1] is{Kind:"wheel",WheelX:-7},"Precision horizontal delta");
+                local.Focus();int richCount=rich.Count;_ = ComponentDispatcher.RaiseThreadMessage(ref raw);Check(rich.Count==richCount,"Rich native keys rejected outside native focus");
+                viewport.RichInput=null;viewport.FocusInput();
                 Key(0x11);local.Focus();
                 Check(packets[^1].Code==0xA2&&packets[^1].Up,"Focus loss releases held modifier");
                 var localKey=new MSG { hwnd=new WindowInteropHelper(window).Handle,message=0x100,wParam=0x41 };

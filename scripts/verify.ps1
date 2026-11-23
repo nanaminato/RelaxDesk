@@ -64,6 +64,8 @@ try {
         if ($LASTEXITCODE) { throw "Security smoke failed: $mode" }
     }
     if ($Wpf) {
+        Run-App $viewer --input-ui-contracts
+        if ($LASTEXITCODE) { throw 'Viewer input/text composition contracts failed' }
         $shell = Join-Path $root 'src/RelaxDesk.HostShell/bin/Release/net11.0-windows/RelaxDesk.HostShell.dll'
         if ($ArtifactsDirectory -and !$PackageRoot) { $shell = Join-Path $artifacts 'bin/RelaxDesk.HostShell/release/RelaxDesk.HostShell.dll' }
         if ($PackageRoot) { $shell = Join-Path $root 'HostUi/RelaxDesk.HostShell.exe' }

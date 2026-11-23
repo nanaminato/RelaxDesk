@@ -73,9 +73,10 @@ public sealed partial class ViewerWindow
         if (connected)
         {
             sessionToolbar ??= new SessionToolbar(this, ToggleFullScreen, () => disconnect.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)),
-                session is null ? null : SendShortcut);
+                session is null ? null : SendShortcut,ReleaseHeldInputs);
             sessionToolbar.SetSession(host.Text, fullScreen);
             sessionToolbar.SetClipboard(sessionPermissions?.Allows(SessionCapabilities.ClipboardText) == true, DisableClipboard);
+            sessionToolbar.SetTextInput(inputAuthorized&&inputVersion==2?OpenTextInput:null);
             RefreshFileToolbar();
         }
         else
