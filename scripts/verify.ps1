@@ -122,6 +122,8 @@ try {
         if($LASTEXITCODE){throw 'Viewer audio session/UI failed'}
         Run-App $viewer --history-contracts $hostDll (Join-Path $root 'build/history-wpf-verification')
         if($LASTEXITCODE){throw 'Viewer history privacy/session checks failed'}
+        Run-App $viewer --statistics-contracts $hostDll (Join-Path $root 'build/statistics-wpf-verification')
+        if($LASTEXITCODE){throw 'Viewer live statistics checks failed'}
     }
     if ($Graphics) {
         & $probe --viewport-render-contracts

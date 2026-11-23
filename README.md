@@ -2,6 +2,8 @@
 
 Source now includes [independently authorized system audio](docs/AUDIO.md): separate pinned TLS, WASAPI output mix/playback, volume/mute/revoke, bounded device recovery and video-correlated scheduling. Production WPF/TLS tests use synthetic endpoints; real Home sound quality/A-V sync remain pending. The existing distributed ZIP predates this feature; final unified packaging remains deferred.
 
+Viewer source also includes [IP/port-only recent connections](docs/CONNECTION-HISTORY.md) and an explicitly opened [live statistics panel](docs/LIVE-STATISTICS.md). Statistics distinguish application bytes, control RTT and processing/API timings from physical end-to-end measurements. These additions are not in the historical distributed ZIP.
+
 Scoped [file task and byte resume](docs/FILE-RESUME.md) is now implemented: fresh Host authorization, fixed identity/directory scope, explicit continue/discard, five-minute tickets, SHA-256 and bounded partial retention. Actual WPF/TLS directory recovery and real non-sparse files above 1GiB pass [recorded checks](benchmarks/2026-11-23-file-resume-validation.md). Physical Home/network/input acceptance remains pending; no per-slice package.
 
 Host now returns to Listening after each separately authorized session. HostShell distinguishes session disconnect from global stop; [lifecycle and security contract](docs/SESSION-LIFECYCLE.md). Viewer now reconnects with bounded backoff, the original certificate pin and fresh Host consent; revoked optional features and old input are not replayed. File tasks can now resume under a new grant and explicit confirmation. No package is generated for this slice.

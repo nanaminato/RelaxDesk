@@ -69,6 +69,10 @@ internal sealed class SessionToolbar : IDisposable
     }
     readonly MenuItem clipboard = new() { Header = "剪贴板未授权 / 已关闭", IsEnabled = false };
     readonly MenuItem audio=new(){Header="声音未授权 / 已关闭",IsEnabled=false};
+    readonly MenuItem statistics=new(){Header="连接统计（只读）",IsEnabled=false};
+    internal MenuItem StatisticsAction=>statistics;
+    Action? openStatistics;
+    public void SetStatistics(Action? open){openStatistics=open;statistics.IsEnabled=open is not null;}
     internal MenuItem AudioAction=>audio;
     public void SetAudio(bool enabled,double volume,bool muted,Action<double,bool> adjust,Action stop)
     {
@@ -125,6 +129,7 @@ internal sealed class SessionToolbar : IDisposable
         ShortcutMenu.Items.Add(displays);
         ShortcutMenu.Items.Add(zoom);
         ShortcutMenu.Items.Add(audio);
+        ShortcutMenu.Items.Add(statistics);statistics.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;openStatistics?.Invoke();};
         clipboard.Click += (_, _) => { ShortcutMenu.IsOpen = false; disableClipboard?.Invoke(); };
         ShortcutsButton.Click += (_, _) => { ShortcutMenu.PlacementTarget = ShortcutsButton; ShortcutMenu.IsOpen = true; Reveal(); };
         controls.Children.Add(endpoint); controls.Children.Add(FilesButton); controls.Children.Add(ShortcutsButton); controls.Children.Add(full); controls.Children.Add(DisconnectButton);
