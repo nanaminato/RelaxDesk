@@ -30,7 +30,10 @@ internal static class FileProtocolChecks
         try{await FileDataProtocol.Read(new MemoryStream(header),default);throw new Exception("Oversize file data accepted");}catch(InvalidDataException){count++;}
         Check(SessionCapabilities.Grant([SessionCapabilities.FileTransfer],false,false).Length==0);
         Check(SessionCapabilities.Grant([SessionCapabilities.FileTransfer],false,true) is [SessionCapabilities.FileTransfer]);
-        var gate=new AccessGate();gate.Approve([SessionCapabilities.FileTransfer]);Check(gate.Allows(SessionCapabilities.FileTransfer)&&!gate.Allows(SessionCapabilities.ClipboardText));gate.Revoke();Check(!gate.Allows(SessionCapabilities.FileTransfer));
+        var gate=new AccessGate();gate.Approve([SessionCapabilities.FileTransfer]);Check(gate.Allows(SessionCapabilities.FileTransfer)&&!gate.Allows(SessionCapabilities.ClipboardText));
+        Check(!gate.AcceptControl(new("file-state-v2",1,Code:1)));Check(!gate.AcceptControl(new("file-state-v2",1,Features:[SessionCapabilities.ClipboardText])));
+        Check(gate.AcceptControl(new("file-state-v2",1)));gate.RevokeFeature(SessionCapabilities.FileTransfer);Check(gate.AcceptControl(new("file-state-v2",2)));
+        Check(gate.Accept(new("input",3,Code:65)));gate.Revoke();Check(!gate.Allows(SessionCapabilities.FileTransfer));Check(!gate.AcceptControl(new("file-state-v2",4)));
         return count;
     }
 }

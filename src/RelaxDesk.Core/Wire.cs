@@ -36,6 +36,7 @@ public sealed class AccessGate
     readonly HashSet<string> originalFeatures = [];
     public bool Approved { get { lock (sync) return approved; } }
     private long sequence;
+    static bool ValidStop(Packet packet)=>packet.Code==0&&!packet.Up&&packet.Text is null&&packet.Data is null&&packet.Features is null&&packet.Capabilities is null&&packet.Origin is null&&packet.Revision==0&&packet.DataTicket is null&&packet.X==0&&packet.Y==0&&packet.Width==0&&packet.Height==0&&packet.CaptureMs==0&&packet.EncodeMs==0;
     public void Approve(IEnumerable<string>? grantedFeatures = null)
     {
         var grants = SessionCapabilities.Validate(grantedFeatures?.ToArray());
@@ -57,10 +58,15 @@ public sealed class AccessGate
         lock (sync)
         {
             if (p.Kind == "input") return Accept(p);
+            if (p.Kind == "file-state-v2")
+            {
+                if (!approved || p.Sequence <= sequence || !originalFeatures.Contains(SessionCapabilities.FileTransfer) || !ValidStop(p)) return false;
+                sequence = p.Sequence; return true;
+            }
             if (p.Kind is "clipboard-text-v2" or "clipboard-state-v2")
             {
                 if (!approved || p.Sequence <= sequence || !(p.Kind == "clipboard-state-v2" ? originalFeatures : features).Contains(SessionCapabilities.ClipboardText)) return false;
-                if (p.Kind == "clipboard-text-v2" ? !ClipboardTextProtocol.IsValid(p) : p.Code != 0 || p.Text is not null || p.Data is not null) return false;
+                if (p.Kind == "clipboard-text-v2" ? !ClipboardTextProtocol.IsValid(p) : !ValidStop(p)) return false;
                 sequence = p.Sequence; return true;
             }
             if (!approved || p.Sequence <= sequence || p.Kind is not ("keyframe-v2" or "ping-v2")) return false;

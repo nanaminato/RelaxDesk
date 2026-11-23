@@ -32,6 +32,9 @@ internal sealed class SessionToolbar : IDisposable
     public Window Surface => window;
     internal Button FullScreenButton => full;
     internal Button DisconnectButton { get; }
+    internal Button FilesButton {get;}
+    Action? openFiles;
+    public void SetFiles(Action? open){openFiles=open;FilesButton.IsEnabled=open is not null;}
     internal Button ShortcutsButton { get; }
     internal ContextMenu ShortcutMenu { get; }
     readonly MenuItem clipboard = new() { Header = "剪贴板未授权 / 已关闭", IsEnabled = false };
@@ -42,12 +45,13 @@ internal sealed class SessionToolbar : IDisposable
     public SessionToolbar(Window owner, Action toggle, Action disconnect, Action<RemoteShortcut>? shortcut = null)
     {
         this.owner = owner;
-        window = new Window { Owner = owner, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false, ShowActivated = false, Background = Brushes.Transparent, AllowsTransparency = true, Width = 480, Height = 48, MinWidth = 0, MinHeight = 0, Focusable = false };
+        window = new Window { Owner = owner, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false, ShowActivated = false, Background = Brushes.Transparent, AllowsTransparency = true, Width = 560, Height = 48, MinWidth = 0, MinHeight = 0, Focusable = false };
         RelaxDesk.Ui.ModernTheme.Apply(window);
         full = new Button { Content = "全屏", Focusable = false, Padding = new(14, 6, 14, 6), Margin = new(3) };
         DisconnectButton = new Button { Content = "断开", Focusable = false, Style = (Style)window.Resources["DangerButton"], Padding = new(14, 6, 14, 6), Margin = new(3) };
         full.Click += (_, _) => { toggle(); Reveal(); };
         DisconnectButton.Click += (_, _) => disconnect();
+        FilesButton=new Button{Content="文件",Focusable=false,Padding=new(12,6,12,6),Margin=new(3),IsEnabled=false,ToolTip="上传、下载与任务队列（需Host授权）"};FilesButton.Click+=(_,_)=>openFiles?.Invoke();
         ShortcutsButton = new Button { Content = "快捷键", Focusable = false, Padding = new(12, 6, 12, 6), Margin = new(3), IsEnabled = shortcut is not null, ToolTip = "发送到远程电脑；仅对已授权会话生效" };
         ShortcutMenu = new ContextMenu();
         foreach (var (label, action) in new[] {
@@ -69,7 +73,7 @@ internal sealed class SessionToolbar : IDisposable
         ShortcutMenu.Items.Add(new Separator()); ShortcutMenu.Items.Add(clipboard);
         clipboard.Click += (_, _) => { ShortcutMenu.IsOpen = false; disableClipboard?.Invoke(); };
         ShortcutsButton.Click += (_, _) => { ShortcutMenu.PlacementTarget = ShortcutsButton; ShortcutMenu.IsOpen = true; Reveal(); };
-        controls.Children.Add(endpoint); controls.Children.Add(ShortcutsButton); controls.Children.Add(full); controls.Children.Add(DisconnectButton);
+        controls.Children.Add(endpoint); controls.Children.Add(FilesButton); controls.Children.Add(ShortcutsButton); controls.Children.Add(full); controls.Children.Add(DisconnectButton);
         window.Content = new Border { Background = new SolidColorBrush(Color.FromRgb(23, 36, 58)), CornerRadius = new(0, 0, 10, 10), Child = controls, BorderBrush = new SolidColorBrush(Color.FromRgb(86, 126, 184)), BorderThickness = new(1, 0, 1, 1), ClipToBounds = true };
         window.SourceInitialized += (_, _) => { handle = new WindowInteropHelper(window).Handle; SetStyle(handle, -20, GetStyle(handle, -20) | (nint)0x08000000); };
         owner.LocationChanged += OwnerChanged; owner.SizeChanged += OwnerChanged; owner.StateChanged += OwnerChanged; owner.Closed += OwnerClosed;
@@ -106,7 +110,7 @@ internal sealed class SessionToolbar : IDisposable
         if (content.ActualWidth <= 0) return;
         Point origin = content.PointToScreen(new Point(0, 0));
         var dpi = VisualTreeHelper.GetDpi(owner);
-        width = (int)Math.Round(Math.Min(480, content.ActualWidth) * dpi.DpiScaleX);
+        width = (int)Math.Round(Math.Min(560, content.ActualWidth) * dpi.DpiScaleX);
         height = (int)Math.Round((expanded ? 48 : 5) * dpi.DpiScaleY);
         left = (int)Math.Round(origin.X + (content.ActualWidth * dpi.DpiScaleX - width) / 2); top = (int)Math.Round(origin.Y);
         controls.Visibility = expanded ? Visibility.Visible : Visibility.Hidden;

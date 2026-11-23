@@ -13,6 +13,11 @@ public sealed class NativeVideoHost : HwndHost
     int videoWidth, videoHeight;
     nint previousIme;
     bool keyboardAttached, keyboardOwned;
+    Action<string[]>? filesDropped;
+    [DllImport("shell32.dll")] static extern void DragAcceptFiles(nint hwnd,bool accept);
+    [DllImport("shell32.dll",CharSet=CharSet.Unicode)] static extern uint DragQueryFile(nint drop,uint index,System.Text.StringBuilder? path,uint characters);
+    [DllImport("shell32.dll")] static extern void DragFinish(nint drop);
+    internal void SetFilesDrop(Action<string[]>? handler){filesDropped=handler;if(Handle!=0)DragAcceptFiles(Handle,handler is not null);}
     [DllImport("user32.dll")] static extern nint GetFocus();
     [DllImport("user32.dll")] static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] static extern nint GetAncestor(nint hwnd, uint flags);
@@ -31,6 +36,7 @@ public sealed class NativeVideoHost : HwndHost
         Focusable = true;
         InputMethod.SetIsInputMethodEnabled(this, false);
         nint child = GraphicsDiagnostics.CreateChildWindow(parent.Handle);
+        DragAcceptFiles(child,filesDropped is not null);
         previousIme = ImmAssociateContext(child, 0); // Only this remote surface, never a system IME setting.
         ComponentDispatcher.ThreadFilterMessage += FilterKeyboard;
         keyboardAttached = true;
@@ -69,6 +75,23 @@ public sealed class NativeVideoHost : HwndHost
     }
     protected override nint WndProc(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
+        if(message==0x233)
+        {
+            try
+            {
+                if(filesDropped is not null)
+                {
+                    uint count=DragQueryFile(wParam,uint.MaxValue,null,0);
+                    if(count is >0 and <=128)
+                    {
+                        var paths=new List<string>();
+                        for(uint i=0;i<count;i++){uint length=DragQueryFile(wParam,i,null,0);if(length is 0 or >32767){paths.Clear();break;}var path=new System.Text.StringBuilder((int)length+1);DragQueryFile(wParam,i,path,(uint)path.Capacity);paths.Add(path.ToString());}
+                        filesDropped(paths.ToArray());
+                    }
+                }
+            }
+            finally{DragFinish(wParam);}handled=true;return 0;
+        }
         const int MouseMove = 0x200, LeftDown = 0x201, LeftUp = 0x202, RightDown = 0x204, RightUp = 0x205, Wheel = 0x20A;
         if (message == 0x8) { keyboardOwned = false; InputFocusLost?.Invoke(); }
         if (message == 0x7) keyboardOwned = true;

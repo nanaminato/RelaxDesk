@@ -10,6 +10,8 @@ internal sealed class ShellBridge : IDisposable
     readonly TaskCompletionSource<string> decision = new(TaskCreationOptions.RunContinuationsAsynchronously);
     readonly CancellationTokenSource clipboardRevoked = new();
     public CancellationToken ClipboardRevoked => clipboardRevoked.Token;
+    readonly CancellationTokenSource filesRevoked = new();
+    public CancellationToken FilesRevoked => filesRevoked.Token;
     int pending;
     public ShellBridge(CancellationTokenSource stop)
     { this.stop = stop; _ = Task.Run(ReadCommands); }
@@ -26,7 +28,8 @@ internal sealed class ShellBridge : IDisposable
                 string? command = await Console.In.ReadLineAsync(stop.Token);
                 if (command is null or "STOP") { stop.Cancel(); return; }
                 if (command == "REVOKE_CLIPBOARD") { clipboardRevoked.Cancel(); continue; }
-                if (command is "APPROVE" or "APPROVE_CLIPBOARD" or "DENY" && Interlocked.CompareExchange(ref pending, 0, 1) == 1) decision.TrySetResult(command);
+                if (command == "REVOKE_FILES") { filesRevoked.Cancel(); continue; }
+                if (command is "APPROVE" or "APPROVE_CLIPBOARD" or "APPROVE_FILES" or "APPROVE_ALL" or "DENY" && Interlocked.CompareExchange(ref pending, 0, 1) == 1) decision.TrySetResult(command);
             }
         }
         catch (Exception error) when (error is OperationCanceledException or IOException or ObjectDisposedException) { }

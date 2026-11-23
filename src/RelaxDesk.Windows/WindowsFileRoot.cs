@@ -13,7 +13,7 @@ public sealed class WindowsFileRoot
     public WindowsFileRoot(string selectedDirectory)
     {
         root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(selectedDirectory));
-        if (!Path.IsPathFullyQualified(root) || root.StartsWith("\\", StringComparison.Ordinal) || !Directory.Exists(root)) throw new IOException("A local existing directory must be selected");
+        if (!Path.IsPathFullyQualified(root) || root.StartsWith("\\", StringComparison.Ordinal) || new DriveInfo(Path.GetPathRoot(root)!).DriveType is not (DriveType.Fixed or DriveType.Removable or DriveType.Ram) || !Directory.Exists(root)) throw new IOException("A local existing directory must be selected");
         using var locked = DirectoryLease.Acquire(root, false);
         if (!FinalName(locked.Last).Equals(Extended(root), StringComparison.OrdinalIgnoreCase)) throw new IOException("Aliased transfer root unsupported");
     }

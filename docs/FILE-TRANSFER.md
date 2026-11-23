@@ -1,6 +1,12 @@
-# Scoped file transfer — engine checkpoint
+# Scoped file transfer — UI and queue checkpoint
 
-The production Host and client library now exchange real files over an independently bound third TLS connection. This checkpoint exposes the engine through the explicit CLI root option and executable integration tests. **Host/Viewer file-selection UI, multi-file/folder queue/drag-drop, cross-session resume and revocation UI are the next slice.** Do not describe the current Viewer as having a finished file panel. No package is built at the owner's request.
+The production Host and Viewer exchange real files over an independently bound third TLS connection. Host now has a local folder chooser and independent, default-off file consent. Viewer has a remote browser, recursive file/folder queue, staged drag-drop confirmation, progress, pause/cancel/retry and explicit overwrite/keep-both/skip choices. Both ends can revoke files while video/control continue. Cross-session resume remains planned. No package is built at the owner's request.
+
+## Host and Viewer workflow
+
+Choose a local Host folder before starting the listener; the root is fixed while it runs. The approval dialog shows that scope and leaves file access unchecked. Viewer must also request files explicitly. After both sides agree, the Files toolbar button opens the owned transfer panel. Local file/folder selection and downloads use explicit local pickers. Dropping files onto either the WPF surface or native video HWND stages a confirmation against the displayed remote directory before enqueueing anything. Closing the panel hides it; ending the session cancels jobs and releases file handles.
+
+The queue is bounded to 10000 entries and 128 top-level local selections. Jobs execute serially, preserve empty directories and reject unsupported links/cloud placeholders. Cancellation includes descendants of a directory job. Disconnect currently removes partial files; retry creates a fresh operation. Automated WPF tests use generated local fixtures and real production Host/TLS connections, with synthetic video. Physical Explorer drag/drop, Home LAN and large-disk fault testing remain pending. [UI validation evidence](../benchmarks/2026-11-23-file-ui-validation.md).
 
 ## Authorization and binding
 

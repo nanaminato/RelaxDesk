@@ -12,19 +12,24 @@ internal sealed class HostProcess
     public bool Running => process is not null;
     public bool Pending { get; private set; }
     public bool ClipboardRequested { get; private set; }
+    public bool FilesRequested { get; private set; }
+    bool fileRootConfigured;
     public event Action<string,string?>? Changed;
     public event Action<string>? Diagnostic;
     public readonly List<string> Lines = [];
     public string[] Snapshot(){lock(Lines)return Lines.ToArray();}
     public Task Finished => completion ?? Task.CompletedTask;
-    public async Task Start(string application,string ip,int port,string backend="dxgi")
+    public async Task Start(string application,string ip,int port,string backend="dxgi",string? fileRoot=null)
     {
         if(Running) throw new InvalidOperationException("共享已在运行");
         if(!IPAddress.TryParse(ip,out var address)||address.Equals(IPAddress.Any)||address.Equals(IPAddress.IPv6Any)||port is <1 or >65535)throw new ArgumentException("请选择有效的本机 IP 和端口");
         if(backend!="dxgi"&&!((backend is "test-hardware" or "test-clipboard")&&IPAddress.IsLoopback(address)))throw new ArgumentException("测试后端只用于本机回归");
         var start=new ProcessStartInfo(Path.GetExtension(application).Equals(".exe",StringComparison.OrdinalIgnoreCase)?application:"dotnet") {UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true};
         if(!application.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))start.ArgumentList.Add(application);
-        foreach(string value in new[]{"--shell",ip,port.ToString(),backend})start.ArgumentList.Add(value);
+        start.ArgumentList.Add("--shell");
+        fileRootConfigured=!string.IsNullOrWhiteSpace(fileRoot);
+        if(fileRootConfigured){start.ArgumentList.Add("--file-root");start.ArgumentList.Add(Path.GetFullPath(fileRoot!));}
+        foreach(string value in new[]{ip,port.ToString(),backend})start.ArgumentList.Add(value);
         stopping=false;Pending=false;Lines.Clear();
         var child=new Process{StartInfo=start};process=child;
         try { if(!child.Start())throw new IOException("无法启动 Host"); }
@@ -44,6 +49,7 @@ internal sealed class HostProcess
                     using var data=JsonDocument.Parse(line[9..]);string type=data.RootElement.GetProperty("type").GetString()!;
                     string? address=data.RootElement.TryGetProperty("address",out var endpoint)?endpoint.GetString():null;
                     if(type=="approval-request") ClipboardRequested=data.RootElement.TryGetProperty("features",out var requested)&&requested.ValueKind==JsonValueKind.Array&&requested.EnumerateArray().Any(feature=>feature.GetString()==RelaxDesk.Core.SessionCapabilities.ClipboardText);
+                    if(type=="approval-request") FilesRequested=data.RootElement.TryGetProperty("features",out var offered)&&offered.ValueKind==JsonValueKind.Array&&offered.EnumerateArray().Any(feature=>feature.GetString()==RelaxDesk.Core.SessionCapabilities.FileTransfer);
                     Pending=type=="approval-request";if(type!="ended")Changed?.Invoke(type,address);continue;
                 }
                 lock(Lines){if(Lines.Count>=200)Lines.RemoveAt(0);Lines.Add(line);}
@@ -56,16 +62,20 @@ internal sealed class HostProcess
         catch(Exception e){Diagnostic?.Invoke(e.Message);}
         finally {Pending=false;process=null;child.Dispose();Changed?.Invoke(stopping?"stopped":"ended",null);}
     }
-    public async Task Decide(bool allow, bool allowClipboard = false)
+    public async Task Decide(bool allow, bool allowClipboard = false, bool allowFiles = false)
     {
         var child=process;if(child is null||!Pending)return;
-        Pending=false;await child.StandardInput.WriteLineAsync(allow ? allowClipboard && ClipboardRequested ? "APPROVE_CLIPBOARD" : "APPROVE" : "DENY");await child.StandardInput.FlushAsync();
+        bool clipboard=allowClipboard&&ClipboardRequested,files=allowFiles&&FilesRequested&&fileRootConfigured;
+        string command=!allow?"DENY":clipboard&&files?"APPROVE_ALL":files?"APPROVE_FILES":clipboard?"APPROVE_CLIPBOARD":"APPROVE";
+        Pending=false;await child.StandardInput.WriteLineAsync(command);await child.StandardInput.FlushAsync();
     }
     public async Task RevokeClipboard()
     {
         var child=process;if(child is null)return;
         await child.StandardInput.WriteLineAsync("REVOKE_CLIPBOARD");await child.StandardInput.FlushAsync();
     }
+    public async Task RevokeFiles()
+    {var child=process;if(child is null)return;await child.StandardInput.WriteLineAsync("REVOKE_FILES");await child.StandardInput.FlushAsync();}
     public async Task Stop()
     {
         var child=process;if(child is null)return;stopping=true;Pending=false;

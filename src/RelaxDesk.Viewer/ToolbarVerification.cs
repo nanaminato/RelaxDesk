@@ -22,6 +22,7 @@ internal static class ToolbarVerification
                 if (child.Handle == 0 || !window.DesktopFillsClient) throw new Exception("Native surface or full-client layout missing");
                 var bar = window.Toolbar ?? throw new Exception("Toolbar missing");
                 if (bar.ShortcutsButton.IsEnabled) throw new Exception("Offline preview exposed remote shortcuts");
+                if(bar.FilesButton.IsEnabled)throw new Exception("Offline preview exposed file access");
                 Point client = ((FrameworkElement)window.Content).PointToScreen(new Point(20, 200));
                 SessionToolbar.PixelPoint? pointer = new() { X = (int)client.X, Y = (int)client.Y };
                 bar.TestPointer = () => pointer; // No desktop pointer injection in automation.

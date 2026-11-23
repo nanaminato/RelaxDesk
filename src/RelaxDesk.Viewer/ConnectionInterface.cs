@@ -32,6 +32,7 @@ public sealed partial class ViewerWindow
         form.Children.Add(new TextBlock { Text = "远程电脑 IP", Margin = new Thickness(0, 16, 0, 0) }); form.Children.Add(host);
         form.Children.Add(new TextBlock { Text = "端口" }); form.Children.Add(port);
         requestClipboard.Margin = new Thickness(0, 10, 0, 4); form.Children.Add(requestClipboard);
+        requestFiles.Margin=new Thickness(0,2,0,4);form.Children.Add(requestFiles);
         var advanced = new StackPanel();
         void Field(string name, FrameworkElement control) { advanced.Children.Add(new TextBlock { Text = name }); advanced.Children.Add(control); }
         advanced.Children.Add(pinnedConnection);
@@ -74,7 +75,8 @@ public sealed partial class ViewerWindow
             sessionToolbar ??= new SessionToolbar(this, ToggleFullScreen, () => disconnect.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)),
                 session is null ? null : SendShortcut);
             sessionToolbar.SetSession(host.Text, fullScreen);
-            sessionToolbar.SetClipboard(clipboardPermission?.Allows(SessionCapabilities.ClipboardText) == true, DisableClipboard);
+            sessionToolbar.SetClipboard(sessionPermissions?.Allows(SessionCapabilities.ClipboardText) == true, DisableClipboard);
+            sessionToolbar.SetFiles(fileQueue?.Enabled==true?()=>_ = OpenFilePanel():null);
         }
         else
         {

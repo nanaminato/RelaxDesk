@@ -30,6 +30,9 @@ public sealed class FileTransferClient : IAsyncDisposable
     readonly long rate;
     long sent, received;
     int disposed;
+    public event Action? Closed;
+    public bool Active => Volatile.Read(ref disposed)==0&&!lifetime.IsCancellationRequested;
+    void FailChannel(){lifetime.Cancel();data.Dispose();Closed?.Invoke();}
     public FileTransferClient(Stream data, CancellationToken session, long maximumBytesPerSecond = 20 * 1024 * 1024)
     {
         if (maximumBytesPerSecond is < 64 * 1024 or > 1024L * 1024 * 1024) throw new ArgumentOutOfRangeException(nameof(maximumBytesPerSecond));
@@ -46,7 +49,7 @@ public sealed class FileTransferClient : IAsyncDisposable
                 }
             }
             catch (Exception error) when (error is IOException or InvalidDataException or OperationCanceledException or ObjectDisposedException)
-            { lifetime.Cancel(); }
+            { if(!lifetime.IsCancellationRequested)FailChannel(); }
         });
     }
     async Task Send(TransferMessage message)
@@ -89,7 +92,7 @@ public sealed class FileTransferClient : IAsyncDisposable
             }
             throw new InvalidDataException("Cancel response missing");
         }
-        catch { lifetime.Cancel(); data.Dispose(); }
+        catch { FailChannel(); }
     }
     async Task WaitPause(TransferControl? control, CancellationToken ct)
     {

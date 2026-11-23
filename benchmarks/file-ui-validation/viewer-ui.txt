@@ -1,0 +1,1 @@
+PASS 4 UI behaviours: connection form, arbitrary-text offline preview, disconnect restores form, authenticated-view form hiding; no remote connection or input

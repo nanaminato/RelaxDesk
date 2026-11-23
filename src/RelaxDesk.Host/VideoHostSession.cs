@@ -15,7 +15,7 @@ internal static class VideoHostSession
 {
     sealed record QueuedFrame(MediaFrame Frame, long EnqueuedAt);
     public static async Task Run(TcpListener listener, TcpClient controlSocket, SslStream control, X509Certificate2 certificate,
-        Packet hello, string backend, CancellationToken stop, string[]? grantedFeatures = null, CancellationToken clipboardRevoked = default, string? selectedFileRoot = null)
+        Packet hello, string backend, CancellationToken stop, string[]? grantedFeatures = null, CancellationToken clipboardRevoked = default, string? selectedFileRoot = null, CancellationToken filesRevoked = default)
     {
         string[] capabilities = (hello.Capabilities ?? []).Intersect(["h264", "deflate"]).ToArray();
         if (capabilities.Length == 0) throw new InvalidDataException("No common media codec");
@@ -25,6 +25,7 @@ internal static class VideoHostSession
         var features = SessionCapabilities.ValidateGrant(hello.Features, grantedFeatures);
         if (synthetic && backend is not ("test-clipboard" or "test-clipboard-failure")) features = features.Where(feature=>feature!=SessionCapabilities.ClipboardText).ToArray();
         if (clipboardRevoked.IsCancellationRequested) features = features.Where(feature=>feature!=SessionCapabilities.ClipboardText).ToArray();
+        if (filesRevoked.IsCancellationRequested) features = features.Where(feature=>feature!=SessionCapabilities.FileTransfer).ToArray();
         var fileRoot = features.Contains(SessionCapabilities.FileTransfer) && selectedFileRoot is not null ? new WindowsFileRoot(selectedFileRoot) : null;
         if (fileRoot is null) features = features.Where(feature=>feature!=SessionCapabilities.FileTransfer).ToArray();
         var ticket = new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15));
@@ -59,9 +60,11 @@ internal static class VideoHostSession
             try { await Wire.Write(control, packet, deadline.Token); }
             finally { controlWrite.Release(); }
         }
+        using var fileSession = CancellationTokenSource.CreateLinkedTokenSource(session.Token, filesRevoked);
+        using var fileRevokeRegistration = filesRevoked.Register(() => { gate.RevokeFeature(SessionCapabilities.FileTransfer); dataSocket?.Close(); });
         var fileWorker = data is null ? Task.CompletedTask : Task.Run(async () =>
         {
-            try { await new FileTransferServer(fileRoot!, gate).Run(data, session.Token); }
+            try { await new FileTransferServer(fileRoot!, gate).Run(data, fileSession.Token); }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException or OperationCanceledException or System.Text.Json.JsonException)
             {
                 gate.RevokeFeature(SessionCapabilities.FileTransfer);
@@ -110,6 +113,10 @@ internal static class VideoHostSession
                 else if (packet.Kind == "clipboard-state-v2")
                 {
                     gate.RevokeFeature(SessionCapabilities.ClipboardText); clipboardUpdates.Writer.TryComplete();
+                }
+                else if (packet.Kind == "file-state-v2")
+                {
+                    gate.RevokeFeature(SessionCapabilities.FileTransfer); fileSession.Cancel(); dataSocket?.Close();
                 }
                 else if (packet.Kind == "keyframe-v2") Interlocked.Exchange(ref forceKeyFrame, 1);
                 else if (packet.Kind == "ping-v2")

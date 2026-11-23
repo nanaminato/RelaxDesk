@@ -1,8 +1,8 @@
 # RelaxDesk implementation and evidence
 
-## Scoped third-TLS file engine checkpoint
+## File transfer UI and queue checkpoint
 
-Current source adds independent `file.transfer` negotiation, expiring role-specific data ticket, third pinned TLS stream, Windows path/handle scope enforcement, 64KiB sequential chunks, SHA-256 + temporary/atomic commit, overwrite consent, live pause/continue, cancellation, progress/rate/ETA, empty files/directories and paged listings. Core/TLS 593, actual Windows file contracts 29 and production Host/client real-file + media/control concurrency tests pass. This engine is currently available via explicit CLI root/test callers; the Viewer transfer panel, Host folder picker, multi-file/folder orchestration and cross-session resume are next. [Contract and limits](FILE-TRANSFER.md), [exact evidence](../benchmarks/2026-11-23-file-transfer-validation.md). No per-slice packaging; physical Home/LAN acceptance remains pending.
+Current source includes Host folder selection/default-off consent and Viewer remote browser, recursive bounded queue, confirmed native/WPF drops, overwrite choices, pause/cancel/retry and live file-only revocation. Release build has zero warnings/errors; Core/TLS 599, Windows file contracts 29, WPF file UI 22 plus cleanup and actual Viewer/Host session checks pass. Complete nonphysical regression exited 0, with explicit foreground/physical graphics skips. [Contract](FILE-TRANSFER.md), [evidence](../benchmarks/2026-11-23-file-ui-validation.md). Cross-session resume is not implemented. Persistent Host and secure reconnect are next prerequisites. No package until the final milestone. Physical Home/LAN acceptance remains pending.
 
 ## Independently authorized Unicode text clipboard
 

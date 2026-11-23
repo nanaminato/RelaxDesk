@@ -1,6 +1,6 @@
 # Architecture — RelaxDesk
 
-File engine: independently granted `file.transfer` binds a third pinned TLS stream with its own one-use ticket. File IO/flow control have their own worker and bounded envelopes; selected local directory scope is enforced with Windows handle/reparse checks. The protocol carries relative paths only. See [file contract](FILE-TRANSFER.md); selection UI/orchestration/resume remain the next slice.
+File engine: independently granted `file.transfer` binds a third pinned TLS stream with its own one-use ticket. File IO/flow control have their own worker and bounded envelopes; selected local directory scope is enforced with Windows handle/reparse checks. The protocol carries relative paths only. See [file contract](FILE-TRANSFER.md); Host folder consent and Viewer recursive queue/confirmed drop UI are implemented; cross-session resume remains planned.
 
 Current optional v2 session extension: `Features` is separate from media codec negotiation. `clipboard.text` requires Viewer request plus independent Host opt-in; text updates use the bounded serialized TLS control channel and separate clipboard workers, never the WPF Dispatcher/network reader for clipboard I/O. Original v1/v2 codec/media-ticket boundaries remain. Old peers omit the feature grant. Full [clipboard protocol and lifecycle](CLIPBOARD.md). File bytes will use a separate bounded authenticated channel, not this control envelope.
 

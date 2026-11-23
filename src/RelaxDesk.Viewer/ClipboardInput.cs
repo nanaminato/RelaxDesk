@@ -12,13 +12,13 @@ public sealed partial class ViewerWindow
         {
             var latest = Interlocked.Exchange(ref pendingClipboard, null);
             Interlocked.Exchange(ref clipboardDispatchPending, 0);
-            if (latest is null || session is null || session.IsCancellationRequested || clipboardPermission?.Allows(SessionCapabilities.ClipboardText) != true) return;
+            if (latest is null || session is null || session.IsCancellationRequested || sessionPermissions?.Allows(SessionCapabilities.ClipboardText) != true) return;
             if (!outgoing.TryWrite(ClipboardTextProtocol.Encode(latest, ++sequence))) session.Cancel();
         });
     }
     void DisableClipboard()
     {
-        clipboardPermission?.RevokeFeature(SessionCapabilities.ClipboardText);
+        sessionPermissions?.RevokeFeature(SessionCapabilities.ClipboardText);
         Interlocked.Exchange(ref pendingClipboard, null);
         if (session is not null && !session.IsCancellationRequested)
             if (!outgoing.TryWrite(new("clipboard-state-v2", ++sequence, Code: 0))) session.Cancel();

@@ -102,7 +102,7 @@ try
     if (hello.Kind is "hello-v2" or "request-v2")
     {
         await VideoHostSession.Run(listener, client, tls, cert, hello, backend, stop.Token,
-            SessionCapabilities.Grant(requestedFeatures, approval is "APPROVE_CLIPBOARD" or "APPROVE_ALL", selectedFileRoot is not null && approval is "APPROVE_FILES" or "APPROVE_ALL"), shell?.ClipboardRevoked ?? default, selectedFileRoot);
+            SessionCapabilities.Grant(requestedFeatures, approval is "APPROVE_CLIPBOARD" or "APPROVE_ALL", selectedFileRoot is not null && approval is "APPROVE_FILES" or "APPROVE_ALL"), shell?.ClipboardRevoked ?? default, selectedFileRoot, shell?.FilesRevoked ?? default);
         return;
     }
     listener.Stop();
