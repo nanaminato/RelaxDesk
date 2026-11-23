@@ -54,6 +54,8 @@ try {
     }
     Run-App $tests
     if ($LASTEXITCODE) { throw 'Core/TLS checks failed' }
+    Run-App $smokeDll --collector-contracts (Join-Path $root 'build/collector-verification')
+    if($LASTEXITCODE){throw 'Collector integrity/output/coverage contracts failed'}
     Run-App $smokeDll $serviceDll --broker-contracts
     if ($LASTEXITCODE) { throw 'Local broker identity/lease/IPC failed' }
     Run-App $smokeDll $serviceDll --service-setup-contracts (Join-Path $root 'build/machine-service-setup-verification')

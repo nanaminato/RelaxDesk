@@ -1,5 +1,7 @@
 # Viewer original-failure and UI isolation validation
 
+A later shared-office run exposed a separate premature-control-close race during explicit Host stop. It is repaired and tested with delayed control delivery; see [the later collector evidence](2026-11-24-office-collector-validation.md). The historical results below remain their original scoped observations.
+
 Baseline `c7478ce`, stable .NET 11.0.100, branch `codex/dxgi-media-pipeline`. The audit found a concrete cancellation-order defect: receiver `finally` canceled control/writer before its faulted task completed, so `WhenAny` could pick a related cancellation and lose the real decode/render error. CPU bitmap/render and post-frame UI callbacks could also throw outside controlled session teardown.
 
 Viewer now records the first causal exception/stage using existing Core `FirstSessionFailure` before canceling other workers, catches UI callbacks, joins workers and rethrows the original cause for session policy. New local stages distinguish control/media read/write, validation, CPU/GPU decoding, renderer initialization, GPU Present, CPU bitmap submission and post-frame UI updates. Display/decode/UI errors do not trigger network retry even when typed `IOException`. Valid explicit Host termination still overrides transport EOF across independent sockets. No wire or permission change, no new capture/codec implementation and no package.

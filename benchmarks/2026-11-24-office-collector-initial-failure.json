@@ -1,0 +1,459 @@
+{
+  "status": "FAIL",
+  "steps": [
+    {
+      "name": "office-core-tls",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 18.5148059
+    },
+    {
+      "name": "office-collector",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.5239133
+    },
+    {
+      "name": "office-broker",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 10.7609019
+    },
+    {
+      "name": "office-service-setup",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 5.4884038
+    },
+    {
+      "name": "office-windows",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.0862787
+    },
+    {
+      "name": "office-session",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.1233519
+    },
+    {
+      "name": "office-display",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.1535785
+    },
+    {
+      "name": "office-viewport",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.0841217
+    },
+    {
+      "name": "office-input",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.0869138
+    },
+    {
+      "name": "office-clipboard-image",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.16529
+    },
+    {
+      "name": "office-capture-refresh",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.0800476
+    },
+    {
+      "name": "office-history-store",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.1834028
+    },
+    {
+      "name": "office-diagnostic-log",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.1761929
+    },
+    {
+      "name": "office-file-root",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.1450117
+    },
+    {
+      "name": "office-file-resume",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 1.8901519
+    },
+    {
+      "name": "office-file-clipboard",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 1.3380702
+    },
+    {
+      "name": "office-network-shaped",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 6.1797412
+    },
+    {
+      "name": "office-network-media-cut",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.7976844
+    },
+    {
+      "name": "office-network-control-cut",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.8658038
+    },
+    {
+      "name": "office-reject-token",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.7012393
+    },
+    {
+      "name": "office-reject-pin",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.5582744
+    },
+    {
+      "name": "office-deny-v2",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.5677897
+    },
+    {
+      "name": "office-reject-media",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.7817339
+    },
+    {
+      "name": "office-deny-approval",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.7970558
+    },
+    {
+      "name": "office-display-denied",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.5775586
+    },
+    {
+      "name": "office-display-switch",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 3.564345
+    },
+    {
+      "name": "office-topology",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 26.2393689
+    },
+    {
+      "name": "office-persistent-host",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 12.3896953
+    },
+    {
+      "name": "office-file-transfer",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 8.7791605
+    },
+    {
+      "name": "office-file-denied",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.6434735
+    },
+    {
+      "name": "office-reject-data",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.6497656
+    },
+    {
+      "name": "office-clipboard-text",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 1.9616498
+    },
+    {
+      "name": "office-clipboard-denied",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 1.2731957
+    },
+    {
+      "name": "office-clipboard-unnegotiated",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 1.3220425
+    },
+    {
+      "name": "office-clipboard-failure",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 1.2087519
+    },
+    {
+      "name": "office-clipboard-binding",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 1.4998701
+    },
+    {
+      "name": "office-clipboard-rich",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 2.8728875
+    },
+    {
+      "name": "office-clipboard-rich-denied",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 1.1924745
+    },
+    {
+      "name": "office-clipboard-rich-failure",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 1.1608371
+    },
+    {
+      "name": "office-clipboard-rich-transport",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 1.4436932
+    },
+    {
+      "name": "office-clipboard-rich-replay",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 1.432326
+    },
+    {
+      "name": "office-clipboard-rich-format-denied",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 1.5570549
+    },
+    {
+      "name": "office-viewer-viewport",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 1.5555958
+    },
+    {
+      "name": "office-viewer-input-ui",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.6634729
+    },
+    {
+      "name": "office-viewer-hwnd",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.4488353
+    },
+    {
+      "name": "office-viewer-ui",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.7402925
+    },
+    {
+      "name": "office-viewer-toolbar",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 3.9509979
+    },
+    {
+      "name": "office-viewer-diagnostics",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 0.4221023
+    },
+    {
+      "name": "office-viewer-failure-cpu-decode",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 1.1318778
+    },
+    {
+      "name": "office-viewer-failure-cpu-submit",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 1.1699627
+    },
+    {
+      "name": "office-viewer-failure-viewer-update",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 1.2385675
+    },
+    {
+      "name": "office-viewer-display",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 5.6805135
+    },
+    {
+      "name": "office-viewer-display-legacy",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 4.9300845
+    },
+    {
+      "name": "office-viewer-topology",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 26.8455904
+    },
+    {
+      "name": "office-viewer-topology-race",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 2.516359
+    },
+    {
+      "name": "office-viewer-audio",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 3.0529381
+    },
+    {
+      "name": "office-viewer-history",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 1.9787457
+    },
+    {
+      "name": "office-viewer-statistics",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 7.8543959
+    },
+    {
+      "name": "office-viewer-file-ui",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 5.1264424
+    },
+    {
+      "name": "office-viewer-file-session",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 1.9338572
+    },
+    {
+      "name": "office-viewer-file-resume-session",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 33.3903446
+    },
+    {
+      "name": "office-viewer-reconnect",
+      "status": "FAIL",
+      "exit_code": 1,
+      "elapsed_seconds": 100.2423321
+    },
+    {
+      "name": "office-viewer-file-clipboard-granted",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 2.3677361
+    },
+    {
+      "name": "office-viewer-file-clipboard-deny-clipboard",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 1.6589014
+    },
+    {
+      "name": "office-viewer-file-clipboard-deny-files",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 1.6826083
+    },
+    {
+      "name": "office-viewer-rich-clipboard-granted",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 2.611827
+    },
+    {
+      "name": "office-viewer-rich-clipboard-denied",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 1.5983016
+    },
+    {
+      "name": "office-viewer-video-settings-h264",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 10.3372667
+    },
+    {
+      "name": "office-viewer-video-settings-deflate",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 4.507682
+    },
+    {
+      "name": "office-viewer-video-settings-audio",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 10.3542466
+    },
+    {
+      "name": "office-viewer-video-settings-static",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 10.163049
+    },
+    {
+      "name": "office-host-ui",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 17.4418918
+    },
+    {
+      "name": "office-host-service",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 3.8781526
+    },
+    {
+      "name": "office-host-recovery",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 16.4011625
+    },
+    {
+      "name": "office-host-audio",
+      "status": "PASS",
+      "exit_code": 0,
+      "elapsed_seconds": 4.5020979
+    }
+  ],
+  "physical_scanout": "NOT_TESTED",
+  "input_to_photon": "NOT_TESTED",
+  "dual_pc_lan": "NOT_TESTED",
+  "packaged_runtime": "NOT_TESTED"
+}

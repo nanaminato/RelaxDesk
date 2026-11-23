@@ -5,6 +5,9 @@ using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using RelaxDesk.Core;
+if(args is ["--collector-contracts",var collectorFixtures]){try{await PackageCollector.Contracts(collectorFixtures);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
+if(args is ["--collector-output-fixture",var collectorLength]){int length=int.Parse(collectorLength);if(length is <0 or >2*1024*1024)throw new ArgumentOutOfRangeException(nameof(args));Console.Write(new string('x',length));return;}
+if(args is ["--office-suite-source",var officeArtifacts,var officeOutput]){try{Environment.ExitCode=await PackageCollector.SourceOffice(officeArtifacts,officeOutput);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is ["--diagnostic-log-contracts",var diagnosticFixtures]){try{await RelaxDesk.Windows.DiagnosticLogContracts.Run(diagnosticFixtures);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is [var networkHost,"--network-impairment",var networkMode]){try{await NetworkImpairmentSmoke.Run(networkHost,networkMode);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is ["--capture-refresh-contracts"]){try{RelaxDesk.Windows.CaptureRefreshContracts.Run();}catch(Exception e){Console.Error.WriteLine(e);Environment.ExitCode=1;}return;}

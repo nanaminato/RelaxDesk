@@ -1,0 +1,3 @@
+System.Threading.Tasks.TaskCanceledException: A task was canceled.
+   at RelaxDesk.Viewer.ViewerWindow.ExerciseReconnect(RecoveryHost driver, RecoveryRelay relay, String hostPath, String root, CancellationToken ct) in E:\RelaxDesk\src\RelaxDesk.Viewer\ReconnectVerification.cs:line 58
+   at RelaxDesk.Viewer.ReconnectVerification.<>c__DisplayClass0_0.<<Run>b__0>d.MoveNext() in E:\RelaxDesk\src\RelaxDesk.Viewer\ReconnectVerification.cs:line 216

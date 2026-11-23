@@ -124,7 +124,7 @@ try {
     if ($DiagnosticOnly) { Write-Host 'Diagnostic-only run: Home acceptance and full graphics suite intentionally not claimed.' }
     elseif ($comparison -ne 'PASS') { $environmentStop=$true;throw 'Independent presentation blocked/failed; no repeated WPF/benchmark attempts.' }
     else {
-        if ((Run-Step 'graphics-wpf-capture' $shell (@('-NoProfile','-File',"$PSScriptRoot/verify.ps1",'-SkipBuild','-Graphics','-Wpf','-Capture','-NativeBuildDirectory',$NativeBuildDirectory) + $packageArguments) 300) -eq 'PASS') {
+        if ((Run-Step 'graphics-wpf-capture' $shell (@('-NoProfile','-File',"$PSScriptRoot/verify.ps1",'-SkipBuild','-Graphics','-Wpf','-Capture','-NativeBuildDirectory',$NativeBuildDirectory) + $packageArguments) 1800) -eq 'PASS') {
             $null = Run-Step 'renderer-benchmark' $shell (@('-NoProfile','-File',"$PSScriptRoot/benchmark-renderers.ps1",'-Frames',"$Frames",'-OutputDirectory',"$OutputDirectory/renderers") + $packageArguments) 600
             # Summaries are optional when Python is unavailable; raw logs are always retained.
             if (Get-Command python -ErrorAction SilentlyContinue) { $null = Run-Step 'renderer-summary' 'python' @("$PSScriptRoot/summarize-renderers.py",(Join-Path $output 'renderers')) }

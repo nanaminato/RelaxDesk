@@ -13,7 +13,7 @@ internal static class ServiceSetupSmoke
 {
     [DllImport("kernel32.dll",EntryPoint="CreateFileW",CharSet=CharSet.Unicode,SetLastError=true)] static extern SafeFileHandle OpenDirectory(string path,uint access,uint share,nint security,uint disposition,uint flags,nint template);
     [DllImport("kernel32.dll",SetLastError=true)] static extern bool DeviceIoControl(SafeFileHandle file,uint code,byte[] input,uint length,nint output,uint bytes,out uint returned,nint overlapped);
-    static void Junction(string path,string target)
+    internal static void Junction(string path,string target)
     {
         Directory.CreateDirectory(path);using var handle=OpenDirectory(path,0x40000000,0,0,3,0x02200000,0);
         byte[] substitute=Encoding.Unicode.GetBytes(@"\??\"+Path.GetFullPath(target)),printable=Encoding.Unicode.GetBytes(Path.GetFullPath(target));

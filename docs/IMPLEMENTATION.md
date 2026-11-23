@@ -2,6 +2,8 @@
 
 ## Current office continuation checkpoint — 2026-11-24
 
+The [shared office acceptance suite](OFFICE-ACCEPTANCE.md) now drives developer DLLs and future packaged EXEs from one 75-case definition, with bounded output/manifest verification, strict failed-evidence handling and explicit physical exclusions. [Validation](../benchmarks/2026-11-24-office-collector-validation.md) records a real full-suite reconnect failure and the media/control shutdown-order repair, rather than waiving it. New `Test-Office.cmd` and collector recipe are source-prepared; a new self-contained bundle is still deferred.
+
 Viewer now [retains first pipeline failures and distinguishes stages](DIAGNOSTICS.md#viewer-first-failure-and-stage-attribution), including controlled CPU submission/post-frame UI teardown and transport-only automatic retry. [Actual WPF/TLS fault injection and regression evidence](../benchmarks/2026-11-24-viewer-failure-validation.md) verifies original exception identity, UI messages, no inappropriate retry and native cleanup; physical GPU/scanout remains pending.
 
 [Bounded asynchronous local diagnostics](DIAGNOSTICS.md) now replace daily unbounded file appends, preserve existing structured Host errors and Viewer secret exclusion, and add process-local per-connection correlation. [Actual file/TLS/WPF evidence](../benchmarks/2026-11-24-diagnostic-log-validation.md) covers retention/pressure, storage failure isolation, credential sentinels and existing session/reconnect paths. This is best-effort diagnostic storage, not durable audit logging or physical acceptance.
