@@ -18,7 +18,7 @@ public sealed partial class ViewerWindow
             TextInputWindow? dialog=null;
             try
             {
-                Check(window.requestClipboard.IsChecked==false&&window.requestClipboardImage.IsChecked==false&&window.requestClipboardHtml.IsChecked==false);
+                Check(window.requestClipboard.IsChecked==false&&window.requestClipboardImage.IsChecked==false&&window.requestClipboardHtml.IsChecked==false&&window.requestFileClipboard.IsChecked==false&&!window.requestFileClipboard.IsEnabled);
                 using var lifetime=new CancellationTokenSource();window.session=lifetime;window.inputVersion=2;
                 window.SendRawKey(65,(nint)((30L<<16)|1),false);Check(window.outgoing.Depth==0);
                 window.inputAuthorized=true;

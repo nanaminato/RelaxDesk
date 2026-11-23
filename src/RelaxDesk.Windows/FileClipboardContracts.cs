@@ -1,0 +1,61 @@
+using System.Buffers.Binary;
+using System.Net;
+using System.Net.Sockets;
+using RelaxDesk.Core;
+
+namespace RelaxDesk.Windows;
+
+public static class FileClipboardContracts
+{
+    sealed class Local(string[] selected):ILocalFileClipboard
+    {
+        public int Published;public long Version=1;public string[] Paths=selected;
+        public Task<long> ClipboardVersion(CancellationToken ct){ct.ThrowIfCancellationRequested();return Task.FromResult(Version);}
+        public Task<LocalClipboardFiles?> ReadFiles(CancellationToken ct){ct.ThrowIfCancellationRequested();return Task.FromResult<LocalClipboardFiles?>(new(Version,Paths.ToArray()));}
+        public Task<bool> PublishFiles(string[] paths,long expected,CancellationToken ct){ct.ThrowIfCancellationRequested();if(expected!=Version)return Task.FromResult(false);Paths=ClipboardFileFormat.Decode(ClipboardFileFormat.Encode(paths));Published++;Version++;return Task.FromResult(true);}
+    }
+    sealed class Publisher(WindowsFileRoot root):IFileClipboardPublisher
+    {
+        public int Published;public long Version=3;public ClipboardFiles? Files;
+        public Task<long> ClipboardVersion(CancellationToken ct){ct.ThrowIfCancellationRequested();return Task.FromResult(Version);}
+        public Task<bool> PrepareFiles(ClipboardFiles files,long expected,CancellationToken ct){ct.ThrowIfCancellationRequested();_=root.ResolveClipboard(files);if(Version!=expected)return Task.FromResult(false);Files=files.Own();Published++;Version++;return Task.FromResult(true);}
+    }
+    public static async Task Run(string directory)
+    {
+        int count=0;void Check(bool value){if(!value)throw new IOException($"Windows file clipboard contract {count+1} failed");count++;}
+        void Reject(Action run){try{run();throw new InvalidOperationException("Unsafe clipboard input accepted");}catch(Exception error)when(error is IOException or InvalidDataException){count++;}}
+        string fixtures=Path.Combine(Path.GetFullPath(directory),"contracts-"+Guid.NewGuid().ToString("N")),host=Path.Combine(fixtures,"host"),source=Path.Combine(fixtures,"source"),dest=Path.Combine(fixtures,"dest");
+        Directory.CreateDirectory(host);Directory.CreateDirectory(Path.Combine(source,"空"));Directory.CreateDirectory(dest);File.WriteAllText(Path.Combine(host,"existing.txt"),"existing");File.WriteAllText(Path.Combine(source,"日本語.txt"),"file clipboard source");File.WriteAllBytes(Path.Combine(source,"empty"),[]);
+        var root=new WindowsFileRoot(host);var paths=new[]{Path.Combine(source,"日本語.txt"),Path.Combine(source,"空")};byte[] encoded=ClipboardFileFormat.Encode(paths);
+        Check(ClipboardFileFormat.Decode(encoded).SequenceEqual(paths));Check(BinaryPrimitives.ReadInt32LittleEndian(encoded)==20&&BinaryPrimitives.ReadInt32LittleEndian(encoded.AsSpan(16))==1);
+        var wide=encoded.ToArray();BinaryPrimitives.WriteInt32LittleEndian(wide.AsSpan(16),-1);Check(ClipboardFileFormat.Decode(wide).SequenceEqual(paths));
+        Reject(()=>ClipboardFileFormat.Decode(encoded[..^2]));var ansi=encoded.ToArray();BinaryPrimitives.WriteInt32LittleEndian(ansi.AsSpan(16),0);Reject(()=>ClipboardFileFormat.Decode(ansi));
+        var offset=encoded.ToArray();BinaryPrimitives.WriteInt32LittleEndian(offset,21);Reject(()=>ClipboardFileFormat.Decode(offset));
+        Reject(()=>ClipboardFileFormat.Encode(["C:\\bad:stream"]));Reject(()=>ClipboardFileFormat.Encode(["\\\\server\\share\\file"]));Reject(()=>ClipboardFileFormat.Encode([Path.GetPathRoot(source)!]));Reject(()=>ClipboardFileFormat.Encode(["relative.txt"]));Reject(()=>ClipboardFileFormat.Encode([paths[0],paths[0]]));
+        var described=root.DescribeClipboard([Path.Combine(host,"existing.txt")]);Check(described.Paths is["existing.txt"]&&root.ResolveClipboard(described).Single()==Path.Combine(host,"existing.txt"));Reject(()=>root.DescribeClipboard(paths));Reject(()=>root.ResolveClipboard(new(["../escape"])));
+        var listener=new TcpListener(IPAddress.Loopback,0);listener.Start();using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(15));using var viewer=new TcpClient();var accepting=listener.AcceptTcpClientAsync(timeout.Token);await viewer.ConnectAsync((IPEndPoint)listener.LocalEndpoint,timeout.Token);using var server=await accepting;listener.Stop();
+        var gate=new AccessGate();gate.Approve([SessionCapabilities.FileTransfer,SessionCapabilities.ClipboardFiles]);var publisher=new Publisher(root);
+        var worker=new FileTransferServer(root,gate,clipboardPublisher:_=>Task.FromResult<IFileClipboardPublisher?>(publisher)).Run(server.GetStream(),timeout.Token);
+        await using var client=new FileTransferClient(viewer.GetStream(),timeout.Token,64*1024,supportsClipboardFiles:true);await using var queue=new FileTransferQueue(client,timeout.Token);
+        try
+        {
+            long version=await client.ClipboardVersion(timeout.Token);Check(version==3);
+            try{await client.PrepareClipboard(described,version+1,timeout.Token);throw new InvalidOperationException("Changed clipboard overwritten");}catch(TransferRejectedException error){Check(error.Code=="clipboard-changed"&&publisher.Published==0);}
+            _=await client.List("",0,timeout.Token);await client.PrepareClipboard(described,version,timeout.Token);Check(publisher.Published==1);
+            gate.RevokeFeature(SessionCapabilities.ClipboardFiles);try{await client.ClipboardVersion(timeout.Token);throw new InvalidOperationException("Unauthorized clipboard version read");}catch(TransferRejectedException error){Check(error.Code=="access-denied");}
+            Check((await client.List("",0,timeout.Token)).Length==1);gate.Approve([SessionCapabilities.FileTransfer,SessionCapabilities.ClipboardFiles]);
+            var local=new Local([source]);var flow=new FileClipboardTransfer(client,queue,local,()=>ClipboardFormats.Granted(gate).Files);
+            await flow.Upload(new(local.Version,[source]),timeout.Token);Check(publisher.Published==2&&publisher.Files is not null);Check(File.ReadAllText(Path.Combine(root.ResolveClipboard(publisher.Files!).Single(),"日本語.txt"))=="file clipboard source");
+            await flow.Download(publisher.Files!,dest,timeout.Token);Check(local.Published==1&&File.ReadAllText(Path.Combine(local.Paths.Single(),"日本語.txt"))=="file clipboard source");Check(Directory.Exists(Path.Combine(local.Paths.Single(),"空")));
+            long downloaded=client.DownloadedBytes;await flow.PrepareLocal(timeout.Token);Check(local.Published==2&&client.DownloadedBytes==downloaded);
+            string large=Path.Combine(fixtures,"large.bin");File.WriteAllBytes(large,new byte[8*1024*1024]);local.Paths=[large];local.Version++;using var cancel=new CancellationTokenSource();int before=publisher.Published;
+            var copying=flow.Upload(new(local.Version,[large]),cancel.Token);
+            while(!queue.Snapshot().Any(job=>job.Name=="large.bin"&&job.CompletedBytes>0))await Task.Delay(10,timeout.Token);
+            cancel.Cancel();try{await copying;throw new InvalidOperationException("Cancelled copy completed");}catch(OperationCanceledException){count++;}
+            while(queue.Busy)await Task.Delay(10,timeout.Token);Check(publisher.Published==before);Check(queue.Snapshot().Any(job=>job.Name=="large.bin"&&job.State==TransferJobState.Cancelled));
+        }
+        finally{timeout.Cancel();viewer.Close();server.Close();try{await worker;}catch(Exception error)when(error is IOException or OperationCanceledException or ObjectDisposedException){} }
+        string moved=host+"-moved";Directory.Move(host,moved);Directory.CreateDirectory(host);File.WriteAllText(Path.Combine(host,"existing.txt"),"replacement");Reject(()=>root.ResolveClipboard(described));
+        Console.WriteLine($"PASS {count} actual Windows file clipboard contracts: Unicode DROPFILES/termination/bounds, scoped path/root identity, real TCP transfer/metadata acknowledgement, changed/revoked clipboard, recursive/empty files, local CF_HDROP buffer after commits, cancellation never publishes; generated fixtures={fixtures}; no system clipboard or Explorer paste");
+    }
+}

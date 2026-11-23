@@ -23,11 +23,11 @@ internal static class VideoHostSession
         if (synthetic && !IPAddress.IsLoopback(((IPEndPoint)controlSocket.Client.LocalEndPoint!).Address))
             throw new AuthenticationException("Synthetic video testing is loopback-only");
         var features = SessionCapabilities.ValidateGrant(hello.Features, grantedFeatures);
-        if (synthetic && backend is not ("test-clipboard" or "test-clipboard-failure" or "test-clipboard-rich" or "test-clipboard-rich-failure")) features = features.Where(feature=>!SessionCapabilities.IsClipboard(feature)).ToArray();
+        if (synthetic && backend is not ("test-clipboard" or "test-clipboard-failure" or "test-clipboard-rich" or "test-clipboard-rich-failure" or "test-clipboard-files")) features = features.Where(feature=>!SessionCapabilities.IsClipboard(feature)).ToArray();
         if (clipboardRevoked.IsCancellationRequested) features = features.Where(feature=>!SessionCapabilities.IsClipboard(feature)).ToArray();
-        if (filesRevoked.IsCancellationRequested) features = features.Where(feature=>feature!=SessionCapabilities.FileTransfer).ToArray();
+        if (filesRevoked.IsCancellationRequested) features = features.Where(feature=>feature is not (SessionCapabilities.FileTransfer or SessionCapabilities.ClipboardFiles)).ToArray();
         var fileRoot = features.Contains(SessionCapabilities.FileTransfer) && selectedFileRoot is not null ? new WindowsFileRoot(selectedFileRoot) : null;
-        if (fileRoot is null) features = features.Where(feature=>feature!=SessionCapabilities.FileTransfer).ToArray();
+        if (fileRoot is null) features = features.Where(feature=>feature is not (SessionCapabilities.FileTransfer or SessionCapabilities.ClipboardFiles)).ToArray();
         bool resumeFiles=hello.FileResume&&fileRoot is not null&&fileResumes is not null;
         string? fileScope=resumeFiles?await fileResumes!.Scope():null;
         var ticket = new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15));
@@ -73,12 +73,13 @@ internal static class VideoHostSession
             try { await Wire.Write(control, packet, deadline.Token); }
             finally { controlWrite.Release(); }
         }
+        var clipboardReady=new TaskCompletionSource<IFileClipboardPublisher?>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var fileSession = CancellationTokenSource.CreateLinkedTokenSource(session.Token, filesRevoked);
         int explicitFileRevocation=0;
         using var fileRevokeRegistration = filesRevoked.Register(() => {Interlocked.Exchange(ref explicitFileRevocation,1);gate.RevokeFeature(SessionCapabilities.FileTransfer); dataSocket?.Close(); });
         var fileWorker = data is null ? Task.CompletedTask : Task.Run(async () =>
         {
-            try { await new FileTransferServer(fileRoot!, gate,resumeFiles?fileResumes:null,()=>!stop.IsCancellationRequested&&!filesRevoked.IsCancellationRequested&&Volatile.Read(ref explicitFileRevocation)==0).Run(data, fileSession.Token); }
+            try { await new FileTransferServer(fileRoot!, gate,resumeFiles?fileResumes:null,()=>!stop.IsCancellationRequested&&!filesRevoked.IsCancellationRequested&&Volatile.Read(ref explicitFileRevocation)==0,token=>clipboardReady.Task.WaitAsync(token)).Run(data, fileSession.Token); }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException or OperationCanceledException or System.Text.Json.JsonException)
             {
                 gate.RevokeFeature(SessionCapabilities.FileTransfer);
@@ -97,7 +98,16 @@ internal static class VideoHostSession
             ? new ClipboardSynchronizer(() => synthetic ? new TestTextClipboard(backend == "test-clipboard-failure") : new WindowsTextClipboard(), gate,
                 update => clipboardUpdates.Writer.TryWrite(update), clipboardLifetime.Token, HostSessionLog.Write) : null;
         if (clipboard is not null) _ = clipboard.Completion.ContinueWith(_ => clipboardUpdates.Writer.TryComplete(), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-        await using var richClipboard=clipboardData is null?null:new ClipboardContentSession(clipboardData,()=>synthetic?new TestContentClipboard(backend=="test-clipboard-rich-failure"):new WindowsTextClipboard(),gate,clipboardLifetime.Token,HostSessionLog.Write);
+        IContentClipboard CreateRichClipboard()
+        {
+            try
+            {
+                IContentClipboard provider=synthetic?new TestContentClipboard(backend=="test-clipboard-rich-failure",fileRoot,backend=="test-clipboard-files"):new WindowsTextClipboard(fileRoot);
+                clipboardReady.TrySetResult(provider as IFileClipboardPublisher);return provider;
+            }
+            catch{clipboardReady.TrySetResult(null);throw;}
+        }
+        await using var richClipboard=clipboardData is null?null:new ClipboardContentSession(clipboardData,CreateRichClipboard,gate,clipboardLifetime.Token,HostSessionLog.Write,receiveFiles:false);
         using var revokeRegistration = clipboardRevoked.Register(() => { SessionCapabilities.RevokeClipboard(gate);clipboardUpdates.Writer.TryComplete();richClipboard?.Stop();clipboardSocket?.Close(); });
         var clipboardSender = Task.Run(async () =>
         {

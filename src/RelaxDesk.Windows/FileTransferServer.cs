@@ -5,7 +5,7 @@ namespace RelaxDesk.Windows;
 
 // One independently authorized operation at a time. Resumable resources remain
 // inside the process-local, bounded store; a new grant is mandatory to reattach.
-public sealed class FileTransferServer(WindowsFileRoot root, AccessGate gate, FileTransferResumeStore? resumes = null, Func<bool>? canRetain = null)
+public sealed class FileTransferServer(WindowsFileRoot root, AccessGate gate, FileTransferResumeStore? resumes = null, Func<bool>? canRetain = null,Func<CancellationToken,Task<IFileClipboardPublisher?>>? clipboardPublisher=null)
 {
     sealed class TransportFailure(Exception cause) : IOException("File transport interrupted", cause);
     public async Task Run(Stream data, CancellationToken ct)
@@ -103,6 +103,20 @@ public sealed class FileTransferServer(WindowsFileRoot root, AccessGate gate, Fi
                     if (message.Resumable && resumes is null) throw new InvalidDataException("File resume not negotiated");
                     switch (message.Kind)
                     {
+                        case "clipboard-get" or "clipboard-set" when upload is null&&retained is null:
+                        {
+                            if(clipboardPublisher is null||!gate.Allows(SessionCapabilities.ClipboardFiles))throw new UnauthorizedAccessException("File clipboard grant absent");
+                            using var deadline=CancellationTokenSource.CreateLinkedTokenSource(ct);deadline.CancelAfter(TimeSpan.FromSeconds(3));
+                            try
+                            {
+                                var publisher=await clipboardPublisher(deadline.Token)??throw new UnauthorizedAccessException("Clipboard provider unavailable");
+                                if(!gate.Allows(SessionCapabilities.ClipboardFiles))throw new UnauthorizedAccessException("Clipboard grant revoked");
+                                if(message.Kind=="clipboard-get")await Send(new("clipboard-version",message.Id,Offset:await publisher.ClipboardVersion(deadline.Token)));
+                                else{_=root.ResolveClipboard(message.Clipboard!);if(!await publisher.PrepareFiles(message.Clipboard!,message.Offset,deadline.Token))throw new TransferRejectedException("clipboard-changed");await Send(new("result",message.Id));}
+                            }
+                            catch(OperationCanceledException)when(!ct.IsCancellationRequested){throw new TransferRejectedException("busy");}
+                            break;
+                        }
                         case "ping": await Send(new("pong", message.Id)); break;
                         case "list" when upload is null && retained is null:
                             await Send(new("entries", message.Id, Offset: message.Offset, Entries: root.List(message.Path!, checked((int)message.Offset)))); break;

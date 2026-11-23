@@ -13,7 +13,20 @@ public sealed partial class ViewerWindow
     {
         if(connection.ClipboardData is null)return;
         if(smoke?.RichClipboardTest==true&&(!System.Net.IPAddress.TryParse(smoke.Host,out var address)||!System.Net.IPAddress.IsLoopback(address)))throw new System.IO.InvalidDataException("Clipboard test provider is loopback-only");
-        var active=new ClipboardContentSession(connection.ClipboardData,()=>smoke?.RichClipboardTest==true?richClipboardTestProvider=new ViewerContentClipboard():new WindowsTextClipboard(),gate,ct,message=>ViewerSessionLog.Record(message));
+        if(fileClipboardVerificationFactory is not null&&(!System.Net.IPAddress.TryParse(host.Text,out var testAddress)||!System.Net.IPAddress.IsLoopback(testAddress)))throw new System.IO.InvalidDataException("Clipboard test provider is loopback-only");
+        fileClipboardLifetime=CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var ready=new TaskCompletionSource<ILocalFileClipboard?>(TaskCreationOptions.RunContinuationsAsynchronously);localFileClipboard=ready;
+        IContentClipboard Create()
+        {
+            try
+            {
+                Action<ClipboardFiles?> offer=files=>ReceiveFileOffer(files,gate,ct);
+                IContentClipboard provider=fileClipboardVerificationFactory is not null?fileClipboardVerificationFactory(offer):smoke?.RichClipboardTest==true?richClipboardTestProvider=new ViewerContentClipboard():new WindowsTextClipboard(receiveFileOffer:offer);
+                ready.TrySetResult(provider as ILocalFileClipboard);return provider;
+            }
+            catch{ready.TrySetResult(null);throw;}
+        }
+        var active=new ClipboardContentSession(connection.ClipboardData,Create,gate,ct,message=>ViewerSessionLog.Record(message));
         richClipboardSession=active;
         _=active.Completion.ContinueWith(_=>Dispatcher.BeginInvoke(()=>
         {
@@ -21,5 +34,5 @@ public sealed partial class ViewerWindow
             DisableClipboard();
         }),CancellationToken.None,TaskContinuationOptions.ExecuteSynchronously,TaskScheduler.Default);
     }
-    async Task EndRichClipboard(){var previous=richClipboardSession;richClipboardSession=null;if(previous is not null)await previous.DisposeAsync();}
+    async Task EndRichClipboard(){await EndFileClipboard();var previous=richClipboardSession;richClipboardSession=null;if(previous is not null)await previous.DisposeAsync();}
 }

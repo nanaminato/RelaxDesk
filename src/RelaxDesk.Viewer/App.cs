@@ -35,7 +35,8 @@ public sealed class App : Application
         try
         {
             var app = new App();
-            if(args is ["--rich-clipboard-session-contracts",var clipboardHost,var clipboardConsent])RichClipboardSessionVerification.Run(app,clipboardHost,clipboardConsent=="denied");
+            if(args is ["--file-clipboard-contracts",var fileClipboardHost,var fileClipboardOutput,var fileClipboardMode])ViewerWindow.VerifyFileClipboard(app,fileClipboardHost,fileClipboardOutput,fileClipboardMode);
+            else if(args is ["--rich-clipboard-session-contracts",var clipboardHost,var clipboardConsent])RichClipboardSessionVerification.Run(app,clipboardHost,clipboardConsent=="denied");
             else if(args is ["--input-ui-contracts"])ViewerWindow.VerifyInputUi(app);
             else if (args is ["--hwnd-contracts"]) HwndLifecycleVerification.Run(app);
             else if (args is ["--toolbar-contracts"]) ToolbarVerification.Run(app);
@@ -271,8 +272,8 @@ public sealed partial class ViewerWindow : Window
                         _ = Dispatcher.BeginInvoke(() =>
                         {
                             if (!ReferenceEquals(sessionPermissions, permissionGate)) return;
-                            if(SessionCapabilities.IsClipboard(feature)){SessionCapabilities.RevokeClipboard(permissionGate);richClipboardSession?.Stop();sessionToolbar?.SetClipboard(false,null);}
-                            else if(feature==SessionCapabilities.FileTransfer){if(packet.Text=="transport")fileQueue?.Interrupt();else fileQueue?.Disable("Host已关闭文件权限");sessionToolbar?.SetFiles(null);nativeView?.SetFilesDrop(null);}
+                            if(SessionCapabilities.IsClipboard(feature)){StopFileClipboard();SessionCapabilities.RevokeClipboard(permissionGate);richClipboardSession?.Stop();sessionToolbar?.SetClipboard(false,null);}
+                            else if(feature==SessionCapabilities.FileTransfer){StopFileClipboard();if(packet.Text=="transport")fileQueue?.Interrupt();else fileQueue?.Disable("Host已关闭文件权限");sessionToolbar?.SetFiles(null);nativeView?.SetFilesDrop(null);}
                             if(feature==SessionCapabilities.FileTransfer)Interlocked.Increment(ref fileRevocationReplies);
                             status.Text="会话能力已关闭；重新开启需要重新连接并授权。";
                         });

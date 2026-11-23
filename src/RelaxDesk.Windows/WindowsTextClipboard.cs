@@ -39,8 +39,9 @@ public sealed partial class WindowsTextClipboard : ITextClipboard
     [DllImport("kernel32.dll")] static extern nint GlobalLock(nint memory);
     [DllImport("kernel32.dll")] static extern bool GlobalUnlock(nint memory);
     [DllImport("kernel32.dll")] static extern nint GlobalFree(nint memory);
-    public WindowsTextClipboard()
+    public WindowsTextClipboard(WindowsFileRoot? fileRoot=null,Action<ClipboardFiles?>? receiveFileOffer=null)
     {
+        clipboardFileRoot=fileRoot;fileOffer=receiveFileOffer;
         // A stalled delayed-rendering owner cannot accumulate one native thread
         // per reconnect. New clipboard sessions fail closed until it returns.
         if (Interlocked.CompareExchange(ref activeWorker, 1, 0) != 0) throw new IOException("Previous clipboard worker is still releasing native resources");
@@ -112,6 +113,6 @@ public sealed partial class WindowsTextClipboard : ITextClipboard
     {
         if (window == 0) return; Verify();
         if (!DestroyWindow(window)) throw new IOException("Clipboard worker window destruction failed");
-        window = 0; cached = null;richCached=null; Interlocked.Exchange(ref activeWorker, 0);
+        window = 0; cached = null;richCached=null;CancelFileCommand(); Interlocked.Exchange(ref activeWorker, 0);
     }
 }

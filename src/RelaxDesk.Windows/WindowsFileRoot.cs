@@ -31,6 +31,23 @@ public sealed class WindowsFileRoot
         return full;
     }
     void VerifyIdentity() { if(!SameIdentity())throw new IOException("Selected directory identity changed"); }
+    public ClipboardFiles DescribeClipboard(string[] absolutePaths)
+    {
+        VerifyIdentity();string prefix=Path.EndsInDirectorySeparator(root)?root:root+Path.DirectorySeparatorChar;
+        var relative=absolutePaths.Select(path=>{string full=Path.GetFullPath(path);if(!full.StartsWith(prefix,StringComparison.OrdinalIgnoreCase))throw new IOException("Clipboard path outside authorized root");return TransferPaths.Relative(full[prefix.Length..]);}).ToArray();
+        var result=new ClipboardFiles(relative);if(!ClipboardFiles.Valid(result))throw new InvalidDataException("Invalid scoped clipboard file list");
+        foreach(string path in relative)_=InspectClipboardPath(path);return result;
+    }
+    public string[] ResolveClipboard(ClipboardFiles files)
+    {if(!ClipboardFiles.Valid(files))throw new InvalidDataException("Invalid clipboard paths");VerifyIdentity();return files.Paths.Select(InspectClipboardPath).ToArray();}
+    string InspectClipboardPath(string relative)
+    {
+        string full=Resolve(relative);var attributes=File.GetAttributes(full);
+        if((attributes&FileAttributes.ReparsePoint)!=0)throw new IOException("Clipboard links unsupported");
+        if((attributes&FileAttributes.Directory)!=0){using var lease=DirectoryLease.Acquire(full,false);VerifyIdentity();}
+        else{var file=OpenRead(relative);file.DisposeAsync().AsTask().GetAwaiter().GetResult();}
+        return full;
+    }
     public void CreateDirectory(string relative) { using var rootLease=DirectoryLease.Acquire(root,false);VerifyIdentity();string directory = Resolve(relative); EnsureSpace(1024 * 1024); using var lease = DirectoryLease.Acquire(directory, true); }
     public TransferEntry[] List(string relative, int offset)
     {

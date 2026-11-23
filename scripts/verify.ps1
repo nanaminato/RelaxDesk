@@ -57,6 +57,8 @@ try {
     if ($LASTEXITCODE) { throw 'Input contracts failed' }
     Run-App $smokeDll --clipboard-image-contracts
     if ($LASTEXITCODE) { throw 'Clipboard PNG/BMP codec contracts failed' }
+    Run-App $smokeDll --file-clipboard-contracts (Join-Path $root 'build/file-clipboard-verification')
+    if ($LASTEXITCODE) { throw 'File clipboard format/scope/transfer contracts failed' }
     & $probe --present-contracts
     if ($LASTEXITCODE) { throw 'Present state contracts failed' }
     & $probe --capture-contracts
@@ -66,6 +68,10 @@ try {
         if ($LASTEXITCODE) { throw "Security smoke failed: $mode" }
     }
     if ($Wpf) {
+        foreach($consent in @('granted','deny-clipboard','deny-files')) {
+            Run-App $viewer --file-clipboard-contracts $hostDll (Join-Path $root 'build/file-clipboard-verification') $consent
+            if ($LASTEXITCODE) { throw "Viewer file clipboard failed: $consent" }
+        }
         Run-App $viewer --input-ui-contracts
         if ($LASTEXITCODE) { throw 'Viewer input/text composition contracts failed' }
         $shell = Join-Path $root 'src/RelaxDesk.HostShell/bin/Release/net11.0-windows/RelaxDesk.HostShell.dll'

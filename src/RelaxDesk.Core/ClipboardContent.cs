@@ -4,10 +4,10 @@ using System.Text;
 
 namespace RelaxDesk.Core;
 
-public sealed record ClipboardContent(string? Text=null,byte[]? Png=null,string? Html=null,bool Clear=false)
+public sealed record ClipboardContent(string? Text=null,byte[]? Png=null,string? Html=null,bool Clear=false,ClipboardFiles? Files=null)
 {
     public override string ToString()=>"ClipboardContent (all content redacted)";
-    public ClipboardContent Own()=>this with{Png=Png?.ToArray()};
+    public ClipboardContent Own()=>this with{Png=Png?.ToArray(),Files=Files?.Own()};
 }
 public sealed record ClipboardContentUpdate(string Origin,long Revision,ClipboardContent Content)
 {
@@ -22,14 +22,14 @@ public static class ClipboardContentRules
         if(html is null||html.Length>MaximumHtmlBytes||html.Contains('\0'))return false;
         try{return Utf8.GetByteCount(html)<=MaximumHtmlBytes;}catch(EncoderFallbackException){return false;}
     }
-    public static bool Valid(ClipboardContent? content)=>content is not null&&(content.Clear?content.Text is null&&content.Png is null&&content.Html is null:content.Text is not null||content.Png is not null||content.Html is not null)&&
+    public static bool Valid(ClipboardContent? content)=>content is not null&&(content.Clear?content.Text is null&&content.Png is null&&content.Html is null&&content.Files is null:content.Files is not null?ClipboardFiles.Valid(content.Files)&&content.Text is null&&content.Png is null&&content.Html is null:content.Text is not null||content.Png is not null||content.Html is not null)&&
         (content.Text is null||ClipboardTextProtocol.ValidText(content.Text))&&(content.Html is null||HtmlValid(content.Html))&&(content.Png is null||ClipboardPng.Valid(content.Png));
     public static bool Valid(ClipboardContentUpdate? update)=>update is not null&&update.Revision>0&&Guid.TryParseExact(update.Origin,"N",out var id)&&update.Origin==id.ToString("N")&&Valid(update.Content);
     internal static string Digest(ClipboardContent content)
     {
         using var hash=IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         Span<byte> size=stackalloc byte[4];
-        foreach(byte[]? part in new[]{content.Text is null?null:Utf8.GetBytes(content.Text),content.Png,content.Html is null?null:Utf8.GetBytes(content.Html)})
+        foreach(byte[]? part in new[]{content.Text is null?null:Utf8.GetBytes(content.Text),content.Png,content.Html is null?null:Utf8.GetBytes(content.Html),content.Files is null?null:System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(content.Files.Paths)})
         {BinaryPrimitives.WriteInt32LittleEndian(size,part?.Length??-1);hash.AppendData(size);if(part is not null)hash.AppendData(part);}
         return Convert.ToHexString(hash.GetHashAndReset());
     }

@@ -33,7 +33,7 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
     }
     public bool TryRead(ClipboardFormats formats,out ClipboardContentSnapshot snapshot)
     {
-        Verify();snapshot=new(0,null);if(!formats.Any)return true;
+        Verify();snapshot=new(0,null);RunFileCommand(formats);if(!formats.Any)return true;
         PumpMessages();Desktop.EnsureInteractiveDesktop();uint sequence=GetClipboardSequenceNumber();if(sequence==0)return false;
         if(richCached?.Version==sequence&&cachedFormats==formats){snapshot=richCached;return true;}
         if(!OpenClipboard(window))return false;
@@ -41,6 +41,14 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
         {
             string? text=null,html=null;byte[]? png=null;
             if(CountClipboardFormats()==0){snapshot=richCached=new(GetClipboardSequenceNumber(),new(Clear:true));cachedFormats=formats;return true;}
+            if(formats.Files&&IsClipboardFormatAvailable(15))
+            {
+                if(clipboardFileRoot is null){snapshot=richCached=new(GetClipboardSequenceNumber(),null);cachedFormats=formats;return true;}
+                if(!ReadMemory(15,ClipboardFileFormat.MaximumBytes,out var drop))return false;
+                ClipboardContent? offered=null;
+                if(drop is not null&&clipboardFileRoot is not null)try{offered=new(Files:clipboardFileRoot.DescribeClipboard(ClipboardFileFormat.Decode(drop)));}catch(Exception error)when(error is IOException or InvalidDataException){}
+                snapshot=richCached=new(GetClipboardSequenceNumber(),offered);cachedFormats=formats;return true;
+            }
             if(formats.Text)
             {
                 if(!ReadMemory(UnicodeText,ClipboardTextProtocol.MaximumBytes+66,out var raw))return false;
@@ -83,7 +91,14 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
     {
         Verify();Desktop.EnsureInteractiveDesktop();writtenVersion=expectedVersion;
         if(!ClipboardContentRules.Valid(content))throw new InvalidDataException("Invalid clipboard content");
+        if(content.Files is not null&&clipboardFileRoot is null)
+        {
+            if(fileOffer is null)throw new IOException("File clipboard receiver not configured");
+            if(GetClipboardSequenceNumber()!=expectedVersion)return false;
+            fileOffer(content.Files.Own());return true;
+        }
         var prepared=new List<(uint Format,byte[] Bytes)>();
+        if(content.Files is not null)prepared.Add((15,ClipboardFileFormat.Encode(clipboardFileRoot!.ResolveClipboard(content.Files))));
         if(content.Text is not null)prepared.Add((UnicodeText,Encoding.Unicode.GetBytes(content.Text+"\0")));
         if(content.Html is not null)prepared.Add((Format(ref htmlFormat,"HTML Format"),HtmlClipboardFormat.Create(content.Html)));
         if(content.Png is not null)
@@ -110,7 +125,7 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
                     }
                     allocations[index]=(allocation.Format,0);
                 }
-                writtenVersion=GetClipboardSequenceNumber();cached=null;richCached=null;return true;
+                writtenVersion=GetClipboardSequenceNumber();cached=null;richCached=null;fileOffer?.Invoke(null);return true;
             }
             finally{CloseClipboard();}
         }

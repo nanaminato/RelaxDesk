@@ -36,6 +36,7 @@ public sealed class FileTransferClient : IAsyncDisposable
     readonly Task heartbeat;
     readonly long rate;
     public bool SupportsResume { get; }
+    public bool SupportsClipboardFiles{get;}
     public long UploadedBytes { get; private set; }
     public long DownloadedBytes { get; private set; }
     long sent, received;
@@ -43,10 +44,11 @@ public sealed class FileTransferClient : IAsyncDisposable
     public event Action? Closed;
     public bool Active => Volatile.Read(ref disposed) == 0 && !lifetime.IsCancellationRequested;
     void FailChannel() { if (Interlocked.Exchange(ref failed, 1) != 0) return; try { lifetime.Cancel(); } catch (ObjectDisposedException) { } data.Dispose(); Closed?.Invoke(); }
-    public FileTransferClient(Stream data, CancellationToken session, long maximumBytesPerSecond = 20 * 1024 * 1024, bool supportsResume = false)
+    public FileTransferClient(Stream data, CancellationToken session, long maximumBytesPerSecond = 20 * 1024 * 1024, bool supportsResume = false,bool supportsClipboardFiles=false)
     {
         if (maximumBytesPerSecond is < 64 * 1024 or > 1024L * 1024 * 1024) throw new ArgumentOutOfRangeException(nameof(maximumBytesPerSecond));
         this.data = data; rate = maximumBytesPerSecond; SupportsResume = supportsResume; sessionToken = session; lifetime = CancellationTokenSource.CreateLinkedTokenSource(session);
+        SupportsClipboardFiles=supportsClipboardFiles;
         heartbeat = Task.Run(async () =>
         {
             try
@@ -133,6 +135,18 @@ public sealed class FileTransferClient : IAsyncDisposable
         _ = TransferPaths.Relative(relative); await operation.WaitAsync(ct);
         try { string id = Guid.NewGuid().ToString("N"); await Send(new("mkdir", id, Path: relative)); await Response(id, "result"); }
         finally { operation.Release(); }
+    }
+    public async Task<long> ClipboardVersion(CancellationToken ct)
+    {
+        if(!SupportsClipboardFiles)throw new InvalidOperationException("File clipboard not negotiated");await operation.WaitAsync(ct);
+        try{ct.ThrowIfCancellationRequested();string id=Guid.NewGuid().ToString("N");await Send(new("clipboard-get",id));return (await Response(id,"clipboard-version")).Offset;}
+        catch(Exception error)when(error is ChannelInterrupted or InvalidDataException){FailChannel();throw;}finally{operation.Release();}
+    }
+    public async Task PrepareClipboard(ClipboardFiles files,long expectedVersion,CancellationToken ct)
+    {
+        if(!SupportsClipboardFiles||!ClipboardFiles.Valid(files)||expectedVersion is <0 or >uint.MaxValue)throw new InvalidDataException("Invalid file clipboard request");await operation.WaitAsync(ct);
+        try{ct.ThrowIfCancellationRequested();string id=Guid.NewGuid().ToString("N");await Send(new("clipboard-set",id,Offset:expectedVersion,Clipboard:files.Own()));await Response(id,"result");}
+        catch(Exception error)when(error is ChannelInterrupted or InvalidDataException){FailChannel();throw;}finally{operation.Release();}
     }
     async Task CommitAcknowledged(string id)
     {

@@ -130,6 +130,26 @@ internal static class ShellVerification
                     await window.StopSharing();await window.Host.Finished;
                 }
                 Console.WriteLine("PASS WPF file permission: selected local directory, disabled without root, default unchecked, separate allow/deny, real scoped TLS file upload and live Host file revocation; screen/control remain independent");
+                Directory.CreateDirectory(Path.Combine(fileRoot,"host-copy"));
+                foreach(var (clip,files) in new[]{(false,true),(true,false),(true,true)})
+                {
+                    port=Port();await window.StartSharing("127.0.0.1",port,"test-clipboard-files");await Until(()=>window.Status=="等待连接");
+                    using var viewer=new SessionClient{RequestedFeatures=[SessionCapabilities.FileTransfer,SessionCapabilities.ClipboardFiles]};var connecting=viewer.ConnectByApproval("127.0.0.1",port,timeout.Token);await Until(()=>window.RequestVisible);
+                    if(window.ClipboardAllowed||window.FilesAllowed||!window.ClipboardRequestDescription.Contains("文件清单"))throw new IOException("File clipboard consent dependency/description missing");
+                    window.ClipboardAllowed=clip;window.FilesAllowed=files;await window.Decide(true);await connecting;
+                    if(viewer.Features.Contains(SessionCapabilities.ClipboardFiles)!=(clip&&files)||(viewer.ClipboardData is not null)!=(clip&&files))throw new IOException("File clipboard bypassed independent consent");
+                    _=await MediaProtocol.Read(viewer.Media,timeout.Token);
+                    if(clip&&files)
+                    {
+                        var offer=await ClipboardContentWire.Read(viewer.ClipboardData!,timeout.Token);if(offer.Update.Content.Files?.Paths is not["host-copy"])throw new IOException("File intent missing");
+                        await window.StopFiles();var revoked=new HashSet<string>();while(revoked.Count<2){var packet=await Wire.Read(viewer.Control,timeout.Token);if(packet.Kind!="capability-revoked-v2"||packet.Features is not[var feature])throw new IOException("File intent revocation acknowledgement missing");revoked.Add(feature);}
+                        if(!revoked.Contains(SessionCapabilities.FileTransfer)||!revoked.Contains(SessionCapabilities.ClipboardFiles))throw new IOException("File revoke retained clipboard intent");
+                        await Wire.Write(viewer.Control,new("ping-v2",1),timeout.Token);if((await Wire.Read(viewer.Control,timeout.Token)).Kind!="pong-v2")throw new IOException("File clipboard revoke killed control");
+                    }
+                    await window.StopSharing();await window.Host.Finished;
+                    if(!(clip&&files)&&window.Host.Snapshot().Any(line=>line.StartsWith("test_clipboard_rich_")))throw new IOException("Denied file clipboard constructed provider");
+                }
+                Console.WriteLine("PASS WPF file clipboard permission: exact file intent opt-in requires both clipboard and configured file grants, default off, live Host file revoke stops intent while control survives; isolated provider only");
             }
             catch(Exception e){Console.Error.WriteLine(e);Environment.ExitCode=1;}
             finally{await window.StopSharing();window.Close();}

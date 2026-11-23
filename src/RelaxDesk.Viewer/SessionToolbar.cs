@@ -40,6 +40,10 @@ internal sealed class SessionToolbar : IDisposable
     internal ContextMenu ShortcutMenu { get; }
     readonly MenuItem clipboard = new() { Header = "剪贴板未授权 / 已关闭", IsEnabled = false };
     internal MenuItem ClipboardAction => clipboard;
+    readonly MenuItem fileClipboard=new(){Header="文件剪贴板…",IsEnabled=false};
+    Action? openFileClipboard;
+    internal MenuItem FileClipboardAction=>fileClipboard;
+    public void SetFileClipboard(Action? open,bool remoteOffer){openFileClipboard=open;fileClipboard.IsEnabled=open is not null;fileClipboard.Header=remoteOffer?"粘贴远端文件…":"文件剪贴板…";}
     readonly MenuItem textInput=new(){Header="本机输入法 → 发送已完成的文字",IsEnabled=false};
     internal MenuItem TextInputAction=>textInput;
     Action? openTextInput;
@@ -79,6 +83,7 @@ internal sealed class SessionToolbar : IDisposable
         ShortcutMenu.Items.Add(new MenuItem { Header = "Ctrl+Alt+End / 安全注意序列：不支持", IsEnabled = false });
         ShortcutMenu.Items.Add(new Separator()); ShortcutMenu.Items.Add(clipboard);
         ShortcutMenu.Items.Add(textInput);
+        ShortcutMenu.Items.Add(fileClipboard);fileClipboard.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;openFileClipboard?.Invoke();};
         clipboard.Click += (_, _) => { ShortcutMenu.IsOpen = false; disableClipboard?.Invoke(); };
         ShortcutsButton.Click += (_, _) => { ShortcutMenu.PlacementTarget = ShortcutsButton; ShortcutMenu.IsOpen = true; Reveal(); };
         controls.Children.Add(endpoint); controls.Children.Add(FilesButton); controls.Children.Add(ShortcutsButton); controls.Children.Add(full); controls.Children.Add(DisconnectButton);

@@ -7,7 +7,7 @@ public enum TransferJobState { Queued, Running, Paused, AwaitingOverwrite, Compl
 public enum FileCollisionChoice { Overwrite, KeepBoth, Skip }
 public sealed record TransferQueueStatus(long Version, int Count, int Completed, int Failed, int Pending, long CompletedBytes, long TotalBytes, TransferJobSnapshot? Current);
 public sealed record TransferJobSnapshot(Guid Id, string Name, string Direction, string RemotePath, string LocalFolder,
-    TransferJobState State, long CompletedBytes, long TotalBytes, double BytesPerSecond, double? RemainingSeconds, string? Error, long ResumedFrom = 0)
+    TransferJobState State, long CompletedBytes, long TotalBytes, double BytesPerSecond, double? RemainingSeconds, string? Error, long ResumedFrom = 0,string? LocalRelativePath=null)
 {
     public override string ToString() => $"TransferJob id={Id} state={State} (paths redacted)";
 }
@@ -52,7 +52,7 @@ public sealed class FileTransferQueue : IAsyncDisposable
     {
         lock (sync) return jobs.Select(Copy).ToArray();
     }
-    static TransferJobSnapshot Copy(Job job) => new(job.Id, job.Directory ? Path.GetFileName(job.RemotePath) + "/" : Path.GetFileName(job.RemotePath), job.Download ? "下载" : "上传", job.RemotePath, job.LocalFolder, job.State, job.Completed, job.Total, job.State == TransferJobState.Paused ? 0 : job.Speed, job.Eta, job.Error, job.ResumedFrom);
+    static TransferJobSnapshot Copy(Job job) => new(job.Id, job.Directory ? Path.GetFileName(job.RemotePath) + "/" : Path.GetFileName(job.RemotePath), job.Download ? "下载" : "上传", job.RemotePath, job.LocalFolder, job.State, job.Completed, job.Total, job.State == TransferJobState.Paused ? 0 : job.Speed, job.Eta, job.Error, job.ResumedFrom,job.LocalPath);
     public TransferQueueStatus Status()
     {
         lock (sync)

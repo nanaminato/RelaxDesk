@@ -6,7 +6,7 @@ namespace RelaxDesk.Core;
 public sealed record TransferEntry(string Path, bool Directory, long Length);
 public sealed record TransferMessage(string Kind, string Id, long Sequence = 0, string? Path = null, long Offset = 0,
     long Length = 0, byte[]? Data = null, string? Hash = null, bool Overwrite = false, TransferEntry[]? Entries = null, string? Error = null,
-    bool Resumable = false, string? ResumeToken = null, bool Completed = false)
+    bool Resumable = false, string? ResumeToken = null, bool Completed = false,ClipboardFiles? Clipboard=null)
 {
     public override string ToString() => $"TransferMessage kind={Kind} id={Id} sequence={Sequence} (payload/path redacted)";
 }
@@ -16,7 +16,8 @@ public static class FileDataProtocol
     public const int EnvelopeLimit = 256 * 1024;
     public static void Validate(TransferMessage message)
     {
-        if (message.Error is not null && message.Error is not ("exists" or "cancelled" or "invalid-data" or "access-denied" or "file-io" or "disk-full" or "busy" or "path-denied" or "resume-unavailable" or "source-changed")) throw new InvalidDataException("Unknown file error code");
+        if (message.Error is not null && message.Error is not ("exists" or "cancelled" or "invalid-data" or "access-denied" or "file-io" or "disk-full" or "busy" or "path-denied" or "resume-unavailable" or "source-changed" or "clipboard-changed")) throw new InvalidDataException("Unknown file error code");
+        if(message.Clipboard is not null&&(message.Kind!="clipboard-set"||!ClipboardFiles.Valid(message.Clipboard)))throw new InvalidDataException("Invalid file clipboard payload");
         if (!Guid.TryParseExact(message.Id, "N", out _) || message.Id.Length != 32 || message.Sequence <= 0 || message.Offset < 0 || message.Length is < 0 or > TransferLimits.MaximumFileBytes ||
             message.Data is { Length: > TransferLimits.ChunkBytes } || message.Entries is { Length: > TransferLimits.ListPage } ||
             message.Hash is not null && (message.Hash.Length != 64 || !message.Hash.All(char.IsAsciiHexDigit)) || message.Error is { Length: > 64 }) throw new InvalidDataException("Invalid file data envelope");
@@ -31,6 +32,9 @@ public static class FileDataProtocol
                 if (entry is null || TransferPaths.Relative(entry.Path).Length == 0 || entry.Length is < 0 or > TransferLimits.MaximumFileBytes) throw new InvalidDataException("Invalid directory entry");
         bool valid = message.Kind switch
         {
+            "clipboard-get"=>message==new TransferMessage(message.Kind,message.Id,message.Sequence),
+            "clipboard-version"=>message.Offset<=uint.MaxValue&&message==new TransferMessage(message.Kind,message.Id,message.Sequence,Offset:message.Offset),
+            "clipboard-set"=>message.Clipboard is not null&&message.Offset<=uint.MaxValue&&message==new TransferMessage(message.Kind,message.Id,message.Sequence,Offset:message.Offset,Clipboard:message.Clipboard),
             "upload" => message.Path is not null && message.Data is null && message.Hash is null && message.Offset == 0,
             "download" => message.Path is not null && message.Data is null && (message.ResumeToken is null ? message.Hash is null && message.Offset == 0 : message.Hash is not null),
             "mkdir" => message.Path is not null && message.Data is null,

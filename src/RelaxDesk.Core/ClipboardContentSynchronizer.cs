@@ -1,12 +1,12 @@
 namespace RelaxDesk.Core;
 
-public readonly record struct ClipboardFormats(bool Text,bool Image,bool Html)
+public readonly record struct ClipboardFormats(bool Text,bool Image,bool Html,bool Files=false)
 {
-    public bool Any=>Text||Image||Html;
-    public ClipboardContent? Select(ClipboardContent? content)=>content is null?null:new(Text?content.Text:null,Image?content.Png:null,Html?content.Html:null,content.Clear&&Any);
-    public bool Allows(ClipboardContent content)=>Any&&(content.Text is null||Text)&&(content.Png is null||Image)&&(content.Html is null||Html);
-    public string Permission(ClipboardContent content)=>content.Text is not null?SessionCapabilities.ClipboardText:content.Png is not null?SessionCapabilities.ClipboardImage:content.Html is not null?SessionCapabilities.ClipboardHtml:Text?SessionCapabilities.ClipboardText:Image?SessionCapabilities.ClipboardImage:SessionCapabilities.ClipboardHtml;
-    public static ClipboardFormats Granted(AccessGate gate)=>new(gate.Allows(SessionCapabilities.ClipboardText),gate.Allows(SessionCapabilities.ClipboardImage),gate.Allows(SessionCapabilities.ClipboardHtml));
+    public bool Any=>Text||Image||Html||Files;
+    public ClipboardContent? Select(ClipboardContent? content)=>content is null?null:new(Text?content.Text:null,Image?content.Png:null,Html?content.Html:null,content.Clear&&Any,Files?content.Files:null);
+    public bool Allows(ClipboardContent content)=>Any&&(content.Text is null||Text)&&(content.Png is null||Image)&&(content.Html is null||Html)&&(content.Files is null||Files);
+    public string Permission(ClipboardContent content)=>content.Text is not null?SessionCapabilities.ClipboardText:content.Png is not null?SessionCapabilities.ClipboardImage:content.Html is not null?SessionCapabilities.ClipboardHtml:content.Files is not null?SessionCapabilities.ClipboardFiles:Text?SessionCapabilities.ClipboardText:Image?SessionCapabilities.ClipboardImage:Html?SessionCapabilities.ClipboardHtml:SessionCapabilities.ClipboardFiles;
+    public static ClipboardFormats Granted(AccessGate gate)=>new(gate.Allows(SessionCapabilities.ClipboardText),gate.Allows(SessionCapabilities.ClipboardImage),gate.Allows(SessionCapabilities.ClipboardHtml),gate.Allows(SessionCapabilities.ClipboardFiles)&&gate.Allows(SessionCapabilities.FileTransfer));
 }
 public sealed record ClipboardContentSnapshot(long Version,ClipboardContent? Content)
 {
@@ -94,13 +94,14 @@ public sealed class ClipboardContentSynchronizer:IAsyncDisposable
                             else if(++attempts>=8){retry=null;diagnostic("clipboard_rich_write_unavailable attempts=8 update_discarded=True");}
                         }
                     }
+
                 }
                 if(stop.Token.WaitHandle.WaitOne(interval))break;
             }
         }
         catch(Exception error)
         {
-            foreach(string feature in new[]{SessionCapabilities.ClipboardText,SessionCapabilities.ClipboardImage,SessionCapabilities.ClipboardHtml})gate.RevokeFeature(feature);
+            SessionCapabilities.RevokeClipboard(gate);
             diagnostic($"clipboard_rich_disabled stage=worker error_type={error.GetType().Name} hresult=0x{error.HResult:X8}");
         }
         finally

@@ -13,6 +13,7 @@ count += await MediaChecks.Run();
 count += await ShortcutChecks.Run();
 count += await ClipboardChecks.Run();
 count += await ClipboardContentChecks.Run();
+count += await ClipboardFileChecks.Run();
 count += await FileProtocolChecks.Run();
 count += await ConsentChecks.Run();
 count += RecoveryChecks.Run();

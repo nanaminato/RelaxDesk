@@ -11,13 +11,17 @@ public sealed class ClipboardContentSession:IAsyncDisposable
     readonly CancellationTokenSource stop;
     readonly CancellationToken parent;
     readonly Action<string> diagnostic;
+    readonly bool filesInitiallyGranted;
+    readonly bool receiveFiles;
     readonly Channel<ClipboardContentUpdate> updates=Channel.CreateBounded<ClipboardContentUpdate>(new BoundedChannelOptions(1){FullMode=BoundedChannelFullMode.DropOldest,SingleReader=true});
     int disposed,stopping;
     public Task Completion{get;}
-    public ClipboardContentSession(Stream stream,Func<IContentClipboard> create,AccessGate gate,CancellationToken ct,Action<string>? diagnostic=null,int pollMilliseconds=250)
+    public ClipboardContentSession(Stream stream,Func<IContentClipboard> create,AccessGate gate,CancellationToken ct,Action<string>? diagnostic=null,int pollMilliseconds=250,bool receiveFiles=true)
     {
         if(pollMilliseconds is <10 or >1000)throw new ArgumentOutOfRangeException(nameof(pollMilliseconds));
         this.stream=stream;this.gate=gate;parent=ct;this.diagnostic=diagnostic??(_=>{});stop=CancellationTokenSource.CreateLinkedTokenSource(ct);
+        filesInitiallyGranted=ClipboardFormats.Granted(gate).Files;
+        this.receiveFiles=receiveFiles;
         Completion=Task.Run(()=>Run(create,pollMilliseconds));
     }
     public void Stop()
@@ -37,9 +41,13 @@ public sealed class ClipboardContentSession:IAsyncDisposable
         var receiver=new ClipboardContentReceiver(gate,worker.ReceivePrepared);
         var read=Task.Run(async()=>
         {
+            long sequence=0;
             while(!stop.IsCancellationRequested)
             {
                 var frame=await ClipboardContentWire.Read(stream,stop.Token);
+                if(frame.Sequence<=sequence)throw new InvalidDataException("Replayed clipboard frame");sequence=frame.Sequence;
+                if(frame.Update.Content.Files is not null&&!receiveFiles)throw new InvalidDataException("File intent direction rejected");
+                if(frame.Update.Content.Files is not null&&filesInitiallyGranted&&!ClipboardFormats.Granted(gate).Files)continue;
                 if(!receiver.TryAccept(frame.Sequence,frame.Update))throw new InvalidDataException("Unauthorized/replayed clipboard frame");
             }
         });

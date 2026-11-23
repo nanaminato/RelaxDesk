@@ -19,6 +19,8 @@ public sealed partial class ViewerWindow
     bool fileSessionVerified;
     void ConfigureFileDrop()
     {
+        requestFiles.Checked+=(_,_)=>requestFileClipboard.IsEnabled=true;
+        requestFiles.Unchecked+=(_,_)=>{requestFileClipboard.IsChecked=false;requestFileClipboard.IsEnabled=false;};
         AllowDrop = true;
         PreviewDragOver += (_, e) => { if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return; e.Effects = fileQueue?.Enabled == true ? DragDropEffects.Copy : DragDropEffects.None; e.Handled = true; };
         Drop += (_, e) => { if (fileQueue?.Enabled == true && e.Data.GetData(DataFormats.FileDrop) is string[] paths) FilesDropped(paths); e.Handled = true; };
@@ -27,14 +29,14 @@ public sealed partial class ViewerWindow
     {
         if (smoke?.ReconnectTest==true)return [SessionCapabilities.FileTransfer];
         if (smoke is not null&&!smoke.RichClipboardTest) return smoke.FileTransfer ? [SessionCapabilities.FileTransfer] : [];
-        var features = new List<string>(); if (requestClipboard.IsChecked == true) features.Add(SessionCapabilities.ClipboardText); if(requestClipboardImage.IsChecked==true)features.Add(SessionCapabilities.ClipboardImage);if(requestClipboardHtml.IsChecked==true)features.Add(SessionCapabilities.ClipboardHtml); if (requestFiles.IsChecked == true) features.Add(SessionCapabilities.FileTransfer); return features.ToArray();
+        var features = new List<string>(); if (requestClipboard.IsChecked == true) features.Add(SessionCapabilities.ClipboardText); if(requestClipboardImage.IsChecked==true)features.Add(SessionCapabilities.ClipboardImage);if(requestClipboardHtml.IsChecked==true)features.Add(SessionCapabilities.ClipboardHtml); if (requestFiles.IsChecked == true) features.Add(SessionCapabilities.FileTransfer); if(requestFileClipboard.IsChecked==true&&requestFiles.IsChecked==true)features.Add(SessionCapabilities.ClipboardFiles); return features.ToArray();
     }
     async Task StartFileSession(SessionClient connection, CancellationToken ct)
     {
         if(pendingFileRecovery is not null&&(!connection.SupportsFileResume||connection.FileScope!=recoveryFileScope||connection.VerifiedFingerprint!=recoveryPeerPin||!connection.Features.Contains(SessionCapabilities.FileTransfer)))await DiscardFileRecovery();
         if (connection.Data is null || !connection.Features.Contains(SessionCapabilities.FileTransfer)) return;
         activeFileScope=connection.FileScope;filePermissionStoppedByUser=false;
-        fileClient = new(connection.Data, ct,supportsResume:connection.SupportsFileResume); fileQueue = new(fileClient, ct);
+        fileClient = new(connection.Data, ct,supportsResume:connection.SupportsFileResume,supportsClipboardFiles:connection.Features.Contains(SessionCapabilities.ClipboardFiles)); fileQueue = new(fileClient, ct);
         var activeQueue = fileQueue; int notified = 0;
         activeQueue.Changed += () =>
         {
@@ -57,7 +59,7 @@ public sealed partial class ViewerWindow
     }
     void StopFilePermission()
     {
-        filePermissionStoppedByUser=true;_ = DiscardFileRecovery();
+        StopFileClipboard();filePermissionStoppedByUser=true;_ = DiscardFileRecovery();
         sessionPermissions?.RevokeFeature(SessionCapabilities.FileTransfer); fileQueue?.Disable("文件权限已关闭"); sessionToolbar?.SetFiles(null); nativeView?.SetFilesDrop(null);
         if (session is not null && !session.IsCancellationRequested && !outgoing.TryWrite(new("file-state-v2", ++sequence))) session.Cancel();
     }
