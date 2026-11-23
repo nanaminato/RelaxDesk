@@ -1,0 +1,13 @@
+PASS authenticated production Host -> shared Viewer decoder; mode=--video-capture-recovery hardware_encode=True hardware_decode=True frames=60 elapsed_s=2.97 fps=20.17 wire_mbps=3.932 process_cpu_pct=1.18 gpu_pct=unavailable dropped=0 queue_depth=0 capture_or_test_generation_p50_ms=2.68 capture_or_test_generation_p95_ms=4.08 encode_p50_ms=5.33 encode_p95_ms=7.11 decode_with_readback_p50_ms=5.09 decode_with_readback_p95_ms=5.77 frame_interval_p50_ms=33.79 frame_interval_p95_ms=35.94
+PASS concurrent TLS control; samples=285 rtt_p50_ms=0.22 rtt_p95_ms=0.48 rtt_max_ms=2.24; physical Present/input injection not tested
+backend=synthetic-test codec=H264 hardware_encode=True encoder=Intel? Quick Sync Video H.264 Encoder MFT
+pipeline_recovery state=Recovering attempt=1 stage=capture-frame completed_frames=4 hresult=0x887A0026 reason=Injected capture access loss attempt 1 first_stage=capture-frame first_hresult=0x887A0026
+backend=synthetic-test codec=H264 hardware_encode=True encoder=Intel? Quick Sync Video H.264 Encoder MFT
+pipeline_recovery state=Recovered attempt=1 completed_frames=5 keyframe=True
+session_end worker=control-read stage=control-read completed_frames=0 state=Faulted error_type=EndOfStreamException hresult=0x80070026 reason=Unable to read beyond the end of the stream.
+media frames=60 elapsed_s=3.00 fps=19.99 wire_mbps=3.897 process_cpu_pct=1.72 gpu_pct=unavailable dropped=0 queue_depth=0 send_p50_ms=0.07 send_p95_ms=0.13 capture_p50_ms=2.68 capture_p95_ms=4.08 encode_p50_ms=5.33 encode_p95_ms=7.11 frame_interval_p50_ms=33.57 frame_interval_p95_ms=35.18
+encode_stages upload_bytes=224870400 accepted_setting_mask=15 gpu_timestamp_samples=51 frames=61 elapsed_s=3.16 fps=19.33 wire_mbps=3.762 process_cpu_pct=1.63 gpu_pct=unavailable dropped=0 queue_depth=0 generate_p50_ms=2.69 generate_p95_ms=4.77 upload_submit_p50_ms=0.16 upload_submit_p95_ms=0.46 surface_setup_p50_ms=0.36 surface_setup_p95_ms=0.61 color_submit_p50_ms=0.30 color_submit_p95_ms=0.45 input_wait_p50_ms=0.00 input_wait_p95_ms=0.00 mft_submit_p50_ms=0.38 mft_submit_p95_ms=2.25 output_wait_p50_ms=4.03 output_wait_p95_ms=4.31 packet_pack_p50_ms=0.00 packet_pack_p95_ms=0.01 native_encode_total_p50_ms=5.33 native_encode_total_p95_ms=7.09 gpu_upload_p50_ms=0.26 gpu_upload_p95_ms=0.33 gpu_color_p50_ms=0.26 gpu_color_p95_ms=33.16
+session_cleanup native_live_resources=0 input_release_attempted=True
+Session ended: Unable to read beyond the end of the stream.
+
+PASS v2 peer disconnect / host clean exit

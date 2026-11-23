@@ -1,5 +1,9 @@
 # RelaxDesk implementation and evidence
 
+## 2026-11-23 office-readiness continuation
+
+P0 now has a testable session-lifetime recovery budget, explicit recovery transitions, initial/terminal failure evidence, IDR after capture rebuild and 20-second v2 control liveness cleanup independent of video updates. Production Host/TLS/decoder injected recovery/exhaustion and existing security/fallback tests pass; physical GPU recovery remains pending. See [validation](../benchmarks/2026-11-23-office-readiness.md) and [continuation ledger](PRODUCT-READINESS.md). No new wire capability or permission grant; v1 is unchanged. v2 peers must send existing heartbeats within 20 seconds.
+
 Updated 2026-11-22. Starting point: GitHub main `6e683b7eb2f9161cf0a7d028720769ec47b519c8`, verified against the GitHub branch API. Phase 0 build/test exit is met. Phase 1/1.5 and Phase 2 exits remain OPEN: physical-desktop capture and two-PC Home office workloads have not been demonstrated in this environment.
 
 ## Status by evidence level

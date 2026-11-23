@@ -214,7 +214,7 @@ public sealed partial class ViewerWindow : Window
         }
 
             var writer = Task.Run(async () => { await foreach (var packet in outgoing.Reader.ReadAllAsync(cancellation.Token)) await Wire.Write(connection.Control, packet, cancellation.Token); });
-            var control = Task.Run(async () => { while (true) { var packet = await Wire.Read(connection.Control, cancellation.Token); if (packet.Kind != "pong-v2") throw new InvalidDataException("Unexpected control response"); Interlocked.Increment(ref heartbeatReplies); } });
+            var control = Task.Run(async () => { while (true) { var packet = await SessionControl.Read(connection.Control, cancellation.Token); if (packet.Kind != "pong-v2") throw new InvalidDataException("Unexpected control response"); Interlocked.Increment(ref heartbeatReplies); } });
             var receiver = Task.Factory.StartNew(() =>
             {
                 void KeyFrame() { Interlocked.Increment(ref keyframeRequests); Dispatcher.BeginInvoke(() => { if (!outgoing.Writer.TryWrite(new Packet("keyframe-v2", ++sequence))) cancellation.Cancel(); }); }

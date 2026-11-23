@@ -40,7 +40,7 @@ internal static class VideoHostSession
         {
             while (true)
             {
-                var packet = await Wire.Read(control, session.Token);
+                var packet = await SessionControl.Read(control, session.Token);
                 if (packet.Kind == "input")
                 {
                     if (synthetic) throw new AuthenticationException("Input disabled in synthetic video test");
@@ -49,7 +49,12 @@ internal static class VideoHostSession
                 }
                 if (!gate.AcceptControl(packet)) throw new InvalidDataException("Unauthorized control event");
                 if (packet.Kind == "keyframe-v2") Interlocked.Exchange(ref forceKeyFrame, 1);
-                else if (packet.Kind == "ping-v2") await Wire.Write(control, new Packet("pong-v2", packet.Sequence), session.Token);
+                else if (packet.Kind == "ping-v2")
+                {
+                    using var replyDeadline = CancellationTokenSource.CreateLinkedTokenSource(session.Token);
+                    replyDeadline.CancelAfter(TimeSpan.FromSeconds(2));
+                    await Wire.Write(control, new Packet("pong-v2", packet.Sequence), replyDeadline.Token);
+                }
             }
         }, session.Token);
         var producer = Task.Factory.StartNew(() => Produce(queue, backend, capabilities, () => Interlocked.Exchange(ref forceKeyFrame, 0) != 0,
@@ -88,6 +93,13 @@ internal static class VideoHostSession
         {
             try { await Task.WhenAll(observedInput, observedSender, observedProducer); } catch (Exception) { /* Causal failure is reported above; join all workers. */ }
             gate.Revoke(); inputDesktop?.ReleaseAll();
+            try
+            {
+                var resources = GraphicsDiagnostics.Resources();
+                HostSessionLog.Write($"session_cleanup native_live_resources={(resources.Empty ? 0 : 1)} input_release_attempted=True");
+            }
+            catch (Exception error) when (error is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException)
+            { HostSessionLog.Write($"session_cleanup native_live_resources=unavailable error_type={error.GetType().Name} input_release_attempted=True"); }
         }
     }
 
@@ -101,7 +113,9 @@ internal static class VideoHostSession
     {
         bool synthetic = backend.StartsWith("test-", StringComparison.Ordinal);
         ICaptureBackend? capture = null; H264Encoder? encoder = null;
-        var clock = Stopwatch.StartNew(); long sequence = 0, previousDrops = 0; int recoveries = 0; int encoderWidth = 0, encoderHeight = 0;
+        var clock = Stopwatch.StartNew(); long sequence = 0, previousDrops = 0; int encoderWidth = 0, encoderHeight = 0;
+        var recovery = new PipelineRecovery();
+        bool injectedCaptureLoss = false;
         MediaCodec codec = backend != "test-deflate" && capabilities.Contains("h264") ? MediaCodec.H264 : MediaCodec.DeflateBgra;
         var encodeMetrics = new PipelineMetrics(); long uploaded = 0; uint accepted = 0; int gpuSamples = 0;
         string stage = "capture-init";
@@ -117,6 +131,11 @@ internal static class VideoHostSession
                     if (backend == "test-idle" && sequence >= 1) { ct.WaitHandle.WaitOne(); break; }
                     stage = "capture-init"; capture ??= synthetic ? null : CreateCapture(backend);
                     stage = "capture-frame";
+                    if ((backend == "test-capture-recovery" && sequence >= 4 && !injectedCaptureLoss) || (backend == "test-capture-exhausted" && sequence >= 4))
+                    {
+                        injectedCaptureLoss = true;
+                        throw new ExternalException($"Injected capture access loss attempt {recovery.Attempts + 1}", unchecked((int)0x887A0026));
+                    }
                     var timer = Stopwatch.StartNew();
                     int testWidth = backend == "test-resolution" && sequence >= 30 ? 1920 : 1280; int testHeight = backend == "test-resolution" && sequence >= 30 ? 1080 : 720;
                     var frame = synthetic ? new CapturedFrame(testWidth, testHeight, CodecVerification.Pattern(testWidth, testHeight, (int)(sequence % 200)), new(Stopwatch.GetTimestamp(), 1, [], [], 0, 0, false, 0, 0, 0, 0, 0, 0, [])) : capture!.Capture();
@@ -174,13 +193,22 @@ internal static class VideoHostSession
                     var packet = new MediaFrame(codec, ++sequence, encoded.Timestamp, frame.Width, frame.Height, encoded.KeyFrame, encoder?.Hardware == true,
                         (long)(captureMs * 1000), (long)(timer.Elapsed.TotalMilliseconds * 1000), CaptureMetadataCodec.Encode(frame.Metadata), encoded.Data);
                     stage = "queue-publish"; queue.Write(new(packet, Stopwatch.GetTimestamp()));
+                    if (recovery.FramePublished())
+                        HostSessionLog.Write($"pipeline_recovery state=Recovered attempt={recovery.Attempts} completed_frames={sequence} keyframe={encoded.KeyFrame}");
                     int delay = Math.Max(0, 33 - (int)(captureMs + timer.Elapsed.TotalMilliseconds));
                     if (ct.WaitHandle.WaitOne(delay)) break;
                 }
-                catch (ExternalException e) when (capture is DxgiCaptureBackend && e.HResult is unchecked((int)0x887A0026) or unchecked((int)0x887A0005) or unchecked((int)0x887A0007) && recoveries++ < 3)
+                catch (ExternalException e) when (PipelineRecovery.IsDeviceLoss(e) && !ct.IsCancellationRequested)
                 {
-                    encoder?.Dispose(); encoder = null; capture.Dispose(); capture = null;
-                    Console.WriteLine($"capture_reset={recoveries} reason={e.Message}");
+                    bool retry = recovery.TryBegin(stage, sequence, e);
+                    HostSessionLog.Write($"pipeline_recovery state={recovery.State} attempt={recovery.Attempts} stage={stage} completed_frames={sequence} hresult=0x{e.HResult:X8} reason={e.Message} first_stage={recovery.First!.Stage} first_hresult=0x{recovery.First.Error.HResult:X8}");
+                    if (!retry) throw;
+                    // Detach first so an exceptional Dispose cannot trigger a second release.
+                    var oldEncoder = encoder; encoder = null;
+                    var oldCapture = capture; capture = null;
+                    try { oldEncoder?.Dispose(); }
+                    finally { oldCapture?.Dispose(); }
+                    forceNextKeyFrame = true;
                     if (ct.WaitHandle.WaitOne(250)) break;
                 }
                 catch (ExternalException error) when (stage == "encode-submit" && encoder?.Hardware == true && !forceSoftware && !ct.IsCancellationRequested && error.HResult is not (unchecked((int)0x887A0026) or unchecked((int)0x887A0005) or unchecked((int)0x887A0007)))
@@ -195,6 +223,9 @@ internal static class VideoHostSession
         }
         catch (Exception error)
         {
+            recovery.Fail();
+            if (recovery.First is {} original)
+                HostSessionLog.Write($"pipeline_recovery state=Failed attempt={recovery.Attempts} first_stage={original.Stage} first_completed_frames={original.CompletedFrames} first_hresult=0x{original.Error.HResult:X8} first_reason={original.Error.Message} terminal_stage={stage} terminal_hresult=0x{error.HResult:X8}");
             producerFailure = error;
             failed(stage, sequence, error); // MUST precede queue completion and sibling cancellation
             HostSessionLog.Write($"producer_error stage={stage} completed_frames={sequence} error_type={error.GetType().Name} hresult=0x{error.HResult:X8} reason={error.Message}");

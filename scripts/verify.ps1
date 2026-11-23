@@ -44,7 +44,7 @@ try {
         if ($LASTEXITCODE) { throw 'WPF Host approval/stop contracts failed' }
     }
     if ($Graphics) {
-        foreach ($mode in @('--video-software', '--video-hardware', '--video-recovery', '--video-stalled', '--video-producer-failure', '--video-runtime-fallback')) {
+        foreach ($mode in @('--video-software', '--video-hardware', '--video-recovery', '--video-stalled', '--video-producer-failure', '--video-runtime-fallback', '--video-capture-recovery', '--video-capture-exhausted', '--video-control-timeout', '--video-idle-control')) {
             Run-App $smokeDll $hostDll $mode
             if ($LASTEXITCODE) { throw "Video smoke failed: $mode" }
         }

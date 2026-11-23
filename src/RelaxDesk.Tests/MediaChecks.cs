@@ -8,6 +8,23 @@ internal static class MediaChecks
         int count = 0;
         void Check(bool condition) { if (!condition) throw new Exception($"Media assertion {count + 1} failed"); count++; }
         var fault = new IOException("original capture/encode failure");
+        var recovery = new PipelineRecovery();
+        Check(recovery.State == RecoveryState.Healthy && !recovery.FramePublished());
+        var loss = new System.Runtime.InteropServices.ExternalException("first device removal", unchecked((int)0x887A0005));
+        Check(PipelineRecovery.IsDeviceLoss(loss) && !PipelineRecovery.IsDeviceLoss(fault));
+        foreach (int hr in new[] { unchecked((int)0x887A0026), unchecked((int)0x887A0007) })
+            Check(PipelineRecovery.IsDeviceLoss(new System.Runtime.InteropServices.ExternalException("loss", hr)));
+        Check(!PipelineRecovery.IsDeviceLoss(new System.Runtime.InteropServices.ExternalException("unsupported", unchecked((int)0x887A0004))));
+        for (int attempt = 1; attempt <= 3; attempt++)
+        {
+            Check(recovery.TryBegin("capture-frame", 4, attempt == 1 ? loss : fault));
+            Check(recovery.State == RecoveryState.Recovering && recovery.Attempts == attempt);
+            Check(recovery.FramePublished() && recovery.State == RecoveryState.Recovered);
+            Check(!recovery.FramePublished());
+        }
+        Check(!recovery.TryBegin("encoder-init", 9, fault) && recovery.State == RecoveryState.Failed);
+        Check(ReferenceEquals(recovery.First!.Error, loss) && recovery.First.Stage == "capture-frame" && recovery.First.CompletedFrames == 4);
+        Check(!recovery.FramePublished() && !recovery.TryBegin("capture-init", 9, fault));
         var failures = new FirstSessionFailure();
         Check(failures.Record("capture-encode", "encode-submit", 4, fault));
         Check(!failures.Record("media-send", "queue-read", 4, new System.Threading.Channels.ChannelClosedException()));
