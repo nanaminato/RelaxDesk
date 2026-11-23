@@ -1,5 +1,15 @@
 # Bounded local diagnostics
 
+## Viewer first failure and stage attribution
+
+Viewer uses the existing Core `FirstSessionFailure` before canceling related workers. A media failure previously could cancel control first and become hidden behind the control task's cancellation result. Media read/validation, CPU/GPU decode, renderer creation, GPU Present, CPU bitmap submission and post-frame UI update now have separate local stages. CPU rendering and scheduled post-frame callbacks capture failures and stop the session instead of escaping WPF event handlers. The first exception object/type/HRESULT is retained; queued input, workers and graphics resources still follow existing teardown. Logs record received-frame count, not physical displayed frames.
+
+After existing bounded GPU recovery/fallback is exhausted, decode/render/UI failures stop automatic retry, including display-side `IOException`. Transport read/write failures retain the existing pinned/fresh-consent retry policy; malformed protocol data still fails it. A valid Host terminal notice takes precedence over transport EOF arriving on another socket, preserving explicit-stop semantics, while an already captured decode/display failure remains its own diagnostic cause. Normal user cancellation does not invent a failure.
+
+Viewer displays distinct decode/display/UI failure notices. GPU occlusion remains a visibility condition, logged once per renderer generation without a device-rebuild loop. Recoverable GPU events include their current stage/type/code, with existing retry limits unchanged. Actual GPU Present, driver-loss and visible-image acceptance remain physical tests; synthetic CPU/UI failure injection does not verify those paths. [Viewer stage evidence](../benchmarks/2026-11-24-viewer-failure-validation.md).
+
+## File storage and privacy
+
 Current source writes `%LOCALAPPDATA%/RelaxDesk/logs/host.log` and `viewer.log`; each has three rolling archives (`.1` newest through `.3`). Each file is limited to 2MiB, for at most 8MiB newly managed data per role. Existing date-named logs from historical packages are preserved and are not included in this bound or automatically removed. Oversized pre-existing managed files are refused, not silently truncated. No package is produced by this change.
 
 Host keeps existing structured stage/type/HRESULT/reason and cleanup diagnostics on its console; startup fingerprint, pairing token, invitation and protocol/input payloads never go through the file logger. Viewer stores only operation, exception type/HRESULT and local correlation, deliberately excluding exception messages that can contain user-supplied credentials. Normalized records replace control characters, cap diagnostic text at 2,048 UTF-16 characters and mark truncation; bounded UTF-8 records fit within the minimum configured file cap. Neither screenshots, clipboard text, file contents nor full keyboard data belong in this API. This is developer-controlled diagnostic text, not a general-purpose redactor for arbitrary secret strings.

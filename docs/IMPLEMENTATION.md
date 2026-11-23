@@ -2,6 +2,8 @@
 
 ## Current office continuation checkpoint — 2026-11-24
 
+Viewer now [retains first pipeline failures and distinguishes stages](DIAGNOSTICS.md#viewer-first-failure-and-stage-attribution), including controlled CPU submission/post-frame UI teardown and transport-only automatic retry. [Actual WPF/TLS fault injection and regression evidence](../benchmarks/2026-11-24-viewer-failure-validation.md) verifies original exception identity, UI messages, no inappropriate retry and native cleanup; physical GPU/scanout remains pending.
+
 [Bounded asynchronous local diagnostics](DIAGNOSTICS.md) now replace daily unbounded file appends, preserve existing structured Host errors and Viewer secret exclusion, and add process-local per-connection correlation. [Actual file/TLS/WPF evidence](../benchmarks/2026-11-24-diagnostic-log-validation.md) covers retention/pressure, storage failure isolation, credential sentinels and existing session/reconnect paths. This is best-effort diagnostic storage, not durable audit logging or physical acceptance.
 
 Performance tooling now supports isolated builds and future self-contained EXEs with explicit owned-process identities, binary hashes, bounded sampling and strict terminal results. [Collection contract](BENCHMARK-COLLECTION.md), [actual collector evidence](../benchmarks/2026-11-24-benchmark-collector-validation.md). Both PowerShell versions and summary integrity contracts pass; brief synthetic WPF traces are archived without making office-performance claims.

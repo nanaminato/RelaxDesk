@@ -99,6 +99,10 @@ try {
         if ($LASTEXITCODE) { throw "Security smoke failed: $mode" }
     }
     if ($Wpf) {
+        foreach($failureStage in @('cpu-decode','cpu-submit','viewer-update')){
+            Run-App $viewer --pipeline-failure-contracts $hostDll $failureStage
+            if($LASTEXITCODE){throw "Viewer original pipeline failure lost: $failureStage"}
+        }
         Run-App $viewer --diagnostic-log-contracts (Join-Path $root 'build/diagnostic-log-verification')
         if($LASTEXITCODE){throw 'Viewer diagnostic privacy/async isolation failed'}
         Run-App $viewer --viewport-contracts

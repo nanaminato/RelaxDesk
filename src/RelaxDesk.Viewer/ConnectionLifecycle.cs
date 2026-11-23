@@ -56,7 +56,7 @@ public sealed partial class ViewerWindow
                 if (recoveryBudget.IsCancellationRequested)
                 { SetConnectionPhase(ConnectionPhase.Failed); status.Text = "自动重连已超时，请检查网络后手动连接。"; break; }
                 if (result.Error is null) { SetConnectionPhase(ConnectionPhase.Disconnected); break; }
-                if (approvedPin is null || !ConnectionRecovery.IsTransient(result.Error) || (smoke is not null && !smoke.ReconnectTest))
+                if (approvedPin is null || !PipelineAllowsReconnect || !ConnectionRecovery.IsTransient(result.Error) || (smoke is not null && !smoke.ReconnectTest))
                 {
                     SetConnectionPhase(result.Error is RemoteSessionEndedException ? ConnectionPhase.Disconnected : ConnectionPhase.Failed);
                     status.Text = result.Error switch
@@ -66,7 +66,7 @@ public sealed partial class ViewerWindow
                         System.Security.Authentication.AuthenticationException => "无法验证 Host 身份，已停止连接；请重新核对指纹。",
                         InvalidDataException => "会话协议数据无效，已停止自动重连。",
                         _ => "连接已结束：" + result.Error.Message
-                    }; break;
+                    }; if(PipelineFailureText is{} pipelineText)status.Text=pipelineText; break;
                 }
                 if (outage is null) outage = Stopwatch.StartNew();
                 var delay = ConnectionRecovery.Delay(++retry, outage.Elapsed, Random.Shared.NextDouble());

@@ -37,7 +37,8 @@ public sealed class App : Application
         try
         {
             var app = new App();
-            if(args is ["--diagnostic-log-contracts",var diagnosticFixtures])DiagnosticLogVerification.Run(app,diagnosticFixtures);
+            if(args is ["--pipeline-failure-contracts",var pipelineHost,var pipelineStage])ViewerWindow.VerifyPipelineFailure(app,pipelineHost,pipelineStage);
+            else if(args is ["--diagnostic-log-contracts",var diagnosticFixtures])DiagnosticLogVerification.Run(app,diagnosticFixtures);
             else if(args is ["--viewport-contracts"])ViewerWindow.VerifyViewport(app);
             else if(args is ["--audio-session-contracts",var audioHost])ViewerWindow.VerifyAudioSession(app,audioHost);
             else if(args is ["--history-contracts",var historyHost,var historyFixtures])ViewerWindow.VerifyConnectionHistory(app,historyHost,historyFixtures);
@@ -187,6 +188,15 @@ public sealed partial class ViewerWindow : Window
         bool preferGpu = gpuRendering.IsChecked == true; nint hwnd = 0;
         using var repaintSignal = new AutoResetEvent(false);
         int receivedFrames = 0; bool budgetComplete = false;
+        var pipelineFailures = new FirstSessionFailure(); lastPipelineFailure = null;
+        void Failed(string worker, string stage, Exception error)
+        {
+            if (cancellation.IsCancellationRequested || !pipelineFailures.Record(worker, stage, Volatile.Read(ref receivedFrames), error)) return;
+            lastPipelineFailure = pipelineFailures.First;
+            if (smoke is null) ViewerSessionLog.Record($"pipeline-failure worker={worker} stage={stage} received_frames={lastPipelineFailure!.CompletedFrames}", lastPipelineFailure.Error);
+        }
+        async Task Observe(Func<Task> work, string worker, string stage)
+        { try { await work(); } catch (Exception error) { Failed(worker, stage, error); throw; } }
         long heartbeatReplies = 0;
         var pacing = Stopwatch.StartNew(); double last = 0;
         System.Windows.Threading.DispatcherTimer? heartbeat = null;
@@ -198,6 +208,9 @@ public sealed partial class ViewerWindow : Window
             void Update()
             {
                 if(!ReferenceEquals(session,cancellation)||cancellation.IsCancellationRequested)return;
+                try
+                {
+                InjectPipelineFault("viewer-update");
                 if(displaySession is not null&&!displaySession.AcceptFrame(frame))return;
                 if(!AcceptVideoFrame(frame))return;
                 SetViewportVideoSize(frame.Width,frame.Height);if(gpu&&drawnViewport is not null)ViewportDrawn(drawnViewport);
@@ -206,18 +219,26 @@ public sealed partial class ViewerWindow : Window
                 audioSession?.VideoPresented(frame.Timestamp100ns);
                 VideoSettingsPresented(frame);
                 if (smoke is not null && !smoke.FileTransfer && !smoke.RichClipboardTest && !smoke.ReconnectTest && !smoke.IdleSessionTest && !smoke.IdleRepaintTest && !smoke.FixedMediaBudget && count >= smoke.Frames && !smoke.CloseWhileStreaming) cancellation.Cancel();
+                }
+                catch (Exception error) { Failed("ui-state", "viewer-update", error); cancellation.Cancel(); }
             }
             if (Dispatcher.CheckAccess()) Update(); else Dispatcher.BeginInvoke(Update);
         }
         void Rendering(object? sender, EventArgs args)
         {
+            if (cancellation.IsCancellationRequested) return;
+            try
+            {
             if (!decoded.TryRead(out var frame) || frame is null) return;
             if(displaySession is not null&&!displaySession.AcceptFrame(frame.Frame))return;
             if(!AcceptVideoFrame(frame.Frame)){Interlocked.Increment(ref skipped);return;}
+            InjectPipelineFault("cpu-submit");
             metrics.Add("render_submit", cpu.Submit(frame));if(!viewportInputReady)ApplyViewport(); metrics.Add("decode", frame.DecodeMilliseconds);
             metrics.Add("readback", frame.Timing.ReadbackMs); metrics.Add("decode_to_render_submit", Stopwatch.GetElapsedTime(frame.DecodedAt).TotalMilliseconds);
             Presented(false, frame.Frame, frame.DecodeMilliseconds);
             if (budgetComplete && decoded.Depth == 0) cancellation.Cancel();
+            }
+            catch (Exception error) { Failed("cpu-render", "cpu-submit", error); cancellation.Cancel(); }
         }
         CompositionTarget.Rendering += Rendering;
         try
@@ -272,14 +293,15 @@ public sealed partial class ViewerWindow : Window
             }
             catch (Exception e)
             {
+                if (smoke is null) ViewerSessionLog.Record("gpu-recovery stage=gpu-child-init", e);
                 preferGpu=false;gpuViewportActive=false;
                 if(nativeView is not null){videoPanel.Children.Remove(nativeView);try{nativeView.Dispose();}catch(Exception cleanup){ViewerSessionLog.Record("gpu-child-cleanup",cleanup);}nativeView=null;}
                 image.Visibility=Visibility.Visible;status.Text="GPU display unavailable: "+e.Message;
             }
         }
 
-            var writer = Task.Run(async () => { await foreach (var packet in outgoing.Reader.ReadAllAsync(cancellation.Token)) await Wire.Write(connection.Control, packet, cancellation.Token); });
-            var control = Task.Run(async () =>
+            var writer = Task.Run(() => Observe(async () => { await foreach (var packet in outgoing.Reader.ReadAllAsync(cancellation.Token)) await Wire.Write(connection.Control, packet, cancellation.Token); }, "control-write", "control-write"));
+            var control = Task.Run(() => Observe(async () =>
             {
                 long clipboardSequence = 0;
                 while (true)
@@ -330,7 +352,7 @@ public sealed partial class ViewerWindow : Window
                     }
                     else throw new InvalidDataException("Unexpected control response");
                 }
-            });
+            }, "control-read", "control-read"));
             var receiver = Task.Factory.StartNew(() =>
             {
                 void KeyFrame() { Interlocked.Increment(ref keyframeRequests); Dispatcher.BeginInvoke(() => { if(!ReferenceEquals(session,cancellation)||cancellation.IsCancellationRequested)return; if (!outgoing.Writer.TryWrite(new Packet("keyframe-v2", ++sequence))) cancellation.Cancel(); }); }
@@ -347,6 +369,7 @@ public sealed partial class ViewerWindow : Window
                 }
                 int generation = -1, retries = 0, lastRendererResizes = 0; bool gpu = preferGpu; bool simulatedGap = false;
                 bool reportedOcclusion = false;
+                string stage = "media-read";
                 void CollectRenderState()
                 {
                     if (renderer is null) return;
@@ -357,6 +380,7 @@ public sealed partial class ViewerWindow : Window
                     if (!reportedOcclusion && timing.Occluded > 0)
                     {
                         reportedOcclusion = true;
+                        if (smoke is null) ViewerSessionLog.Record("gpu-occluded");
                         Diagnostic("GPU output occluded; waiting for visibility without rebuilding the device");
                         string details = "render_environment=" + renderer.Diagnostics();
                         if (smoke is not null) Console.WriteLine(details); else Debug.WriteLine(details);
@@ -364,6 +388,7 @@ public sealed partial class ViewerWindow : Window
                 }
                 void RecoverGpu(Exception error)
                 {
+                    if (smoke is null) ViewerSessionLog.Record("gpu-recovery stage=" + stage, error);
                     retained?.Dispose(); retained = null; renderer?.Dispose(); renderer = null; decoder.Dispose();
                     bool lost = error.HResult is unchecked((int)0x887A0005) or unchecked((int)0x887A0007) or unchecked((int)0x887A0026);
                     if (lost && retries++ < 2) { Diagnostic("GPU device lost; recreating decoder and swapchain"); decoder = new(KeyFrame, Diagnostic); generation = -1; KeyFrame(); return; }
@@ -385,6 +410,7 @@ public sealed partial class ViewerWindow : Window
                         {
                             try
                             {
+                                stage = "gpu-present";
                                 var idleViewport=CurrentViewport;
                                 if (AcceptVideoFrame(retained.Frame)&&(displaySession is null||displaySession.AcceptFrame(retained.Frame))&&renderer.Present(retained.Surface, retained.Frame.Metadata,idleViewport))
                                 {
@@ -395,7 +421,9 @@ public sealed partial class ViewerWindow : Window
                             catch (System.Runtime.InteropServices.ExternalException e) { RecoverGpu(e); }
                         }
                         if (!pendingRead.IsCompleted) continue;
+                        stage = "media-read";
                         var frame = pendingRead.GetAwaiter().GetResult(); ioNotification?.GetAwaiter().GetResult(); pendingRead = null; ioNotification = null;
+                        stage = "media-validate";
                         Interlocked.Increment(ref receivedFrames); metrics.Traffic(MediaProtocol.HeaderSize + frame.Metadata.Length + frame.Data.Length);
                         metrics.Add("capture",frame.CaptureMicroseconds/1000d);metrics.Add("encode",frame.EncodeMicroseconds/1000d);
                         if(displaySession is not null&&!displaySession.AcceptFrame(frame))continue;
@@ -409,10 +437,13 @@ public sealed partial class ViewerWindow : Window
                             {
                                 if (smoke?.SimulateDeviceLoss == true && simulatedLosses < 3 && gpuFrames >= 10 * (simulatedLosses + 1)) { simulatedLosses++; throw new System.Runtime.InteropServices.ExternalException("Simulated device removal for recovery test", unchecked((int)0x887A0005)); }
                                 retained?.Dispose(); retained = null;
+                                stage = "gpu-decode"; InjectPipelineFault(stage);
                                 var surface = decoder.DecodeSurface(frame); if (surface is null) continue; retained = surface;
                                 if (generation != decoder.Generation) { renderer?.Dispose(); renderer = null; lastRendererResizes = 0; lastHidden = lastOccluded = lastBusy = 0; reportedOcclusion = false; generation = decoder.Generation; }
+                                stage = "gpu-renderer-init";
                                 if (renderer is null) { renderer = new(surface.Surface, hwnd); rendererGenerations++; }
                                 nativeView!.SetVideoSize(frame.Width, frame.Height);
+                                stage = "gpu-present"; InjectPipelineFault(stage);
                                 var drawnViewport=CurrentViewport;bool shown = renderer.Present(surface.Surface, frame.Metadata,drawnViewport);
                                 if(smoke is not null && receivedFrames==1)Console.WriteLine("render_environment="+renderer.Diagnostics());
                                 metrics.Add("decode", surface.DecodeMilliseconds); metrics.Add("gpu_draw_submit", renderer.Timing.DrawMs); metrics.Add("present_call", renderer.Timing.PresentMs);
@@ -427,10 +458,12 @@ public sealed partial class ViewerWindow : Window
                                 continue;
                             }
                         }
+                        stage = "cpu-decode"; InjectPipelineFault(stage);
                         var pixels = decoder.Decode(frame); if (pixels is not null) { Interlocked.Add(ref readbackBytes, checked((long)pixels.Timing.ReadbackBytes)); decoded.Write(pixels); }
                         BudgetReached();
                     }
                 }
+                catch (Exception error) { Failed("media", stage, error); throw; }
                 finally
                 {
                     cancellation.Cancel();
@@ -445,7 +478,11 @@ public sealed partial class ViewerWindow : Window
             Exception? ended=null;
             try { await first; } catch(Exception error){ended=error;}
             try { await Task.WhenAll(writer,control,receiver); } catch(Exception) { }
-            if(control.Exception?.GetBaseException() is RemoteSessionEndedException remoteEnd)throw remoteEnd;
+            // Independent sockets can deliver media EOF before the authorized
+            // terminal notice. Preserve explicit Host stop over transport EOF,
+            // while retaining an already captured decode/display fault.
+            if(control.Exception?.GetBaseException() is RemoteSessionEndedException remoteEnd && PipelineAllowsReconnect)throw remoteEnd;
+            if (pipelineFailures.First is { } original) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(original.Error).Throw();
             if(ended is not null)System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ended).Throw();
         }
         catch (OperationCanceledException error) when (cancellation.IsCancellationRequested) { attemptError=error; status.Text = "已断开连接"; }
