@@ -44,17 +44,18 @@ internal sealed partial class HostWindow
         selectedFileRoot = full; fileRootLabel.Text = full; fileRootLabel.ToolTip = full;
     }
     void SetFileConfigurationEnabled(bool enabled) { chooseFileRoot.IsEnabled = clearFileRoot.IsEnabled = enabled; }
-    void ShowFileRequest()
+    void ShowFileRequest(bool requested)
     {
         filesPermission.IsChecked = false; filesPermission.IsEnabled = selectedFileRoot is not null;
         filesPermission.Content = selectedFileRoot is null ? "文件访问未开放（请停止共享后先选择目录）" : "允许在选定目录内上传、下载和列出文件";
-        filesPermission.Visibility = Host.FilesRequested ? Visibility.Visible : Visibility.Collapsed;
+        filesPermission.Visibility = requested ? Visibility.Visible : Visibility.Collapsed;
         filesScopeLabel.Text = selectedFileRoot is null ? "本次未开放任何文件目录。" : "仅此目录及其子目录：" + selectedFileRoot;
         filesScopeLabel.Visibility = filesPermission.Visibility;
     }
     internal async Task StopFiles()
     {
-        await Host.RevokeFiles(); revokeFiles.Visibility = Visibility.Collapsed;
+        string? id=displayedSessionId;if(id is null)return;
+        await Host.RevokeFiles(id);if(displayedSessionId!=id)return;revokeFiles.Visibility = Visibility.Collapsed;
         detail.Text = "已停止文件传输；重新开启需要重新连接并授权。";
     }
 }

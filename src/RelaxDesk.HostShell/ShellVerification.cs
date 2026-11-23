@@ -40,9 +40,19 @@ internal static class ShellVerification
                 {
                     var denied=viewer.ConnectByApproval("127.0.0.1",port,timeout.Token);await Until(()=>window.RequestVisible);await window.Decide(false);
                     bool rejected=false;try{await denied;}catch(Exception e)when(e is IOException or System.Security.Authentication.AuthenticationException){rejected=true;}
-                    if(!rejected)throw new IOException("Shell denial accepted a session");await window.Host.Finished.WaitAsync(TimeSpan.FromSeconds(10));
+                    if(!rejected)throw new IOException("Shell denial accepted a session");await Until(()=>window.Status=="等待连接");
+                    if(!window.Host.Running||window.Host.Pending)throw new IOException("Denial terminated persistent Host");
                     if(window.Host.Snapshot().Any(l=>l.StartsWith("backend=")||l.StartsWith("media frames=")))throw new IOException("Denied session started capture/media");
                 }
+                // Same process accepts another independently approved session after denial.
+                using(var next=new SessionClient())
+                {
+                    var connecting=next.ConnectByApproval("127.0.0.1",port,timeout.Token);await Until(()=>window.RequestVisible);
+                    await window.Decide(true);await connecting;_=await MediaProtocol.Read(next.Media,timeout.Token);
+                    await window.DisconnectSession();await Until(()=>window.Status=="等待连接");
+                    if(!window.Host.Running)throw new IOException("Disconnect ended shared listener");
+                }
+                await window.StopSharing();await window.Host.Finished;
                 // Stop while still waiting, without a peer or an approval.
                 port=Port();await window.StartSharing("127.0.0.1",port,"test-hardware");await Until(()=>window.Status=="等待连接");await window.StopSharing();await window.Host.Finished.WaitAsync(TimeSpan.FromSeconds(10));
                 if(window.Host.Snapshot().Any(l=>l.Contains("pairing token:")||l.Contains("fingerprint:")||l.Contains("relaxdesk://")))throw new IOException("Shell diagnostic log exposed credentials");
@@ -67,7 +77,7 @@ internal static class ShellVerification
                     await window.StopSharing();await window.Host.Finished.WaitAsync(TimeSpan.FromSeconds(10));
                     if(!allowClipboard&&window.Host.Snapshot().Any(line=>line.StartsWith("test_clipboard_")))throw new IOException("Denied clipboard permission constructed provider");
                 }
-                Console.WriteLine("PASS WPF Host shell: real Host child/listen, explicit approval, H264 media, graceful stop, denial without capture, stop while waiting, no credential logs; synthetic loopback source only");
+                Console.WriteLine("PASS WPF Host shell: real Host child/listen, explicit approval, H264 media, graceful stop, denial without capture, new approval after denial in same process, session-only disconnect returns to listening, stop while waiting, no credential logs; synthetic loopback source only");
                 Console.WriteLine("PASS WPF clipboard permission: default off, request checkbox, screen-only grant denies clipboard, separate opt-in negotiates feature, Host IPC revocation preserves control; isolated test clipboard only");
                 string fileRoot=Path.Combine(Path.GetFullPath(output),"file-scope-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(fileRoot);
                 // No directory means the file request cannot be approved.

@@ -16,15 +16,21 @@ public sealed class SessionClient : IDisposable
     public string[] Capabilities { get; private set; } = [];
     public string[] RequestedFeatures { get; init; } = [];
     public string[] Features { get; private set; } = [];
+    public string VerifiedFingerprint { get; private set; } = "";
     public Task Connect(string host, int port, string fingerprint, string token, CancellationToken ct) => ConnectInternal(host, port, fingerprint, token, false, ct);
     // First-contact LAN approval: trust only this TLS session's presented cert,
     // then pin the media channel to that exact certificate. Host consent remains
     // mandatory. This provides no out-of-band identity proof on first contact.
     public Task ConnectByApproval(string host, int port, CancellationToken ct) => ConnectInternal(host, port, "", "", true, ct);
+    public Task ConnectByPinnedApproval(string host, int port, string fingerprint, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(fingerprint)) throw new AuthenticationException("Previously verified SHA256 fingerprint required");
+        return ConnectInternal(host, port, fingerprint, "", true, ct);
+    }
     async Task ConnectInternal(string host, int port, string fingerprint, string token, bool approvalOnly, CancellationToken ct)
     {
         string expected = fingerprint.Replace(" ", "").Replace(":", "").ToUpperInvariant();
-        if (!approvalOnly && (expected.Length != 64 || !expected.All(Uri.IsHexDigit))) throw new AuthenticationException("Trusted SHA256 fingerprint required");
+        if ((!approvalOnly || expected.Length != 0) && (expected.Length != 64 || !expected.All(Uri.IsHexDigit))) throw new AuthenticationException("Trusted SHA256 fingerprint required");
         async Task<SslStream> Open(TcpClient socket, bool firstContact = false)
         {
             await socket.ConnectAsync(host, port, ct);
@@ -39,6 +45,7 @@ public sealed class SessionClient : IDisposable
             catch { stream.Dispose(); throw; }
         }
         Control = await Open(control, approvalOnly);
+        VerifiedFingerprint = expected;
         var requestedFeatures = SessionCapabilities.Validate(RequestedFeatures);
         await Wire.Write(Control, new Packet(approvalOnly ? "request-v2" : "hello-v2", Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], Features: requestedFeatures.Length == 0 ? null : requestedFeatures), ct);
         var approval = await Wire.Read(Control, ct);

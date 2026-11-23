@@ -5,6 +5,7 @@ using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using RelaxDesk.Core;
+if (args is [var persistentHost, "--persistent-host", var persistentFixtures]) { await PersistentHostSmoke.Run(persistentHost, persistentFixtures); return; }
 if (args is ["--file-root-contracts", var fileFixture]) { await RelaxDesk.Windows.FileTransferContracts.Run(fileFixture); return; }
 if (args is [var fileHost, var fileMode, var fileOutput] && fileMode is "--file-transfer" or "--file-denied") { await FileTransferSmoke.Run(fileHost, fileOutput, fileMode=="--file-transfer"); return; }
 if(args is [var dataHost,"--reject-data",var dataFixtures]){string root=Path.Combine(Path.GetFullPath(dataFixtures),"rejected-data-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);await SecuritySmoke.Run(dataHost,"--reject-data",root);return;}

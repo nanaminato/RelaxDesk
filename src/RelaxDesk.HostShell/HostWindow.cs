@@ -21,6 +21,8 @@ internal sealed partial class HostWindow:Window
     readonly TextBox logs=new(){IsReadOnly=true,TextWrapping=TextWrapping.Wrap,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,MaxHeight=180,FontFamily=new("Consolas"),FontSize=11};
     readonly string application;
     bool closing;
+    string? displayedSessionId;
+    readonly Button disconnectSession=new(){Content="断开本次连接",Visibility=Visibility.Collapsed};
     public HostWindow(string? hostApplication=null)
     {
         application=hostApplication??Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"..","Host","RelaxDesk.Host.exe"));
@@ -40,13 +42,13 @@ internal sealed partial class HostWindow:Window
         if(addresses.Length>1){var options=new WrapPanel();foreach(string address in addresses){var pick=new Button{Content=address,Padding=new(10,5,10,5),FontSize=12};pick.Click+=(_,_)=>{if(!Host.Running)ip.Text=address;};options.Children.Add(pick);}settings.Children.Add(options);}
         AddFileSettings(settings);
         var actions=new WrapPanel();start.Style=(Style)Resources["PrimaryButton"];stop.Style=(Style)Resources["DangerButton"];
-        actions.Children.Add(start);actions.Children.Add(stop);actions.Children.Add(revokeClipboard);revokeClipboard.Click+=async(_,_)=>await StopClipboard();var copy=new Button{Content="复制地址"};copy.Click+=(_,_)=>Clipboard.SetText(ip.Text+":"+port.Text);actions.Children.Add(copy);settings.Children.Add(actions);color.Margin=new(4,12,0,0);color.TextWrapping=TextWrapping.Wrap;settings.Children.Add(color);var settingsCard=Card(settings);
+        actions.Children.Add(start);actions.Children.Add(stop);actions.Children.Add(disconnectSession);disconnectSession.Click+=async(_,_)=>await DisconnectSession();actions.Children.Add(revokeClipboard);revokeClipboard.Click+=async(_,_)=>await StopClipboard();var copy=new Button{Content="复制地址"};copy.Click+=(_,_)=>Clipboard.SetText(ip.Text+":"+port.Text);actions.Children.Add(copy);settings.Children.Add(actions);color.Margin=new(4,12,0,0);color.TextWrapping=TextWrapping.Wrap;settings.Children.Add(color);var settingsCard=Card(settings);
         var consent=new StackPanel();consent.Children.Add(Text("有人请求连接",19,true));peer.FontSize=16;peer.Margin=new(0,10,0,8);consent.Children.Add(peer);consent.Children.Add(new TextBlock{Text="允许后，对方可以查看桌面并操作键盘与鼠标。请确认是你期望的连接。",TextWrapping=TextWrapping.Wrap,Foreground=Brushes.SlateGray});var decision=new StackPanel{Orientation=Orientation.Horizontal,Margin=new(0,14,0,0)};allow.Style=(Style)Resources["PrimaryButton"];deny.Style=(Style)Resources["DangerButton"];decision.Children.Add(allow);decision.Children.Add(deny);consent.Children.Add(decision);request.Child=consent;request.Background=Brush("#EAF2FF");request.CornerRadius=new(12);request.Padding=new(22);request.Margin=new(0,0,0,16);content.Children.Add(request);content.Children.Add(settingsCard);
         consent.Children.Insert(3,clipboardPermission);consent.Children.Insert(4,filesPermission);consent.Children.Insert(5,filesScopeLabel);actions.Children.Add(revokeFiles);
         content.Children.Add(new Expander{Header="诊断与日志",Content=logs,Margin=new(0,4,0,0)});
         var scroll=new ScrollViewer{Content=content,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};Grid.SetColumn(scroll,1);root.Children.Add(scroll);Content=root;
         start.Click+=async(_,_)=>await StartSharing();stop.Click+=async(_,_)=>await StopSharing();allow.Click+=async(_,_)=>await Decide(true);deny.Click+=async(_,_)=>await Decide(false);
-        Host.Changed+=(kind,value)=>Dispatcher.BeginInvoke(()=>Changed(kind,value));Host.Diagnostic+=line=>Dispatcher.BeginInvoke(()=>{logs.Text=string.Join(Environment.NewLine,Host.Snapshot());if(line.StartsWith("producer_error")||line.StartsWith("Session ended:")||line.StartsWith("clipboard_")||line.StartsWith("file_transfer_disabled"))detail.Text=line;if(line.StartsWith("clipboard_disabled"))revokeClipboard.Visibility=Visibility.Collapsed;if(line.StartsWith("file_transfer_disabled"))revokeFiles.Visibility=Visibility.Collapsed;});
+        Host.Changed+=change=>Dispatcher.BeginInvoke(()=>Changed(change));Host.Diagnostic+=line=>Dispatcher.BeginInvoke(()=>{logs.Text=string.Join(Environment.NewLine,Host.Snapshot());if(line.StartsWith("producer_error")||line.StartsWith("Session ended:")||line.StartsWith("clipboard_")||line.StartsWith("file_transfer_disabled"))detail.Text=line;if(line.StartsWith("clipboard_disabled"))revokeClipboard.Visibility=Visibility.Collapsed;if(line.StartsWith("file_transfer_disabled"))revokeFiles.Visibility=Visibility.Collapsed;});
         Closing+=async(_,e)=>{if(!Host.Running)return;e.Cancel=true;if(closing)return;closing=true;await StopSharing();Close();};
     }
     static SolidColorBrush Brush(string value)=>new((Color)ColorConverter.ConvertFromString(value));
@@ -56,20 +58,22 @@ internal sealed partial class HostWindow:Window
     internal bool RequestVisible=>request.Visibility==Visibility.Visible;
     internal bool ClipboardChoiceVisible => clipboardPermission.Visibility == Visibility.Visible;
     internal bool ClipboardAllowed { get => clipboardPermission.IsChecked == true; set => clipboardPermission.IsChecked = value; }
-    internal async Task StopClipboard(){await Host.RevokeClipboard();revokeClipboard.Visibility=Visibility.Collapsed;detail.Text="已停止文本剪贴板同步；重新开启需要新的连接授权。";}
+    internal async Task StopClipboard(){string? id=displayedSessionId;if(id is null)return;await Host.RevokeClipboard(id);if(displayedSessionId!=id)return;revokeClipboard.Visibility=Visibility.Collapsed;detail.Text="已停止文本剪贴板同步；重新开启需要新的连接授权。";}
     internal string Status=>state.Text;
     internal async Task StartSharing(string? address=null,int? number=null,string backend="dxgi")
     {
         try{if(address is not null)ip.Text=address;if(number.HasValue)port.Text=number.Value.ToString();if(!int.TryParse(port.Text,out int selected))throw new ArgumentException("端口应为 1–65535");ip.IsEnabled=port.IsEnabled=start.IsEnabled=false;SetFileConfigurationEnabled(false);stop.IsEnabled=true;state.Text="正在启动";await Host.Start(application,ip.Text.Trim(),selected,backend,selectedFileRoot);}
         catch(Exception e){state.Text="无法开始共享";detail.Text=e.Message;ip.IsEnabled=port.IsEnabled=start.IsEnabled=true;SetFileConfigurationEnabled(true);stop.IsEnabled=false;}
     }
-    internal async Task Decide(bool accepted){allow.IsEnabled=deny.IsEnabled=false;bool clipboard=accepted&&clipboardPermission.IsChecked==true;bool files=accepted&&filesPermission.IsChecked==true&&selectedFileRoot is not null;await Host.Decide(accepted,clipboard,files);revokeClipboard.Visibility=clipboard?Visibility.Visible:Visibility.Collapsed;revokeFiles.Visibility=files?Visibility.Visible:Visibility.Collapsed;request.Visibility=Visibility.Collapsed;}
+    internal async Task Decide(bool accepted){string? id=displayedSessionId;if(id is null)return;allow.IsEnabled=deny.IsEnabled=false;bool clipboard=accepted&&clipboardPermission.IsChecked==true;bool files=accepted&&filesPermission.IsChecked==true&&selectedFileRoot is not null;await Host.Decide(accepted,clipboard,files,id);if(displayedSessionId!=id)return;revokeClipboard.Visibility=clipboard?Visibility.Visible:Visibility.Collapsed;revokeFiles.Visibility=files?Visibility.Visible:Visibility.Collapsed;request.Visibility=Visibility.Collapsed;}
     internal async Task StopSharing(){stop.IsEnabled=false;try{await Host.Stop();}catch(Exception e){detail.Text=e.Message;}}
-    void Changed(string kind,string? value)
+    internal Task DisconnectSession()=>displayedSessionId is {} id?Host.Disconnect(id):Task.CompletedTask;
+    void Changed(HostEvent change)
     {
+        string kind=change.Kind;string? value=change.Address;
         switch(kind){
-            case "listening":state.Text="等待连接";detail.Text=$"Viewer 可连接 {ip.Text}:{port.Text}，收到请求后由你确认。";break;
-            case "approval-request":peer.Text="请求来源  "+value;request.Visibility=Visibility.Visible;allow.IsEnabled=deny.IsEnabled=true;clipboardPermission.IsChecked=false;clipboardPermission.Visibility=Host.ClipboardRequested?Visibility.Visible:Visibility.Collapsed;ShowFileRequest();state.Text="等待你的授权";detail.Text="还未共享桌面或开放输入。";break;
+            case "listening":request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=revokeFiles.Visibility=disconnectSession.Visibility=Visibility.Collapsed;displayedSessionId=null;state.Text="等待连接";detail.Text=$"Viewer 可连接 {ip.Text}:{port.Text}，收到请求后由你确认。";break;
+            case "approval-request":displayedSessionId=change.SessionId;disconnectSession.Visibility=Visibility.Visible;peer.Text="请求来源  "+value;request.Visibility=Visibility.Visible;allow.IsEnabled=deny.IsEnabled=true;clipboardPermission.IsChecked=false;clipboardPermission.Visibility=(change.Features??[]).Contains(SessionCapabilities.ClipboardText)?Visibility.Visible:Visibility.Collapsed;ShowFileRequest((change.Features??[]).Contains(SessionCapabilities.FileTransfer));state.Text="等待你的授权";detail.Text="还未共享桌面或开放输入。";break;
             case "approved":state.Text="正在建立共享";detail.Text="已允许本次连接，正在准备屏幕。";request.Visibility=Visibility.Collapsed;break;
             case "denied":state.Text="已拒绝连接";detail.Text="没有共享桌面。";break;
             case "streaming":state.Text="正在共享";detail.Text="对方可查看并操作当前桌面。你可以随时停止共享。";break;
@@ -84,7 +88,8 @@ internal sealed partial class HostWindow:Window
                     if(!info.GetProperty("white_level_known").GetBoolean()) color.Text+="（系统未提供白位，使用默认值）";
                 }
                 catch(JsonException){}break;
-            case "ended":case "stopped":if(state.Text!="已拒绝连接")state.Text=kind=="stopped"?"已停止共享":"会话已结束";request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=Visibility.Collapsed;revokeFiles.Visibility=Visibility.Collapsed;ip.IsEnabled=port.IsEnabled=start.IsEnabled=true;SetFileConfigurationEnabled(true);stop.IsEnabled=false;break;
+            case "session-ended":request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=revokeFiles.Visibility=disconnectSession.Visibility=Visibility.Collapsed;displayedSessionId=null;state.Text="会话已结束";detail.Text="正在清理资源，随后继续等待新的连接。";break;
+            case "ended":case "stopped":displayedSessionId=null;disconnectSession.Visibility=Visibility.Collapsed;if(state.Text!="已拒绝连接")state.Text=kind=="stopped"?"已停止共享":"会话已结束";request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=Visibility.Collapsed;revokeFiles.Visibility=Visibility.Collapsed;ip.IsEnabled=port.IsEnabled=start.IsEnabled=true;SetFileConfigurationEnabled(true);stop.IsEnabled=false;break;
         }
     }
 }

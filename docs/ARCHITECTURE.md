@@ -8,6 +8,8 @@ Current optional v2 session extension: `Features` is separate from media codec n
 
 Provide a **physical-desktop screen-sharing remote controller**, initially for Windows 10/11 Home. The design is not a new RDP server and does not create independent Windows logon sessions. It should approach the responsiveness of MSTSC on comparable office tasks while retaining fidelity and safe operation.
 
+Host lifetime: HostShell/interactive Host supports sequential single-controller sessions, per-connection one-shot local consent IDs, per-session optional revocations and complete teardown before listening again. A process-lifetime certificate supports pinned fresh approval; automatic Viewer recovery is next. See [session lifecycle](SESSION-LIFECYCLE.md).
+
 ## Process boundaries
 
 - **Viewer:** WPF Windows application. Connection lifecycle, input capture, hardware-assisted decoding/composition, clipboard policy and per-session UI.

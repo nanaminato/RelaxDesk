@@ -11,6 +11,8 @@ using RelaxDesk.Windows;
 using RelaxDesk.Host;
 bool shellMode = args.Length > 0 && args[0] == "--shell";
 if (shellMode) args = args[1..];
+bool listenMode = args.Length > 0 && args[0] == "--listen";
+if (listenMode) args = args[1..];
 string? selectedFileRoot = null;
 if (args is ["--file-root", var authorizedDirectory, .. var remaining]) { selectedFileRoot = Path.GetFullPath(authorizedDirectory); args = remaining; }
 bool interactiveLaunch = args.Length == 0;
@@ -62,76 +64,41 @@ if (args is ["--capture-test"])
     catch (IOException e) { Console.Error.WriteLine($"Capture test failed: {e.Message}"); Environment.ExitCode = 1; return; }
 }
 if (args.Length is < 2 or > 3 || !IPAddress.TryParse(args[0], out var address) || !int.TryParse(args[1], out int port) || port is < 1 or > 65535 || IPAddress.Any.Equals(address) || IPAddress.IPv6Any.Equals(address))
-{ Console.WriteLine("Usage: RelaxDesk.Host <specific LAN IP> <port>"); return; }
+{ Console.WriteLine("Usage: RelaxDesk.Host [--listen] [--file-root <local directory>] <specific LAN IP> <port> [backend]"); return; }
 string backend = args.Length == 3 ? args[2] : "auto";
 if (backend is not ("auto" or "dxgi" or "gdi" or "test-software" or "test-hardware" or "test-deflate" or "test-resolution" or "test-idle" or "test-producer-failure" or "test-runtime-fallback" or "test-capture-recovery" or "test-capture-exhausted" or "test-clipboard" or "test-clipboard-failure")) throw new ArgumentException("Unknown capture backend");
 if (backend.StartsWith("test-", StringComparison.Ordinal) && !IPAddress.IsLoopback(address)) throw new ArgumentException("Synthetic test is loopback-only");
 using var cert = SessionCertificate.Create();
-string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
-if (!shellMode) Console.WriteLine($"SHA256 fingerprint: {cert.GetCertHashString(HashAlgorithmName.SHA256)}\nOne-session pairing token: {token}\nConnection code: {new ConnectionInvitation(address.ToString(), port, cert.GetCertHashString(HashAlgorithmName.SHA256), token).Encode()}");
-var listener = new TcpListener(address, port); listener.Start(1);
+bool persistent = shellMode || listenMode || interactiveLaunch;
+var listener = new TcpListener(address, port);
 using var stop = new CancellationTokenSource();
 using var shell = shellMode ? new ShellBridge(stop) : null;
-if (shellMode) ShellBridge.Emit("listening", address.ToString(), port);
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Cancel(); listener.Stop(); };
 try
 {
-    using var client = await listener.AcceptTcpClientAsync(stop.Token); client.NoDelay = true;
-    Packet hello;
-    using var tls = new SslStream(client.GetStream(), false);
-    using (var auth = CancellationTokenSource.CreateLinkedTokenSource(stop.Token))
+    do
     {
-        auth.CancelAfter(TimeSpan.FromSeconds(30));
-        await tls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = cert, EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, auth.Token);
-        hello = await Wire.Read(tls, auth.Token, 16 * 1024);
-        if (hello.Kind == "request-v2")
+        string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+        if (!shellMode) Console.WriteLine($"SHA256 fingerprint: {cert.GetCertHashString(HashAlgorithmName.SHA256)}\nOne-session pairing token: {token}\nConnection code: {new ConnectionInvitation(address.ToString(), port, cert.GetCertHashString(HashAlgorithmName.SHA256), token).Encode()}");
+        listener.Start(1);
+        if (shellMode) ShellBridge.Emit("listening", address.ToString(), port);
+        try
         {
-            if (hello.Text is not { Length: 32 } || !hello.Text.All(char.IsAsciiHexDigit) || hello.Capabilities is not { Length: > 0 and <= 2 } || hello.Capabilities.Any(c => c is not ("h264" or "deflate"))) throw new AuthenticationException("Invalid consent request");
-            if (!shellMode) Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests screen + input via IP/port approval. First-contact identity is not independently verified. Type APPROVE only if you expect this connection:");
+            using var client = await listener.AcceptTcpClientAsync(stop.Token); client.NoDelay = true;
+            using var scope = shell?.Begin();
+            try { await HostConnection.Run(listener, client, cert, token, backend, selectedFileRoot, scope, scope?.Token ?? stop.Token); }
+            finally { if (shellMode) ShellBridge.Emit("session-ended", sessionId: scope!.Id); }
         }
-        else if (hello.Kind is not ("hello-v1" or "hello-v2") || hello.Text is null || !CryptographicOperations.FixedTimeEquals(System.Text.Encoding.UTF8.GetBytes(hello.Text), System.Text.Encoding.UTF8.GetBytes(token))) throw new AuthenticationException("Pairing rejected");
-    }
-    if (!shellMode && hello.Kind != "request-v2") Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests screen + input. Type APPROVE to allow this session:");
-    var requestedFeatures = SessionCapabilities.Validate(hello.Features);
-    if (hello.Kind == "hello-v1" && requestedFeatures.Length != 0) throw new AuthenticationException("Session extensions require v2");
-    if (!shellMode && requestedFeatures.Contains(SessionCapabilities.ClipboardText)) Console.WriteLine("Optional clipboard.text requested. Type APPROVE_CLIPBOARD to separately allow bidirectional text; APPROVE grants screen/input only.");
-    if (!shellMode && requestedFeatures.Contains(SessionCapabilities.FileTransfer)) Console.WriteLine("Optional file.transfer requested. APPROVE_FILES grants access only to the configured local directory; APPROVE_ALL grants all requested configured features. APPROVE grants screen/input only.");
-    string? approval = shell is null ? await Console.In.ReadLineAsync(stop.Token) : await shell.Request(client.Client.RemoteEndPoint?.ToString() ?? "unknown", requestedFeatures);
-    if (approval is not ("APPROVE" or "APPROVE_CLIPBOARD" or "APPROVE_FILES" or "APPROVE_ALL")) { if (shellMode) ShellBridge.Emit("denied"); return; }
-    if (shellMode) ShellBridge.Emit("approved");
-    if (hello.Kind is "hello-v2" or "request-v2")
-    {
-        await VideoHostSession.Run(listener, client, tls, cert, hello, backend, stop.Token,
-            SessionCapabilities.Grant(requestedFeatures, approval is "APPROVE_CLIPBOARD" or "APPROVE_ALL", selectedFileRoot is not null && approval is "APPROVE_FILES" or "APPROVE_ALL"), shell?.ClipboardRevoked ?? default, selectedFileRoot, shell?.FilesRevoked ?? default);
-        return;
-    }
-    listener.Stop();
-    if (backend.StartsWith("test-", StringComparison.Ordinal)) throw new AuthenticationException("Synthetic mode requires v2");
-    var gate = new AccessGate(); gate.Approve();
-    using var desktop = new Desktop();
-    await Wire.Write(tls, new Packet("approved-v1"), stop.Token);
-    using var session = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
-    var input = Task.Run(async () => { try { while (true) { var p = await Wire.Read(tls, session.Token); if (!gate.TryExecuteInput(p, () => { session.Token.ThrowIfCancellationRequested(); desktop.Inject(p.Code, p.Up, p.X, p.Y); })) throw new InvalidDataException("Unauthorized/invalid input"); } } finally { session.Cancel(); } });
-    try
-    {
-        long id = 0;
-        while (!session.IsCancellationRequested)
-        {
-            var timer = Stopwatch.StartNew(); var pixels = desktop.Capture(); double capture = timer.Elapsed.TotalMilliseconds; timer.Restart();
-            using var output = new MemoryStream(); using (var zip = new DeflateStream(output, CompressionLevel.Fastest, true)) zip.Write(pixels);
-            double encode = timer.Elapsed.TotalMilliseconds; timer.Restart();
-            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(session.Token); deadline.CancelAfter(TimeSpan.FromSeconds(5));
-            await Wire.Write(tls, new Packet("frame-v1", ++id, desktop.Width, desktop.Height, output.ToArray(), CaptureMs: capture, EncodeMs: encode), deadline.Token);
-            Console.WriteLine($"frame={id} capture_ms={capture:F2} encode_ms={encode:F2} send_ms={timer.Elapsed.TotalMilliseconds:F2} compressed_bytes={output.Length}");
-            await Task.Delay(100, session.Token);
-        }
-    }
-    finally { gate.Revoke(); session.Cancel(); client.Close(); try { await input; } catch (Exception e) when (e is IOException or OperationCanceledException or ObjectDisposedException or InvalidDataException) { } desktop.ReleaseAll(); }
+        catch (Exception e) when (e is IOException or AuthenticationException or OperationCanceledException or SocketException or InvalidDataException or System.Runtime.InteropServices.ExternalException or System.Threading.Channels.ChannelClosedException)
+        { Console.WriteLine($"Session ended: {e.Message}"); }
+        finally { listener.Stop(); }
+        // Do not spin on repeated failed handshakes; STOP remains immediately cancellable.
+        if (persistent && !stop.IsCancellationRequested) await Task.Delay(250, stop.Token);
+    } while (persistent && !stop.IsCancellationRequested);
 }
-catch (Exception e) when (e is IOException or AuthenticationException or OperationCanceledException or SocketException or InvalidDataException or System.Runtime.InteropServices.ExternalException or System.Threading.Channels.ChannelClosedException) { Console.WriteLine($"Session ended: {e.Message}"); }
+catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
 finally
 {
     listener.Stop();
     if (shellMode) ShellBridge.Emit("ended");
-    if (interactiveLaunch) { Console.WriteLine($"会话已结束。诊断日志：{HostSessionLog.FilePath}\n按 Enter 关闭窗口。"); Console.ReadLine(); }
 }

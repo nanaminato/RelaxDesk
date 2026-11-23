@@ -16,7 +16,8 @@ Reviewed 2026-11-23: local and fetched remote `codex/dxgi-media-pipeline` both `
 | Scoped file engine + third TLS | Implemented | Automated Verified: 599 Core/TLS, 29 Windows file contracts, real fixture files/Host/media/control | Resume + Home LAN pending |
 | File panel/folder queue/confirmed drag-drop | Implemented | 22 WPF checks + cleanup; actual Viewer/Host session and live revoke | Physical Explorer/Home LAN pending |
 | Cross-session file resume | Planned | None | Fresh authorization and scope validation required |
-| Long-running Host / reconnect | Planned | None | One session per Host process |
+| Long-running single-controller Host | Implemented | 622 Core/TLS, real same-process sequential sessions and WPF disconnect/listen checks | Physical Home/long soak pending |
+| Viewer automatic reconnect | Planned next | Pinned fresh-approval transport tested | Bounded backoff and full Viewer state restoration required |
 | Multi-monitor / negative origins | Planned | None | Primary display only |
 | Service/installer/audio | Planned | None | Secure desktop unsupported |
 
@@ -26,6 +27,6 @@ Owner execution preferences: continue the complete remote-office goal; skip and 
 
 Historical packaged checkpoint: P0/P1 code through `0977e787b7c5d9816184a9aefbd369a9b885ef72`; the 0.4.2 ZIP was verified before clipboard development and does not contain this new feature. Actual capture remains denied (0x80070005); collector rejects Server/RDP for Home acceptance. Current source adds optional v2 clipboard capability/message types with independent grants; file capability is independently negotiated; reconnect remains planned. [Physical test/result template](PHYSICAL-ACCEPTANCE.md).
 
-Next development slice: **persistent single-session Host and secure bounded Viewer reconnect**, followed by scoped cross-session resume using fresh authorization. Host folder chooser/independent consent and Viewer panel/folder queues/confirmed drops are now implemented; [evidence](../benchmarks/2026-11-23-file-ui-validation.md). Negotiated scan-code/precision-pointer/TextCommit input and advanced clipboard formats remain required. Foreground keyboard and physical GPU/capture tests are explicitly skipped in this runner; production security gates stay strict. Do not count protocol-only/mock tests as physical acceptance.
+Next development slice: **secure bounded Viewer reconnect**, followed by scoped cross-session resume using fresh authorization. Persistent Host with per-connection consent is now implemented; [lifecycle evidence](../benchmarks/2026-11-23-session-lifecycle-validation.md). Host folder chooser/independent consent and Viewer panel/folder queues/confirmed drops are now implemented; [evidence](../benchmarks/2026-11-23-file-ui-validation.md). Negotiated scan-code/precision-pointer/TextCommit input and advanced clipboard formats remain required. Foreground keyboard and physical GPU/capture tests are explicitly skipped in this runner; production security gates stay strict. Do not count protocol-only/mock tests as physical acceptance.
 
 Physical exit: run existing `scripts/accept-home.ps1` or bundled `Collect-Logs.cmd` on an unlocked Home local console. Use two PCs and explicit approval; verify visible image, held Ctrl/drag disconnect, Microsoft Pinyin and Japanese Microsoft IME in actual remote applications, DPI, monitor unplug and real GPU reset. Record edition/build/driver/session/network/package identity. API Present success is not visible correctness or input-to-photon proof.

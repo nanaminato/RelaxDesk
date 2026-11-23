@@ -42,7 +42,9 @@ internal static class SecuritySmoke
             await process.StandardInput.WriteLineAsync(root is not null ? "APPROVE_FILES" : mode == "--deny-v2" ? "DENY" : "APPROVE"); await process.StandardInput.FlushAsync();
             if (mode == "--deny-v2")
             {
-                try { await Wire.Read(control, timeout.Token); throw new Exception("Denied viewer received approval"); } catch (EndOfStreamException) { }
+                var denied = await Wire.Read(control, timeout.Token);
+                if (denied.Kind != "denied-v2" || denied.Text is not null || denied.Data is not null || denied.Capabilities is not null || denied.Features is not null || denied.DataTicket is not null) throw new Exception("Denied viewer received session data");
+                try { await Wire.Read(control, timeout.Token); throw new Exception("Denied channel stayed open"); } catch (EndOfStreamException) { }
                 Console.WriteLine("PASS v2 host denial exposes no media"); return;
             }
             var approval = await Wire.Read(control, timeout.Token);

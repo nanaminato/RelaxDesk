@@ -69,6 +69,8 @@ try {
         if ($LASTEXITCODE) { throw 'WPF Host approval/stop contracts failed' }
     }
     if ($Graphics) {
+        Run-App $smokeDll $hostDll --persistent-host (Join-Path $root 'build/persistent-host-verification')
+        if ($LASTEXITCODE) { throw 'Persistent Host authorization/lifecycle failed' }
         $fileFixtures = Join-Path $root 'build/file-transfer-validation'
         Run-App $smokeDll --file-root-contracts $fileFixtures
         if ($LASTEXITCODE) { throw 'Scoped file contracts failed' }

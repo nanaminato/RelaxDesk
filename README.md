@@ -1,5 +1,7 @@
 # RelaxDesk
 
+Host now returns to Listening after each separately authorized session. HostShell distinguishes session disconnect from global stop; [lifecycle and security contract](docs/SESSION-LIFECYCLE.md). Pinned fresh-approval transport is implemented; Viewer automatic reconnect is next. No package is generated for this slice.
+
 File-transfer UI checkpoint: [scoped directory + third pinned TLS stream](docs/FILE-TRANSFER.md), Host folder consent, Viewer directory browser, recursive queue, confirmed drag-drop and live revoke are implemented. [Automated evidence](benchmarks/2026-11-23-file-ui-validation.md). Cross-session resume and physical Home acceptance remain pending; no new package until the final milestone.
 
 Current development source adds [independently authorized bidirectional text clipboard](docs/CLIPBOARD.md). Integration is verified with isolated clipboard providers; real Home/Windows clipboard validation is pending. Packaging is deferred until the final milestone at the owner's request; the existing 0.4.2 ZIP predates clipboard support.
