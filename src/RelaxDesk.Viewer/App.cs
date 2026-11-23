@@ -189,11 +189,13 @@ public sealed partial class ViewerWindow : Window
         using var repaintSignal = new AutoResetEvent(false);
         int receivedFrames = 0; bool budgetComplete = false;
         var pipelineFailures = new FirstSessionFailure(); lastPipelineFailure = null;
+        var pipelineFailed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         void Failed(string worker, string stage, Exception error)
         {
             if (cancellation.IsCancellationRequested || !pipelineFailures.Record(worker, stage, Volatile.Read(ref receivedFrames), error)) return;
             lastPipelineFailure = pipelineFailures.First;
             if (smoke is null) ViewerSessionLog.Record($"pipeline-failure worker={worker} stage={stage} received_frames={lastPipelineFailure!.CompletedFrames}", lastPipelineFailure.Error);
+            pipelineFailed.TrySetResult();
         }
         async Task Observe(Func<Task> work, string worker, string stage)
         { try { await work(); } catch (Exception error) { Failed(worker, stage, error); throw; } }
@@ -466,14 +468,18 @@ public sealed partial class ViewerWindow : Window
                 catch (Exception error) { Failed("media", stage, error); throw; }
                 finally
                 {
-                    cancellation.Cancel();
+                    // Close this reader without prematurely aborting the control
+                    // socket: it may already carry an explicit Host-end notice.
+                    try { connection.Media.Dispose(); } catch (Exception error) { Failed("media", "media-close", error); }
                     if (pendingRead is not null) { try { pendingRead.GetAwaiter().GetResult(); } catch (Exception) { } }
                     if (ioNotification is not null) { try { ioNotification.GetAwaiter().GetResult(); } catch (Exception) { } }
                     retained?.Dispose(); renderer?.Dispose(); decoder.Dispose();
                 }
             }, cancellation.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-            var first = await Task.WhenAny(writer, control, receiver);
-            if (smoke is null) ViewerSessionLog.Record(first == writer ? "control-write-end" : first == control ? "control-read-end" : "media-decode-render-end", first.Exception?.GetBaseException());
+            var first = await Task.WhenAny(writer, control, receiver, pipelineFailed.Task);
+            if (smoke is null) ViewerSessionLog.Record(first == pipelineFailed.Task ? "pipeline-failure-signaled" : first == writer ? "control-write-end" : first == control ? "control-read-end" : "media-decode-render-end", pipelineFailures.First?.Error ?? first.Exception?.GetBaseException());
+            if (!cancellation.IsCancellationRequested && pipelineFailures.First is { Stage: "media-read" } mediaEnd && ConnectionRecovery.IsTransient(mediaEnd.Error))
+                await Task.WhenAny(control, Task.Delay(300, cancellation.Token));
             cancellation.Cancel(); connection.Dispose();
             Exception? ended=null;
             try { await first; } catch(Exception error){ended=error;}

@@ -55,10 +55,13 @@ public sealed partial class ViewerWindow
         await Until(() => connectionGeneration == before + 1 && smokeFrames > oldFrames);
         await Task.Delay(300, ct);
         if (!fullScreen || sessionPermissions?.Allows(SessionCapabilities.FileTransfer) != false || fileQueue is not null || sessionToolbar?.FilesButton.IsEnabled != false || heldInputs.ReleaseAll().Length != 0) throw new IOException("Recovery viewport/input/permission state incorrect");
+        int delayedNotices = relay.DelayedControlWrites;
+        relay.DelayControlDownstream(TimeSpan.FromMilliseconds(150));
         await driver.Send("DISCONNECT", fresh.Id); await connectionEnded.Task.WaitAsync(ct);
+        if (relay.DelayedControlWrites <= delayedNotices) throw new IOException("Explicit-stop control delay fixture was not exercised");
         int ended = connectionGeneration; await Task.Delay(1500, ct);
         if (connectionGeneration != ended || connectionPhase != ConnectionPhase.Disconnected || connectionRun is not null || !GraphicsDiagnostics.Resources().Empty) throw new IOException("Explicit Host end retried or leaked resources");
-        Console.WriteLine("PASS actual WPF recovery: loopback network cut, fresh Host approval, same identity, revoked files not requested again, fresh decoder/video/toolbar, fullscreen restored, old held/queued input cleared, explicit Host end stops retry, native resources zero");
+        Console.WriteLine("PASS actual WPF recovery: loopback network cut, fresh Host approval, same identity, revoked files not requested again, fresh decoder/video/toolbar, fullscreen restored, old held/queued input cleared, delayed explicit Host-end control notice stops retry after media close, native resources zero");
 
         // A denied automatic retry must stop rather than prompting repeatedly.
         await ManualStart(); relay.Cut();
@@ -162,6 +165,14 @@ internal sealed class RecoveryRelay : IAsyncDisposable
     readonly List<Task> workers = [];
     readonly Task accept;
     readonly int destination;
+    int nextLink, delayedControlWrites;
+    long controlDelayUntil;
+    public int DelayedControlWrites => Volatile.Read(ref delayedControlWrites);
+    public void DelayControlDownstream(TimeSpan duration)
+    {
+        if (duration < TimeSpan.Zero || duration > TimeSpan.FromSeconds(1)) throw new ArgumentOutOfRangeException(nameof(duration));
+        Interlocked.Exchange(ref controlDelayUntil, Stopwatch.GetTimestamp() + (long)(duration.TotalSeconds * Stopwatch.Frequency));
+    }
     public int Port => ((IPEndPoint)listener.LocalEndpoint).Port;
     public RecoveryRelay(int destination) { this.destination = destination; listener.Start(); accept = Accept(); }
     async Task Accept()
@@ -171,12 +182,23 @@ internal sealed class RecoveryRelay : IAsyncDisposable
             while (true)
             {
                 var peer = await listener.AcceptTcpClientAsync(stop.Token);
-                lock (sync) { workers.RemoveAll(task => task.IsCompleted); workers.Add(Forward(peer)); }
+                lock (sync) { workers.RemoveAll(task => task.IsCompleted); workers.Add(Forward(peer, nextLink++ == 0)); }
             }
         }
         catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
     }
-    async Task Forward(TcpClient peer)
+    async Task CopyOutbound(Stream source, Stream target, bool control)
+    {
+        byte[] bytes = new byte[4096];
+        while (true)
+        {
+            int count = await source.ReadAsync(bytes, stop.Token); if (count == 0) return;
+            double remaining = control ? (Interlocked.Read(ref controlDelayUntil) - Stopwatch.GetTimestamp()) / (double)Stopwatch.Frequency : 0;
+            if (remaining > 0) { Interlocked.Increment(ref delayedControlWrites); await Task.Delay(TimeSpan.FromSeconds(remaining), stop.Token); }
+            await target.WriteAsync(bytes.AsMemory(0, count), stop.Token);
+        }
+    }
+    async Task Forward(TcpClient peer, bool control)
     {
         using var upstream = new TcpClient(); using (peer)
         {
@@ -185,7 +207,7 @@ internal sealed class RecoveryRelay : IAsyncDisposable
             {
                 peer.NoDelay = upstream.NoDelay = true; await upstream.ConnectAsync(IPAddress.Loopback, destination, stop.Token);
                 Task inbound = peer.GetStream().CopyToAsync(upstream.GetStream(), stop.Token);
-                Task outbound = upstream.GetStream().CopyToAsync(peer.GetStream(), stop.Token);
+                Task outbound = CopyOutbound(upstream.GetStream(), peer.GetStream(), control);
                 await Task.WhenAny(inbound, outbound); peer.Close(); upstream.Close();
                 try { await Task.WhenAll(inbound, outbound); } catch (Exception e) when (e is IOException or OperationCanceledException or ObjectDisposedException) { }
             }
@@ -193,7 +215,7 @@ internal sealed class RecoveryRelay : IAsyncDisposable
             finally { lock (sync) { sockets.Remove(peer); sockets.Remove(upstream); } }
         }
     }
-    public void Cut() { lock (sync) { foreach (var socket in sockets) socket.Close(); } }
+    public void Cut() { lock (sync) { foreach (var socket in sockets) socket.Close(); nextLink = 0; } }
     public async ValueTask DisposeAsync()
     {
         stop.Cancel(); listener.Stop(); Cut(); await accept;
