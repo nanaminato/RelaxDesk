@@ -19,6 +19,8 @@ Reviewed 2026-11-23: local and fetched remote `codex/dxgi-media-pipeline` both `
 
 Current slice: P0 bounded recovery/control liveness. [Evidence and commands](../benchmarks/2026-11-23-office-readiness.md).
 
+Delivery checkpoint: P0/P1 code committed through `0977e787b7c5d9816184a9aefbd369a9b885ef72`; self-contained 0.4.2 ZIP freshly extracted/manifest-verified and synthetic office/Host-WPF regressions passed without SDK/global runtime. Actual capture remains denied (0x80070005); collector rejects Server/RDP for Home acceptance. [Physical test/result template](PHYSICAL-ACCEPTANCE.md). No clipboard/files/reconnect capability is advertised. Protocol v1/v2 message types and granted permissions remain unchanged.
+
 P1 shortcuts/queue slice complete; expanded F1-F24/OEM/numpad routing test added but blocked because native foreground acquisition is unavailable in this runner. Existing routing rejects input as designed. Next: negotiated scan-code/precision-pointer input and opt-in text clipboard. Do not count protocol-only or mock tests as complete office features.
 
 Physical exit: run existing `scripts/accept-home.ps1` or bundled `Collect-Logs.cmd` on an unlocked Home local console. Use two PCs and explicit approval; verify visible image, held Ctrl/drag disconnect, Microsoft Pinyin and Japanese Microsoft IME in actual remote applications, DPI, monitor unplug and real GPU reset. Record edition/build/driver/session/network/package identity. API Present success is not visible correctness or input-to-photon proof.

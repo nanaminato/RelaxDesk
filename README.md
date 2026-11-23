@@ -1,5 +1,7 @@
 # RelaxDesk
 
+2026-11-23 continuation: bounded capture recovery/control liveness, remote shortcut menu and pointer-motion coalescing are delivered as a self-contained 0.4.2 acceptance slice. See [product readiness](docs/PRODUCT-READINESS.md) and [exact build/test evidence](benchmarks/2026-11-23-office-readiness.md). Physical Home acceptance, clipboard, file transfer and reconnect remain open.
+
 **A high-performance, open-source remote desktop project for Windows Home.**
 
 RelaxDesk aims to provide responsive, pixel-based remote control of an existing Windows desktop, with an office-productivity experience approaching Microsoft Remote Desktop (MSTSC)—without requiring Windows Pro, enabling Microsoft's RDP host, or modifying Windows system files.

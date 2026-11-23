@@ -1,0 +1,47 @@
+Synthetic loopback reliability checks. No physical desktop or input acceptance.
+PASS first-contact approval request and changed-media-certificate rejection (TLS)
+PASS 461 protocol/access/TLS integration checks
+PASS authenticated production Host -> shared Viewer decoder; mode=--video-capture-recovery hardware_encode=True hardware_decode=True frames=60 elapsed_s=3.04 fps=19.76 wire_mbps=3.852 process_cpu_pct=1.29 gpu_pct=unavailable dropped=0 queue_depth=0 capture_or_test_generation_p50_ms=2.82 capture_or_test_generation_p95_ms=4.64 encode_p50_ms=5.49 encode_p95_ms=7.03 decode_with_readback_p50_ms=5.23 decode_with_readback_p95_ms=10.49 frame_interval_p50_ms=33.46 frame_interval_p95_ms=37.40
+PASS concurrent TLS control; samples=292 rtt_p50_ms=0.24 rtt_p95_ms=0.46 rtt_max_ms=4.05; physical Present/input injection not tested
+backend=synthetic-test codec=H264 hardware_encode=True encoder=Intel? Quick Sync Video H.264 Encoder MFT
+pipeline_recovery state=Recovering attempt=1 stage=capture-frame completed_frames=4 hresult=0x887A0026 reason=Injected capture access loss attempt 1 first_stage=capture-frame first_hresult=0x887A0026
+backend=synthetic-test codec=H264 hardware_encode=True encoder=Intel? Quick Sync Video H.264 Encoder MFT
+pipeline_recovery state=Recovered attempt=1 completed_frames=5 keyframe=True
+session_end worker=control-read stage=control-read completed_frames=0 state=Faulted error_type=EndOfStreamException hresult=0x80070026 reason=Unable to read beyond the end of the stream.
+media frames=61 elapsed_s=3.05 fps=19.99 wire_mbps=3.912 process_cpu_pct=1.92 gpu_pct=unavailable dropped=0 queue_depth=0 send_p50_ms=0.07 send_p95_ms=0.14 capture_p50_ms=2.84 capture_p95_ms=6.74 encode_p50_ms=5.50 encode_p95_ms=7.03 frame_interval_p50_ms=33.38 frame_interval_p95_ms=36.06
+encode_stages upload_bytes=224870400 accepted_setting_mask=15 gpu_timestamp_samples=51 frames=61 elapsed_s=3.20 fps=19.07 wire_mbps=3.712 process_cpu_pct=1.83 gpu_pct=unavailable dropped=0 queue_depth=0 generate_p50_ms=2.84 generate_p95_ms=6.74 upload_submit_p50_ms=0.17 upload_submit_p95_ms=0.53 surface_setup_p50_ms=0.37 surface_setup_p95_ms=0.67 color_submit_p50_ms=0.35 color_submit_p95_ms=0.64 input_wait_p50_ms=0.00 input_wait_p95_ms=0.00 mft_submit_p50_ms=0.42 mft_submit_p95_ms=1.79 output_wait_p50_ms=4.05 output_wait_p95_ms=4.72 packet_pack_p50_ms=0.00 packet_pack_p95_ms=0.00 native_encode_total_p50_ms=5.47 native_encode_total_p95_ms=7.00 gpu_upload_p50_ms=0.25 gpu_upload_p95_ms=0.36 gpu_color_p50_ms=0.25 gpu_color_p95_ms=33.41
+session_cleanup native_live_resources=0 input_release_attempted=True
+Session ended: Unable to read beyond the end of the stream.
+
+PASS v2 peer disconnect / host clean exit
+backend=synthetic-test codec=H264 hardware_encode=True encoder=Intel? Quick Sync Video H.264 Encoder MFT
+pipeline_recovery state=Recovering attempt=1 stage=capture-frame completed_frames=4 hresult=0x887A0026 reason=Injected capture access loss attempt 1 first_stage=capture-frame first_hresult=0x887A0026
+pipeline_recovery state=Recovering attempt=2 stage=capture-frame completed_frames=4 hresult=0x887A0026 reason=Injected capture access loss attempt 2 first_stage=capture-frame first_hresult=0x887A0026
+pipeline_recovery state=Recovering attempt=3 stage=capture-frame completed_frames=4 hresult=0x887A0026 reason=Injected capture access loss attempt 3 first_stage=capture-frame first_hresult=0x887A0026
+pipeline_recovery state=Failed attempt=3 stage=capture-frame completed_frames=4 hresult=0x887A0026 reason=Injected capture access loss attempt 4 first_stage=capture-frame first_hresult=0x887A0026
+pipeline_recovery state=Failed attempt=3 first_stage=capture-frame first_completed_frames=4 first_hresult=0x887A0026 first_reason=Injected capture access loss attempt 1 terminal_stage=capture-frame terminal_hresult=0x887A0026
+producer_error stage=capture-frame completed_frames=4 error_type=ExternalException hresult=0x887A0026 reason=Injected capture access loss attempt 4
+media frames=4 elapsed_s=1.36 fps=2.95 wire_mbps=0.024 process_cpu_pct=1.32 gpu_pct=unavailable dropped=0 queue_depth=0 send_p50_ms=0.10 send_p95_ms=1.00 capture_p50_ms=4.28 capture_p95_ms=5.53 encode_p50_ms=5.70 encode_p95_ms=345.93 frame_interval_p50_ms=34.08 frame_interval_p95_ms=34.46
+encode_stages upload_bytes=14745600 accepted_setting_mask=15 gpu_timestamp_samples=2 frames=4 elapsed_s=1.36 fps=2.95 wire_mbps=0.021 process_cpu_pct=1.32 gpu_pct=unavailable dropped=0 queue_depth=0 generate_p50_ms=4.28 generate_p95_ms=5.53 upload_submit_p50_ms=0.16 upload_submit_p95_ms=1.23 surface_setup_p50_ms=0.50 surface_setup_p95_ms=0.55 color_submit_p50_ms=0.34 color_submit_p95_ms=4.29 input_wait_p50_ms=0.00 input_wait_p95_ms=0.00 mft_submit_p50_ms=0.83 mft_submit_p95_ms=9.00 output_wait_p50_ms=2.73 output_wait_p95_ms=3.96 packet_pack_p50_ms=0.00 packet_pack_p95_ms=0.00 native_encode_total_p50_ms=5.68 native_encode_total_p95_ms=17.27 gpu_upload_p50_ms=0.24 gpu_upload_p95_ms=0.27 gpu_color_p50_ms=13.54 gpu_color_p95_ms=33.21
+session_end worker=capture-encode stage=capture-frame completed_frames=4 state=Faulted error_type=ExternalException hresult=0x887A0026 reason=Injected capture access loss attempt 4
+session_cleanup native_live_resources=0 input_release_attempted=True
+Session ended: Injected capture access loss attempt 4
+
+PASS capture recovery exhausted after three attempts; initial and terminal causes retained; bounded host exit
+backend=synthetic-test codec=H264 hardware_encode=True encoder=Intel? Quick Sync Video H.264 Encoder MFT
+session_end worker=control-read stage=control-read completed_frames=0 state=Faulted error_type=IOException hresult=0x80131620 reason=Authenticated control channel timed out waiting for a complete message
+media frames=1 elapsed_s=20.01 fps=0.05 wire_mbps=0.001 process_cpu_pct=0.06 gpu_pct=unavailable dropped=0 queue_depth=0 send_p50_ms=0.72 send_p95_ms=0.72 capture_p50_ms=3.30 capture_p95_ms=3.30 encode_p50_ms=353.27 encode_p95_ms=353.27
+encode_stages upload_bytes=3686400 accepted_setting_mask=15 gpu_timestamp_samples=0 frames=1 elapsed_s=20.15 fps=0.05 wire_mbps=0.000 process_cpu_pct=0.06 gpu_pct=unavailable dropped=0 queue_depth=0 generate_p50_ms=3.30 generate_p95_ms=3.30 upload_submit_p50_ms=0.98 upload_submit_p95_ms=0.98 surface_setup_p50_ms=0.66 surface_setup_p95_ms=0.66 color_submit_p50_ms=4.90 color_submit_p95_ms=4.90 input_wait_p50_ms=0.00 input_wait_p95_ms=0.00 mft_submit_p50_ms=8.23 mft_submit_p95_ms=8.23 output_wait_p50_ms=1.94 output_wait_p95_ms=1.94 packet_pack_p50_ms=0.00 packet_pack_p95_ms=0.00 native_encode_total_p50_ms=17.04 native_encode_total_p95_ms=17.04
+session_cleanup native_live_resources=0 input_release_attempted=True
+Session ended: Authenticated control channel timed out waiting for a complete message
+
+PASS open silent control/media sockets -> bounded disconnect 19.82s -> worker join/resource release; no real input injection
+backend=synthetic-test codec=H264 hardware_encode=True encoder=Intel? Quick Sync Video H.264 Encoder MFT
+session_end worker=control-read stage=control-read completed_frames=0 state=Faulted error_type=EndOfStreamException hresult=0x80070026 reason=Unable to read beyond the end of the stream.
+media frames=1 elapsed_s=25.42 fps=0.04 wire_mbps=0.000 process_cpu_pct=0.12 gpu_pct=unavailable dropped=0 queue_depth=0 send_p50_ms=0.70 send_p95_ms=0.70 capture_p50_ms=7.21 capture_p95_ms=7.21 encode_p50_ms=350.73 encode_p95_ms=350.73
+encode_stages upload_bytes=3686400 accepted_setting_mask=15 gpu_timestamp_samples=0 frames=1 elapsed_s=25.56 fps=0.04 wire_mbps=0.000 process_cpu_pct=0.12 gpu_pct=unavailable dropped=0 queue_depth=0 generate_p50_ms=7.21 generate_p95_ms=7.21 upload_submit_p50_ms=2.73 upload_submit_p95_ms=2.73 surface_setup_p50_ms=0.68 surface_setup_p95_ms=0.68 color_submit_p50_ms=4.99 color_submit_p95_ms=4.99 input_wait_p50_ms=0.00 input_wait_p95_ms=0.00 mft_submit_p50_ms=7.17 mft_submit_p95_ms=7.17 output_wait_p50_ms=1.86 output_wait_p95_ms=1.86 packet_pack_p50_ms=0.00 packet_pack_p95_ms=0.00 native_encode_total_p50_ms=17.96 native_encode_total_p95_ms=17.96
+session_cleanup native_live_resources=0 input_release_attempted=True
+Session ended: Unable to read beyond the end of the stream.
+
+PASS idle media + authenticated control remains alive 25.22s beyond 15s binding deadline; pings=100; no input, no physical desktop/GPU Present claim
+PASS office reliability automation. Physical Home, visible image and real input remain unverified.
