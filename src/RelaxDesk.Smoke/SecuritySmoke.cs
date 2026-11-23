@@ -8,10 +8,11 @@ using RelaxDesk.Core;
 
 internal static class SecuritySmoke
 {
-    public static async Task Run(string path, string mode)
+    public static async Task Run(string path, string mode, string? root = null)
     {
         var reservation = new TcpListener(IPAddress.Loopback, 0); reservation.Start(); int port = ((IPEndPoint)reservation.LocalEndpoint).Port; reservation.Stop();
-        var start = ChildProcess.Create(path, "127.0.0.1", port.ToString(), "test-hardware");
+        var start = root is null ? ChildProcess.Create(path, "127.0.0.1", port.ToString(), "test-hardware")
+            : ChildProcess.Create(path, "--file-root", root, "127.0.0.1", port.ToString(), "test-hardware");
         using var process = Process.Start(start) ?? throw new IOException("Host launch failed");
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         async Task<SslStream> Open(TcpClient socket, string fingerprint)
@@ -34,10 +35,11 @@ internal static class SecuritySmoke
                 return;
             }
             using var control = await Open(controlSocket, fingerprint);
-            await Wire.Write(control, new Packet("hello-v2", Text: token, Capabilities: ["h264"]), timeout.Token);
+            await Wire.Write(control, new Packet("hello-v2", Text: token, Capabilities: ["h264"], Features: root is null ? null : [SessionCapabilities.FileTransfer]), timeout.Token);
             string prompt = await process.StandardOutput.ReadLineAsync(timeout.Token) ?? throw new IOException("No approval prompt");
             if (!prompt.Contains("APPROVE")) throw new IOException("Missing consent");
-            await process.StandardInput.WriteLineAsync(mode == "--deny-v2" ? "DENY" : "APPROVE"); await process.StandardInput.FlushAsync();
+            if(root is not null && !(await process.StandardOutput.ReadLineAsync(timeout.Token)??"").Contains("APPROVE_FILES"))throw new IOException("Missing file consent");
+            await process.StandardInput.WriteLineAsync(root is not null ? "APPROVE_FILES" : mode == "--deny-v2" ? "DENY" : "APPROVE"); await process.StandardInput.FlushAsync();
             if (mode == "--deny-v2")
             {
                 try { await Wire.Read(control, timeout.Token); throw new Exception("Denied viewer received approval"); } catch (EndOfStreamException) { }
@@ -46,6 +48,17 @@ internal static class SecuritySmoke
             var approval = await Wire.Read(control, timeout.Token);
             if (approval.Kind != "approved-v2") throw new IOException("Not approved");
             using var mediaSocket = new TcpClient(); using var media = await Open(mediaSocket, fingerprint);
+            if (root is not null)
+            {
+                await Wire.Write(media,new("media-v2",Text:approval.Text),timeout.Token);
+                if((await Wire.Read(media,timeout.Token)).Kind!="media-approved-v2")throw new IOException("Media binding failed");
+                using var dataSocket=new TcpClient();using var data=await Open(dataSocket,fingerprint);
+                await Wire.Write(data,new("data-v2",Text:approval.Text),timeout.Token); // Media ticket cannot bind the data role.
+                try{await Wire.Read(data,timeout.Token);throw new IOException("Media ticket accepted as file data ticket");}catch(EndOfStreamException){}
+                await process.WaitForExitAsync(timeout.Token);string output=await process.StandardOutput.ReadToEndAsync(timeout.Token);
+                if(process.ExitCode!=0||output.Contains("backend=")||Directory.EnumerateFileSystemEntries(root).Any())throw new IOException("Invalid data binding advanced to capture/file access");
+                Console.WriteLine("PASS production Host rejects media ticket reused as file data ticket before capture/file operation");return;
+            }
             await Wire.Write(media, new Packet("media-v2", Text: new string('0', 64)), timeout.Token);
             try { await Wire.Read(media, timeout.Token); throw new Exception("Unbound media channel accepted"); } catch (EndOfStreamException) { }
             Console.WriteLine("PASS wrong media binding ticket rejected before capture/encoding");

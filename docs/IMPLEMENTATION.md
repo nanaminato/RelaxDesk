@@ -1,5 +1,9 @@
 # RelaxDesk implementation and evidence
 
+## Scoped third-TLS file engine checkpoint
+
+Current source adds independent `file.transfer` negotiation, expiring role-specific data ticket, third pinned TLS stream, Windows path/handle scope enforcement, 64KiB sequential chunks, SHA-256 + temporary/atomic commit, overwrite consent, live pause/continue, cancellation, progress/rate/ETA, empty files/directories and paged listings. Core/TLS 593, actual Windows file contracts 29 and production Host/client real-file + media/control concurrency tests pass. This engine is currently available via explicit CLI root/test callers; the Viewer transfer panel, Host folder picker, multi-file/folder orchestration and cross-session resume are next. [Contract and limits](FILE-TRANSFER.md), [exact evidence](../benchmarks/2026-11-23-file-transfer-validation.md). No per-slice packaging; physical Home/LAN acceptance remains pending.
+
 ## Independently authorized Unicode text clipboard
 
 Current source implements optional v2 `clipboard.text`, explicit unchecked Viewer request/Host permission, bidirectional text/CRLF/empty handling, origin/revision convergence, baseline privacy, loop suppression, size bounds and independent stop/revocation. Windows CF_UNICODETEXT adapter has a dedicated message-only HWND worker; backend errors disable clipboard while control/video continue. Old v2 peers omit Features and retain the existing path; v1 grants no extensions. Control envelopes now validate smaller role-specific limits before allocation. [Behavior/protocol/security/OS limitations](CLIPBOARD.md), [530-check Core/TLS and actual Host/WPF test evidence](../benchmarks/2026-11-23-clipboard-validation.md). Real Windows clipboard/Home physical tests remain pending; foreground/GPU tests were skipped as authorized. Owner requested no per-slice packaging; the existing 0.4.2 ZIP predates these changes.

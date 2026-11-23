@@ -13,7 +13,7 @@ internal static class ClipboardChecks
         Check(SessionCapabilities.Grant([SessionCapabilities.ClipboardText], true).SequenceEqual(new[] { SessionCapabilities.ClipboardText }));
         Check(SessionCapabilities.ValidateGrant([SessionCapabilities.ClipboardText], null).Length == 0); // old v2 Host
         Reject(() => SessionCapabilities.ValidateGrant([], [SessionCapabilities.ClipboardText]));
-        Reject(() => SessionCapabilities.Validate(["file.transfer"]));
+        Reject(() => SessionCapabilities.Validate(["unknown.extension"]));
         Reject(() => SessionCapabilities.Validate([SessionCapabilities.ClipboardText, SessionCapabilities.ClipboardText]));
         string origin = Guid.NewGuid().ToString("N");
         foreach (string text in new[] { "", "hello\r\nworld", "中文测试", "日本語かなカナ", "😀", new string('A', 32768) })

@@ -1,0 +1,2 @@
+SKIP symbolic link creation privilege unavailable; junction tested independently
+PASS 29 actual scoped Windows file contracts: Unicode/empty/overwrite/hash/cancel/temp cleanup, traversal/ADS/devices, parent rename lock, supported link rejection, >4GiB logical bounds; fixtures=E:\RelaxDesk\build\file-transfer-validation\scope-e4736d34f1d140179158837cb9cf3aa0; no physical LAN claim

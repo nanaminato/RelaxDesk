@@ -1,0 +1,1 @@
+PASS file TLS grant=False: screen-only approval denied files, no data connection and no root contents accessed; media_frames=0 control_samples=0 control_p95_ms=0.00; loopback synthetic video, real fixture files only; fixtures=E:\RelaxDesk\build\file-transfer-validation\tls-f3dafb4e631845d0b38e0193bb73eb11

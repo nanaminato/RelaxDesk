@@ -44,6 +44,13 @@ try {
         if ($LASTEXITCODE) { throw 'WPF Host approval/stop contracts failed' }
     }
     if ($Graphics) {
+        $fileFixtures = Join-Path $root 'build/file-transfer-validation'
+        Run-App $smokeDll --file-root-contracts $fileFixtures
+        if ($LASTEXITCODE) { throw 'Scoped file contracts failed' }
+        foreach ($mode in @('--file-transfer', '--file-denied', '--reject-data')) {
+            Run-App $smokeDll $hostDll $mode $fileFixtures
+            if ($LASTEXITCODE) { throw "File transfer smoke failed: $mode" }
+        }
         foreach ($mode in @('--clipboard-text', '--clipboard-denied', '--clipboard-unnegotiated', '--clipboard-failure')) {
             Run-App $smokeDll $hostDll $mode
             if ($LASTEXITCODE) { throw "Clipboard smoke failed: $mode" }

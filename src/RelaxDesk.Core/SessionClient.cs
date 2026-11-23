@@ -9,8 +9,10 @@ public sealed class SessionClient : IDisposable
 {
     readonly TcpClient control = new() { NoDelay = true };
     readonly TcpClient media = new() { NoDelay = true };
+    readonly TcpClient data = new() { NoDelay = true };
     public SslStream Control { get; private set; } = null!;
     public SslStream Media { get; private set; } = null!;
+    public SslStream? Data { get; private set; }
     public string[] Capabilities { get; private set; } = [];
     public string[] RequestedFeatures { get; init; } = [];
     public string[] Features { get; private set; } = [];
@@ -47,6 +49,14 @@ public sealed class SessionClient : IDisposable
         Media = await Open(media);
         await Wire.Write(Media, new Packet("media-v2", Text: approval.Text), ct);
         if ((await Wire.Read(Media, ct)).Kind != "media-approved-v2") throw new AuthenticationException("Media channel rejected");
+        if (Features.Contains(SessionCapabilities.FileTransfer))
+        {
+            if (approval.DataTicket is null) throw new AuthenticationException("File data binding ticket missing");
+            Data = await Open(data);
+            await Wire.Write(Data, new("data-v2", Text: approval.DataTicket), ct);
+            if ((await Wire.Read(Data, ct, 8 * 1024)).Kind != "data-approved-v2") throw new AuthenticationException("File data channel rejected");
+        }
+        else if (approval.DataTicket is not null) throw new AuthenticationException("Unrequested file data ticket");
     }
-    public void Dispose() { control.Dispose(); media.Dispose(); Control?.Dispose(); Media?.Dispose(); }
+    public void Dispose() { control.Dispose(); media.Dispose(); data.Dispose(); Control?.Dispose(); Media?.Dispose(); Data?.Dispose(); }
 }

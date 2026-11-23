@@ -15,7 +15,7 @@ internal static class VideoHostSession
 {
     sealed record QueuedFrame(MediaFrame Frame, long EnqueuedAt);
     public static async Task Run(TcpListener listener, TcpClient controlSocket, SslStream control, X509Certificate2 certificate,
-        Packet hello, string backend, CancellationToken stop, string[]? grantedFeatures = null, CancellationToken clipboardRevoked = default)
+        Packet hello, string backend, CancellationToken stop, string[]? grantedFeatures = null, CancellationToken clipboardRevoked = default, string? selectedFileRoot = null)
     {
         string[] capabilities = (hello.Capabilities ?? []).Intersect(["h264", "deflate"]).ToArray();
         if (capabilities.Length == 0) throw new InvalidDataException("No common media codec");
@@ -23,17 +23,31 @@ internal static class VideoHostSession
         if (synthetic && !IPAddress.IsLoopback(((IPEndPoint)controlSocket.Client.LocalEndPoint!).Address))
             throw new AuthenticationException("Synthetic video testing is loopback-only");
         var features = SessionCapabilities.ValidateGrant(hello.Features, grantedFeatures);
-        if (synthetic && backend is not ("test-clipboard" or "test-clipboard-failure")) features = [];
-        if (clipboardRevoked.IsCancellationRequested) features = [];
+        if (synthetic && backend is not ("test-clipboard" or "test-clipboard-failure")) features = features.Where(feature=>feature!=SessionCapabilities.ClipboardText).ToArray();
+        if (clipboardRevoked.IsCancellationRequested) features = features.Where(feature=>feature!=SessionCapabilities.ClipboardText).ToArray();
+        var fileRoot = features.Contains(SessionCapabilities.FileTransfer) && selectedFileRoot is not null ? new WindowsFileRoot(selectedFileRoot) : null;
+        if (fileRoot is null) features = features.Where(feature=>feature!=SessionCapabilities.FileTransfer).ToArray();
         var ticket = new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15));
-        await Wire.Write(control, new Packet("approved-v2", Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features), stop);
+        var dataTicket = fileRoot is null ? null : new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15));
+        await Wire.Write(control, new Packet("approved-v2", Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features, DataTicket: dataTicket?.Value), stop);
         using var attach = CancellationTokenSource.CreateLinkedTokenSource(stop); attach.CancelAfter(TimeSpan.FromSeconds(15));
-        using var mediaSocket = await listener.AcceptTcpClientAsync(attach.Token); listener.Stop(); mediaSocket.NoDelay = true; mediaSocket.SendBufferSize = 64 * 1024;
+        using var mediaSocket = await listener.AcceptTcpClientAsync(attach.Token); mediaSocket.NoDelay = true; mediaSocket.SendBufferSize = 64 * 1024;
         using var media = new SslStream(mediaSocket.GetStream(), false);
         await media.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = certificate, EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, attach.Token);
         var binding = await Wire.Read(media, attach.Token, 8 * 1024);
         if (binding.Kind != "media-v2" || !ticket.Consume(binding.Text, DateTimeOffset.UtcNow)) throw new AuthenticationException("Media binding rejected");
         await Wire.Write(media, new Packet("media-approved-v2"), attach.Token);
+        using var dataSocket = dataTicket is null ? null : await listener.AcceptTcpClientAsync(attach.Token);
+        using var data = dataSocket is null ? null : new SslStream(dataSocket.GetStream(), false);
+        if (data is not null)
+        {
+            dataSocket!.NoDelay = true;
+            await data.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = certificate, EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, attach.Token);
+            var dataBinding = await Wire.Read(data, attach.Token, 8 * 1024);
+            if (dataBinding.Kind != "data-v2" || !dataTicket!.Consume(dataBinding.Text, DateTimeOffset.UtcNow)) throw new AuthenticationException("File data binding rejected");
+            await Wire.Write(data, new("data-approved-v2"), attach.Token);
+        }
+        listener.Stop();
         using var session = CancellationTokenSource.CreateLinkedTokenSource(stop);
         var queue = new LatestQueue<QueuedFrame>();
         var gate = new AccessGate(); gate.Approve(features);
@@ -45,6 +59,21 @@ internal static class VideoHostSession
             try { await Wire.Write(control, packet, deadline.Token); }
             finally { controlWrite.Release(); }
         }
+        var fileWorker = data is null ? Task.CompletedTask : Task.Run(async () =>
+        {
+            try { await new FileTransferServer(fileRoot!, gate).Run(data, session.Token); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException or OperationCanceledException or System.Text.Json.JsonException)
+            {
+                gate.RevokeFeature(SessionCapabilities.FileTransfer);
+                if (!session.IsCancellationRequested)
+                {
+                    HostSessionLog.Write($"file_transfer_disabled stage=data-worker error_type={error.GetType().Name} hresult=0x{error.HResult:X8}");
+                    try { await WriteControl(new("capability-revoked-v2", Features: [SessionCapabilities.FileTransfer])); }
+                    catch (Exception) when (session.IsCancellationRequested) { }
+                }
+            }
+            finally { data.Dispose(); }
+        }, session.Token);
         var clipboardUpdates = Channel.CreateBounded<ClipboardTextUpdate>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest });
         await using var clipboard = features.Contains(SessionCapabilities.ClipboardText)
             ? new ClipboardSynchronizer(() => synthetic ? new TestTextClipboard(backend == "test-clipboard-failure") : new WindowsTextClipboard(), gate,
@@ -120,11 +149,12 @@ internal static class VideoHostSession
         string worker = failures.First?.Worker ?? (first == observedInput ? "control-read" : first == observedSender ? "media-send" : "capture-encode");
         var failure = failures.First;
         HostSessionLog.Write($"session_end worker={worker} stage={failure?.Stage ?? "shutdown"} completed_frames={failure?.CompletedFrames ?? 0} state={first.Status} error_type={failure?.Error.GetType().Name ?? "none"} hresult=0x{failure?.Error.HResult ?? 0:X8} reason={failure?.Error.Message ?? "worker completed/cancelled"}");
-        gate.Revoke(); session.Cancel(); controlSocket.Close(); mediaSocket.Close(); queue.Complete();
+        gate.Revoke(); session.Cancel(); controlSocket.Close(); mediaSocket.Close(); dataSocket?.Close(); queue.Complete();
         try { if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure.Error).Throw(); await first; }
         finally
         {
             try { await Task.WhenAll(observedInput, observedSender, observedProducer, observedClipboard); } catch (Exception) { /* Causal failure is reported above; join all workers. */ }
+            try { await fileWorker; } catch (Exception error) { HostSessionLog.Write($"file_worker_shutdown error_type={error.GetType().Name} hresult=0x{error.HResult:X8}"); }
             gate.Revoke(); inputDesktop?.ReleaseAll();
             try
             {

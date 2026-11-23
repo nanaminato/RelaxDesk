@@ -13,7 +13,8 @@ Reviewed 2026-11-23: local and fetched remote `codex/dxgi-media-pipeline` both `
 | Dedicated remote shortcuts / pointer burst handling | Implemented | Automated Verified: 15 menu actions, balanced authorized chords, bounded motion coalescing | Remote application behavior pending |
 | Clipboard Unicode text | Implemented | Automated Verified: Core/TLS + production Host with isolated provider + WPF consent/revoke | Actual Windows clipboard/Home dual-PC pending |
 | Clipboard image/HTML/files | Planned | None | Additional negotiated formats required |
-| File/folder upload/download/drag-drop/resume | Planned | None | Scoped selection + bounded data channel required |
+| Scoped file engine + third TLS | Implemented CLI/library | Automated Verified: 593 Core/TLS, 29 Windows file contracts, real fixture files/Host/media/control | UI/folder orchestration/resume + Home LAN pending |
+| File panel/folder queue/drag-drop/cross-session resume | Planned next | None | Local folder selection + complete task lifecycle required |
 | Long-running Host / reconnect | Planned | None | One session per Host process |
 | Multi-monitor / negative origins | Planned | None | Primary display only |
 | Service/installer/audio | Planned | None | Secure desktop unsupported |
@@ -24,6 +25,6 @@ Owner execution preferences: continue the complete remote-office goal; skip and 
 
 Historical packaged checkpoint: P0/P1 code through `0977e787b7c5d9816184a9aefbd369a9b885ef72`; the 0.4.2 ZIP was verified before clipboard development and does not contain this new feature. Actual capture remains denied (0x80070005); collector rejects Server/RDP for Home acceptance. Current source adds optional v2 clipboard capability/message types with independent grants; file/reconnect capabilities remain unadvertised. [Physical test/result template](PHYSICAL-ACCEPTANCE.md).
 
-Next development slice: scoped file/folder transfer core + independent authenticated bounded data channel, then transfer panel/drag-drop, persistent Host and secure reconnect. Negotiated scan-code/precision-pointer/TextCommit input and advanced clipboard formats remain required. Expanded F1-F24/OEM/numpad routing test is skipped because native foreground acquisition is unavailable in this runner; production gating stays strict. Do not count protocol-only/mock tests as physical office acceptance.
+Next development slice: **Host local folder chooser + independent file consent; Viewer transfer panel/remote directory browser/multi-file-folder queue/drag-drop**, using the now functional FileTransferClient/WindowsFileRoot/FileTransferServer. Then scoped cross-session resume, persistent Host and secure reconnect. Negotiated scan-code/precision-pointer/TextCommit input and advanced clipboard formats remain required. Expanded F1-F24/OEM/numpad routing test is skipped because native foreground acquisition is unavailable in this runner; production gating stays strict. Do not count protocol-only/mock tests as physical office acceptance.
 
 Physical exit: run existing `scripts/accept-home.ps1` or bundled `Collect-Logs.cmd` on an unlocked Home local console. Use two PCs and explicit approval; verify visible image, held Ctrl/drag disconnect, Microsoft Pinyin and Japanese Microsoft IME in actual remote applications, DPI, monitor unplug and real GPU reset. Record edition/build/driver/session/network/package identity. API Present success is not visible correctness or input-to-photon proof.

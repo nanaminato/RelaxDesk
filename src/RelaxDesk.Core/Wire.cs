@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.Text.Json;
 namespace RelaxDesk.Core;
 
-public record Packet(string Kind, long Sequence = 0, int Width = 0, int Height = 0, byte[]? Data = null, string? Text = null, int X = 0, int Y = 0, int Code = 0, bool Up = false, double CaptureMs = 0, double EncodeMs = 0, string[]? Capabilities = null, string[]? Features = null, string? Origin = null, long Revision = 0)
+public record Packet(string Kind, long Sequence = 0, int Width = 0, int Height = 0, byte[]? Data = null, string? Text = null, int X = 0, int Y = 0, int Code = 0, bool Up = false, double CaptureMs = 0, double EncodeMs = 0, string[]? Capabilities = null, string[]? Features = null, string? Origin = null, long Revision = 0, string? DataTicket = null)
 {
     public override string ToString() => $"Packet kind={Kind} sequence={Sequence} (payload redacted)";
 }
