@@ -1,0 +1,1 @@
+PASS IP/port-only request waits for Host consent; DENY exposes no desktop/media/input; no fingerprint/token supplied

@@ -22,6 +22,7 @@ Run bundled `Collect-Logs.cmd` from the unlocked Home console. Run `Test-Office.
 | Shortcuts | Ctrl+C/V/X/A/Z/Y/S/F/L, Alt+Tab/F4, Win+E/D/R, Ctrl+Shift+Esc via toolbar and ordinary app paths | Pending |
 | Safety limits | Ctrl+Alt+End/SAS unavailable; local background keys stay local; secure desktop unsupported | Pending |
 | IME | Microsoft Pinyin; Japanese Microsoft IME romanization/kana/candidates/commit in real remote apps; no local composition duplication | Pending |
+| Text clipboard | Viewer request + independent Host opt-in; new copied Unicode/CRLF/empty text both ways; no initial disclosure/echo; both stop actions preserve remote control | Pending |
 | Mouse | Click/double-click/drag/long hold/rapid movement and exact landing; note middle/X/horizontal/fine wheel remain unimplemented | Pending |
 | Held-input cleanup | Hold Ctrl/Shift or drag, then lose focus/minimize/fullscreen/disconnect/terminate Viewer; verify remote key/button release | Pending |
 | Network silence | Controlled disconnect leaves no stale input replay; cleanup <=20s plus worker teardown; fresh approval required to reconnect | Pending |
@@ -30,4 +31,4 @@ Run bundled `Collect-Logs.cmd` from the unlocked Home console. Run `Test-Office.
 | Office workload | Matched 60s IDE/browser/Excel/window motion; record FPS/bandwidth/CPU/GPU/memory and distributions | Pending |
 | Input-to-photon | External instrument/high-speed camera and trigger definition; never sum stage P95 values | Pending |
 
-Unsupported features remain explicit: cross-machine clipboard, file transfer, automatic reconnect, multi-monitor selection, service/secure-desktop control and audio. Do not mark these failed implementations as passed via mocks; they are planned capabilities.
+Unsupported features remain explicit: image/HTML/file clipboard formats, file transfer, automatic reconnect, multi-monitor selection, service/secure-desktop control and audio. Text clipboard now has a Windows implementation and isolated-provider integration evidence; actual Windows/Home clipboard behavior remains pending. Do not mark planned features or mock-only verification as physical acceptance.

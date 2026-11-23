@@ -34,7 +34,7 @@ public sealed class Desktop : IDisposable
     [DllImport("user32.dll", SetLastError = true)] static extern nint OpenInputDesktop(uint flags, bool inherit, uint access);
     [DllImport("user32.dll")] static extern bool CloseDesktop(nint desktop);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool GetUserObjectInformation(nint obj, int index, System.Text.StringBuilder name, uint length, out uint needed);
-    static void EnsureInteractiveDesktop()
+    internal static void EnsureInteractiveDesktop()
     {
         nint desktop = OpenInputDesktop(0, false, 1);
         if (desktop == 0) throw new IOException("Interactive desktop unavailable or locked");

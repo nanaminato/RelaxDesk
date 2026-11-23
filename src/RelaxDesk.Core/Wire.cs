@@ -2,7 +2,10 @@ using System.Buffers.Binary;
 using System.Text.Json;
 namespace RelaxDesk.Core;
 
-public record Packet(string Kind, long Sequence = 0, int Width = 0, int Height = 0, byte[]? Data = null, string? Text = null, int X = 0, int Y = 0, int Code = 0, bool Up = false, double CaptureMs = 0, double EncodeMs = 0, string[]? Capabilities = null);
+public record Packet(string Kind, long Sequence = 0, int Width = 0, int Height = 0, byte[]? Data = null, string? Text = null, int X = 0, int Y = 0, int Code = 0, bool Up = false, double CaptureMs = 0, double EncodeMs = 0, string[]? Capabilities = null, string[]? Features = null, string? Origin = null, long Revision = 0)
+{
+    public override string ToString() => $"Packet kind={Kind} sequence={Sequence} (payload redacted)";
+}
 public static class Wire
 {
     public const int Limit = 32 * 1024 * 1024;
@@ -13,11 +16,12 @@ public static class Wire
         byte[] header = new byte[4]; BinaryPrimitives.WriteInt32LittleEndian(header, body.Length);
         await stream.WriteAsync(header, ct); await stream.WriteAsync(body, ct);
     }
-    public static async Task<Packet> Read(Stream stream, CancellationToken ct = default)
+    public static async Task<Packet> Read(Stream stream, CancellationToken ct = default, int maximumLength = Limit)
     {
+        if (maximumLength is < 2 or > Limit) throw new ArgumentOutOfRangeException(nameof(maximumLength));
         byte[] header = new byte[4]; await stream.ReadExactlyAsync(header, ct);
         int length = BinaryPrimitives.ReadInt32LittleEndian(header);
-        if (length < 2 || length > Limit) throw new InvalidDataException("Invalid packet length");
+        if (length < 2 || length > maximumLength) throw new InvalidDataException("Invalid packet length");
         byte[] body = new byte[length]; await stream.ReadExactlyAsync(body, ct);
         var packet = JsonSerializer.Deserialize<Packet>(body);
         if (packet is null || string.IsNullOrWhiteSpace(packet.Kind)) throw new InvalidDataException("Missing packet type");
@@ -28,10 +32,18 @@ public sealed class AccessGate
 {
     readonly object sync = new();
     bool approved;
+    readonly HashSet<string> features = [];
+    readonly HashSet<string> originalFeatures = [];
     public bool Approved { get { lock (sync) return approved; } }
     private long sequence;
-    public void Approve() { lock (sync) { approved = true; sequence = 0; } }
-    public void Revoke() { lock (sync) approved = false; }
+    public void Approve(IEnumerable<string>? grantedFeatures = null)
+    {
+        var grants = SessionCapabilities.Validate(grantedFeatures?.ToArray());
+        lock (sync) { approved = true; sequence = 0; features.Clear(); originalFeatures.Clear(); foreach (string feature in grants) { features.Add(feature); originalFeatures.Add(feature); } }
+    }
+    public void Revoke() { lock (sync) { approved = false; features.Clear(); originalFeatures.Clear(); } }
+    public void RevokeFeature(string feature) { lock (sync) features.Remove(feature); }
+    public bool Allows(string feature) { lock (sync) return approved && features.Contains(feature); }
     public bool Accept(Packet p)
     {
         lock (sync)
@@ -45,6 +57,12 @@ public sealed class AccessGate
         lock (sync)
         {
             if (p.Kind == "input") return Accept(p);
+            if (p.Kind is "clipboard-text-v2" or "clipboard-state-v2")
+            {
+                if (!approved || p.Sequence <= sequence || !(p.Kind == "clipboard-state-v2" ? originalFeatures : features).Contains(SessionCapabilities.ClipboardText)) return false;
+                if (p.Kind == "clipboard-text-v2" ? !ClipboardTextProtocol.IsValid(p) : p.Code != 0 || p.Text is not null || p.Data is not null) return false;
+                sequence = p.Sequence; return true;
+            }
             if (!approved || p.Sequence <= sequence || p.Kind is not ("keyframe-v2" or "ping-v2")) return false;
             sequence = p.Sequence; return true;
         }
@@ -53,5 +71,9 @@ public sealed class AccessGate
     public bool TryExecuteInput(Packet packet, Action inject)
     {
         lock (sync) { if (!Accept(packet)) return false; inject(); return true; }
+    }
+    public bool TryExecuteFeature(string feature, Action action)
+    {
+        lock (sync) { if (!approved || !features.Contains(feature)) return false; action(); return true; }
     }
 }

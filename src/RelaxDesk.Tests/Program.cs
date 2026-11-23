@@ -10,6 +10,7 @@ await Reject([]); await Reject([1, 0, 0, 0]); await Reject([255, 255, 255, 255])
 
 count += await MediaChecks.Run();
 count += await ShortcutChecks.Run();
+count += await ClipboardChecks.Run();
 var invitation = new ConnectionInvitation("192.168.1.2", 48200, new string('A', 64), new string('B', 32));
 Check(ConnectionInvitation.Parse(invitation.Encode()) == invitation);
 Check(ConnectionInvitation.Parse((invitation with { Host = "::1" }).Encode()).Host == "::1");
@@ -18,6 +19,7 @@ foreach (string invalid in new[] { "anything", "https://localhost/", invitation.
 { try { ConnectionInvitation.Parse(invalid); throw new Exception("Invalid invitation accepted"); } catch (FormatException) { Check(true); } }
 if (args is ["--core"]) { Console.WriteLine($"PASS {count} protocol/access/media checks (TLS not run)"); return; }
 count += await ApprovalTlsChecks.Run();
+count += await FeatureTlsChecks.Run();
 using var certificate = SessionCertificate.Create();
 var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0); listener.Start();
 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));

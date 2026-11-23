@@ -7,7 +7,7 @@ public static class SessionControl
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(timeout ?? SilenceTimeout);
-        try { return await Wire.Read(stream, deadline.Token); }
+        try { return await Wire.Read(stream, deadline.Token, 256 * 1024); }
         catch (OperationCanceledException error) when (!ct.IsCancellationRequested)
         { throw new IOException("Authenticated control channel timed out waiting for a complete message", error); }
     }

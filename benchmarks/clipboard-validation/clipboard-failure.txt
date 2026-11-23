@@ -1,0 +1,1 @@
+PASS clipboard backend failure -> single sanitized diagnostic + capability revocation; control ping/media continue; resources released; test provider only

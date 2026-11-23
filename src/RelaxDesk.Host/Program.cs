@@ -62,7 +62,7 @@ if (args is ["--capture-test"])
 if (args.Length is < 2 or > 3 || !IPAddress.TryParse(args[0], out var address) || !int.TryParse(args[1], out int port) || port is < 1 or > 65535 || IPAddress.Any.Equals(address) || IPAddress.IPv6Any.Equals(address))
 { Console.WriteLine("Usage: RelaxDesk.Host <specific LAN IP> <port>"); return; }
 string backend = args.Length == 3 ? args[2] : "auto";
-if (backend is not ("auto" or "dxgi" or "gdi" or "test-software" or "test-hardware" or "test-deflate" or "test-resolution" or "test-idle" or "test-producer-failure" or "test-runtime-fallback" or "test-capture-recovery" or "test-capture-exhausted")) throw new ArgumentException("Unknown capture backend");
+if (backend is not ("auto" or "dxgi" or "gdi" or "test-software" or "test-hardware" or "test-deflate" or "test-resolution" or "test-idle" or "test-producer-failure" or "test-runtime-fallback" or "test-capture-recovery" or "test-capture-exhausted" or "test-clipboard" or "test-clipboard-failure")) throw new ArgumentException("Unknown capture backend");
 if (backend.StartsWith("test-", StringComparison.Ordinal) && !IPAddress.IsLoopback(address)) throw new ArgumentException("Synthetic test is loopback-only");
 using var cert = SessionCertificate.Create();
 string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
@@ -77,10 +77,11 @@ try
     using var client = await listener.AcceptTcpClientAsync(stop.Token); client.NoDelay = true;
     Packet hello;
     using var tls = new SslStream(client.GetStream(), false);
-    using (var auth = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
+    using (var auth = CancellationTokenSource.CreateLinkedTokenSource(stop.Token))
     {
+        auth.CancelAfter(TimeSpan.FromSeconds(30));
         await tls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = cert, EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, auth.Token);
-        hello = await Wire.Read(tls, auth.Token);
+        hello = await Wire.Read(tls, auth.Token, 16 * 1024);
         if (hello.Kind == "request-v2")
         {
             if (hello.Text is not { Length: 32 } || !hello.Text.All(char.IsAsciiHexDigit) || hello.Capabilities is not { Length: > 0 and <= 2 } || hello.Capabilities.Any(c => c is not ("h264" or "deflate"))) throw new AuthenticationException("Invalid consent request");
@@ -89,12 +90,16 @@ try
         else if (hello.Kind is not ("hello-v1" or "hello-v2") || hello.Text is null || !CryptographicOperations.FixedTimeEquals(System.Text.Encoding.UTF8.GetBytes(hello.Text), System.Text.Encoding.UTF8.GetBytes(token))) throw new AuthenticationException("Pairing rejected");
     }
     if (!shellMode && hello.Kind != "request-v2") Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests screen + input. Type APPROVE to allow this session:");
-    string? approval = shell is null ? await Console.In.ReadLineAsync(stop.Token) : await shell.Request(client.Client.RemoteEndPoint?.ToString() ?? "unknown");
-    if (approval != "APPROVE") { if (shellMode) ShellBridge.Emit("denied"); return; }
+    var requestedFeatures = SessionCapabilities.Validate(hello.Features);
+    if (hello.Kind == "hello-v1" && requestedFeatures.Length != 0) throw new AuthenticationException("Session extensions require v2");
+    if (!shellMode && requestedFeatures.Contains(SessionCapabilities.ClipboardText)) Console.WriteLine("Optional clipboard.text requested. Type APPROVE_CLIPBOARD to separately allow bidirectional text; APPROVE grants screen/input only.");
+    string? approval = shell is null ? await Console.In.ReadLineAsync(stop.Token) : await shell.Request(client.Client.RemoteEndPoint?.ToString() ?? "unknown", requestedFeatures);
+    if (approval is not ("APPROVE" or "APPROVE_CLIPBOARD")) { if (shellMode) ShellBridge.Emit("denied"); return; }
     if (shellMode) ShellBridge.Emit("approved");
     if (hello.Kind is "hello-v2" or "request-v2")
     {
-        await VideoHostSession.Run(listener, client, tls, cert, hello, backend, stop.Token);
+        await VideoHostSession.Run(listener, client, tls, cert, hello, backend, stop.Token,
+            SessionCapabilities.Grant(requestedFeatures, approval == "APPROVE_CLIPBOARD"), shell?.ClipboardRevoked ?? default);
         return;
     }
     listener.Stop();

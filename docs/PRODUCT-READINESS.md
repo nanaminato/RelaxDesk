@@ -11,16 +11,19 @@ Reviewed 2026-11-23: local and fetched remote `codex/dxgi-media-pipeline` both `
 | VK/modifiers, remote IME routing, focus release | Implemented | WPF routing contracts | Chinese/Japanese apps pending; scan-code transport/text commit Planned |
 | Auto-hiding fullscreen toolbar | Implemented | Real HWND lifecycle contracts | Physical hover/mixed DPI pending |
 | Dedicated remote shortcuts / pointer burst handling | Implemented | Automated Verified: 15 menu actions, balanced authorized chords, bounded motion coalescing | Remote application behavior pending |
-| Clipboard text/image/HTML | Planned | None | Independent opt-in capability required |
+| Clipboard Unicode text | Implemented | Automated Verified: Core/TLS + production Host with isolated provider + WPF consent/revoke | Actual Windows clipboard/Home dual-PC pending |
+| Clipboard image/HTML/files | Planned | None | Additional negotiated formats required |
 | File/folder upload/download/drag-drop/resume | Planned | None | Scoped selection + bounded data channel required |
 | Long-running Host / reconnect | Planned | None | One session per Host process |
 | Multi-monitor / negative origins | Planned | None | Primary display only |
 | Service/installer/audio | Planned | None | Secure desktop unsupported |
 
-Current slice: P0 bounded recovery/control liveness. [Evidence and commands](../benchmarks/2026-11-23-office-readiness.md).
+Current checkpoint: P0/P1 reliability/input slices and independently authorized text clipboard are implemented. [Office evidence](../benchmarks/2026-11-23-office-readiness.md), [clipboard evidence](../benchmarks/2026-11-23-clipboard-validation.md), [clipboard contract](CLIPBOARD.md).
 
-Delivery checkpoint: P0/P1 code committed through `0977e787b7c5d9816184a9aefbd369a9b885ef72`; self-contained 0.4.2 ZIP freshly extracted/manifest-verified and synthetic office/Host-WPF regressions passed without SDK/global runtime. Actual capture remains denied (0x80070005); collector rejects Server/RDP for Home acceptance. [Physical test/result template](PHYSICAL-ACCEPTANCE.md). No clipboard/files/reconnect capability is advertised. Protocol v1/v2 message types and granted permissions remain unchanged.
+Owner execution preferences: continue the complete remote-office goal; skip and label environment-blocked tests instead of stopping other development. **Do not package each slice.** Keep implementing/testing/committing; defer unified package and operator physical tests until the final milestone. Do not mistake skipped tests for passing evidence.
 
-P1 shortcuts/queue slice complete; expanded F1-F24/OEM/numpad routing test added but blocked because native foreground acquisition is unavailable in this runner. Existing routing rejects input as designed. Next: negotiated scan-code/precision-pointer input and opt-in text clipboard. Do not count protocol-only or mock tests as complete office features.
+Historical packaged checkpoint: P0/P1 code through `0977e787b7c5d9816184a9aefbd369a9b885ef72`; the 0.4.2 ZIP was verified before clipboard development and does not contain this new feature. Actual capture remains denied (0x80070005); collector rejects Server/RDP for Home acceptance. Current source adds optional v2 clipboard capability/message types with independent grants; file/reconnect capabilities remain unadvertised. [Physical test/result template](PHYSICAL-ACCEPTANCE.md).
+
+Next development slice: scoped file/folder transfer core + independent authenticated bounded data channel, then transfer panel/drag-drop, persistent Host and secure reconnect. Negotiated scan-code/precision-pointer/TextCommit input and advanced clipboard formats remain required. Expanded F1-F24/OEM/numpad routing test is skipped because native foreground acquisition is unavailable in this runner; production gating stays strict. Do not count protocol-only/mock tests as physical office acceptance.
 
 Physical exit: run existing `scripts/accept-home.ps1` or bundled `Collect-Logs.cmd` on an unlocked Home local console. Use two PCs and explicit approval; verify visible image, held Ctrl/drag disconnect, Microsoft Pinyin and Japanese Microsoft IME in actual remote applications, DPI, monitor unplug and real GPU reset. Record edition/build/driver/session/network/package identity. API Present success is not visible correctness or input-to-photon proof.

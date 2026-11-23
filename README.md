@@ -1,5 +1,7 @@
 # RelaxDesk
 
+Current development source adds [independently authorized bidirectional text clipboard](docs/CLIPBOARD.md). Integration is verified with isolated clipboard providers; real Home/Windows clipboard validation is pending. Packaging is deferred until the final milestone at the owner's request; the existing 0.4.2 ZIP predates clipboard support.
+
 2026-11-23 continuation: bounded capture recovery/control liveness, remote shortcut menu and pointer-motion coalescing are delivered as a self-contained 0.4.2 acceptance slice. See [product readiness](docs/PRODUCT-READINESS.md) and [exact build/test evidence](benchmarks/2026-11-23-office-readiness.md). Physical Home acceptance, clipboard, file transfer and reconnect remain open.
 
 **A high-performance, open-source remote desktop project for Windows Home.**

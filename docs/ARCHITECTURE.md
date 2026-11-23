@@ -1,5 +1,7 @@
 # Architecture — RelaxDesk
 
+Current optional v2 session extension: `Features` is separate from media codec negotiation. `clipboard.text` requires Viewer request plus independent Host opt-in; text updates use the bounded serialized TLS control channel and separate clipboard workers, never the WPF Dispatcher/network reader for clipboard I/O. Original v1/v2 codec/media-ticket boundaries remain. Old peers omit the feature grant. Full [clipboard protocol and lifecycle](CLIPBOARD.md). File bytes will use a separate bounded authenticated channel, not this control envelope.
+
 ## Design objective
 
 Provide a **physical-desktop screen-sharing remote controller**, initially for Windows 10/11 Home. The design is not a new RDP server and does not create independent Windows logon sessions. It should approach the responsiveness of MSTSC on comparable office tasks while retaining fidelity and safe operation.

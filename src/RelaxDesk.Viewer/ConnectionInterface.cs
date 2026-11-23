@@ -31,6 +31,7 @@ public sealed partial class ViewerWindow
         form.Children.Add(new TextBlock { Text = "输入 IP 和端口，Host 确认授权后进入桌面。", Foreground = Brushes.DimGray, TextWrapping = TextWrapping.Wrap });
         form.Children.Add(new TextBlock { Text = "远程电脑 IP", Margin = new Thickness(0, 16, 0, 0) }); form.Children.Add(host);
         form.Children.Add(new TextBlock { Text = "端口" }); form.Children.Add(port);
+        requestClipboard.Margin = new Thickness(0, 10, 0, 4); form.Children.Add(requestClipboard);
         var advanced = new StackPanel();
         void Field(string name, FrameworkElement control) { advanced.Children.Add(new TextBlock { Text = name }); advanced.Children.Add(control); }
         advanced.Children.Add(pinnedConnection);
@@ -73,6 +74,7 @@ public sealed partial class ViewerWindow
             sessionToolbar ??= new SessionToolbar(this, ToggleFullScreen, () => disconnect.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)),
                 session is null ? null : SendShortcut);
             sessionToolbar.SetSession(host.Text, fullScreen);
+            sessionToolbar.SetClipboard(clipboardPermission?.Allows(SessionCapabilities.ClipboardText) == true, DisableClipboard);
         }
         else
         {

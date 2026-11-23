@@ -50,7 +50,12 @@ internal static class ToolbarVerification
                     foreach (var item in testBar.ShortcutMenu.Items.OfType<MenuItem>().Where(item => item.IsEnabled))
                         item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
                     if (!shortcuts.SequenceEqual(Enum.GetValues<RelaxDesk.Core.RemoteShortcut>())) throw new Exception("Shortcut menu misrouted/duplicated an action");
-                    if (testBar.ShortcutMenu.Items.OfType<MenuItem>().Last().IsEnabled) throw new Exception("Secure attention sequence must be unavailable");
+                    if (testBar.ShortcutMenu.Items.OfType<MenuItem>().Single(item=>item.Header.ToString()!.Contains("Ctrl+Alt+End")).IsEnabled) throw new Exception("Secure attention sequence must be unavailable");
+                    int stopped = 0; testBar.SetClipboard(true, () => stopped++);
+                    if (!testBar.ClipboardAction.IsEnabled) throw new Exception("Granted clipboard stop action unavailable");
+                    testBar.ClipboardAction.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                    testBar.SetClipboard(false, null);
+                    if (stopped != 1 || testBar.ClipboardAction.IsEnabled) throw new Exception("Clipboard toolbar stop action failed");
                 }
                 child.Dispose(); child = null;
                 bar.DisconnectButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

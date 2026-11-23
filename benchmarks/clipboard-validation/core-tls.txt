@@ -1,0 +1,3 @@
+PASS first-contact approval request and changed-media-certificate rejection (TLS)
+PASS optional v2 feature TLS negotiation: older Host omission, explicit grant, unsolicited/unknown grant rejection, existing media-ticket binding
+PASS 530 protocol/access/TLS integration checks

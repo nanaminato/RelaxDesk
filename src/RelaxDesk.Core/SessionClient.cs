@@ -12,6 +12,8 @@ public sealed class SessionClient : IDisposable
     public SslStream Control { get; private set; } = null!;
     public SslStream Media { get; private set; } = null!;
     public string[] Capabilities { get; private set; } = [];
+    public string[] RequestedFeatures { get; init; } = [];
+    public string[] Features { get; private set; } = [];
     public Task Connect(string host, int port, string fingerprint, string token, CancellationToken ct) => ConnectInternal(host, port, fingerprint, token, false, ct);
     // First-contact LAN approval: trust only this TLS session's presented cert,
     // then pin the media channel to that exact certificate. Host consent remains
@@ -35,10 +37,12 @@ public sealed class SessionClient : IDisposable
             catch { stream.Dispose(); throw; }
         }
         Control = await Open(control, approvalOnly);
-        await Wire.Write(Control, new Packet(approvalOnly ? "request-v2" : "hello-v2", Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"]), ct);
+        var requestedFeatures = SessionCapabilities.Validate(RequestedFeatures);
+        await Wire.Write(Control, new Packet(approvalOnly ? "request-v2" : "hello-v2", Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], Features: requestedFeatures.Length == 0 ? null : requestedFeatures), ct);
         var approval = await Wire.Read(Control, ct);
         if (approval.Kind != "approved-v2" || approval.Text is null || approval.Capabilities is not { Length: > 0 }) throw new AuthenticationException("Host approval/capabilities missing");
         Capabilities = approval.Capabilities;
+        Features = SessionCapabilities.ValidateGrant(requestedFeatures, approval.Features);
         if (Capabilities.Any(c => c is not ("h264" or "deflate"))) throw new InvalidDataException("Unknown negotiated capability");
         Media = await Open(media);
         await Wire.Write(Media, new Packet("media-v2", Text: approval.Text), ct);

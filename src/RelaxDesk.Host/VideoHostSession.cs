@@ -6,6 +6,7 @@ using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
+using System.Threading.Channels;
 using RelaxDesk.Core;
 using RelaxDesk.Windows;
 namespace RelaxDesk.Host;
@@ -14,25 +15,50 @@ internal static class VideoHostSession
 {
     sealed record QueuedFrame(MediaFrame Frame, long EnqueuedAt);
     public static async Task Run(TcpListener listener, TcpClient controlSocket, SslStream control, X509Certificate2 certificate,
-        Packet hello, string backend, CancellationToken stop)
+        Packet hello, string backend, CancellationToken stop, string[]? grantedFeatures = null, CancellationToken clipboardRevoked = default)
     {
         string[] capabilities = (hello.Capabilities ?? []).Intersect(["h264", "deflate"]).ToArray();
         if (capabilities.Length == 0) throw new InvalidDataException("No common media codec");
         bool synthetic = backend.StartsWith("test-", StringComparison.Ordinal);
         if (synthetic && !IPAddress.IsLoopback(((IPEndPoint)controlSocket.Client.LocalEndPoint!).Address))
             throw new AuthenticationException("Synthetic video testing is loopback-only");
+        var features = SessionCapabilities.ValidateGrant(hello.Features, grantedFeatures);
+        if (synthetic && backend is not ("test-clipboard" or "test-clipboard-failure")) features = [];
+        if (clipboardRevoked.IsCancellationRequested) features = [];
         var ticket = new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15));
-        await Wire.Write(control, new Packet("approved-v2", Text: ticket.Value, Capabilities: capabilities), stop);
+        await Wire.Write(control, new Packet("approved-v2", Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features), stop);
         using var attach = CancellationTokenSource.CreateLinkedTokenSource(stop); attach.CancelAfter(TimeSpan.FromSeconds(15));
         using var mediaSocket = await listener.AcceptTcpClientAsync(attach.Token); listener.Stop(); mediaSocket.NoDelay = true; mediaSocket.SendBufferSize = 64 * 1024;
         using var media = new SslStream(mediaSocket.GetStream(), false);
         await media.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = certificate, EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, attach.Token);
-        var binding = await Wire.Read(media, attach.Token);
+        var binding = await Wire.Read(media, attach.Token, 8 * 1024);
         if (binding.Kind != "media-v2" || !ticket.Consume(binding.Text, DateTimeOffset.UtcNow)) throw new AuthenticationException("Media binding rejected");
         await Wire.Write(media, new Packet("media-approved-v2"), attach.Token);
         using var session = CancellationTokenSource.CreateLinkedTokenSource(stop);
         var queue = new LatestQueue<QueuedFrame>();
-        var gate = new AccessGate(); gate.Approve();
+        var gate = new AccessGate(); gate.Approve(features);
+        using var controlWrite = new SemaphoreSlim(1);
+        async Task WriteControl(Packet packet)
+        {
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(session.Token); deadline.CancelAfter(TimeSpan.FromSeconds(2));
+            await controlWrite.WaitAsync(deadline.Token);
+            try { await Wire.Write(control, packet, deadline.Token); }
+            finally { controlWrite.Release(); }
+        }
+        var clipboardUpdates = Channel.CreateBounded<ClipboardTextUpdate>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest });
+        await using var clipboard = features.Contains(SessionCapabilities.ClipboardText)
+            ? new ClipboardSynchronizer(() => synthetic ? new TestTextClipboard(backend == "test-clipboard-failure") : new WindowsTextClipboard(), gate,
+                update => clipboardUpdates.Writer.TryWrite(update), session.Token, HostSessionLog.Write) : null;
+        if (clipboard is not null) _ = clipboard.Completion.ContinueWith(_ => clipboardUpdates.Writer.TryComplete(), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        using var revokeRegistration = clipboardRevoked.Register(() => { gate.RevokeFeature(SessionCapabilities.ClipboardText); clipboardUpdates.Writer.TryComplete(); });
+        var clipboardSender = Task.Run(async () =>
+        {
+            long clipboardSequence = 0;
+            await foreach (var update in clipboardUpdates.Reader.ReadAllAsync(session.Token))
+                if (gate.Allows(SessionCapabilities.ClipboardText)) await WriteControl(ClipboardTextProtocol.Encode(update, ++clipboardSequence));
+            if (!session.IsCancellationRequested) await WriteControl(new("capability-revoked-v2", Features: [SessionCapabilities.ClipboardText]));
+            await Task.Delay(Timeout.Infinite, session.Token);
+        }, session.Token);
         int forceKeyFrame = 1;
         var failures = new FirstSessionFailure();
         using var inputDesktop = synthetic ? null : new Desktop();
@@ -48,12 +74,18 @@ internal static class VideoHostSession
                     continue;
                 }
                 if (!gate.AcceptControl(packet)) throw new InvalidDataException("Unauthorized control event");
-                if (packet.Kind == "keyframe-v2") Interlocked.Exchange(ref forceKeyFrame, 1);
+                if (packet.Kind == "clipboard-text-v2")
+                {
+                    if (clipboard is null || !clipboard.Receive(ClipboardTextProtocol.Decode(packet))) throw new AuthenticationException("Clipboard permission revoked");
+                }
+                else if (packet.Kind == "clipboard-state-v2")
+                {
+                    gate.RevokeFeature(SessionCapabilities.ClipboardText); clipboardUpdates.Writer.TryComplete();
+                }
+                else if (packet.Kind == "keyframe-v2") Interlocked.Exchange(ref forceKeyFrame, 1);
                 else if (packet.Kind == "ping-v2")
                 {
-                    using var replyDeadline = CancellationTokenSource.CreateLinkedTokenSource(session.Token);
-                    replyDeadline.CancelAfter(TimeSpan.FromSeconds(2));
-                    await Wire.Write(control, new Packet("pong-v2", packet.Sequence), replyDeadline.Token);
+                    await WriteControl(new Packet("pong-v2", packet.Sequence));
                 }
             }
         }, session.Token);
@@ -83,7 +115,8 @@ internal static class VideoHostSession
         Task observedInput = Observe(input, "control-read", failures, session.Token);
         Task observedSender = Observe(sender, "media-send", failures, session.Token);
         Task observedProducer = Observe(producer, "capture-encode", failures, session.Token);
-        Task first = await Task.WhenAny(observedInput, observedSender, observedProducer);
+        Task observedClipboard = Observe(clipboardSender, "clipboard-send", failures, session.Token);
+        Task first = await Task.WhenAny(observedInput, observedSender, observedProducer, observedClipboard);
         string worker = failures.First?.Worker ?? (first == observedInput ? "control-read" : first == observedSender ? "media-send" : "capture-encode");
         var failure = failures.First;
         HostSessionLog.Write($"session_end worker={worker} stage={failure?.Stage ?? "shutdown"} completed_frames={failure?.CompletedFrames ?? 0} state={first.Status} error_type={failure?.Error.GetType().Name ?? "none"} hresult=0x{failure?.Error.HResult ?? 0:X8} reason={failure?.Error.Message ?? "worker completed/cancelled"}");
@@ -91,7 +124,7 @@ internal static class VideoHostSession
         try { if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure.Error).Throw(); await first; }
         finally
         {
-            try { await Task.WhenAll(observedInput, observedSender, observedProducer); } catch (Exception) { /* Causal failure is reported above; join all workers. */ }
+            try { await Task.WhenAll(observedInput, observedSender, observedProducer, observedClipboard); } catch (Exception) { /* Causal failure is reported above; join all workers. */ }
             gate.Revoke(); inputDesktop?.ReleaseAll();
             try
             {

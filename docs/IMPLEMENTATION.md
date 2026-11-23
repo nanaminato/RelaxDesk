@@ -1,5 +1,9 @@
 # RelaxDesk implementation and evidence
 
+## Independently authorized Unicode text clipboard
+
+Current source implements optional v2 `clipboard.text`, explicit unchecked Viewer request/Host permission, bidirectional text/CRLF/empty handling, origin/revision convergence, baseline privacy, loop suppression, size bounds and independent stop/revocation. Windows CF_UNICODETEXT adapter has a dedicated message-only HWND worker; backend errors disable clipboard while control/video continue. Old v2 peers omit Features and retain the existing path; v1 grants no extensions. Control envelopes now validate smaller role-specific limits before allocation. [Behavior/protocol/security/OS limitations](CLIPBOARD.md), [530-check Core/TLS and actual Host/WPF test evidence](../benchmarks/2026-11-23-clipboard-validation.md). Real Windows clipboard/Home physical tests remain pending; foreground/GPU tests were skipped as authorized. Owner requested no per-slice packaging; the existing 0.4.2 ZIP predates these changes.
+
 ## 2026-11-23 office-readiness continuation
 
 Delivery checkpoint: clean source `0977e787b7c5d9816184a9aefbd369a9b885ef72`, self-contained `build/RelaxDesk-office-0.4.2.zip`; 1455 fresh-extraction hashes verified, package office checks and actual EXE Host-to-WPF synthetic test passed without SDK/global runtime. Native source rebuilt and 42 WARP / 16 Present / 21 Windows contracts passed. Actual capture probe returned DuplicateOutput E_ACCESSDENIED, so Home/physical acceptance remains open. Full package hash, measurements, failures and unfinished capabilities are in the [validation report](../benchmarks/2026-11-23-office-readiness.md).

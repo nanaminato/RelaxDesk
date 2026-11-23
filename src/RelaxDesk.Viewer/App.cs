@@ -60,6 +60,10 @@ public sealed partial class ViewerWindow : Window
     readonly Grid renderPanel = new();
     readonly CheckBox gpuRendering = new() { Content = "D3D11 GPU display", IsChecked = true };
     readonly CheckBox pinnedConnection = new() { Content = "使用固定指纹与凭证（可选高级方式）" };
+    readonly CheckBox requestClipboard = new() { Content = "请求双向文本剪贴板（Host 仍需单独允许）", IsChecked = false };
+    AccessGate? clipboardPermission;
+    ClipboardTextUpdate? pendingClipboard;
+    int clipboardDispatchPending;
     NativeVideoHost? nativeView;
     readonly PressedInputs heldInputs = new();
     TaskCompletionSource connectionEnded = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -153,7 +157,8 @@ public sealed partial class ViewerWindow : Window
         StopLocalPreview(); connectionCard.IsEnabled = false; disconnect.IsEnabled = true; connect.IsEnabled = false; using var cancellation = new CancellationTokenSource(); session = cancellation; sequence = 0;
         connectionEnded = new(TaskCreationOptions.RunContinuationsAsynchronously);
         while (outgoing.Reader.TryRead(out _)) { }
-        using var connection = new SessionClient(); using var abort = cancellation.Token.Register(connection.Dispose);
+        using var connection = new SessionClient { RequestedFeatures = smoke is null && requestClipboard.IsChecked == true ? [SessionCapabilities.ClipboardText] : [] }; using var abort = cancellation.Token.Register(connection.Dispose);
+        ClipboardSynchronizer? clipboard = null;
         var decoded = new LatestQueue<DecodedMedia>(1); var cpu = new CpuBitmapRenderer(image);
         var metrics = new PipelineMetrics(); long readbackBytes = 0, gpuFrames = 0, cpuFrames = 0, skipped = 0; int resizeCount = 0, simulatedLosses = 0, keyframeRequests = 0, rendererGenerations = 0, idleRepaints = 0;
         ulong hiddenPresents = 0, occludedPresents = 0, busyPresents = 0, lastHidden = 0, lastOccluded = 0, lastBusy = 0;
@@ -193,6 +198,10 @@ public sealed partial class ViewerWindow : Window
             if (pinnedConnection.IsChecked == true) await connection.Connect(target.ToString(), targetPort, fingerprint.Text, token.Password, cancellation.Token);
             else await connection.ConnectByApproval(target.ToString(), targetPort, cancellation.Token);
             token.Clear();
+            var clipboardGate = new AccessGate(); clipboardGate.Approve(connection.Features); clipboardPermission = clipboardGate;
+            if (clipboardGate.Allows(SessionCapabilities.ClipboardText))
+                clipboard = new ClipboardSynchronizer(() => new WindowsTextClipboard(), clipboardGate, QueueClipboardUpdate, cancellation.Token,
+                    message => Dispatcher.BeginInvoke(() => { if (!ReferenceEquals(clipboardPermission, clipboardGate) || cancellation.IsCancellationRequested) return; status.Text = message; if (!clipboardGate.Allows(SessionCapabilities.ClipboardText)) DisableClipboard(); }));
             status.Text = "已获授权，正在接收桌面…";
             ShowConnectedView(true);
             heartbeat = new() { Interval = TimeSpan.FromSeconds(5) };
@@ -214,7 +223,29 @@ public sealed partial class ViewerWindow : Window
         }
 
             var writer = Task.Run(async () => { await foreach (var packet in outgoing.Reader.ReadAllAsync(cancellation.Token)) await Wire.Write(connection.Control, packet, cancellation.Token); });
-            var control = Task.Run(async () => { while (true) { var packet = await SessionControl.Read(connection.Control, cancellation.Token); if (packet.Kind != "pong-v2") throw new InvalidDataException("Unexpected control response"); Interlocked.Increment(ref heartbeatReplies); } });
+            var control = Task.Run(async () =>
+            {
+                long clipboardSequence = 0;
+                while (true)
+                {
+                    var packet = await SessionControl.Read(connection.Control, cancellation.Token);
+                    if (packet.Kind == "pong-v2") { Interlocked.Increment(ref heartbeatReplies); continue; }
+                    if (!connection.Features.Contains(SessionCapabilities.ClipboardText)) throw new InvalidDataException("Unnegotiated session message");
+                    if (packet.Kind == "clipboard-text-v2")
+                    {
+                        var update = ClipboardTextProtocol.Decode(packet);
+                        if (packet.Sequence <= clipboardSequence) throw new InvalidDataException("Replayed clipboard update");
+                        clipboardSequence = packet.Sequence;
+                        clipboard?.Receive(update); // Late, already-authorized updates are ignored after local revocation.
+                    }
+                    else if (packet.Kind == "capability-revoked-v2" && packet.Features is [SessionCapabilities.ClipboardText])
+                    {
+                        clipboardGate.RevokeFeature(SessionCapabilities.ClipboardText);
+                        _ = Dispatcher.BeginInvoke(() => { if (!ReferenceEquals(clipboardPermission, clipboardGate)) return; sessionToolbar?.SetClipboard(false, null); status.Text = "文本剪贴板已关闭；重新开启需要重新连接并授权。"; });
+                    }
+                    else throw new InvalidDataException("Unexpected control response");
+                }
+            });
             var receiver = Task.Factory.StartNew(() =>
             {
                 void KeyFrame() { Interlocked.Increment(ref keyframeRequests); Dispatcher.BeginInvoke(() => { if (!outgoing.Writer.TryWrite(new Packet("keyframe-v2", ++sequence))) cancellation.Cancel(); }); }
@@ -326,6 +357,8 @@ public sealed partial class ViewerWindow : Window
         finally
         {
             heartbeat?.Stop(); cancellation.Cancel(); CompositionTarget.Rendering -= Rendering; ReleaseHeldInputs(); cpu.Clear(); image.Visibility = Visibility.Visible;
+            clipboardPermission?.Revoke(); clipboardPermission = null; Interlocked.Exchange(ref pendingClipboard, null);
+            if (clipboard is not null) await clipboard.DisposeAsync();
             if (nativeView is not null) { renderPanel.Children.Remove(nativeView); nativeView.Dispose(); nativeView = null; }
             session = null; connect.IsEnabled = true; connectionCard.IsEnabled = true; disconnect.IsEnabled = false; ShowConnectedView(false);
             string report = $"renderer={(gpuFrames > 0 && cpuFrames == 0 ? "d3d11" : "cpu-or-fallback")} gpu_frames={gpuFrames} cpu_frames={cpuFrames} full_frame_readback_bytes={readbackBytes} received_frames={receivedFrames} resizes={resizeCount} renderer_generations={rendererGenerations} keyframe_requests={keyframeRequests} simulated_device_losses={simulatedLosses} idle_repaints={idleRepaints} hidden={hiddenPresents} occluded={occludedPresents} gpu_busy={busyPresents} " + metrics.Report(decoded.Dropped + skipped, decoded.Depth);

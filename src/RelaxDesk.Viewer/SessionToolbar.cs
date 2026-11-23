@@ -34,6 +34,11 @@ internal sealed class SessionToolbar : IDisposable
     internal Button DisconnectButton { get; }
     internal Button ShortcutsButton { get; }
     internal ContextMenu ShortcutMenu { get; }
+    readonly MenuItem clipboard = new() { Header = "剪贴板未授权 / 已关闭", IsEnabled = false };
+    internal MenuItem ClipboardAction => clipboard;
+    Action? disableClipboard;
+    public void SetClipboard(bool enabled, Action? disable)
+    { clipboard.Header = enabled ? "停止文本剪贴板同步（重新开启需重新授权）" : "剪贴板未授权 / 已关闭"; clipboard.IsEnabled = enabled; disableClipboard = disable; }
     public SessionToolbar(Window owner, Action toggle, Action disconnect, Action<RemoteShortcut>? shortcut = null)
     {
         this.owner = owner;
@@ -61,6 +66,8 @@ internal sealed class SessionToolbar : IDisposable
         }
         ShortcutMenu.Items.Add(new Separator());
         ShortcutMenu.Items.Add(new MenuItem { Header = "Ctrl+Alt+End / 安全注意序列：不支持", IsEnabled = false });
+        ShortcutMenu.Items.Add(new Separator()); ShortcutMenu.Items.Add(clipboard);
+        clipboard.Click += (_, _) => { ShortcutMenu.IsOpen = false; disableClipboard?.Invoke(); };
         ShortcutsButton.Click += (_, _) => { ShortcutMenu.PlacementTarget = ShortcutsButton; ShortcutMenu.IsOpen = true; Reveal(); };
         controls.Children.Add(endpoint); controls.Children.Add(ShortcutsButton); controls.Children.Add(full); controls.Children.Add(DisconnectButton);
         window.Content = new Border { Background = new SolidColorBrush(Color.FromRgb(23, 36, 58)), CornerRadius = new(0, 0, 10, 10), Child = controls, BorderBrush = new SolidColorBrush(Color.FromRgb(86, 126, 184)), BorderThickness = new(1, 0, 1, 1), ClipToBounds = true };

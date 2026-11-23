@@ -1,0 +1,1 @@
+PASS --clipboard-unnegotiated: explicit capability/consent, clipboard_granted=False, bidirectional_unicode_verified=False, unauthorized/revoked operation denied, concurrent_media_frames=0, worker/resource cleanup; test clipboard provider only, no Windows clipboard modified
