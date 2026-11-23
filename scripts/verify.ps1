@@ -59,7 +59,9 @@ try {
     Run-App $smokeDll $serviceDll --service-setup-contracts (Join-Path $root 'build/machine-service-setup-verification')
     if ($LASTEXITCODE) { throw 'Machine service deployment/ACL/transaction contracts failed' }
     Run-App $smokeDll --windows-contracts
-    if ($LASTEXITCODE) { throw 'Windows contracts failed' }
+    if($LASTEXITCODE){throw 'Windows contracts failed'}
+    Run-App $smokeDll --history-store-contracts (Join-Path $root 'build/history-store-verification')
+    if($LASTEXITCODE){throw 'History store contracts failed'}
     Run-App $smokeDll --session-contracts
     if ($LASTEXITCODE) { throw 'Windows session contracts failed' }
     Run-App $smokeDll $hostDll --session-unavailable
@@ -118,6 +120,8 @@ try {
         if($LASTEXITCODE){throw 'Host audio consent/isolation failed'}
         Run-App $viewer --audio-session-contracts $hostDll
         if($LASTEXITCODE){throw 'Viewer audio session/UI failed'}
+        Run-App $viewer --history-contracts $hostDll (Join-Path $root 'build/history-wpf-verification')
+        if($LASTEXITCODE){throw 'Viewer history privacy/session checks failed'}
     }
     if ($Graphics) {
         & $probe --viewport-render-contracts

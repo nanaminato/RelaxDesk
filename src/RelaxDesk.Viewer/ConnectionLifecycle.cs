@@ -44,7 +44,7 @@ public sealed partial class ViewerWindow
         {
             while (true)
             {
-                var result = await ConnectVideoAttempt(target, approvedPin, retry > 0 ? recoveryBudget.Token : lifetime.Token, () => recoveryBudget.CancelAfter(Timeout.InfiniteTimeSpan));
+                var result = await ConnectVideoAttempt(target, approvedPin, retry > 0 ? recoveryBudget.Token : lifetime.Token, () => {recoveryBudget.CancelAfter(Timeout.InfiniteTimeSpan);QueueConnectionHistory(target.Host,target.Port);});
                 if (result.Established)
                 {
                     approvedPin = result.Pin;

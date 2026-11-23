@@ -21,6 +21,7 @@ count += RecoveryChecks.Run();
 count += WorkerRestartChecks.Run();
 count += await AudioChecks.Run();
 count += AudioSessionChecks.Policies();
+count += ConnectionHistoryChecks.Run();
 count += DisplayChecks.Run();
 count += DisplayTopologyChecks.Run();
 count += ViewportChecks.Run();

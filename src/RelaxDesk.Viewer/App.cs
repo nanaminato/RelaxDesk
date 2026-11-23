@@ -20,10 +20,12 @@ namespace RelaxDesk.Viewer;
 public sealed record ViewerSmokeSettings(string Host, int Port, string Fingerprint, string Token, string Renderer = "cpu", bool HardwareDecode = true, int Frames = 60, bool ExerciseWindow = false, bool RequireGpu = false, bool CloseWhileStreaming = false, bool FixedMediaBudget = false, bool SimulateDeviceLoss = false, bool SimulateGap = false, bool IdleRepaintTest = false, bool IdleSessionTest = false, string? ConnectionCode = null, bool FileTransfer = false, string? FileFixtureRoot = null, bool ReconnectTest = false,bool RichClipboardTest=false,bool DenyRichClipboard=false);
 public sealed class App : Application
 {
+    internal static bool VerificationMode{get;private set;}
     [System.Runtime.InteropServices.DllImport("user32.dll")] static extern nint SetThreadDpiAwarenessContext(nint context);
     [STAThread]
     public static void Main(string[] args)
     {
+        VerificationMode=args.Any(value=>value.StartsWith("--",StringComparison.Ordinal));
         if (args is ["--version"]) { Console.WriteLine(BuildIdentity.Version); return; }
         ViewerSmokeSettings? smoke = null;
         if (args is ["--render-smoke"])
@@ -37,6 +39,7 @@ public sealed class App : Application
             var app = new App();
             if(args is ["--viewport-contracts"])ViewerWindow.VerifyViewport(app);
             else if(args is ["--audio-session-contracts",var audioHost])ViewerWindow.VerifyAudioSession(app,audioHost);
+            else if(args is ["--history-contracts",var historyHost,var historyFixtures])ViewerWindow.VerifyConnectionHistory(app,historyHost,historyFixtures);
             else if(args is ["--display-legacy-session-contracts",var legacyDisplayHost])ViewerWindow.VerifyDisplaySession(app,legacyDisplayHost,false,true);
             else if(args is ["--topology-race-contracts",var raceHost])ViewerWindow.VerifyDisplaySession(app,raceHost,false,false,true);
             else if(args is ["--topology-session-contracts",var topologyHost])ViewerWindow.VerifyDisplaySession(app,topologyHost,true);
@@ -477,6 +480,7 @@ public sealed partial class ViewerWindow : Window
             await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = "RelaxDesk", EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, cancellation.Token);
             await Wire.Write(tls, new Packet("hello-v1", Text: token.Password), cancellation.Token); token.Clear(); status.Text = "Waiting for host approval";
             if ((await Wire.Read(tls, cancellation.Token)).Kind != "approved-v1") throw new AuthenticationException("Host did not approve");
+            QueueConnectionHistory(host.Text,int.Parse(port.Text));
             inputAuthorized=true;
             ShowConnectedView(true);
             var writer = Task.Run(async () => { try { await foreach (var p in outgoing.Reader.ReadAllAsync(cancellation.Token)) await Wire.Write(tls, p, cancellation.Token); } finally { cancellation.Cancel(); } });

@@ -11,7 +11,7 @@ public static class FileTransferContracts
 {
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool CreateHardLink(string name, string existing, nint security);
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool DeviceIoControl(SafeFileHandle handle, uint code, byte[] input, uint inputBytes, nint output, uint outputBytes, out uint returned, nint overlapped);
-    static void CreateFixtureJunction(string path, string target)
+    internal static void CreateFixtureJunction(string path, string target)
     {
         Directory.CreateDirectory(path);
         using var handle = WindowsFileRoot.Open(path, 0x40000000, 0, 3, 0x02200000);

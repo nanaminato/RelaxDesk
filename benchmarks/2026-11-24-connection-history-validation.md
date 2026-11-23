@@ -1,0 +1,13 @@
+# Connection history validation
+
+Source branch `codex/dxgi-media-pipeline`; stable .NET 11.0.100. `dotnet build RelaxDesk.sln -c Release --artifacts-path build/history-accepted-artifacts -p:RelaxDeskNativePath=E:/RelaxDesk/build/native-viewport-release/Release/RelaxDesk.Native.dll` exits 0 with zero warnings/errors. No package or real-user preference changes.
+
+27 new Core checks cover 20-entry MRU order/deduplication, canonical IPv6/display, empty/roundtrip documents, invalid addresses/ports, null/malformed/unknown/duplicate schema fields, credential-shaped fields and document/entry bounds. Complete Core/TLS suite passes **1,950** checks (`build/history-core-reviewed.txt`, from `build/history-reviewed-artifacts`; later source edits only extend WPF verification).
+
+`Smoke --history-store-contracts build/history-store-verification` passes **18** real filesystem checks on the final build (`build/history-store-accepted.txt`): absent-file no-write load, persistence, serialized updates, atomic replacement/no leftover temp, cancellation, malformed/unknown-field preservation, explicit clear, oversize/directory refusal and real NTFS junction refusal with target bytes unchanged. The fixture junction helper is shared with existing file-transfer contracts. Symbolic-link creation lacks privilege and is explicitly skipped; junction checks pass independently.
+
+`Viewer --history-contracts <Host.dll> build/history-wpf-verification` passes on the final build (`build/history-wpf-accepted.txt`). Actual WPF/Host/TLS verifies fixture load, address selection clearing credentials/optional requests, preserving strict mode, no automatic connection, no write before consent, authorized endpoint-only persistence, locked-history IO failure preserving video, session opt-out and clear. Generated credentials never enter the history JSON. Test uses synthetic capture/non-injecting control and an injected preference path; it does not modify actual user history.
+
+Rendered `history-default.png` and `history-small-expanded.png` under the fresh WPF fixture were visually inspected at 1100×750 and 680×480. Default history stays collapsed; small-window expanded history is scrollable, with fields/actions inside the form. This is WPF layout verification, not physical mixed-DPI/Home acceptance.
+
+The regular `scripts/verify.ps1` now invokes file-store and WPF history checks. This slice ran the Core/TLS suite plus affected filesystem/WPF tests, not a second full media/hardware regression; the previous audio checkpoint already records that complete suite. No new performance/MSTSC claim. Remaining original UI gaps include negotiated quality/frame-rate controls and live latency/diagnostic views; physical tests and final unified packaging remain deferred.

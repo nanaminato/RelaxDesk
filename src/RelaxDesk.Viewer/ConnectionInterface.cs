@@ -31,6 +31,7 @@ public sealed partial class ViewerWindow
         form.Children.Add(new TextBlock { Text = "输入 IP 和端口，Host 确认授权后进入桌面。意外断开后会有限重试，仍需 Host 重新允许。", Foreground = Brushes.DimGray, TextWrapping = TextWrapping.Wrap });
         form.Children.Add(new TextBlock { Text = "远程电脑 IP", Margin = new Thickness(0, 16, 0, 0) }); form.Children.Add(host);
         form.Children.Add(new TextBlock { Text = "端口" }); form.Children.Add(port);
+        AddConnectionHistory(form);
         requestClipboard.Margin = new Thickness(0, 10, 0, 4); form.Children.Add(requestClipboard);
         form.Children.Add(requestClipboardImage);form.Children.Add(requestClipboardHtml);
         requestFiles.Margin=new Thickness(0,2,0,4);form.Children.Add(requestFiles);form.Children.Add(requestFileClipboard);
