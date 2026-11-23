@@ -77,7 +77,19 @@ function Read-SetupPackage([string]$Root,[switch]$AllowMissing) {
     return ,$entries
 }
 function Get-SetupContext {
-    return @{ Registry='HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\RelaxDesk'; Menu=(Join-Path ([Environment]::GetFolderPath('Programs')) 'RelaxDesk'); Desktop=[Environment]::GetFolderPath('DesktopDirectory'); Fault='' }
+    return @{ Registry='HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\RelaxDesk'; Menu=(Join-Path ([Environment]::GetFolderPath('Programs')) 'RelaxDesk'); Desktop=[Environment]::GetFolderPath('DesktopDirectory'); Startup=[Environment]::GetFolderPath('Startup'); Fault='' }
+}
+function Get-SetupLogonMode($State) {
+    if($null -eq $State -or $null -eq $State.PSObject.Properties['logon']){return 'Disabled'}
+    if($State.logon -notin @('Disabled','Window','ServiceWindow')){throw 'Invalid logon startup mode'}
+    return $State.logon
+}
+function Get-SetupLogonArguments([string]$Mode) {
+    switch($Mode){'Window'{return '--logon'} 'ServiceWindow'{return '--logon --service-agent'} 'Disabled'{return ''} default{throw 'Invalid logon startup mode'}}
+}
+function Get-SetupLogonLink($Context,[string]$Mode) {
+    $directory=Get-SetupPath $Context.Startup
+    return [pscustomobject]@{Path=(Join-Path $directory 'RelaxDesk Host.lnk');Relative='HostUi\RelaxDesk.HostShell.exe';Arguments=(Get-SetupLogonArguments $Mode);Remove=($Mode -eq 'Disabled')}
 }
 function Get-SetupOwner { return [Security.Principal.WindowsIdentity]::GetCurrent().User.Value }
 function Read-SetupState([string]$Root) {
@@ -87,6 +99,7 @@ function Read-SetupState([string]$Root) {
     if ($state.format -ne 1 -or $state.owner -ne (Get-SetupOwner) -or $state.root -ine $Root -or $state.current -notmatch '^app-[a-f0-9]{32}$' -or @($state.releases).Count -notin 1..4 -or $state.current -notin $state.releases -or $state.desktop -isnot [bool]) { throw 'Unowned/invalid installation directory' }
     if(@($state.releases | Select-Object -Unique).Count -ne @($state.releases).Count){throw 'Duplicate installed release'}
     foreach ($release in $state.releases) { if ($release -notmatch '^app-[a-f0-9]{32}$') { throw 'Invalid installed release path' };Assert-SetupPath (Join-Path $Root $release) }
+    $null=Get-SetupLogonMode $state
     return $state
 }
 function Write-SetupState([string]$Root,$State) {
@@ -136,11 +149,11 @@ function Get-SetupLinks($Context,[bool]$Desktop) {
     foreach ($directory in $directories) {
         $directory=Get-SetupPath $directory
         foreach ($pair in @(@('RelaxDesk Host.lnk','HostUi\RelaxDesk.HostShell.exe'),@('RelaxDesk Viewer.lnk','Viewer\RelaxDesk.Viewer.exe'))) {
-            [pscustomobject]@{Path=(Join-Path $directory $pair[0]);Relative=$pair[1]}
+            [pscustomobject]@{Path=(Join-Path $directory $pair[0]);Relative=$pair[1];Arguments='';Remove=$false}
         }
     }
 }
-function Read-SetupLink([string]$Path,[string]$Root,$State) {
+function Read-SetupLink([string]$Path,[string]$Root,$State,[string]$ExpectedArguments='') {
     Assert-SetupPath $Path
     if (!(Test-Path -LiteralPath $Path)) { return $null }
     if ($null -eq $State) { throw 'Shortcut collision; existing shortcut is not owned' }
@@ -151,7 +164,7 @@ function Read-SetupLink([string]$Path,[string]$Root,$State) {
             $allowed=$false
             $relative=if([IO.Path]::GetFileName($Path) -eq 'RelaxDesk Host.lnk'){'HostUi\RelaxDesk.HostShell.exe'}else{'Viewer\RelaxDesk.Viewer.exe'}
             foreach ($release in $State.releases) { if ($shortcut.TargetPath -ieq (Join-Path (Join-Path $Root $release) $relative)) { $allowed=$true } }
-            if (!$allowed -or $shortcut.Arguments) { throw 'Shortcut collision; existing shortcut is not owned' }
+            if (!$allowed -or $shortcut.Arguments -cne $ExpectedArguments) { throw 'Shortcut collision; existing shortcut is not owned' }
         } finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shortcut) }
         return ,[IO.File]::ReadAllBytes($Path)
     } finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) }
@@ -162,7 +175,7 @@ function Write-SetupLink($Link,[string]$Release) {
     $shell=New-Object -ComObject WScript.Shell
     try {
         $shortcut=$shell.CreateShortcut($Link.Path)
-        try { $shortcut.TargetPath=Join-Path $Release $Link.Relative;$shortcut.Arguments='';$shortcut.WorkingDirectory=$Release;$shortcut.Description='RelaxDesk — requires explicit Host approval';$shortcut.Save() }
+        try { $shortcut.TargetPath=Join-Path $Release $Link.Relative;$shortcut.Arguments=$Link.Arguments;$shortcut.WorkingDirectory=$Release;$shortcut.Description='RelaxDesk — visible UI; sharing requires explicit Host approval';$shortcut.Save() }
         finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shortcut) }
     } finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) }
 }
@@ -197,7 +210,7 @@ function Remove-SetupRelease([string]$Root,[string]$Release) {
 
 function Install-RelaxDeskPackage {
     [CmdletBinding(SupportsShouldProcess=$true)]
-    param([Parameter(Mandatory)][string]$PackageRoot,[Parameter(Mandatory)][string]$InstallRoot,[switch]$DesktopShortcuts,$Context=(Get-SetupContext))
+    param([Parameter(Mandatory)][string]$PackageRoot,[Parameter(Mandatory)][string]$InstallRoot,[switch]$DesktopShortcuts,[ValidateSet('Keep','Disabled','Window','ServiceWindow')][string]$LogonStartup='Keep',$Context=(Get-SetupContext))
     $source=Get-SetupPath $PackageRoot;$root=Get-SetupPath $InstallRoot
     if(![Environment]::Is64BitOperatingSystem){throw 'RelaxDesk requires Windows x64'}
     foreach($machineDirectory in @($env:SystemRoot,$env:ProgramFiles,${env:ProgramFiles(x86)},$env:ProgramData)){
@@ -210,7 +223,7 @@ function Install-RelaxDeskPackage {
     foreach ($required in @('Host/RelaxDesk.Host.exe','HostUi/RelaxDesk.HostShell.exe','Viewer/RelaxDesk.Viewer.exe','scripts/RelaxDesk.Setup.psm1','scripts/Uninstall-RelaxDesk.ps1','package.json')) {
         if ($required -notin $entries.path) { throw "Required package file missing: $required" }
     }
-    if (!$PSCmdlet.ShouldProcess($root,('Install/upgrade RelaxDesk '+$package.version+' for current user; no startup/firewall changes'))) { return [pscustomobject]@{Installed=$false;Root=$root;Version=$package.version} }
+    if (!$PSCmdlet.ShouldProcess($root,('Install/upgrade RelaxDesk '+$package.version+' for current user; startup choice '+$LogonStartup+'; no firewall changes'))) { return [pscustomobject]@{Installed=$false;Root=$root;Version=$package.version} }
     $mutex=Enter-SetupLock $root
     try {
         $state=Read-SetupState $root;Assert-SetupStopped $root
@@ -218,8 +231,17 @@ function Install-RelaxDeskPackage {
         if ($null -ne $state -and @($state.releases).Count -ge 4) { throw 'Too many retained releases; review modified files and uninstall before upgrading' }
         $registration=Read-SetupRegistration $Context.Registry $root
         $desktop=[bool]$DesktopShortcuts -or ($null -ne $state -and [bool]$state.desktop)
+        $oldLogon=Get-SetupLogonMode $state
+        $logon=if($LogonStartup -eq 'Keep'){$oldLogon}else{$LogonStartup}
         $links=@(Get-SetupLinks $Context $desktop);$snapshots=@{}
         foreach ($link in $links) { $snapshots[$link.Path]=Read-SetupLink $link.Path $root $state }
+        if($logon -ne 'Disabled' -or $oldLogon -ne 'Disabled'){
+            $startupLink=Get-SetupLogonLink $Context $logon
+            if($startupLink.Path -in $links.Path){throw 'Startup and ordinary shortcut locations overlap'}
+            if($oldLogon -eq 'Disabled' -and (Test-Path -LiteralPath $startupLink.Path)){throw 'Existing startup shortcut is not owned'}
+            $snapshots[$startupLink.Path]=Read-SetupLink $startupLink.Path $root $state (Get-SetupLogonArguments $oldLogon)
+            $links+=@($startupLink)
+        }
         [void][IO.Directory]::CreateDirectory($root)
         $release='app-'+[Guid]::NewGuid().ToString('N');$destination=Join-Path $root $release
         [void][IO.Directory]::CreateDirectory($destination)
@@ -234,7 +256,7 @@ function Install-RelaxDeskPackage {
             $null=Read-SetupPackage $destination
             if ($Context.Fault -eq 'after-copy') { throw 'Injected setup failure after copy' }
             $integrationStarted=$true
-            foreach ($link in $links) { Write-SetupLink $link $destination }
+            foreach ($link in $links) { if($link.Remove){if(Test-Path -LiteralPath $link.Path){Remove-Item -LiteralPath $link.Path}}else{Write-SetupLink $link $destination} }
             $values=@{
                 DisplayName='RelaxDesk (current user)';DisplayVersion=$package.version;InstallLocation=$root;Publisher='RelaxDesk';
                 UninstallString=('"'+$env:SystemRoot+'\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -File "'+$destination+'\scripts\Uninstall-RelaxDesk.ps1" -InstallRoot "'+$root+'"');
@@ -244,7 +266,7 @@ function Install-RelaxDeskPackage {
             foreach ($name in $values.Keys) { $kind=if($values[$name] -is [int]){[Microsoft.Win32.RegistryValueKind]::DWord}else{[Microsoft.Win32.RegistryValueKind]::String};$key.SetValue($name,$values[$name],$kind) }
             if ($Context.Fault -eq 'after-registration') { throw 'Injected setup failure after registration' }
             $releases=@($release);if ($null -ne $state) { $releases+=@($state.releases) }
-            $next=[pscustomobject]@{format=1;owner=(Get-SetupOwner);root=$root;current=$release;releases=$releases;version=$package.version;desktop=$desktop}
+            $next=[pscustomobject]@{format=1;owner=(Get-SetupOwner);root=$root;current=$release;releases=$releases;version=$package.version;desktop=$desktop;logon=$logon}
             Write-SetupState $root $next;$activated=$true
         } finally {
             if (!$activated) {
@@ -259,7 +281,7 @@ function Install-RelaxDeskPackage {
         $retained=@($release)
         if ($null -ne $state) { foreach ($old in $state.releases) { try { if (!(Remove-SetupRelease $root $old)) { $retained+=@($old) } } catch { Write-Warning "Retained previous release: $old";$retained+=@($old) } } }
         $next.releases=$retained;Write-SetupState $root $next
-        Write-Output ([pscustomobject]@{Installed=$true;Root=$root;Version=$package.version;ApplicationRoot=$destination;RetainedPreviousReleases=$retained.Count-1;Logs=(Join-Path $env:LOCALAPPDATA 'RelaxDesk\logs');Firewall='Unchanged; approve only a trusted private network if Windows prompts';Startup='Disabled'})
+        Write-Output ([pscustomobject]@{Installed=$true;Root=$root;Version=$package.version;ApplicationRoot=$destination;RetainedPreviousReleases=$retained.Count-1;Logs=(Join-Path $env:LOCALAPPDATA 'RelaxDesk\logs');Firewall='Unchanged; approve only a trusted private network if Windows prompts';Startup=$logon})
     } finally { $mutex.ReleaseMutex();$mutex.Dispose() }
 }
 
@@ -273,8 +295,10 @@ function Uninstall-RelaxDeskPackage {
         $state=Read-SetupState $root;if ($null -eq $state) { throw 'Installation not found' };Assert-SetupStopped $root
         foreach($release in $state.releases){$directory=Join-Path $root $release;if(Test-Path -LiteralPath $directory){$null=Read-SetupPackage $directory -AllowMissing;$null=@(Get-SetupFiles $directory)}}
         $null=Read-SetupRegistration $Context.Registry $root
-        foreach ($link in @(Get-SetupLinks $Context ([bool]$state.desktop))) {
-            try { $owned=Read-SetupLink $link.Path $root $state;if ($null -ne $owned) { Remove-Item -LiteralPath $link.Path } } catch { Write-Warning "Retained changed shortcut: $($link.Path)" }
+        $removalLinks=@(Get-SetupLinks $Context ([bool]$state.desktop));$logon=Get-SetupLogonMode $state
+        if($logon -ne 'Disabled'){$removalLinks+=@(Get-SetupLogonLink $Context $logon)}
+        foreach ($link in $removalLinks) {
+            try { $owned=Read-SetupLink $link.Path $root $state $link.Arguments;if ($null -ne $owned) { Remove-Item -LiteralPath $link.Path } } catch { Write-Warning "Retained changed shortcut: $($link.Path)" }
         }
         Restore-SetupRegistration $Context.Registry $null
         $retained=@()

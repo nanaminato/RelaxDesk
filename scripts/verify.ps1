@@ -111,7 +111,9 @@ try {
         Run-App $shell --shell-contracts $hostDll (Join-Path $root 'build/host-shell-verification')
         if ($LASTEXITCODE) { throw 'WPF Host approval/stop contracts failed' }
         Run-App $shell --service-contracts $hostDll $serviceDll
-        if ($LASTEXITCODE) { throw 'WPF service lease/owned Host cleanup failed' }
+        if($LASTEXITCODE){throw 'Service coordination failed'}
+        Run-App $shell --recovery-contracts $hostDll
+        if($LASTEXITCODE){throw 'Worker recovery failed'}
     }
     if ($Graphics) {
         & $probe --viewport-render-contracts

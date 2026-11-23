@@ -4,7 +4,7 @@ using System.Net;
 using System.Text.Json;
 namespace RelaxDesk.HostShell;
 
-internal sealed record HostEvent(string Kind, string? Address = null, string? SessionId = null, string[]? Features = null);
+internal sealed record HostEvent(string Kind, string? Address = null, string? SessionId = null, string[]? Features = null,int? ExitCode=null,int Generation=0);
 
 internal sealed class HostProcess
 {
@@ -14,6 +14,8 @@ internal sealed class HostProcess
     readonly SemaphoreSlim commands = new(1);
     public string? SessionId { get; private set; }
     public bool Running => process is not null;
+    public int Generation{get;private set;}
+    internal void TerminateForVerification(){var child=process??throw new InvalidOperationException("No owned child");child.Kill(true);}
     public bool Pending { get; private set; }
     public bool ClipboardRequested { get; private set; }
     public bool FilesRequested { get; private set; }
@@ -39,11 +41,12 @@ internal sealed class HostProcess
         var child=new Process{StartInfo=start};process=child;
         try { if(!child.Start())throw new IOException("无法启动 Host"); }
         catch {process=null;child.Dispose();throw;}
-        completion=Run(child);
+        completion=Run(child,++Generation);
         await Task.Yield();
     }
-    async Task Run(Process child)
+    async Task Run(Process child,int generation)
     {
+        void Emit(HostEvent value)=>Changed?.Invoke(value with{Generation=generation});
         async Task Read(StreamReader reader)
         {
             while(await reader.ReadLineAsync() is {} line)
@@ -62,17 +65,17 @@ internal sealed class HostProcess
                     }
                     Pending=type=="approval-request";
                     if(type is "session-ended" or "listening") {SessionId=null;ClipboardRequested=FilesRequested=false;}
-                    if(type!="ended")Changed?.Invoke(new(type,address,id,features));continue;
+                    if(type!="ended")Emit(new(type,address,id,features));continue;
                 }
                 lock(Lines){if(Lines.Count>=200)Lines.RemoveAt(0);Lines.Add(line);}
                 Diagnostic?.Invoke(line);
-                if(line.StartsWith("backend="))Changed?.Invoke(new("streaming",SessionId:SessionId));
-                if(line.StartsWith("capture_color "))Changed?.Invoke(new("color",line[14..],SessionId));
+                if(line.StartsWith("backend="))Emit(new("streaming",SessionId:SessionId));
+                if(line.StartsWith("capture_color "))Emit(new("color",line[14..],SessionId));
             }
         }
         try {await Task.WhenAll(Read(child.StandardOutput),Read(child.StandardError),child.WaitForExitAsync());if(child.ExitCode!=0)Diagnostic?.Invoke($"Host exit_code={child.ExitCode}");}
         catch(Exception e){Diagnostic?.Invoke(e.Message);}
-        finally {Pending=false;SessionId=null;ClipboardRequested=FilesRequested=false;process=null;child.Dispose();Changed?.Invoke(new(stopping?"stopped":"ended"));}
+        finally {int? exit=child.HasExited?child.ExitCode:null;Pending=false;SessionId=null;ClipboardRequested=FilesRequested=false;process=null;child.Dispose();Emit(new(stopping?"stopped":"ended",ExitCode:exit));}
     }
     async Task Send(Process child,string command)
     {

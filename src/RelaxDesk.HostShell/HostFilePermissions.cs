@@ -28,19 +28,19 @@ internal sealed partial class HostWindow
             var dialog = new OpenFolderDialog { Title = "选择允许上传和下载的本地目录", Multiselect = false };
             if (dialog.ShowDialog(this) == true) { try { await SelectFileRoot(dialog.FolderName); } catch (Exception error) { detail.Text = "无法使用此目录：" + error.Message; } }
         };
-        clearFileRoot.Click += (_, _) => { if (Host.Running) return; selectedFileRoot = null; fileRootLabel.Text = "未选择目录（默认不开放文件访问）"; };
+        clearFileRoot.Click += (_, _) => { if (Host.Running||RestartPending) return; selectedFileRoot = null; fileRootLabel.Text = "未选择目录（默认不开放文件访问）"; };
         revokeFiles.Click += async (_, _) => await StopFiles();
     }
     internal async Task SelectFileRoot(string directory)
     {
-        if (Host.Running) throw new InvalidOperationException("请先停止共享再更换目录");
+        if (Host.Running||RestartPending) throw new InvalidOperationException("请先停止共享再更换目录");
         string full = Path.GetFullPath(directory);
         await Task.Run(() =>
         {
             if (full.StartsWith("\\", StringComparison.Ordinal) || new DriveInfo(Path.GetPathRoot(full)!).DriveType is not (DriveType.Fixed or DriveType.Removable or DriveType.Ram) || !Directory.Exists(full) || (File.GetAttributes(full) & FileAttributes.ReparsePoint) != 0)
                 throw new IOException("请选择现有的普通本地目录");
         });
-        if (Host.Running) throw new InvalidOperationException("共享启动后不能更换目录");
+        if (Host.Running||RestartPending) throw new InvalidOperationException("共享启动后不能更换目录");
         selectedFileRoot = full; fileRootLabel.Text = full; fileRootLabel.ToolTip = full;
     }
     void SetFileConfigurationEnabled(bool enabled) { chooseFileRoot.IsEnabled = clearFileRoot.IsEnabled = enabled; }

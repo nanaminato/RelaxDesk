@@ -32,6 +32,7 @@ internal sealed partial class HostWindow
         useService.IsEnabled=!Host.Running&&!serviceConnecting&&!serviceCleaning&&!closing;
         connectService.IsEnabled=ServiceRequired&&!Host.Running&&!serviceConnecting&&!serviceCleaning&&!ServiceReady&&!closing;
         start.IsEnabled=!Host.Running&&!serviceConnecting&&!serviceCleaning&&!closing&&(!ServiceRequired||ServiceReady);
+        UpdateRecoveryControls();
     }
     internal Task ConnectService(Func<CancellationToken,Task<SessionAgentClient>>? connect=null)
     {

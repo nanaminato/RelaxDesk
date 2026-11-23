@@ -56,3 +56,5 @@ See [2026-11-22 report](../benchmarks/2026-11-22-report.md) and its raw CPU/GPU/
 ## GPU display update (2026-11-22)
 
 Same-device GPU decoder→HwndHost SwapChain and stage instrumentation are implemented. Final visibility/performance acceptance is blocked by RDP DXGI_STATUS_OCCLUDED; physical Home validation is pending. See [current evidence and timing definitions](../benchmarks/2026-11-22-gpu-display-report.md).
+
+2026-11-24 [logon and bounded worker recovery evidence](../benchmarks/2026-11-24-logon-recovery-validation.md) records installation, state, WPF/TLS and full regression results. These are functional checks using synthetic media; they make no physical latency or MSTSC performance claim.

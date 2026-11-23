@@ -40,8 +40,8 @@ internal sealed partial class HostWindow:Window
         var ipField=new StackPanel{Margin=new(0,0,16,0)};ipField.Children.Add(Text("本机局域网 IP",12));ipField.Children.Add(ip);fields.Children.Add(ipField);
         var portField=new StackPanel();portField.Children.Add(Text("端口",12));portField.Children.Add(port);Grid.SetColumn(portField,1);fields.Children.Add(portField);settings.Children.Add(fields);
         var addresses=Addresses();ip.Text=addresses.FirstOrDefault()??"127.0.0.1";
-        if(addresses.Length>1){var options=new WrapPanel();foreach(string address in addresses){var pick=new Button{Content=address,Padding=new(10,5,10,5),FontSize=12};pick.Click+=(_,_)=>{if(!Host.Running)ip.Text=address;};options.Children.Add(pick);}settings.Children.Add(options);}
-        AddDisplaySettings(settings);AddFileSettings(settings);AddServiceSettings(settings);
+        if(addresses.Length>1){var options=new WrapPanel();foreach(string address in addresses){var pick=new Button{Content=address,Padding=new(10,5,10,5),FontSize=12};pick.Click+=(_,_)=>{if(!Host.Running&&!RestartPending)ip.Text=address;};options.Children.Add(pick);}settings.Children.Add(options);}
+        AddDisplaySettings(settings);AddFileSettings(settings);AddServiceSettings(settings);AddRecoverySettings(settings);
         var actions=new WrapPanel();start.Style=(Style)Resources["PrimaryButton"];stop.Style=(Style)Resources["DangerButton"];
         actions.Children.Add(start);actions.Children.Add(stop);actions.Children.Add(disconnectSession);disconnectSession.Click+=async(_,_)=>await DisconnectSession();actions.Children.Add(revokeClipboard);revokeClipboard.Click+=async(_,_)=>await StopClipboard();var copy=new Button{Content="复制地址"};copy.Click+=(_,_)=>Clipboard.SetText(ip.Text+":"+port.Text);actions.Children.Add(copy);settings.Children.Add(actions);color.Margin=new(4,12,0,0);color.TextWrapping=TextWrapping.Wrap;settings.Children.Add(color);var settingsCard=Card(settings);
         var consent=new StackPanel();consent.Children.Add(Text("有人请求连接",19,true));peer.FontSize=16;peer.Margin=new(0,10,0,8);consent.Children.Add(peer);consent.Children.Add(new TextBlock{Text="允许后，对方可以查看桌面并操作键盘与鼠标。请确认是你期望的连接。",TextWrapping=TextWrapping.Wrap,Foreground=Brushes.SlateGray});var decision=new StackPanel{Orientation=Orientation.Horizontal,Margin=new(0,14,0,0)};allow.Style=(Style)Resources["PrimaryButton"];deny.Style=(Style)Resources["DangerButton"];decision.Children.Add(allow);decision.Children.Add(deny);consent.Children.Add(decision);request.Child=consent;request.Background=Brush("#EAF2FF");request.CornerRadius=new(12);request.Padding=new(22);request.Margin=new(0,0,0,16);content.Children.Add(request);content.Children.Add(settingsCard);
@@ -50,7 +50,7 @@ internal sealed partial class HostWindow:Window
         var scroll=new ScrollViewer{Content=content,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};Grid.SetColumn(scroll,1);root.Children.Add(scroll);Content=root;
         start.Click+=async(_,_)=>await StartSharing();stop.Click+=async(_,_)=>await StopSharing();allow.Click+=async(_,_)=>await Decide(true);deny.Click+=async(_,_)=>await Decide(false);
         Host.Changed+=change=>Dispatcher.BeginInvoke(()=>Changed(change));Host.Diagnostic+=line=>Dispatcher.BeginInvoke(()=>{logs.Text=string.Join(Environment.NewLine,Host.Snapshot());if(line.StartsWith("producer_error")||line.StartsWith("Session ended:")||line.StartsWith("clipboard_")||line.StartsWith("file_transfer_disabled"))detail.Text=line;if(line.StartsWith("clipboard_disabled"))revokeClipboard.Visibility=Visibility.Collapsed;if(line.StartsWith("file_transfer_disabled"))revokeFiles.Visibility=Visibility.Collapsed;});
-        Closing+=async(_,e)=>{if(!Host.Running&&serviceAgent is null&&serviceAttempt is null&&serviceWatch is null)return;e.Cancel=true;if(closing)return;closing=true;await DisconnectService();await StopSharing();Close();};
+        Closing+=async(_,e)=>{CancelRecovery();if(!Host.Running&&serviceAgent is null&&serviceAttempt is null&&serviceWatch is null)return;e.Cancel=true;if(closing)return;closing=true;await DisconnectService();await StopSharing();Close();};
     }
     static SolidColorBrush Brush(string value)=>new((Color)ColorConverter.ConvertFromString(value));
     static TextBlock Text(string value,double size=14,bool bold=false,Brush? foreground=null)=>new(){Text=value,FontSize=size,FontWeight=bold?FontWeights.SemiBold:FontWeights.Normal,Foreground=foreground??Brush("#17243A"),TextWrapping=TextWrapping.Wrap,Margin=new(0,0,0,4)};
@@ -63,18 +63,20 @@ internal sealed partial class HostWindow:Window
     internal async Task StopClipboard(){string? id=displayedSessionId;if(id is null)return;await Host.RevokeClipboard(id);if(displayedSessionId!=id)return;revokeClipboard.Visibility=Visibility.Collapsed;detail.Text="已停止剪贴板同步；重新开启需要新的连接授权。";}
     internal string Status=>state.Text;
     internal bool DesktopUnavailableVisible=>desktopUnavailable&&detail.Text==DesktopUnavailableNotice;
-    internal async Task StartSharing(string? address=null,int? number=null,string backend="dxgi")
+    internal async Task StartSharing(string? address=null,int? number=null,string backend="dxgi",bool recovering=false)
     {
+        if(!recovering){if(RestartPending)return;restartBudget=new();restartBackend=backend;}
         if(ServiceRequired&&!ServiceReady){state.Text="服务协调不可用";detail.Text="请先连接已授权的系统服务；没有开始共享。";UpdateServiceControls();return;}
         try{if(address is not null)ip.Text=address;if(number.HasValue)port.Text=number.Value.ToString();if(!int.TryParse(port.Text,out int selected))throw new ArgumentException("端口应为 1–65535");ip.IsEnabled=port.IsEnabled=start.IsEnabled=false;SetFileConfigurationEnabled(false);SetDisplayConfigurationEnabled(false);stop.IsEnabled=true;state.Text="正在启动";await Host.Start(application,ip.Text.Trim(),selected,backend,selectedFileRoot,SelectedDisplay);}
         catch(Exception e){state.Text="无法开始共享";detail.Text=e.Message;ip.IsEnabled=port.IsEnabled=start.IsEnabled=true;SetFileConfigurationEnabled(true);SetDisplayConfigurationEnabled(true);stop.IsEnabled=false;}
         finally{UpdateServiceControls();}
     }
     internal async Task Decide(bool accepted){string? id=displayedSessionId;if(id is null)return;allow.IsEnabled=deny.IsEnabled=false;bool clipboard=accepted&&clipboardPermission.IsChecked==true;bool files=accepted&&filesPermission.IsChecked==true&&selectedFileRoot is not null;await Host.Decide(accepted,clipboard,files,id);if(displayedSessionId!=id)return;revokeClipboard.Visibility=clipboard?Visibility.Visible:Visibility.Collapsed;revokeFiles.Visibility=files?Visibility.Visible:Visibility.Collapsed;request.Visibility=Visibility.Collapsed;}
-    internal async Task StopSharing(){stop.IsEnabled=false;try{await Host.Stop();}catch(Exception e){detail.Text=e.Message;}}
+    internal async Task StopSharing(){CancelRecovery();stop.IsEnabled=false;try{await Host.Stop();}catch(Exception e){detail.Text=e.Message;}}
     internal Task DisconnectSession()=>displayedSessionId is {} id?Host.Disconnect(id):Task.CompletedTask;
     void Changed(HostEvent change)
     {
+        if(change.Generation!=0&&change.Generation!=Host.Generation)return;
         string kind=change.Kind;string? value=change.Address;
         switch(kind){
             case "listening":request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=revokeFiles.Visibility=disconnectSession.Visibility=Visibility.Collapsed;displayedSessionId=null;state.Text="等待连接";detail.Text=desktopUnavailable?DesktopUnavailableNotice:$"Viewer 可连接 {ip.Text}:{port.Text}，收到请求后由你确认。";break;
@@ -98,5 +100,6 @@ internal sealed partial class HostWindow:Window
             case "ended":case "stopped":displayedSessionId=null;disconnectSession.Visibility=Visibility.Collapsed;if(state.Text!="已拒绝连接")state.Text=kind=="stopped"?"已停止共享":"会话已结束";request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=Visibility.Collapsed;revokeFiles.Visibility=Visibility.Collapsed;ip.IsEnabled=port.IsEnabled=start.IsEnabled=true;SetFileConfigurationEnabled(true);SetDisplayConfigurationEnabled(true);stop.IsEnabled=false;break;
         }
         UpdateServiceControls();
+        RecoverWorker(change);
     }
 }

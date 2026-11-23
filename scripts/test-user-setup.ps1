@@ -8,7 +8,7 @@ if(!$fixture.StartsWith((Join-Path $repository 'build')+'\',[StringComparison]::
 [void][IO.Directory]::CreateDirectory($fixture)
 Import-Module (Join-Path $PSScriptRoot 'RelaxDesk.Setup.psm1') -Force
 $module=Get-Module RelaxDesk.Setup
-$context=@{Registry=('HKCU:\Software\RelaxDesk.Setup.Tests.'+[Guid]::NewGuid().ToString('N'));Menu=(Join-Path $fixture 'menu');Desktop=(Join-Path $fixture 'desktop');Fault=''}
+$context=@{Registry=('HKCU:\Software\RelaxDesk.Setup.Tests.'+[Guid]::NewGuid().ToString('N'));Menu=(Join-Path $fixture 'menu');Desktop=(Join-Path $fixture 'desktop');Startup=(Join-Path $fixture 'startup');Fault=''}
 $script:checks=0
 function Check([bool]$Result,[string]$Message){if(!$Result){throw "Setup check failed: $Message"};$script:checks++}
 function Reject([scriptblock]$Work,[string]$Message){$denied=$false;try{& $Work | Out-Null}catch{$denied=$true};Check $denied $Message}
@@ -153,6 +153,45 @@ Import-Module $ModulePath -Force
     Reject {Uninstall-RelaxDeskPackage -InstallRoot $junction -Context $context} 'reparse uninstall root rejected'
     Check ((Get-Content -LiteralPath (Join-Path $outside 'sentinel.txt')) -eq 'untouched') 'junction target unchanged'
     [IO.Directory]::Delete($junction)
+    $startup=Join-Path $context.Startup 'RelaxDesk Host.lnk'
+    $fresh=Install-RelaxDeskPackage -PackageRoot $source -InstallRoot $root -Context $context
+    Check ($fresh.Startup -eq 'Disabled' -and !(Test-Path -LiteralPath $startup)) 'fresh installation has no startup entry'
+    Install-RelaxDeskPackage -PackageRoot $source -InstallRoot $root -LogonStartup Window -Context $context -WhatIf | Out-Null
+    Check (!(Test-Path -LiteralPath $startup)) 'startup WhatIf writes nothing'
+    Install-RelaxDeskPackage -PackageRoot $source -InstallRoot $root -LogonStartup Window -Context $context | Out-Null
+    $shell=New-Object -ComObject WScript.Shell
+    $link=$shell.CreateShortcut($startup)
+    Check ($link.Arguments -eq '--logon' -and (State $root).logon -eq 'Window') 'explicit visible window startup'
+    $hash=(Get-FileHash -LiteralPath $startup).Hash
+    $context.Fault='after-registration'
+    Reject {Install-RelaxDeskPackage -PackageRoot $second -InstallRoot $root -LogonStartup ServiceWindow -Context $context} 'startup rollback'
+    $context.Fault=''
+    Check ((Get-FileHash -LiteralPath $startup).Hash -eq $hash -and (State $root).logon -eq 'Window') 'startup rollback restores exact shortcut and choice'
+    $fresh=Install-RelaxDeskPackage -PackageRoot $second -InstallRoot $root -Context $context
+    $link=$shell.CreateShortcut($startup)
+    Check ($link.Arguments -eq '--logon' -and $link.TargetPath -eq (Join-Path $fresh.ApplicationRoot 'HostUi/RelaxDesk.HostShell.exe')) 'upgrade retains choice and retargets startup'
+    Install-RelaxDeskPackage -PackageRoot $source -InstallRoot $root -LogonStartup ServiceWindow -Context $context | Out-Null
+    Check ($shell.CreateShortcut($startup).Arguments -eq '--logon --service-agent') 'service startup is explicit'
+    Install-RelaxDeskPackage -PackageRoot $source -InstallRoot $root -LogonStartup Disabled -Context $context | Out-Null
+    Check (!(Test-Path -LiteralPath $startup) -and (State $root).logon -eq 'Disabled') 'disable removes owned startup'
+    Put $startup 'foreign entry'
+    Reject {Install-RelaxDeskPackage -PackageRoot $source -InstallRoot $root -LogonStartup Window -Context $context} 'foreign startup collision refused'
+    Check ((Get-Content -LiteralPath $startup) -eq 'foreign entry') 'foreign startup preserved'
+    Remove-Item -LiteralPath $startup
+    Install-RelaxDeskPackage -PackageRoot $source -InstallRoot $root -LogonStartup Window -Context $context | Out-Null
+    Uninstall-RelaxDeskPackage -InstallRoot $root -Context $context | Out-Null
+    Check (!(Test-Path -LiteralPath $startup)) 'uninstall removes owned startup'
+    Install-RelaxDeskPackage -PackageRoot $source -InstallRoot $root -Context $context | Out-Null
+    $legacy=State $root;$legacy.PSObject.Properties.Remove('logon')
+    $legacy | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $root 'setup-state.json') -Encoding UTF8
+    Install-RelaxDeskPackage -PackageRoot $second -InstallRoot $root -Context $context | Out-Null
+    Check ((State $root).logon -eq 'Disabled' -and !(Test-Path -LiteralPath $startup)) 'legacy state upgrade defaults startup off'
+    Install-RelaxDeskPackage -PackageRoot $source -InstallRoot $root -LogonStartup Window -Context $context | Out-Null
+    $link=$shell.CreateShortcut($startup);$link.Arguments='--foreign';$link.Save()
+    Reject {Install-RelaxDeskPackage -PackageRoot $second -InstallRoot $root -Context $context} 'changed startup arguments block upgrade'
+    Uninstall-RelaxDeskPackage -InstallRoot $root -Context $context | Out-Null
+    Check ((Test-Path -LiteralPath $startup) -and $shell.CreateShortcut($startup).Arguments -eq '--foreign') 'uninstall preserves altered startup'
+    Remove-Item -LiteralPath $startup
     $other=New-Item -Path $context.Registry -Force;$other.SetValue('InstallLocation','C:\unrelated')
     Reject {Install-RelaxDeskPackage -PackageRoot $source -InstallRoot $root -Context $context} 'foreign uninstall registration collision'
     Remove-Item -LiteralPath $context.Registry
