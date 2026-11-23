@@ -22,6 +22,12 @@ Raw outputs in `office-validation/`: core-tls, video-capture-recovery, video-cap
 
 ## Reproduce
 
+P1 follow-up: 461 Core/TLS assertions pass, including all 15 balanced shortcut chords before/after authorization and interrupted-chord release compensation. The new 256-event control queue accepts/coalesces a 10,000-move burst, preserves click-position/key-up boundaries, evicts only pointer moves under pressure and cancels via the existing session-overflow path when reliable events fill the queue. It never replays a previous session's queued inputs.
+
+Real HWND shortcut menu/disabled SAS/offline denial, UI and HWND lifecycle contracts passed. Production Host -> WPF CPU fallback displayed 60 synthetic frames with native resources zero (decode P50/P95 4.64/6.06ms, readback 3.62/4.97ms, render submission 0.45/0.59ms). These are submission metrics, not physical display latency. Logs: `core-tls-shortcuts.txt`, `toolbar-contracts.txt`, `ui-contracts.txt`, `hwnd-contracts.txt`, `wpf-approval-cpu.txt`.
+
+Expanded keyboard routing run FAILED its foreground precondition: this runner cannot confirm the owned window as GetForegroundWindow, including after bounded activation/Dispatcher yield. Earlier precondition-free run failed at the first existing letter test, before the new cases. The check remains strict; no environment retry loop or weakened production routing. `keyboard-contracts.txt` retains the failure. Re-run `Viewer --keyboard-contracts` on an interactive local console; actual remote applications/IME and physical input remain pending.
+
 Build `dotnet build RelaxDesk.sln -c Release --artifacts-path E:/RelaxDesk/build/office-artifacts -p:RelaxDeskNativePath=E:/RelaxDesk/build/native-hdr/Release/RelaxDesk.Native.dll`.
 
 Run Tests from `build/office-artifacts/bin/RelaxDesk.Tests/release/RelaxDesk.Tests.dll`. Run Smoke with the absolute built Host DLL path and each of `--video-capture-recovery`, `--video-capture-exhausted`, `--video-control-timeout`, `--video-idle-control`. Synthetic backends remain loopback-only. `scripts/verify.ps1 -Graphics` includes these cases for normal/package builds.

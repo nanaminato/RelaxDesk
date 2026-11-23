@@ -52,6 +52,8 @@ try {
         if ($LASTEXITCODE) { throw 'Codec benchmark failed' }
     }
     if ($Wpf) {
+        Run-App $viewer --keyboard-contracts
+        if ($LASTEXITCODE) { throw 'Keyboard routing contracts failed' }
         Run-App $viewer --toolbar-contracts
         if ($LASTEXITCODE) { throw 'Toolbar lifecycle failed' }
         Run-App $viewer --ui-contracts

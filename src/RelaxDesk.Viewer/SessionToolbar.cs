@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
+using RelaxDesk.Core;
 
 namespace RelaxDesk.Viewer;
 
@@ -31,7 +32,9 @@ internal sealed class SessionToolbar : IDisposable
     public Window Surface => window;
     internal Button FullScreenButton => full;
     internal Button DisconnectButton { get; }
-    public SessionToolbar(Window owner, Action toggle, Action disconnect)
+    internal Button ShortcutsButton { get; }
+    internal ContextMenu ShortcutMenu { get; }
+    public SessionToolbar(Window owner, Action toggle, Action disconnect, Action<RemoteShortcut>? shortcut = null)
     {
         this.owner = owner;
         window = new Window { Owner = owner, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false, ShowActivated = false, Background = Brushes.Transparent, AllowsTransparency = true, Width = 480, Height = 48, MinWidth = 0, MinHeight = 0, Focusable = false };
@@ -40,7 +43,26 @@ internal sealed class SessionToolbar : IDisposable
         DisconnectButton = new Button { Content = "断开", Focusable = false, Style = (Style)window.Resources["DangerButton"], Padding = new(14, 6, 14, 6), Margin = new(3) };
         full.Click += (_, _) => { toggle(); Reveal(); };
         DisconnectButton.Click += (_, _) => disconnect();
-        controls.Children.Add(endpoint); controls.Children.Add(full); controls.Children.Add(DisconnectButton);
+        ShortcutsButton = new Button { Content = "快捷键", Focusable = false, Padding = new(12, 6, 12, 6), Margin = new(3), IsEnabled = shortcut is not null, ToolTip = "发送到远程电脑；仅对已授权会话生效" };
+        ShortcutMenu = new ContextMenu();
+        foreach (var (label, action) in new[] {
+            ("复制  Ctrl+C", RemoteShortcut.Copy), ("粘贴  Ctrl+V", RemoteShortcut.Paste),
+            ("剪切  Ctrl+X", RemoteShortcut.Cut), ("全选  Ctrl+A", RemoteShortcut.SelectAll),
+            ("撤销  Ctrl+Z", RemoteShortcut.Undo), ("重做  Ctrl+Y", RemoteShortcut.Redo),
+            ("保存  Ctrl+S", RemoteShortcut.Save), ("查找  Ctrl+F", RemoteShortcut.Find),
+            ("地址栏  Ctrl+L", RemoteShortcut.AddressBar), ("任务管理器  Ctrl+Shift+Esc", RemoteShortcut.TaskManager),
+            ("关闭远程窗口  Alt+F4", RemoteShortcut.CloseWindow), ("切换远程窗口  Alt+Tab", RemoteShortcut.SwitchWindow),
+            ("文件资源管理器  Win+E", RemoteShortcut.Explorer), ("显示桌面  Win+D", RemoteShortcut.Desktop),
+            ("运行  Win+R", RemoteShortcut.Run) })
+        {
+            var item = new MenuItem { Header = label, Tag = action };
+            item.Click += (_, _) => { ShortcutMenu.IsOpen = false; shortcut?.Invoke(action); Reveal(); };
+            ShortcutMenu.Items.Add(item);
+        }
+        ShortcutMenu.Items.Add(new Separator());
+        ShortcutMenu.Items.Add(new MenuItem { Header = "Ctrl+Alt+End / 安全注意序列：不支持", IsEnabled = false });
+        ShortcutsButton.Click += (_, _) => { ShortcutMenu.PlacementTarget = ShortcutsButton; ShortcutMenu.IsOpen = true; Reveal(); };
+        controls.Children.Add(endpoint); controls.Children.Add(ShortcutsButton); controls.Children.Add(full); controls.Children.Add(DisconnectButton);
         window.Content = new Border { Background = new SolidColorBrush(Color.FromRgb(23, 36, 58)), CornerRadius = new(0, 0, 10, 10), Child = controls, BorderBrush = new SolidColorBrush(Color.FromRgb(86, 126, 184)), BorderThickness = new(1, 0, 1, 1), ClipToBounds = true };
         window.SourceInitialized += (_, _) => { handle = new WindowInteropHelper(window).Handle; SetStyle(handle, -20, GetStyle(handle, -20) | (nint)0x08000000); };
         owner.LocationChanged += OwnerChanged; owner.SizeChanged += OwnerChanged; owner.StateChanged += OwnerChanged; owner.Closed += OwnerClosed;
@@ -66,7 +88,7 @@ internal sealed class SessionToolbar : IDisposable
         {
             bool inside = pointer is {} p && p.X >= left && p.X < left + width && p.Y >= top && p.Y < top + height;
             if (inside) { if (!expanded) Reveal(); keepUntil = DateTime.UtcNow.AddSeconds(1); }
-            else if (expanded && DateTime.UtcNow >= keepUntil) { expanded = false; UpdatePosition(); }
+            else if (expanded && !ShortcutMenu.IsOpen && DateTime.UtcNow >= keepUntil) { expanded = false; UpdatePosition(); }
         }
         UpdatePosition();
     }
@@ -87,6 +109,6 @@ internal sealed class SessionToolbar : IDisposable
     {
         if (disposed) return; disposed = true; timer.Stop(); timer.Tick -= Tick;
         owner.LocationChanged -= OwnerChanged; owner.SizeChanged -= OwnerChanged; owner.StateChanged -= OwnerChanged; owner.Closed -= OwnerClosed;
-        window.Close();
+        ShortcutMenu.IsOpen = false; window.Close();
     }
 }

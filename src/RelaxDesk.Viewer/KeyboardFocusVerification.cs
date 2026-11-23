@@ -25,7 +25,7 @@ internal static class KeyboardFocusVerification
         viewport.Input = Send;
         viewport.InputFocusLost = () => { foreach (int key in held.ReleaseAll()) Send(key,true,0,0); };
         var grid = new System.Windows.Controls.DockPanel(); System.Windows.Controls.DockPanel.SetDock(local, System.Windows.Controls.Dock.Top); grid.Children.Add(local); grid.Children.Add(viewport);
-        var window = new Window { Title = "RelaxDesk keyboard message verification", Width = 600, Height = 400, Content = grid };
+        var window = new Window { Title = "RelaxDesk keyboard message verification", Width = 600, Height = 400, Content = grid, Topmost = true };
         void Check(bool value, string name) { if (!value) throw new InvalidOperationException(name); checks++; }
         window.Loaded += async (_,_) =>
         {
@@ -33,6 +33,8 @@ internal static class KeyboardFocusVerification
             {
                 await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
                 window.Activate(); SetForegroundWindow(new WindowInteropHelper(window).Handle);
+                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+                Check(GetForegroundWindow() == new WindowInteropHelper(window).Handle, "Owned test window must be foreground; otherwise keyboard routing must reject input");
                 SendMessage(viewport.Handle,0x201,1,0); SendMessage(viewport.Handle,0x202,0,0);
                 Check(GetFocus()==viewport.Handle,"Click must focus native remote surface");
                 nint ime=ImmGetContext(viewport.Handle); if(ime!=0)ImmReleaseContext(viewport.Handle,ime);
@@ -51,6 +53,15 @@ internal static class KeyboardFocusVerification
                 Check(packets[^4].Code==0xA3 && packets[^1].Code==0xA3,"Right Ctrl preserved");
                 Key(0x10,false,0x36L<<16);Key(0x41);Key(0x41,true);Key(0x10,true,0x36L<<16);
                 Check(packets[^4].Code==0xA1,"Right Shift preserved");
+                foreach (int key in Enumerable.Range(0x70, 24).Concat(new[] { 0x14, 0x90, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x2D, 0x2E, 0xBA, 0xBB, 0xBC, 0xBD, 0xBE, 0xBF, 0xC0, 0xDB, 0xDC, 0xDD, 0xDE }).Concat(Enumerable.Range(0x60, 16)))
+                {
+                    Key(key); Key(key, true);
+                    Check(packets[^2].Code == key && !packets[^2].Up && packets[^1].Code == key && packets[^1].Up, "F1-F24/navigation/numpad/OEM preserves VK/down/up");
+                }
+                Key(0x12, false, 1L << 24); Key(0x12, true, 1L << 24);
+                Check(packets[^2].Code == 0xA5 && packets[^1].Code == 0xA5, "Right Alt preserved");
+                Key(0x41); Key(0x41); Key(0x41, true);
+                Check(held.ReleaseAll().Length == 0, "Typematic repeats forward but leave no stuck key after key-up");
                 foreach(int key in new[]{0x4E,0x49,0x48,0x41,0x4F,0x20}) { Key(key);Key(key,true); }
                 Check(local.Text=="local unchanged","Remote keystrokes must not edit local textbox");
                 var character=new MSG { hwnd=viewport.Handle,message=0x102,wParam='中' };

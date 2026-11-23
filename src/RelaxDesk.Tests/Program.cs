@@ -9,6 +9,7 @@ using var stream = new MemoryStream(); var packet = new Packet("frame-v1", 7, 2,
 await Reject([]); await Reject([1, 0, 0, 0]); await Reject([255, 255, 255, 255]); byte[] oversized = new byte[4]; BinaryPrimitives.WriteInt32LittleEndian(oversized, Wire.Limit + 1); await Reject(oversized); await Reject([5, 0, 0, 0, 123]); await Reject([2, 0, 0, 0, 123, 125, 0]);
 
 count += await MediaChecks.Run();
+count += await ShortcutChecks.Run();
 var invitation = new ConnectionInvitation("192.168.1.2", 48200, new string('A', 64), new string('B', 32));
 Check(ConnectionInvitation.Parse(invitation.Encode()) == invitation);
 Check(ConnectionInvitation.Parse((invitation with { Host = "::1" }).Encode()).Host == "::1");

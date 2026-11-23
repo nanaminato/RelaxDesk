@@ -66,7 +66,7 @@ public sealed partial class ViewerWindow : Window
     bool closing;
     readonly CheckBox legacy = new() { Content = "Legacy v1 GDI/JSON baseline" };
     readonly Button connect = new() { Content = "Connect" };
-    readonly Channel<Packet> outgoing = Channel.CreateBounded<Packet>(256);
+    readonly OutgoingControlQueue outgoing = new(256);
     CancellationTokenSource? session; long sequence;
     readonly ViewerSmokeSettings? smoke;
     int smokeFrames;

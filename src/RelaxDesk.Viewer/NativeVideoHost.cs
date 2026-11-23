@@ -49,6 +49,7 @@ public sealed class NativeVideoHost : HwndHost
         SetFocus(Handle);
         keyboardOwned = GetFocus() == Handle;
     }
+    internal void FocusInput() => FocusRemoteKeyboard();
     protected override bool TabIntoCore(TraversalRequest request) { SetFocus(Handle); keyboardOwned = GetFocus() == Handle; return keyboardOwned; }
     protected override bool TranslateAcceleratorCore(ref MSG message, ModifierKeys modifiers) => RouteKeyboard(message) || base.TranslateAcceleratorCore(ref message, modifiers);
     void FilterKeyboard(ref MSG message, ref bool handled) { if (!handled && RouteKeyboard(message)) handled = true; }

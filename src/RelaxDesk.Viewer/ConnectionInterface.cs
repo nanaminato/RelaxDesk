@@ -70,7 +70,8 @@ public sealed partial class ViewerWindow
         windowToolbar.Visibility = connectionFooter.Visibility = connected ? Visibility.Collapsed : Visibility.Visible;
         if (connected)
         {
-            sessionToolbar ??= new SessionToolbar(this, ToggleFullScreen, () => disconnect.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+            sessionToolbar ??= new SessionToolbar(this, ToggleFullScreen, () => disconnect.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)),
+                session is null ? null : SendShortcut);
             sessionToolbar.SetSession(host.Text, fullScreen);
         }
         else

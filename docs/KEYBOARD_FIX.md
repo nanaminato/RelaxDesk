@@ -1,5 +1,7 @@
 # RelaxDesk 键盘修复测试包
 
+2026-11-23 后续：会话工具栏新增“快捷键”，可明确发送 Alt+Tab、Win+E/D/R、Ctrl+Shift+Esc 及常见编辑组合键。先释放已记录修饰键，再发送完整按下/逆序释放组合。Ctrl+Alt+End/安全注意序列显示为不支持；不安装全局钩子。Ctrl+C/V 目前仅操作远端剪贴板，尚未跨机同步。连续鼠标移动会在有界控制队列中合并；按键、按钮与心跳保持顺序。当前扩展键盘现场自动测试受运行器前台窗口条件阻塞，详见 PRODUCT-READINESS 与验收日志；不代表远端 IME 已通过。
+
 此包只修复键盘焦点/转发，基于已提交的稳定版本及 build/native-capturefix 原生模块；不包含主线程正在开发、尚未完成的 HDR 与 Host WPF 改动。请完整解压至新文件夹，**两端同时更新 Host/Viewer**。运行时已附带，不需要 SDK 或 Visual Studio。
 
 1. Host 运行 Host/RelaxDesk.Host.exe，填写本机 LAN IP 和端口。
