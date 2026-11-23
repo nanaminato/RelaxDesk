@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.Text.Json;
 namespace RelaxDesk.Core;
 
-public record Packet(string Kind, long Sequence = 0, int Width = 0, int Height = 0, byte[]? Data = null, string? Text = null, int X = 0, int Y = 0, int Code = 0, bool Up = false, double CaptureMs = 0, double EncodeMs = 0, string[]? Capabilities = null, string[]? Features = null, string? Origin = null, long Revision = 0, string? DataTicket = null, bool FileResume = false, string? FileScope = null,int InputVersion=0,RemoteInput? Input=null,string? ClipboardTicket=null,int DisplayVersion=0,DisplaySessionInfo? DisplayState=null,string? DisplayId=null,long DisplayGeneration=0,string? AudioTicket=null)
+public record Packet(string Kind, long Sequence = 0, int Width = 0, int Height = 0, byte[]? Data = null, string? Text = null, int X = 0, int Y = 0, int Code = 0, bool Up = false, double CaptureMs = 0, double EncodeMs = 0, string[]? Capabilities = null, string[]? Features = null, string? Origin = null, long Revision = 0, string? DataTicket = null, bool FileResume = false, string? FileScope = null,int InputVersion=0,RemoteInput? Input=null,string? ClipboardTicket=null,int DisplayVersion=0,DisplaySessionInfo? DisplayState=null,string? DisplayId=null,long DisplayGeneration=0,string? AudioTicket=null,int VideoVersion=0,VideoSettings? VideoSettings=null)
 {
     public override string ToString() => $"Packet kind={Kind} sequence={Sequence} (payload redacted)";
 }
@@ -38,13 +38,15 @@ public sealed class AccessGate
     private long sequence;
     int inputVersion;
     int displayVersion;
-    static bool ValidStop(Packet packet)=>packet.Code==0&&!packet.Up&&packet.Text is null&&packet.Data is null&&packet.Features is null&&packet.Capabilities is null&&packet.Origin is null&&packet.Revision==0&&packet.DataTicket is null&&!packet.FileResume&&packet.FileScope is null&&packet.X==0&&packet.Y==0&&packet.Width==0&&packet.Height==0&&packet.CaptureMs==0&&packet.EncodeMs==0&&packet.Input is null&&packet.InputVersion==0&&packet.ClipboardTicket is null&&packet.AudioTicket is null&&DisplayProtocol.Empty(packet);
-    public void Approve(IEnumerable<string>? grantedFeatures = null,int inputVersion=0,int displayVersion=0)
+    int videoVersion;
+    static bool ValidStop(Packet packet)=>VideoSettingsProtocol.Empty(packet)&&packet.Code==0&&!packet.Up&&packet.Text is null&&packet.Data is null&&packet.Features is null&&packet.Capabilities is null&&packet.Origin is null&&packet.Revision==0&&packet.DataTicket is null&&!packet.FileResume&&packet.FileScope is null&&packet.X==0&&packet.Y==0&&packet.Width==0&&packet.Height==0&&packet.CaptureMs==0&&packet.EncodeMs==0&&packet.Input is null&&packet.InputVersion==0&&packet.ClipboardTicket is null&&packet.AudioTicket is null&&DisplayProtocol.Empty(packet);
+    public void Approve(IEnumerable<string>? grantedFeatures = null,int inputVersion=0,int displayVersion=0,int videoVersion=0)
     {
         if(inputVersion is not (0 or InputProtocol.Version))throw new InvalidDataException("Unsupported input version");
         if(!DisplayProtocol.Supported(displayVersion)||displayVersion!=0&&inputVersion!=InputProtocol.Version)throw new InvalidDataException("Unsupported display version");
+        if(!VideoSettingsProtocol.Supported(videoVersion))throw new InvalidDataException("Unsupported video version");
         var grants = SessionCapabilities.Validate(grantedFeatures?.ToArray());
-        lock (sync) { approved = true;this.inputVersion=inputVersion;this.displayVersion=displayVersion; sequence = 0; features.Clear(); originalFeatures.Clear(); foreach (string feature in grants) { features.Add(feature); originalFeatures.Add(feature); } }
+        lock (sync) { approved = true;this.inputVersion=inputVersion;this.displayVersion=displayVersion;this.videoVersion=videoVersion; sequence = 0; features.Clear(); originalFeatures.Clear(); foreach (string feature in grants) { features.Add(feature); originalFeatures.Add(feature); } }
     }
     public void Revoke() { lock (sync) { approved = false;inputVersion=0; features.Clear(); originalFeatures.Clear(); } }
     public void RevokeFeature(string feature) { lock (sync) features.Remove(feature); }
@@ -53,6 +55,7 @@ public sealed class AccessGate
     {
         lock (sync)
         {
+            if(!VideoSettingsProtocol.Empty(p))return false;
             if(p.Kind=="input-v2"){if(!approved||inputVersion!=InputProtocol.Version||p.Sequence<=sequence||!InputProtocol.ValidPacket(p,displayVersion!=0))return false;sequence=p.Sequence;return true;}
             if(p.Input is not null||p.InputVersion!=0||p.ClipboardTicket is not null||p.AudioTicket is not null||!DisplayProtocol.Empty(p)||displayVersion!=0)return false;
             if (!approved || p.Sequence <= sequence || p.Kind != "input" || p.Code < 0 || p.Code > 259 || p.X < 0 || p.X > 65535 || p.Y < 0 || p.Y > 65535) return false;
@@ -63,6 +66,8 @@ public sealed class AccessGate
     {
         lock (sync)
         {
+            if(p.Kind=="video-settings-v2"){if(!approved||videoVersion!=VideoSettingsProtocol.Version||p.Sequence<=sequence||!VideoSettingsProtocol.ValidCommand(p))return false;sequence=p.Sequence;return true;}
+            if(!VideoSettingsProtocol.Empty(p))return false;
             if (p.Kind is "input" or "input-v2") return Accept(p);
             if(p.Kind is "display-select-v2" or "display-ready-v2" or "display-configured-v2")
             {if(!approved||displayVersion==0||p.Kind=="display-configured-v2"&&displayVersion!=DisplayProtocol.TopologyVersion||p.Sequence<=sequence||!DisplayProtocol.ValidCommand(p))return false;sequence=p.Sequence;return true;}

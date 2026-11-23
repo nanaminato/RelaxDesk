@@ -70,6 +70,18 @@ internal sealed class SessionToolbar : IDisposable
     readonly MenuItem clipboard = new() { Header = "剪贴板未授权 / 已关闭", IsEnabled = false };
     readonly MenuItem audio=new(){Header="声音未授权 / 已关闭",IsEnabled=false};
     readonly MenuItem statistics=new(){Header="连接统计（只读）",IsEnabled=false};
+    readonly MenuItem videoSettings=new(){Header="视频设置（Host 未开放）",IsEnabled=false};
+    internal MenuItem VideoSettingsAction=>videoSettings;
+    public void SetVideoSettings(VideoSettings? state,bool ready,bool pending,bool h264,Action<int,int> change)
+    {
+        videoSettings.Header=state is null?"视频设置（Host 未开放）":pending?"视频设置（等待应用确认…）":state.Generation==1_000_000?"视频设置（请重新连接后调整）":ready?$"视频设置 · {state.FramesPerSecond} FPS 上限":"视频设置（等待画面/短暂冷却）";
+        videoSettings.IsEnabled=state is not null&&ready;videoSettings.Items.Clear();if(state is null)return;
+        var fps=new MenuItem{Header="帧率上限"};foreach(int value in new[]{15,30,60})
+        {var item=new MenuItem{Header=$"{value} FPS",IsCheckable=true,IsChecked=state.FramesPerSecond==value,IsEnabled=state.FramesPerSecond!=value};item.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;change(value,state.Bitrate);};fps.Items.Add(item);}videoSettings.Items.Add(fps);
+        var bitrate=new MenuItem{Header=h264?"H.264 目标码率":"当前图像兼容编码，码率不适用",IsEnabled=h264};foreach(int value in new[]{2,8,20})
+        {var item=new MenuItem{Header=$"{value} Mbit/s",IsCheckable=true,IsChecked=state.Bitrate==value*1_000_000,IsEnabled=state.Bitrate!=value*1_000_000};item.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;change(state.FramesPerSecond,value*1_000_000);};bitrate.Items.Add(item);}videoSettings.Items.Add(bitrate);
+        videoSettings.Items.Add(new Separator());videoSettings.Items.Add(new MenuItem{Header="实际提交帧率与媒体流量见连接统计",IsEnabled=false});videoSettings.Items.Add(new MenuItem{Header="码率是目标参数；更高目标通常增加带宽",IsEnabled=false});
+    }
     internal MenuItem StatisticsAction=>statistics;
     Action? openStatistics;
     public void SetStatistics(Action? open){openStatistics=open;statistics.IsEnabled=open is not null;}
@@ -130,6 +142,7 @@ internal sealed class SessionToolbar : IDisposable
         ShortcutMenu.Items.Add(zoom);
         ShortcutMenu.Items.Add(audio);
         ShortcutMenu.Items.Add(statistics);statistics.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;openStatistics?.Invoke();};
+        ShortcutMenu.Items.Add(videoSettings);
         clipboard.Click += (_, _) => { ShortcutMenu.IsOpen = false; disableClipboard?.Invoke(); };
         ShortcutsButton.Click += (_, _) => { ShortcutMenu.PlacementTarget = ShortcutsButton; ShortcutMenu.IsOpen = true; Reveal(); };
         controls.Children.Add(endpoint); controls.Children.Add(FilesButton); controls.Children.Add(ShortcutsButton); controls.Children.Add(full); controls.Children.Add(DisconnectButton);

@@ -21,6 +21,7 @@ public sealed class MediaDecoder : IDisposable
     bool requested, disableHardware;
     bool? previousHardwareEncoder;
     long displayGeneration;
+    int videoGeneration;
     public int Generation { get; private set; }
     public MediaDecoder(Action requestKeyFrame, Action<string>? diagnostic = null, bool preferHardware = true)
     { this.requestKeyFrame = requestKeyFrame; this.diagnostic = diagnostic ?? (_ => { }); disableHardware = !preferHardware; }
@@ -32,10 +33,10 @@ public sealed class MediaDecoder : IDisposable
             if (!requested) { requestKeyFrame(); requested = true; }
             return false;
         }
-        if (frame.Width != width || frame.Height != height || frame.Codec != codec ||frame.DisplayGeneration!=displayGeneration|| (previousHardwareEncoder is not null && previousHardwareEncoder != frame.HardwareEncoded))
+        if (frame.Width != width || frame.Height != height || frame.Codec != codec ||frame.DisplayGeneration!=displayGeneration||frame.VideoGeneration!=videoGeneration|| (previousHardwareEncoder is not null && previousHardwareEncoder != frame.HardwareEncoded))
         {
             if (!frame.KeyFrame) { continuity.RequireKeyFrame(); requestKeyFrame(); return false; }
-            reset = true; width = frame.Width; height = frame.Height; codec = frame.Codec;displayGeneration=frame.DisplayGeneration;
+            reset = true; width = frame.Width; height = frame.Height; codec = frame.Codec;displayGeneration=frame.DisplayGeneration;videoGeneration=frame.VideoGeneration;
         }
         previousHardwareEncoder = frame.HardwareEncoded;
         if (reset) { decoder?.Dispose(); decoder = null; requested = false; Generation++; }

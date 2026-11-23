@@ -27,6 +27,7 @@ internal static class VideoHostSession
         var displays=hello.DisplayVersion!=0&&(!synthetic||backend is "test-displays" or "test-topology" or "test-topology-init-race")?new HostDisplaySession(displaySelection,synthetic?selectedDisplay:null,hello.DisplayVersion,backend=="test-topology"):null;
         int displayVersion=displays?.Version??0;
         var features = SessionCapabilities.ValidateGrant(hello.Features, grantedFeatures);
+        var video=hello.VideoVersion==VideoSettingsProtocol.Version?new HostVideoSettings():null;
         if(audioRevoked.IsCancellationRequested||synthetic&&backend is not ("test-audio" or "test-audio-failure"))features=features.Where(feature=>feature!=SessionCapabilities.SystemAudio).ToArray();
         if (synthetic && backend is not ("test-clipboard" or "test-clipboard-failure" or "test-clipboard-rich" or "test-clipboard-rich-failure" or "test-clipboard-files")) features = features.Where(feature=>!SessionCapabilities.IsClipboard(feature)).ToArray();
         if (clipboardRevoked.IsCancellationRequested) features = features.Where(feature=>!SessionCapabilities.IsClipboard(feature)).ToArray();
@@ -39,13 +40,13 @@ internal static class VideoHostSession
         var dataTicket = fileRoot is null ? null : new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15));
         var clipboardTicket=SessionCapabilities.RichClipboard(features)?new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15)):null;
         var audioTicket=features.Contains(SessionCapabilities.SystemAudio)?new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15)):null;
-        await Wire.Write(control, new Packet("approved-v2", Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features, DataTicket: dataTicket?.Value,FileResume:resumeFiles,FileScope:fileScope,InputVersion:hello.InputVersion,ClipboardTicket:clipboardTicket?.Value,DisplayVersion:displayVersion,DisplayState:displays?.Switch.Snapshot,AudioTicket:audioTicket?.Value), stop);
+        await Wire.Write(control, new Packet("approved-v2", Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features, DataTicket: dataTicket?.Value,FileResume:resumeFiles,FileScope:fileScope,InputVersion:hello.InputVersion,ClipboardTicket:clipboardTicket?.Value,DisplayVersion:displayVersion,DisplayState:displays?.Switch.Snapshot,AudioTicket:audioTicket?.Value,VideoVersion:video is null?0:VideoSettingsProtocol.Version,VideoSettings:video?.Current), stop);
         using var attach = CancellationTokenSource.CreateLinkedTokenSource(stop); attach.CancelAfter(TimeSpan.FromSeconds(15));
         using var mediaSocket = await listener.AcceptTcpClientAsync(attach.Token); mediaSocket.NoDelay = true; mediaSocket.SendBufferSize = 64 * 1024;
         using var media = new SslStream(mediaSocket.GetStream(), false);
         await media.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = certificate, EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, attach.Token);
         var binding = await Wire.Read(media, attach.Token, 8 * 1024);
-        if (!DisplayProtocol.Empty(binding)||binding.Kind != "media-v2" || !ticket.Consume(binding.Text, DateTimeOffset.UtcNow)) throw new AuthenticationException("Media binding rejected");
+        if (!VideoSettingsProtocol.Empty(binding)||!DisplayProtocol.Empty(binding)||binding.Kind != "media-v2" || !ticket.Consume(binding.Text, DateTimeOffset.UtcNow)) throw new AuthenticationException("Media binding rejected");
         await Wire.Write(media, new Packet("media-approved-v2"), attach.Token);
         using var dataSocket = dataTicket is null ? null : await listener.AcceptTcpClientAsync(attach.Token);
         using var data = dataSocket is null ? null : new SslStream(dataSocket.GetStream(), false);
@@ -54,7 +55,7 @@ internal static class VideoHostSession
             dataSocket!.NoDelay = true;
             await data.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = certificate, EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, attach.Token);
             var dataBinding = await Wire.Read(data, attach.Token, 8 * 1024);
-            if (!DisplayProtocol.Empty(dataBinding)||dataBinding.Kind != "data-v2" || !dataTicket!.Consume(dataBinding.Text, DateTimeOffset.UtcNow)) throw new AuthenticationException("File data binding rejected");
+            if (!VideoSettingsProtocol.Empty(dataBinding)||!DisplayProtocol.Empty(dataBinding)||dataBinding.Kind != "data-v2" || !dataTicket!.Consume(dataBinding.Text, DateTimeOffset.UtcNow)) throw new AuthenticationException("File data binding rejected");
             await Wire.Write(data, new("data-approved-v2"), attach.Token);
         }
         using var clipboardSocket=clipboardTicket is null?null:await listener.AcceptTcpClientAsync(attach.Token);
@@ -87,7 +88,7 @@ internal static class VideoHostSession
         listener.Stop();
         using var session = CancellationTokenSource.CreateLinkedTokenSource(stop);
         var queue = new LatestQueue<QueuedFrame>();
-        var gate = new AccessGate(); gate.Approve(features,hello.InputVersion,displayVersion);
+        var gate = new AccessGate(); gate.Approve(features,hello.InputVersion,displayVersion,hello.VideoVersion);
         using var controlWrite = new SemaphoreSlim(1);
         async Task WriteControl(Packet packet)
         {
@@ -188,7 +189,8 @@ internal static class VideoHostSession
                     continue;
                 }
                 if (!gate.AcceptControl(packet)) throw new InvalidDataException("Unauthorized control event");
-                if(packet.Kind=="display-select-v2")displays!.Request(packet.DisplayId!,packet.DisplayGeneration,()=>inputDesktop?.ReleaseAll());
+                if(packet.Kind=="video-settings-v2")video!.Request(packet.VideoSettings!);
+                else if(packet.Kind=="display-select-v2")displays!.Request(packet.DisplayId!,packet.DisplayGeneration,()=>inputDesktop?.ReleaseAll());
                 else if(packet.Kind=="display-configured-v2")displays!.Switch.ConfirmConfiguration(packet.DisplayGeneration);
                 else if(packet.Kind=="display-ready-v2")displays!.Switch.Confirm(packet.DisplayGeneration);
                 else if (packet.Kind == "clipboard-text-v2")
@@ -212,7 +214,7 @@ internal static class VideoHostSession
             }
         }, session.Token);
         var producer = Task.Factory.StartNew(() => Produce(queue, backend, capabilities, () => Interlocked.Exchange(ref forceKeyFrame, 0) != 0,
-            (stage, frames, error) => { if (!session.IsCancellationRequested) failures.Record("capture-encode", stage, frames, error); }, session.Token,displaySelection,displays,(state,topology)=>WriteControl(new(topology?"display-topology-v2":"display-state-v2",DisplayState:state)).GetAwaiter().GetResult(),()=>inputDesktop?.ReleaseAll(),audioTicket is not null),
+            (stage, frames, error) => { if (!session.IsCancellationRequested) failures.Record("capture-encode", stage, frames, error); }, session.Token,displaySelection,displays,(state,topology)=>WriteControl(new(topology?"display-topology-v2":"display-state-v2",DisplayState:state)).GetAwaiter().GetResult(),()=>inputDesktop?.ReleaseAll(),audioTicket is not null,video,state=>WriteControl(new("video-settings-state-v2",VideoVersion:VideoSettingsProtocol.Version,VideoSettings:state)).GetAwaiter().GetResult()),
             session.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         var sender = Task.Run(async () =>
         {
@@ -284,7 +286,7 @@ internal static class VideoHostSession
         catch (Exception error) { if (!ct.IsCancellationRequested) failures.Record(worker, worker, 0, error); throw; }
     }
 
-    static void Produce(LatestQueue<QueuedFrame> queue, string backend, string[] capabilities, Func<bool> requestedKeyFrame, Action<string, long, Exception> failed, CancellationToken ct,WindowsDisplaySelection? displaySelection,HostDisplaySession? displays,Action<DisplaySessionInfo,bool> displayChanged,Action releaseInput,bool commonClock=false)
+    static void Produce(LatestQueue<QueuedFrame> queue, string backend, string[] capabilities, Func<bool> requestedKeyFrame, Action<string, long, Exception> failed, CancellationToken ct,WindowsDisplaySelection? displaySelection,HostDisplaySession? displays,Action<DisplaySessionInfo,bool> displayChanged,Action releaseInput,bool commonClock=false,HostVideoSettings? video=null,Action<VideoSettings>? videoChanged=null)
     {
         bool synthetic = backend.StartsWith("test-", StringComparison.Ordinal);
         ICaptureBackend? capture = null; H264Encoder? encoder = null;
@@ -296,6 +298,8 @@ internal static class VideoHostSession
         string stage = "capture-init";
         Exception? producerFailure = null;
         bool forceSoftware = false, forceNextKeyFrame = false;
+        var activeVideo=VideoSettingsProtocol.Default;var pacer=new VideoFramePacer();int videoKeyAttempts=0;
+        CapturedFrame? staticFrame=null;
         string? lastColor = null; long colorPoll = 0;
         try
         {
@@ -323,6 +327,9 @@ internal static class VideoHostSession
                     }
                     if(displays?.Switch.Unavailable==true){ct.WaitHandle.WaitOne(250);continue;}
                     if(displays is not null&&!displays.Switch.Configured){ct.WaitHandle.WaitOne(50);continue;}
+                    if(video?.Pending is{} desired&&desired!=activeVideo)
+                    {stage="video-settings-apply";encoder?.Dispose();encoder=null;activeVideo=desired;forceNextKeyFrame=true;videoKeyAttempts=0;}
+                    if(ct.WaitHandle.WaitOne(pacer.Delay(activeVideo.FramesPerSecond)))break;pacer.Started();
                     stage="capture-init";
                     if(backend=="test-topology-init-race"&&sequence>=4&&!injectedTopologyRace&&displays?.Switch.Ready==true){injectedTopologyRace=true;throw new ExternalException("Injected output disappeared during initialization",unchecked((int)0x887A0002));}
                     stage = "capture-init"; capture ??= synthetic ? null : CreateCapture(backend,displaySelection);
@@ -336,7 +343,9 @@ internal static class VideoHostSession
                     var timer = Stopwatch.StartNew();
                     int testWidth = backend == "test-resolution" && sequence >= 30 ? 1920 : 1280; int testHeight = backend == "test-resolution" && sequence >= 30 ? 1080 : 720;
                     if(displays is not null&&synthetic){var bounds=displays.Bounds;testWidth=bounds.Width;testHeight=bounds.Height;}
-                    var frame = synthetic ? new CapturedFrame(testWidth, testHeight, CodecVerification.Pattern(testWidth, testHeight, (int)(sequence % 200)), new(Stopwatch.GetTimestamp(), 1, [], [], 0, 0, false, 0, 0, 0, 0, 0, 0, [])) : capture!.Capture();
+                    bool forceRequested=requestedKeyFrame();bool refresh=forceRequested||forceNextKeyFrame||video?.Pending is not null||queue.Dropped!=previousDrops;
+                    var frame = synthetic ? backend=="test-video-settings-static"&&sequence>0?(refresh?staticFrame:null):new CapturedFrame(testWidth, testHeight, CodecVerification.Pattern(testWidth, testHeight, (int)(sequence % 200)), new(Stopwatch.GetTimestamp(), 1, [], [], 0, 0, false, 0, 0, 0, 0, 0, 0, [])) : CaptureFrameRefresh.Read(capture!,refresh);
+                    if(backend=="test-video-settings-static"&&frame is not null)staticFrame=frame;
                     double captureMs = timer.Elapsed.TotalMilliseconds;
                     if (frame is null) continue;
                     if (capture is DxgiCaptureBackend dxgi && clock.ElapsedMilliseconds >= colorPoll)
@@ -345,17 +354,17 @@ internal static class VideoHostSession
                         if (status != lastColor) { Console.WriteLine("capture_color " + status); lastColor = status; }
                     }
                     long timestamp = commonClock?(long)(Stopwatch.GetTimestamp()*(10_000_000d/Stopwatch.Frequency)):(long)(clock.Elapsed.TotalSeconds * 10_000_000);
-                    bool force = requestedKeyFrame() || queue.Dropped != previousDrops || sequence == 0 || forceNextKeyFrame;
+                    bool force = forceRequested || queue.Dropped != previousDrops || sequence == 0 || forceNextKeyFrame;
                     previousDrops = queue.Dropped; timer.Restart();
                     if (encoder is not null && (encoderWidth != frame.Width || encoderHeight != frame.Height)) { encoder.Dispose(); encoder = null; force = true; }
                     stage = "encoder-init";
                     if (encoder is null && codec == MediaCodec.H264)
                     {
-                        try { encoder = new(capture as DxgiCaptureBackend, frame.Width, frame.Height, hardware: !forceSoftware && backend != "test-software" && (synthetic || capture is DxgiCaptureBackend)); }
+                        try { encoder = new(capture as DxgiCaptureBackend, frame.Width, frame.Height, hardware: !forceSoftware && backend != "test-software" && (synthetic || capture is DxgiCaptureBackend),fps:activeVideo.FramesPerSecond,bitrate:activeVideo.Bitrate); }
                         catch (Exception e) when (!forceSoftware && e is (ExternalException or DllNotFoundException or BadImageFormatException))
                         {
                             Console.WriteLine($"hardware_encoder_unavailable={e.Message}; trying explicit software H264 fallback");
-                            try { encoder = new(null, frame.Width, frame.Height, hardware: false); }
+                            try { encoder = new(null, frame.Width, frame.Height, hardware: false,fps:activeVideo.FramesPerSecond,bitrate:activeVideo.Bitrate); }
                             catch (Exception software) when (software is ExternalException or DllNotFoundException or BadImageFormatException)
                             {
                                 if (!capabilities.Contains("deflate")) throw;
@@ -367,6 +376,7 @@ internal static class VideoHostSession
                     }
                     EncodedVideo? encoded;
                     stage = "encode-submit";
+                    if(video?.Pending==activeVideo&&++videoKeyAttempts>60)throw new InvalidDataException("Video settings keyframe boundary unavailable");
                     if (backend == "test-producer-failure" && sequence >= 4) throw new InvalidDataException("Injected producer failure after four frames");
                     if (backend == "test-runtime-fallback" && encoder?.Hardware == true && sequence >= 4) throw new ExternalException("Injected hardware encoder runtime failure", unchecked((int)0x80004005));
                     if (encoder is { Hardware: true } && capture is DxgiCaptureBackend) encoded = encoder.EncodeGpu(timestamp, force);
@@ -377,6 +387,12 @@ internal static class VideoHostSession
                         encoded = new(output.ToArray(), true, timestamp);
                     }
                     if (encoded is null) continue;
+                    double encodeMs=timer.Elapsed.TotalMilliseconds; // Exclude settings ACK IO/diagnostics from source encode timing.
+                    if(video?.Pending==activeVideo)
+                    {
+                        if(!encoded.KeyFrame){forceNextKeyFrame=true;continue;}
+                        video.Commit(activeVideo);videoChanged!(activeVideo);HostSessionLog.Write($"video_settings generation={activeVideo.Generation} fps_limit={activeVideo.FramesPerSecond} target_bitrate={activeVideo.Bitrate} codec={codec} accepted_setting_mask={encoder?.Timing.AcceptedSettings??0}");
+                    }
                     forceNextKeyFrame = false;
                     encodeMetrics.Add(synthetic ? "generate" : "acquire", captureMs);
                     if (encoder is not null)
@@ -389,12 +405,10 @@ internal static class VideoHostSession
                     encodeMetrics.Frame(encoded.Data.Length);
                     stage = "frame-metadata";
                     var packet = new MediaFrame(codec, ++sequence, encoded.Timestamp, frame.Width, frame.Height, encoded.KeyFrame, encoder?.Hardware == true,
-                        (long)(captureMs * 1000), (long)(timer.Elapsed.TotalMilliseconds * 1000), CaptureMetadataCodec.Encode(frame.Metadata), encoded.Data,displays?.Switch.Generation??0);
+                        (long)(captureMs * 1000), (long)(encodeMs * 1000), CaptureMetadataCodec.Encode(frame.Metadata), encoded.Data,displays?.Switch.Generation??0,video is null?0:activeVideo.Generation);
                     stage = "queue-publish"; queue.Write(new(packet, Stopwatch.GetTimestamp()));
                     if (recovery.FramePublished())
                         HostSessionLog.Write($"pipeline_recovery state=Recovered attempt={recovery.Attempts} completed_frames={sequence} keyframe={encoded.KeyFrame}");
-                    int delay = Math.Max(0, 33 - (int)(captureMs + timer.Elapsed.TotalMilliseconds));
-                    if (ct.WaitHandle.WaitOne(delay)) break;
                 }
                 catch(DisplayTopologyChangedException changed)when(displays?.TopologyEnabled==true&&!ct.IsCancellationRequested)
                 {displays.Observe(changed.Displays,releaseInput);}

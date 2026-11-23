@@ -64,6 +64,8 @@ try {
     if($LASTEXITCODE){throw 'History store contracts failed'}
     Run-App $smokeDll --session-contracts
     if ($LASTEXITCODE) { throw 'Windows session contracts failed' }
+    Run-App $smokeDll --capture-refresh-contracts
+    if($LASTEXITCODE){throw 'Explicit capture refresh contracts failed'}
     Run-App $smokeDll $hostDll --session-unavailable
     if ($LASTEXITCODE) { throw 'Windows session shutdown failed' }
     Run-App $smokeDll --display-contracts
@@ -124,8 +126,16 @@ try {
         if($LASTEXITCODE){throw 'Viewer history privacy/session checks failed'}
         Run-App $viewer --statistics-contracts $hostDll (Join-Path $root 'build/statistics-wpf-verification')
         if($LASTEXITCODE){throw 'Viewer live statistics checks failed'}
+        foreach($settingsMode in @('h264','deflate','audio','static')){
+            Run-App $viewer --video-settings-contracts $hostDll $settingsMode
+            if($LASTEXITCODE){throw "Viewer video settings failed: $settingsMode"}
+        }
     }
     if ($Graphics) {
+        foreach($settingsMode in @('h264','deflate','static')){
+            Run-App $smokeDll $hostDll --video-settings $settingsMode
+            if($LASTEXITCODE){throw "Host codec settings failed: $settingsMode"}
+        }
         & $probe --viewport-render-contracts
         if ($LASTEXITCODE) { throw 'GPU viewport draw/crop contracts failed' }
         Run-App $smokeDll $hostDll --persistent-host (Join-Path $root 'build/persistent-host-verification')

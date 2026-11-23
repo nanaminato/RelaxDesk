@@ -25,6 +25,9 @@ public sealed class SessionClient : IDisposable
     public int InputVersion {get;private set;}
     public int RequestedDisplayVersion {get;init;}
     public int DisplayVersion {get;private set;}
+    public int RequestedVideoVersion{get;init;}
+    public int VideoVersion{get;private set;}
+    public VideoSettings? VideoSettings{get;private set;}
     public DisplaySessionInfo? DisplayState {get;private set;}
     public bool RequestFileResume {get;init;}=true;
     public bool SupportsFileResume {get;private set;}
@@ -64,10 +67,11 @@ public sealed class SessionClient : IDisposable
         Control = await Open(control, approvalOnly);
         VerifiedFingerprint = expected;
         var requestedFeatures = SessionCapabilities.Validate(RequestedFeatures);
+        if(!VideoSettingsProtocol.Supported(RequestedVideoVersion))throw new InvalidDataException("Unsupported video version request");
         if(RequestedInputVersion is not (0 or InputProtocol.Version))throw new InvalidDataException("Unsupported requested input version");
         if(!DisplayProtocol.Supported(RequestedDisplayVersion)||RequestedDisplayVersion!=0&&RequestedInputVersion!=InputProtocol.Version)throw new InvalidDataException("Unsupported requested display version");
         bool requestResume=RequestFileResume&&requestedFeatures.Contains(SessionCapabilities.FileTransfer);
-        await Wire.Write(Control, new Packet(approvalOnly ? "request-v2" : "hello-v2", Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], Features: requestedFeatures.Length == 0 ? null : requestedFeatures,FileResume:requestResume,InputVersion:RequestedInputVersion,DisplayVersion:RequestedDisplayVersion), ct);
+        await Wire.Write(Control, new Packet(approvalOnly ? "request-v2" : "hello-v2", Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], Features: requestedFeatures.Length == 0 ? null : requestedFeatures,FileResume:requestResume,InputVersion:RequestedInputVersion,DisplayVersion:RequestedDisplayVersion,VideoVersion:RequestedVideoVersion), ct);
         PhaseChanged?.Invoke(ConnectionPhase.AwaitingApproval);
         var approval = await Wire.Read(Control, ct);
         if (approval == new Packet("denied-v2")) throw new HostConsentRejectedException();
@@ -80,6 +84,9 @@ public sealed class SessionClient : IDisposable
         if(DisplayState is not null&&DisplayState.Generation!=1)throw new AuthenticationException("Invalid initial display generation");
         Capabilities = approval.Capabilities;
         Features = SessionCapabilities.ValidateGrant(requestedFeatures, approval.Features);
+        if(!VideoSettingsProtocol.Supported(approval.VideoVersion)||approval.VideoVersion!=0&&approval.VideoVersion!=RequestedVideoVersion||approval.VideoVersion==0&&approval.VideoSettings is not null||approval.VideoVersion!=0&&approval.VideoSettings is null)throw new AuthenticationException("Unrequested or invalid video configuration negotiation");
+        VideoVersion=approval.VideoVersion;VideoSettings=approval.VideoSettings is{} settings?VideoSettingsProtocol.Validate(settings):null;
+        if(VideoSettings is not null&&VideoSettings.Generation!=1)throw new AuthenticationException("Invalid initial video generation");
         if(approval.FileResume&&(!requestResume||!Features.Contains(SessionCapabilities.FileTransfer)||approval.FileScope is not {Length:32}||!Guid.TryParseExact(approval.FileScope,"N",out _))||!approval.FileResume&&approval.FileScope is not null)throw new AuthenticationException("Unrequested/invalid file resume scope");
         SupportsFileResume=approval.FileResume;FileScope=approval.FileScope;
         if (Capabilities.Any(c => c is not ("h264" or "deflate"))) throw new InvalidDataException("Unknown negotiated capability");

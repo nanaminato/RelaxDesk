@@ -5,6 +5,8 @@ using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using RelaxDesk.Core;
+if(args is ["--capture-refresh-contracts"]){try{RelaxDesk.Windows.CaptureRefreshContracts.Run();}catch(Exception e){Console.Error.WriteLine(e);Environment.ExitCode=1;}return;}
+if(args is [var videoHost,"--video-settings",var videoMode]){try{if(videoMode is not ("h264" or "deflate" or "static"))throw new ArgumentException("Video test codec");await VideoSettingsSmoke.Run(videoHost,videoMode=="deflate",videoMode=="static");}catch(Exception e){Console.Error.WriteLine(e);Environment.ExitCode=1;}return;}
 if(args is ["--history-store-contracts",var historyFixtures]){try{await RelaxDesk.Windows.ConnectionHistoryContracts.Run(historyFixtures);}catch(Exception e){Console.Error.WriteLine(e);Environment.ExitCode=1;}return;}
 if(args is ["--audio-device-contracts"]){try{await RelaxDesk.Windows.AudioDeviceContracts.Run().WaitAsync(TimeSpan.FromSeconds(15));}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is [var serviceSetupApplication,"--service-setup-contracts",var serviceSetupOutput]){try{await ServiceSetupSmoke.Run(serviceSetupApplication,serviceSetupOutput);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
