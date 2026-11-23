@@ -2,6 +2,8 @@
 
 ## Current office continuation checkpoint — 2026-11-24
 
+[Bounded asynchronous local diagnostics](DIAGNOSTICS.md) now replace daily unbounded file appends, preserve existing structured Host errors and Viewer secret exclusion, and add process-local per-connection correlation. [Actual file/TLS/WPF evidence](../benchmarks/2026-11-24-diagnostic-log-validation.md) covers retention/pressure, storage failure isolation, credential sentinels and existing session/reconnect paths. This is best-effort diagnostic storage, not durable audit logging or physical acceptance.
+
 Performance tooling now supports isolated builds and future self-contained EXEs with explicit owned-process identities, binary hashes, bounded sampling and strict terminal results. [Collection contract](BENCHMARK-COLLECTION.md), [actual collector evidence](../benchmarks/2026-11-24-benchmark-collector-validation.md). Both PowerShell versions and summary integrity contracts pass; brief synthetic WPF traces are archived without making office-performance claims.
 
 Current implementation and physical acceptance are tracked separately in [the product ledger](PRODUCT-READINESS.md). Source includes rich keyboard/pointer/text input, independently authorized text/image/HTML/file clipboard, scoped recursive file queues/resume, persistent Host/pinned reconnect, live monitor selection/viewport/topology recovery, session eligibility, opt-in user install/logon recovery and protected service/broker coordination, and independently authorized system audio. Installation/SCM, real Home desktop/application input, mixed DPI/HDR and audible audio still require their stated physical/deployment acceptance; historical test counts and package sections below are checkpoints, not current bundle contents.

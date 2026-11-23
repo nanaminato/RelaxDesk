@@ -1,4 +1,4 @@
-﻿# RelaxDesk Windows Home 验收包（实验版，win-x64）
+# RelaxDesk Windows Home 验收包（实验版，win-x64）
 
 ## 下一次统一打包：用户级安装
 
@@ -80,11 +80,11 @@ IP/端口方式采用本次首次接触信任：控制与媒体连接仍使用 T
 
 若日志归档因磁盘空间或权限失败，可直接回传本次 logs/home-* 文件夹。默认入口不会自动重试；已有日志不会覆盖。可选 PowerShell 入口 Collect-Logs.ps1 使用同样安全门禁，并可执行额外资源采样；只有策略允许时使用。
 
-新界面提供本机预览，可忽略输入内容查看布局；它不联网、不发送远程输入。授权连接成功后收起连接表单；断开后恢复表单。v2 控制连接每 5 秒发送已认证心跳。若自动断开，请提供 Host 的 session_end 行及前后日志（删除指纹/token/Connection code），并附 `%LOCALAPPDATA%/RelaxDesk/logs/viewer-日期.log`。当前为 SDR BT.709 传输，Host 的 FP16/scRGB、HDR10/PQ 已实现 GPU 色调映射（真机颜色待验收）；请分别记录 Host/Viewer 的 HDR 开关及 SDR 内容亮度设置。
+新界面提供本机预览，可忽略输入内容查看布局；它不联网、不发送远程输入。授权连接成功后收起连接表单；断开后恢复表单。v2 控制连接每 5 秒发送已认证心跳。若自动断开，请提供 Host 的 session_end 行及前后日志（删除指纹/token/Connection code），并附 `%LOCALAPPDATA%/RelaxDesk/logs/viewer.log`（旧版为 `viewer-日期.log`）。当前为 SDR BT.709 传输，Host 的 FP16/scRGB、HDR10/PQ 已实现 GPU 色调映射（真机颜色待验收）；请分别记录 Host/Viewer 的 HDR 开关及 SDR 内容亮度设置。
 
 v0.3.1：若批准后立即断开，请回传 `producer_error` 或 `recoverable_encoder_error` 行及 `session_end`，并附 Viewer 本地日志。新的编码故障回退只尝试一次软件 H.264；仍保持 DXGI 捕获和已授权加密连接。该回退已经过注入测试，但 NVIDIA 真机根因与恢复尚待确认。
 
-Host 结构化错误日志保存在 `%LOCALAPPDATA%/RelaxDesk/logs/host-日期.log`，不记录启动配对凭证或输入内容。双击启动的 Host 会在会话结束后等待 Enter，便于读取原始错误；命令行/自动测试启动方式正常退出。
+当前源码的结构化日志保存在 `%LOCALAPPDATA%/RelaxDesk/logs/host.log` 与 `viewer.log`，各保留 `.1`–`.3` 滚动备份，每个文件上限 2MiB。旧版日期日志保留。日志异步且尽力写入；磁盘占用或队列满可能丢失记录，后续可写记录包含丢弃／写入失败计数。每次连接的本地 `correlation_id` 便于查找同次故障与清理，不是授权凭证，两端 ID 不相同。请同时保留原始阶段与错误码；不要附启动指纹、token、Connection code 或私人内容。当前交互 Host 一次会话结束后继续监听，仍需每次明确批准。详见源码 `docs/DIAGNOSTICS.md`；旧测试包不包含这些改动。
 
 v0.3.2：修正仅鼠标更新时复用桌面图像的处理，并显式协商 BGRA。若仍出现 capture-frame 错误，请回传完整 producer_error，保留 width/height/format/dupl_format/api 字段，并说明 Host 的 HDR 开关。不要只截取 HRESULT。24 项 WARP/契约测试不代表 NVIDIA 真机或 HDR 色调映射已验证。
 

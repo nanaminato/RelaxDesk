@@ -37,7 +37,8 @@ public sealed class App : Application
         try
         {
             var app = new App();
-            if(args is ["--viewport-contracts"])ViewerWindow.VerifyViewport(app);
+            if(args is ["--diagnostic-log-contracts",var diagnosticFixtures])DiagnosticLogVerification.Run(app,diagnosticFixtures);
+            else if(args is ["--viewport-contracts"])ViewerWindow.VerifyViewport(app);
             else if(args is ["--audio-session-contracts",var audioHost])ViewerWindow.VerifyAudioSession(app,audioHost);
             else if(args is ["--history-contracts",var historyHost,var historyFixtures])ViewerWindow.VerifyConnectionHistory(app,historyHost,historyFixtures);
             else if(args is ["--statistics-contracts",var statisticsHost,var statisticsFixtures])ViewerWindow.VerifyStatistics(app,statisticsHost,statisticsFixtures);
@@ -60,7 +61,7 @@ public sealed class App : Application
             else if(args is ["--file-resume-session-contracts",var resumeHost,var resumeOutput])FileResumeSessionVerification.Run(app,resumeHost,resumeOutput);
             else app.Run(new ViewerWindow(smoke));
         }
-        finally { if (previousDpi != 0) SetThreadDpiAwarenessContext(previousDpi); }
+        finally { ViewerSessionLog.Close(); if (previousDpi != 0) SetThreadDpiAwarenessContext(previousDpi); }
     }
 }
 public sealed partial class ViewerWindow : Window
@@ -170,6 +171,7 @@ public sealed partial class ViewerWindow : Window
     }
     async Task<AttemptResult> ConnectVideoAttempt(ConnectionTarget target, string? previousPin, CancellationToken lifetime, Action onConnected)
     {
+        using var diagnosticScope=DiagnosticCorrelation.Begin();
         StopLocalPreview(); connectionCard.IsEnabled = false; disconnect.IsEnabled = true; connect.IsEnabled = false; using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime); session = cancellation; sequence = 0; ResetInputState();
         ++connectionGeneration; Exception? attemptError=null; bool established=false,restoreFullScreen=target.FullScreen; string[] retryFeatures=target.Features;long connectedAt=0;bool fileTransportInterrupted=false;
         while (outgoing.Reader.TryRead(out _)) { }

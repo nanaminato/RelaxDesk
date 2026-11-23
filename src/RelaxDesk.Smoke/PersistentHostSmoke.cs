@@ -138,8 +138,14 @@ internal static class PersistentHostSmoke
             if (logs.Any(line => line.Contains("fingerprint:") || line.Contains("pairing token:") || line.Contains("relaxdesk://"))) throw new IOException("Shell logs disclosed credentials");
             int cleanups = logs.Count(line => line.Contains("session_cleanup native_live_resources=0"));
             if (cleanups != sessions || logs.Any(line => line.Contains("native_live_resources=1"))) throw new IOException("Session native cleanup missing");
+            string Correlation(string line) => System.Text.RegularExpressions.Regex.Match(line, @" correlation_id=([a-f0-9]{32})(?: |$)").Groups[1].Value;
+            string[] ended = logs.Where(line => line.StartsWith("session_end ")).Select(Correlation).ToArray();
+            string[] released = logs.Where(line => line.StartsWith("session_cleanup ")).Select(Correlation).ToArray();
+            if (ended.Length != sessions || ended.Any(id => id.Length != 32) || ended.Distinct().Count() != sessions || !ended.Order().SequenceEqual(released.Order()))
+                throw new IOException("Persistent Host diagnostic identities reused or cleanup miscorrelated");
             if (Directory.GetFiles(root).Length != 2 || Directory.EnumerateFiles(root, ".relaxdesk-*", SearchOption.AllDirectories).Any()) throw new IOException("Scope cleanup/content unexpected");
             Console.WriteLine($"PASS persistent production Host: malformed hello recovery; {sessions} fresh same-process pinned sessions; unique consent IDs; stale/duplicate decisions and stale revoke/disconnect ignored; fresh grants/revocation reset; media sequence reset; one controller; cancelled/denied consent; STOP while pending; {cleanups} zero-native-resource cleanups; generated files only, synthetic media/clipboard; physical Home pending");
+            Console.WriteLine("PASS persistent Host local diagnostic IDs differ between sessions and match each session's end/cleanup; no new wire identity or credential");
             await ConsoleListener(hostPath);
         }
         finally

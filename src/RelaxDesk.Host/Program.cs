@@ -81,6 +81,7 @@ bool persistent = shellMode || listenMode || interactiveLaunch;
 var listener = new TcpListener(address, port);
 using var stop = new CancellationTokenSource();
 using var shell = shellMode ? new ShellBridge(stop) : null;
+await using var diagnosticLifetime=HostSessionLog.Lifetime;
 await using var fileResumes=selectedFileRoot is null?null:new FileTransferResumeStore(selectedFileRoot,diagnostic:HostSessionLog.Write);
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Cancel(); listener.Stop(); };
 try
@@ -94,6 +95,7 @@ try
         try
         {
             using var client = await listener.AcceptTcpClientAsync(stop.Token); client.NoDelay = true;
+            using var diagnosticScope=DiagnosticCorrelation.Begin();
             using var scope = shell?.Begin();
             try { await HostConnection.Run(listener, client, cert, token, backend, selectedFileRoot, scope, scope?.Token ?? stop.Token,fileResumes,selectedDisplay); }
             finally { if (shellMode) ShellBridge.Emit("session-ended", sessionId: scope!.Id); }

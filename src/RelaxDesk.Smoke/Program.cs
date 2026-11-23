@@ -5,6 +5,7 @@ using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using RelaxDesk.Core;
+if(args is ["--diagnostic-log-contracts",var diagnosticFixtures]){try{await RelaxDesk.Windows.DiagnosticLogContracts.Run(diagnosticFixtures);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is [var networkHost,"--network-impairment",var networkMode]){try{await NetworkImpairmentSmoke.Run(networkHost,networkMode);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is ["--capture-refresh-contracts"]){try{RelaxDesk.Windows.CaptureRefreshContracts.Run();}catch(Exception e){Console.Error.WriteLine(e);Environment.ExitCode=1;}return;}
 if(args is [var videoHost,"--video-settings",var videoMode]){try{if(videoMode is not ("h264" or "deflate" or "static"))throw new ArgumentException("Video test codec");await VideoSettingsSmoke.Run(videoHost,videoMode=="deflate",videoMode=="static");}catch(Exception e){Console.Error.WriteLine(e);Environment.ExitCode=1;}return;}

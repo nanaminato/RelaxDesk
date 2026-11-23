@@ -66,6 +66,8 @@ try {
     if ($LASTEXITCODE) { throw 'Windows session contracts failed' }
     Run-App $smokeDll --capture-refresh-contracts
     if($LASTEXITCODE){throw 'Explicit capture refresh contracts failed'}
+    Run-App $smokeDll --diagnostic-log-contracts (Join-Path $root 'build/diagnostic-log-verification')
+    if($LASTEXITCODE){throw 'Bounded diagnostic log contracts failed'}
     foreach($networkMode in @('shaped','media-cut','control-cut')){
         Run-App $smokeDll $hostDll --network-impairment $networkMode
         if($LASTEXITCODE){throw "Network impairment/cleanup failed: $networkMode"}
@@ -97,6 +99,8 @@ try {
         if ($LASTEXITCODE) { throw "Security smoke failed: $mode" }
     }
     if ($Wpf) {
+        Run-App $viewer --diagnostic-log-contracts (Join-Path $root 'build/diagnostic-log-verification')
+        if($LASTEXITCODE){throw 'Viewer diagnostic privacy/async isolation failed'}
         Run-App $viewer --viewport-contracts
         if ($LASTEXITCODE) { throw 'Viewer viewport/zoom contracts failed' }
         Run-App $viewer --display-session-contracts $hostDll
