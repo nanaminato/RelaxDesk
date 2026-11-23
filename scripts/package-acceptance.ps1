@@ -47,6 +47,17 @@ try {
     foreach ($name in @('accept-home.ps1','verify.ps1','benchmark-renderers.ps1','benchmark-video.ps1','RelaxDesk.Benchmark.psm1','measure-resources.ps1','summarize-renderers.py','RelaxDesk.Setup.psm1','Install-RelaxDesk.ps1','Uninstall-RelaxDesk.ps1')) { Copy-Item -LiteralPath "$PSScriptRoot/$name" -Destination $scripts }
     Copy-Item -LiteralPath "$root/packaging/Collect-Logs.cmd","$root/packaging/Collect-Logs.ps1","$root/packaging/RUN-ME.zh-CN.md","$root/packaging/Start-Host.cmd","$root/packaging/Start-Viewer.cmd","$root/packaging/Test-Office.cmd" -Destination $output
     Copy-Item -LiteralPath "$root/packaging/Install-RelaxDesk.cmd" -Destination $output
+    # Offline contracts and dated evidence; never sweep build fixtures or logs
+    # into a package. Only repository-tracked documentation is eligible.
+    $documentation = @(& git -c core.quotepath=false ls-files -- docs benchmarks)
+    if ($LASTEXITCODE -or !$documentation.Count) { throw 'Tracked documentation inventory unavailable' }
+    foreach ($relative in $documentation) {
+        $source = Join-Path $root $relative
+        if (!(Test-Path -LiteralPath $source -PathType Leaf)) { throw "Tracked documentation missing: $relative" }
+        $target = Join-Path $output $relative
+        [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target)) | Out-Null
+        Copy-Item -LiteralPath $source -Destination $target
+    }
     $revision = & git rev-parse HEAD
     $dirty = [bool](& git status --porcelain)
     [pscustomobject]@{format=1;version=$productVersion;file_version=$fileVersion;revision=$revision;working_tree_dirty=$dirty;built_at=(Get-Date -Format o);rid='win-x64';self_contained=$true;trimmed=$false;native_abi=2;minimum_os='Windows 10 x64 (supported .NET 11 build) / Windows 11 x64';home_physical_console='NOT_TESTED';signature='UNSIGNED_EXPERIMENTAL'} | ConvertTo-Json | Set-Content (Join-Path $output 'package.json') -Encoding utf8

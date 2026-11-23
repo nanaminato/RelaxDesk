@@ -16,6 +16,18 @@ internal sealed class SessionToolbar : IDisposable
     readonly Action? releaseInput;
     readonly StackPanel controls = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
     readonly TextBlock endpoint = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.White, Margin = new(14, 0, 12, 0), MaxWidth = 170, TextTrimming = TextTrimming.CharacterEllipsis };
+    readonly TextBlock mediaPath = new() { FontSize = 11, Foreground = Brushes.LightGray, TextTrimming = TextTrimming.CharacterEllipsis };
+    (MediaCodec Codec, bool Hardware, bool Gpu)? lastMediaPath;
+    internal string MediaPathText => mediaPath.Text;
+    public void SetMediaPath(MediaFrame frame, bool gpu)
+    {
+        var current = (frame.Codec, frame.HardwareEncoded, gpu);
+        if (lastMediaPath == current) return;
+        lastMediaPath = current;
+        string encoding = frame.Codec == MediaCodec.DeflateBgra ? "图像兼容编码" : frame.HardwareEncoded ? "硬件编码" : "软件编码";
+        mediaPath.Text = encoding + " · " + (gpu ? "GPU 显示" : "CPU 显示");
+        mediaPath.ToolTip = "Host 帧报告：" + encoding + "；Viewer 实际提交：" + (gpu ? "GPU 显示" : "CPU 兼容显示") + "。显示方式不代表解码器使用硬件；性能以实测为准。";
+    }
     readonly Button full;
     readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(100) };
     DateTime keepUntil;
@@ -145,7 +157,9 @@ internal sealed class SessionToolbar : IDisposable
         ShortcutMenu.Items.Add(videoSettings);
         clipboard.Click += (_, _) => { ShortcutMenu.IsOpen = false; disableClipboard?.Invoke(); };
         ShortcutsButton.Click += (_, _) => { ShortcutMenu.PlacementTarget = ShortcutsButton; ShortcutMenu.IsOpen = true; Reveal(); };
-        controls.Children.Add(endpoint); controls.Children.Add(FilesButton); controls.Children.Add(ShortcutsButton); controls.Children.Add(full); controls.Children.Add(DisconnectButton);
+        var identity = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Width = 170, Margin = new(14, 0, 12, 0) };
+        endpoint.Margin = new(0); identity.Children.Add(endpoint); identity.Children.Add(mediaPath);
+        controls.Children.Add(identity); controls.Children.Add(FilesButton); controls.Children.Add(ShortcutsButton); controls.Children.Add(full); controls.Children.Add(DisconnectButton);
         window.Content = new Border { Background = new SolidColorBrush(Color.FromRgb(23, 36, 58)), CornerRadius = new(0, 0, 10, 10), Child = controls, BorderBrush = new SolidColorBrush(Color.FromRgb(86, 126, 184)), BorderThickness = new(1, 0, 1, 1), ClipToBounds = true };
         window.SourceInitialized += (_, _) => { handle = new WindowInteropHelper(window).Handle; SetStyle(handle, -20, GetStyle(handle, -20) | (nint)0x08000000); };
         owner.LocationChanged += OwnerChanged; owner.SizeChanged += OwnerChanged; owner.StateChanged += OwnerChanged; owner.Closed += OwnerClosed;
@@ -153,6 +167,7 @@ internal sealed class SessionToolbar : IDisposable
     }
     public void SetSession(string address, bool fullScreen)
     {
+        lastMediaPath = null; mediaPath.Text = "等待首帧"; mediaPath.ToolTip = null;
         endpoint.Text = "RelaxDesk · " + address; SetFullScreen(fullScreen);
         if (!window.IsVisible) window.Show();
         Reveal(); timer.Start();

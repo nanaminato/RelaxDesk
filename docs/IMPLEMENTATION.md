@@ -1,5 +1,7 @@
 # RelaxDesk implementation and evidence
 
+Current requirement-by-requirement [source/delivery audit](REQUIREMENTS-AUDIT.md) keeps physical and packaging exits open. The accepted-frame media path is now persistently available in the auto-hide toolbar; [focused WPF evidence](../benchmarks/2026-11-24-media-path-validation.md). The final guide is reconciled and the package recipe includes tracked offline contracts/evidence. No intermediate package.
+
 ## Current office continuation checkpoint — 2026-11-24
 
 Viewer now exposes [safe error details and async local copying](ERROR-DETAILS.md), backed by immutable bounded metadata rather than exception messages or user fields. [Evidence](../benchmarks/2026-11-24-error-details-validation.md): 2,070 Core/TLS checks and 76 shared office executable cases pass; actual WPF UI/privacy/timeout and production Host/TLS fault population are distinct from pending real clipboard/Home acceptance. No intermediate package.

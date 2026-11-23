@@ -47,6 +47,18 @@ internal static class ToolbarVerification
                 using (var testBar = new SessionToolbar(window, () => { }, () => { }, shortcuts.Add,()=>releaseRequests++))
                 {
                     testBar.SetSession("owned shortcut test", false);
+                    var media = new RelaxDesk.Core.MediaFrame(RelaxDesk.Core.MediaCodec.H264, 1, 1, 64, 64, true, true, 0, 0, [], []);
+                    if (testBar.MediaPathText != "等待首帧") throw new Exception("New session retained an old media path");
+                    testBar.SetMediaPath(media, true);
+                    if (testBar.MediaPathText != "硬件编码 · GPU 显示") throw new Exception("Hardware path label missing");
+                    testBar.SetMediaPath(media with { HardwareEncoded = false }, true);
+                    if (testBar.MediaPathText != "软件编码 · GPU 显示") throw new Exception("Host software fallback not visible");
+                    testBar.SetMediaPath(media with { HardwareEncoded = false }, false);
+                    if (testBar.MediaPathText != "软件编码 · CPU 显示") throw new Exception("Viewer CPU fallback not visible");
+                    testBar.SetMediaPath(media with { Codec = RelaxDesk.Core.MediaCodec.DeflateBgra }, false);
+                    if (testBar.MediaPathText != "图像兼容编码 · CPU 显示") throw new Exception("Image codec mislabeled hardware");
+                    testBar.SetSession("new session", false);
+                    if (testBar.MediaPathText != "等待首帧") throw new Exception("Reconnect retained a stale media path");
                     if(releaseRequests!=1||testBar.TextInputAction.IsEnabled)throw new Exception("Toolbar reveal must release input; text commit requires negotiation");
                     testBar.ShortcutsButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(100);
                     if (!testBar.ShortcutMenu.IsOpen) throw new Exception("Shortcut menu did not open");
@@ -68,7 +80,7 @@ internal static class ToolbarVerification
                 if (!window.ConnectionPanelVisible || window.Toolbar is not null || window.DesktopFillsClient) throw new Exception("Disconnect did not restore connection chrome");
                 window.StartLocalPreview(); var closingBar = window.Toolbar!; window.Close();
                 if (!closingBar.IsDisposed || closingBar.Surface.IsVisible) throw new Exception("Closing owner leaked toolbar/timer");
-                Console.WriteLine("PASS real HWND toolbar: full-client desktop, timed hide, top-edge reveal, above HwndHost hit-test, 15 shortcut menu actions, disabled secure attention, offline shortcut denial, fullscreen/window actions, minimize/restore, disconnect and disposal; simulated pointer positions, synthetic preview, no remote input; physical hover/DPI pending");
+                Console.WriteLine("PASS real HWND toolbar: persistent media path/fallback labels and session reset, full-client desktop, timed hide, top-edge reveal, above HwndHost hit-test, 15 shortcut menu actions, disabled secure attention, offline shortcut denial, fullscreen/window actions, minimize/restore, disconnect and disposal; simulated pointer positions, synthetic preview, no remote input; physical hover/DPI pending");
             }
             catch (Exception e) { Console.Error.WriteLine(e); Environment.ExitCode = 1; }
             finally { child?.Dispose(); window.StopLocalPreview(); window.Close(); }

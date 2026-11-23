@@ -1,5 +1,7 @@
 # Product readiness ledger
 
+Current requirement-by-requirement [source/delivery audit](REQUIREMENTS-AUDIT.md) keeps physical and packaging exits open. The accepted-frame media path is now persistently available in the auto-hide toolbar; [focused WPF evidence](../benchmarks/2026-11-24-media-path-validation.md). The final guide is reconciled and the package recipe includes tracked offline contracts/evidence. No intermediate package.
+
 Initial audit 2026-11-23: local and fetched remote `codex/dxgi-media-pipeline` both `b9c7428873ad2630f2896af624f8e2baa9997e92`; no pre-existing edits. Stable .NET 11.0.100. Phase 0 exit met; Phase 1/1.5 physical Home dual-PC exit remains open.
 
 | Capability | Implementation | Automated evidence | Physical evidence / remaining work |

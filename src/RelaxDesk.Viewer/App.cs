@@ -219,6 +219,7 @@ public sealed partial class ViewerWindow : Window
                 if(!AcceptVideoFrame(frame))return;
                 SetViewportVideoSize(frame.Width,frame.Height);if(gpu&&drawnViewport is not null)ViewportDrawn(drawnViewport);
                 status.Text = $"已连接 · {frame.Width} × {frame.Height} · {(gpu ? "GPU 显示" : "兼容显示")}";
+                sessionToolbar?.SetMediaPath(frame, gpu);
                 DisplayPresented(frame);ExerciseWindow(count);
                 audioSession?.VideoPresented(frame.Timestamp100ns);
                 VideoSettingsPresented(frame);
