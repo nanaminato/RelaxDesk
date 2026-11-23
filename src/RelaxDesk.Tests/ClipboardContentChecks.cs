@@ -26,6 +26,14 @@ static class ClipboardContentChecks
         {lock(sync){WriteAttempts++;writtenVersion=version;if(Busy||version!=expectedVersion)return false;Writes++;content=value.Own();writtenVersion=++version;return true;}}
         public void Dispose()=>Disposed=true;
     }
+    sealed class IdleStream(bool prefix=false):Stream
+    {
+        int reads;public bool Disposed;
+        public override bool CanRead=>true;public override bool CanSeek=>false;public override bool CanWrite=>true;public override long Length=>throw new NotSupportedException();public override long Position{get=>throw new NotSupportedException();set=>throw new NotSupportedException();}
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer,CancellationToken cancellationToken=default){if(prefix&&reads++==0){buffer.Span[0]=1;return 1;}await Task.Delay(Timeout.Infinite,cancellationToken);return 0;}
+        public override void Flush(){}public override int Read(byte[] buffer,int offset,int count)=>throw new NotSupportedException();public override long Seek(long offset,SeekOrigin origin)=>throw new NotSupportedException();public override void SetLength(long value)=>throw new NotSupportedException();public override void Write(byte[] buffer,int offset,int count){}
+        protected override void Dispose(bool disposing){Disposed=true;base.Dispose(disposing);}
+    }
     static async Task Until(Func<bool> predicate)
     {using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(5));while(!predicate())await Task.Delay(10,timeout.Token);}
     public static async Task<int> Run()
@@ -73,6 +81,10 @@ static class ClipboardContentChecks
         Check(!receiver.TryAccept(1,htmlUpdate));access.Approve([SessionCapabilities.ClipboardHtml]);Check(receiver.TryAccept(1,htmlUpdate));Check(!receiver.TryAccept(1,htmlUpdate));
         Check(!receiver.TryAccept(2,update));Check(receiver.TryAccept(2,new(origin,2,new(Clear:true))));Check(deliveries==2);
         Check(access.Accept(new("input",1,Code:65)));access.RevokeFeature(SessionCapabilities.ClipboardHtml);Check(!receiver.TryAccept(3,htmlUpdate));Check(access.Accept(new("input",2,Code:65)));
+        var concurrentGate=new AccessGate();concurrentGate.Approve([SessionCapabilities.ClipboardHtml]);using var callbackEntered=new ManualResetEventSlim();using var releaseCallback=new ManualResetEventSlim();
+        var concurrentReceiver=new ClipboardContentReceiver(concurrentGate,_=>{callbackEntered.Set();if(!releaseCallback.Wait(TimeSpan.FromSeconds(2)))throw new IOException("Test callback timeout");return true;});
+        var delivery=Task.Run(()=>concurrentReceiver.TryAccept(1,htmlUpdate));await Until(()=>callbackEntered.IsSet);var revocation=Task.Run(()=>concurrentGate.RevokeFeature(SessionCapabilities.ClipboardHtml));await Task.Delay(30);Check(!revocation.IsCompleted);releaseCallback.Set();Check(await delivery);await revocation;Check(!concurrentReceiver.TryAccept(2,htmlUpdate));
+        var ownedGate=new AccessGate();ownedGate.Approve([SessionCapabilities.ClipboardImage]);ClipboardContentUpdate? retained=null;var ownedReceiver=new ClipboardContentReceiver(ownedGate,value=>{retained=value;return true;});byte[] original=Png();Check(ownedReceiver.TryAccept(1,new(origin,1,new(Png:original))));original[0]=0;Check(retained!.Content.Png![0]==137);
         int constructed=0;var denied=new AccessGate();await using(var worker=new ClipboardContentSynchronizer(()=>{constructed++;return new MemoryClipboard(content);},denied,_=>throw new Exception("Unauthorized send"),default,pollMilliseconds:10)){await worker.Completion.WaitAsync(TimeSpan.FromSeconds(2));}Check(constructed==0);
         var gate=new AccessGate();gate.Approve([SessionCapabilities.ClipboardImage,SessionCapabilities.ClipboardHtml]);var memory=new MemoryClipboard(content);var sent=new ConcurrentQueue<ClipboardContentUpdate>();
         await using(var worker=new ClipboardContentSynchronizer(()=>memory,gate,sent.Enqueue,default,pollMilliseconds:10))
@@ -95,6 +107,18 @@ static class ClipboardContentChecks
         var failedGate=new AccessGate();failedGate.Approve([SessionCapabilities.ClipboardHtml]);var failed=new MemoryClipboard(new(Html:"x")){Fail=true};
         await using(var worker=new ClipboardContentSynchronizer(()=>failed,failedGate,_=>{},default,messages.Enqueue,10)){await worker.Completion.WaitAsync(TimeSpan.FromSeconds(2));}
         Check(failed.Disposed&&!failedGate.Allows(SessionCapabilities.ClipboardHtml)&&failedGate.Approved);Check(messages.All(value=>!value.Contains("private diagnostic")));
+        var parentGate=new AccessGate();parentGate.Approve([SessionCapabilities.ClipboardHtml]);var parentMemory=new MemoryClipboard(new(Html:"baseline"));using var parent=new CancellationTokenSource();using var idle=new IdleStream();
+        await using(var link=new ClipboardContentSession(idle,()=>parentMemory,parentGate,parent.Token,pollMilliseconds:10))
+        {
+            await Until(()=>parentMemory.Reads>=2);parent.Cancel();await link.Completion.WaitAsync(TimeSpan.FromSeconds(2));
+            Check(parentGate.Allows(SessionCapabilities.ClipboardHtml)&&parentMemory.Disposed&&idle.Disposed);
+        }
+        Check(parentGate.Approved&&!parentGate.Allows(SessionCapabilities.ClipboardHtml));
+        var stoppedGate=new AccessGate();stoppedGate.Approve([SessionCapabilities.ClipboardImage]);var stoppedMemory=new MemoryClipboard(new(Clear:true));using var stoppedStream=new IdleStream();
+        await using(var link=new ClipboardContentSession(stoppedStream,()=>stoppedMemory,stoppedGate,default,pollMilliseconds:10))
+        {await Until(()=>stoppedMemory.Reads>=2);link.Stop();await link.Completion.WaitAsync(TimeSpan.FromSeconds(2));Check(!stoppedGate.Allows(SessionCapabilities.ClipboardImage)&&stoppedGate.Approved&&stoppedMemory.Disposed);}
+        using var partialFrame=new IdleStream(true);var elapsed=System.Diagnostics.Stopwatch.StartNew();
+        try{await ClipboardContentWire.Read(partialFrame,transferTimeout:TimeSpan.FromMilliseconds(100));throw new InvalidOperationException("Partial frame did not time out");}catch(IOException){Check(elapsed.Elapsed<TimeSpan.FromSeconds(2));}
         Console.WriteLine($"PASS {count} rich clipboard content/PNG CRC+limits/CF_HTML byte offsets/framing/state/permission/busy/revoke contracts; memory providers only, no Windows clipboard or negotiated session integration");return count;
     }
 }

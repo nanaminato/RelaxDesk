@@ -26,8 +26,8 @@ public sealed partial class ViewerWindow
     string[] RequestedFeatures()
     {
         if (smoke?.ReconnectTest==true)return [SessionCapabilities.FileTransfer];
-        if (smoke is not null) return smoke.FileTransfer ? [SessionCapabilities.FileTransfer] : [];
-        var features = new List<string>(); if (requestClipboard.IsChecked == true) features.Add(SessionCapabilities.ClipboardText); if (requestFiles.IsChecked == true) features.Add(SessionCapabilities.FileTransfer); return features.ToArray();
+        if (smoke is not null&&!smoke.RichClipboardTest) return smoke.FileTransfer ? [SessionCapabilities.FileTransfer] : [];
+        var features = new List<string>(); if (requestClipboard.IsChecked == true) features.Add(SessionCapabilities.ClipboardText); if(requestClipboardImage.IsChecked==true)features.Add(SessionCapabilities.ClipboardImage);if(requestClipboardHtml.IsChecked==true)features.Add(SessionCapabilities.ClipboardHtml); if (requestFiles.IsChecked == true) features.Add(SessionCapabilities.FileTransfer); return features.ToArray();
     }
     async Task StartFileSession(SessionClient connection, CancellationToken ct)
     {

@@ -9,9 +9,11 @@ public sealed class SessionClient : IDisposable
 {
     readonly TcpClient control = new() { NoDelay = true };
     readonly TcpClient media = new() { NoDelay = true };
+    readonly TcpClient clipboard = new() { NoDelay = true };
     readonly TcpClient data = new() { NoDelay = true };
     public SslStream Control { get; private set; } = null!;
     public SslStream Media { get; private set; } = null!;
+    public SslStream? ClipboardData{get;private set;}
     public SslStream? Data { get; private set; }
     public string[] Capabilities { get; private set; } = [];
     public string[] RequestedFeatures { get; init; } = [];
@@ -69,6 +71,8 @@ public sealed class SessionClient : IDisposable
         if(approval.FileResume&&(!requestResume||!Features.Contains(SessionCapabilities.FileTransfer)||approval.FileScope is not {Length:32}||!Guid.TryParseExact(approval.FileScope,"N",out _))||!approval.FileResume&&approval.FileScope is not null)throw new AuthenticationException("Unrequested/invalid file resume scope");
         SupportsFileResume=approval.FileResume;FileScope=approval.FileScope;
         if (Capabilities.Any(c => c is not ("h264" or "deflate"))) throw new InvalidDataException("Unknown negotiated capability");
+        bool richClipboard=SessionCapabilities.RichClipboard(Features);
+        if(richClipboard?(approval.ClipboardTicket is not {Length:64}||!approval.ClipboardTicket.All(char.IsAsciiHexDigit)||approval.ClipboardTicket==approval.Text||approval.ClipboardTicket==approval.DataTicket):approval.ClipboardTicket is not null)throw new AuthenticationException("Missing/unsolicited clipboard binding ticket");
         PhaseChanged?.Invoke(ConnectionPhase.Negotiating);
         Media = await Open(media);
         await Wire.Write(Media, new Packet("media-v2", Text: approval.Text), ct);
@@ -81,7 +85,13 @@ public sealed class SessionClient : IDisposable
             if ((await Wire.Read(Data, ct, 8 * 1024)).Kind != "data-approved-v2") throw new AuthenticationException("File data channel rejected");
         }
         else if (approval.DataTicket is not null) throw new AuthenticationException("Unrequested file data ticket");
+        if(richClipboard)
+        {
+            ClipboardData=await Open(clipboard);
+            await Wire.Write(ClipboardData,new("clipboard-v2",Text:approval.ClipboardTicket),ct);
+            if((await Wire.Read(ClipboardData,ct,8*1024))!=new Packet("clipboard-approved-v2"))throw new AuthenticationException("Clipboard data channel rejected");
+        }
         PhaseChanged?.Invoke(ConnectionPhase.Connected);
     }
-    public void Dispose() { control.Dispose(); media.Dispose(); data.Dispose(); Control?.Dispose(); Media?.Dispose(); Data?.Dispose(); }
+    public void Dispose() { control.Dispose(); media.Dispose(); data.Dispose(); clipboard.Dispose(); ClipboardData?.Dispose(); Control?.Dispose(); Media?.Dispose(); Data?.Dispose(); }
 }

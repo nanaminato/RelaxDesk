@@ -8,6 +8,10 @@ public static class SessionCapabilities
     public const string ClipboardImage = "clipboard.image";
     public const string ClipboardHtml = "clipboard.html";
     public const string FileTransfer = "file.transfer";
+    public static bool IsClipboard(string feature)=>feature is ClipboardText or ClipboardImage or ClipboardHtml;
+    public static bool RichClipboard(IEnumerable<string> features)=>features.Any(feature=>feature is ClipboardImage or ClipboardHtml);
+    public static void RevokeClipboard(AccessGate gate){foreach(string feature in new[]{ClipboardText,ClipboardImage,ClipboardHtml})gate.RevokeFeature(feature);}
+    public static string ClipboardDescription(IEnumerable<string> features)=>string.Join("、",features.Where(IsClipboard).Select(feature=>feature switch{ClipboardText=>"文本（64KiB）",ClipboardImage=>"图片（8MiB / 1600万像素）",_=>"HTML（512KiB）"}));
     public static string[] Validate(string[]? features)
     {
         if (features is null) return [];
@@ -16,7 +20,7 @@ public static class SessionCapabilities
         return features.ToArray();
     }
     public static string[] Grant(string[]? requested, bool allowClipboard, bool allowFiles = false) => Validate(requested)
-        .Where(feature => feature == ClipboardText && allowClipboard || feature == FileTransfer && allowFiles).ToArray();
+        .Where(feature => IsClipboard(feature) && allowClipboard || feature == FileTransfer && allowFiles).ToArray();
     public static string[] ValidateGrant(string[]? requested, string[]? granted)
     {
         var result = Validate(granted); var offered = Validate(requested);

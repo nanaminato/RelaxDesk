@@ -1,6 +1,6 @@
 # Text clipboard synchronization
 
-Image/HTML continuation: the [bounded content/codec/Windows adapter foundation](CLIPBOARD-CONTENT.md) is implemented, but its dedicated session binding and consent/UI are not yet connected. Existing production text behavior below remains the current user-facing capability.
+Image/HTML continuation: [bounded rich content, independent TLS binding and format consent/UI](CLIPBOARD-CONTENT.md) are implemented and tested with isolated providers in real Host/Viewer sessions. Native Windows clipboard IO still needs physical acceptance. Text-only sessions retain the path below; rich sessions use one dedicated stream/worker for all granted clipboard formats. All requests remain default off.
 
 Implemented as the next office slice; no per-slice package is produced at the owner's request. A final package/test pass is deferred until the development goal is ready.
 

@@ -79,6 +79,26 @@ internal static class ShellVerification
                 }
                 Console.WriteLine("PASS WPF Host shell: real Host child/listen, explicit approval, H264 media, graceful stop, denial without capture, new approval after denial in same process, session-only disconnect returns to listening, stop while waiting, no credential logs; synthetic loopback source only");
                 Console.WriteLine("PASS WPF clipboard permission: default off, request checkbox, screen-only grant denies clipboard, separate opt-in negotiates feature, Host IPC revocation preserves control; isolated test clipboard only");
+                foreach(bool allowRich in new[]{false,true})
+                {
+                    port=Port();await window.StartSharing("127.0.0.1",port,"test-clipboard-rich");await Until(()=>window.Status=="等待连接");
+                    using var viewer=new SessionClient{RequestedFeatures=[SessionCapabilities.ClipboardText,SessionCapabilities.ClipboardImage,SessionCapabilities.ClipboardHtml]};
+                    var connecting=viewer.ConnectByApproval("127.0.0.1",port,timeout.Token);await Until(()=>window.RequestVisible);
+                    if(!window.ClipboardChoiceVisible||window.ClipboardAllowed||!window.ClipboardRequestDescription.Contains("图片")||!window.ClipboardRequestDescription.Contains("HTML"))throw new IOException("Rich clipboard default permission unsafe or formats hidden");
+                    window.ClipboardAllowed=allowRich;await window.Decide(true);await connecting;
+                    if((viewer.ClipboardData is not null)!=allowRich)throw new IOException("Rich clipboard channel consent mismatch");
+                    _=await MediaProtocol.Read(viewer.Media,timeout.Token);
+                    if(allowRich)
+                    {
+                        var first=await ClipboardContentWire.Read(viewer.ClipboardData!,timeout.Token);
+                        if(first.Update.Content.Png is null||first.Update.Content.Html!="<b>Host 中文</b>")throw new IOException("Rich Host provider did not publish");
+                        await window.StopClipboard();var stopped=new HashSet<string>();while(stopped.Count<3){var packet=await Wire.Read(viewer.Control,timeout.Token);if(packet.Kind!="capability-revoked-v2"||packet.Features is not[var feature])throw new IOException("Rich revoke acknowledgement missing");stopped.Add(feature);}
+                        await Wire.Write(viewer.Control,new("ping-v2",1),timeout.Token);if((await Wire.Read(viewer.Control,timeout.Token)).Kind!="pong-v2")throw new IOException("Rich clipboard revoke killed control");
+                    }
+                    await window.StopSharing();await window.Host.Finished.WaitAsync(TimeSpan.FromSeconds(10));
+                    if(!allowRich&&window.Host.Snapshot().Any(line=>line.StartsWith("test_clipboard_rich_")))throw new IOException("Denied rich provider constructed");
+                }
+                Console.WriteLine("PASS WPF image/HTML clipboard consent: exact requested formats/default off, screen-only denies new channel/provider, explicit grant creates separate TLS, Host group revoke keeps control/media; isolated clipboard only");
                 string fileRoot=Path.Combine(Path.GetFullPath(output),"file-scope-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(fileRoot);
                 // No directory means the file request cannot be approved.
                 port=Port();await window.StartSharing("127.0.0.1",port,"test-hardware");await Until(()=>window.Status=="等待连接");

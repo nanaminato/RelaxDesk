@@ -46,7 +46,7 @@ internal sealed class SessionToolbar : IDisposable
     public void SetTextInput(Action? open){openTextInput=open;textInput.IsEnabled=open is not null;}
     Action? disableClipboard;
     public void SetClipboard(bool enabled, Action? disable)
-    { clipboard.Header = enabled ? "停止文本剪贴板同步（重新开启需重新授权）" : "剪贴板未授权 / 已关闭"; clipboard.IsEnabled = enabled; disableClipboard = disable; }
+    { clipboard.Header = enabled ? "停止剪贴板同步（重新开启需重新授权）" : "剪贴板未授权 / 已关闭"; clipboard.IsEnabled = enabled; disableClipboard = disable; }
     public SessionToolbar(Window owner, Action toggle, Action disconnect, Action<RemoteShortcut>? shortcut = null,Action? releaseInput=null)
     {
         this.owner = owner;

@@ -40,12 +40,21 @@ public sealed class ClipboardContentSynchronizer:IAsyncDisposable
         if(Volatile.Read(ref disposed)!=0||stop.IsCancellationRequested)return false;
         if(!ClipboardContentRules.Valid(update))throw new InvalidDataException("Invalid rich clipboard update");
         if(!ClipboardFormats.Granted(gate).Allows(update.Content))return false;
+        var owned=update with{Content=update.Content.Own()};
+        return ReceivePrepared(owned);
+    }
+    // Called only after validation and payload ownership have been established
+    // outside the access lock. The protected action only updates pending state.
+    internal bool ReceivePrepared(ClipboardContentUpdate owned)
+    {
+        if(Volatile.Read(ref disposed)!=0||stop.IsCancellationRequested)return false;
+        var update=owned;
         string permission=ClipboardFormats.Granted(gate).Permission(update.Content);
         return gate.TryExecuteFeature(permission,()=>
         {
             if(stop.IsCancellationRequested||!ClipboardFormats.Granted(gate).Allows(update.Content))return;
             lock(sync)if(update.Revision>receivedRevision||update.Revision==receivedRevision&&string.CompareOrdinal(update.Origin,receivedOrigin)>0)
-            {pending=update with{Content=update.Content.Own()};receivedRevision=update.Revision;receivedOrigin=update.Origin;}
+            {pending=owned;receivedRevision=update.Revision;receivedOrigin=update.Origin;}
         });
     }
     void Run(Func<IContentClipboard> create,Action<ClipboardContentUpdate> send,int interval)

@@ -21,7 +21,7 @@ public static class ClipboardTextProtocol
     public static bool IsValid(Packet packet) => packet.Kind == "clipboard-text-v2" && packet.Sequence > 0 && packet.Revision > 0 &&
         packet.Origin is { Length: 32 } && Guid.TryParseExact(packet.Origin, "N", out var origin) && packet.Origin == origin.ToString("N") &&
         ValidText(packet.Text) && packet.Data is null && packet.Features is null && packet.Capabilities is null && packet.DataTicket is null && !packet.FileResume && packet.FileScope is null &&
-        packet.Input is null&&packet.InputVersion==0&&packet.Code == 0 && !packet.Up && packet.X == 0 && packet.Y == 0 && packet.Width == 0 && packet.Height == 0 && packet.CaptureMs == 0 && packet.EncodeMs == 0;
+        packet.ClipboardTicket is null&&packet.Input is null&&packet.InputVersion==0&&packet.Code == 0 && !packet.Up && packet.X == 0 && packet.Y == 0 && packet.Width == 0 && packet.Height == 0 && packet.CaptureMs == 0 && packet.EncodeMs == 0;
     public static ClipboardTextUpdate Decode(Packet packet) => IsValid(packet)
         ? new(packet.Origin!, packet.Revision, packet.Text!) : throw new InvalidDataException("Invalid text clipboard update");
     public static Packet Encode(ClipboardTextUpdate update, long sequence)

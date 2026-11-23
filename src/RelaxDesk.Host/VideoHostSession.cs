@@ -23,8 +23,8 @@ internal static class VideoHostSession
         if (synthetic && !IPAddress.IsLoopback(((IPEndPoint)controlSocket.Client.LocalEndPoint!).Address))
             throw new AuthenticationException("Synthetic video testing is loopback-only");
         var features = SessionCapabilities.ValidateGrant(hello.Features, grantedFeatures);
-        if (synthetic && backend is not ("test-clipboard" or "test-clipboard-failure")) features = features.Where(feature=>feature!=SessionCapabilities.ClipboardText).ToArray();
-        if (clipboardRevoked.IsCancellationRequested) features = features.Where(feature=>feature!=SessionCapabilities.ClipboardText).ToArray();
+        if (synthetic && backend is not ("test-clipboard" or "test-clipboard-failure" or "test-clipboard-rich" or "test-clipboard-rich-failure")) features = features.Where(feature=>!SessionCapabilities.IsClipboard(feature)).ToArray();
+        if (clipboardRevoked.IsCancellationRequested) features = features.Where(feature=>!SessionCapabilities.IsClipboard(feature)).ToArray();
         if (filesRevoked.IsCancellationRequested) features = features.Where(feature=>feature!=SessionCapabilities.FileTransfer).ToArray();
         var fileRoot = features.Contains(SessionCapabilities.FileTransfer) && selectedFileRoot is not null ? new WindowsFileRoot(selectedFileRoot) : null;
         if (fileRoot is null) features = features.Where(feature=>feature!=SessionCapabilities.FileTransfer).ToArray();
@@ -32,7 +32,8 @@ internal static class VideoHostSession
         string? fileScope=resumeFiles?await fileResumes!.Scope():null;
         var ticket = new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15));
         var dataTicket = fileRoot is null ? null : new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15));
-        await Wire.Write(control, new Packet("approved-v2", Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features, DataTicket: dataTicket?.Value,FileResume:resumeFiles,FileScope:fileScope,InputVersion:hello.InputVersion), stop);
+        var clipboardTicket=SessionCapabilities.RichClipboard(features)?new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15)):null;
+        await Wire.Write(control, new Packet("approved-v2", Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features, DataTicket: dataTicket?.Value,FileResume:resumeFiles,FileScope:fileScope,InputVersion:hello.InputVersion,ClipboardTicket:clipboardTicket?.Value), stop);
         using var attach = CancellationTokenSource.CreateLinkedTokenSource(stop); attach.CancelAfter(TimeSpan.FromSeconds(15));
         using var mediaSocket = await listener.AcceptTcpClientAsync(attach.Token); mediaSocket.NoDelay = true; mediaSocket.SendBufferSize = 64 * 1024;
         using var media = new SslStream(mediaSocket.GetStream(), false);
@@ -49,6 +50,16 @@ internal static class VideoHostSession
             var dataBinding = await Wire.Read(data, attach.Token, 8 * 1024);
             if (dataBinding.Kind != "data-v2" || !dataTicket!.Consume(dataBinding.Text, DateTimeOffset.UtcNow)) throw new AuthenticationException("File data binding rejected");
             await Wire.Write(data, new("data-approved-v2"), attach.Token);
+        }
+        using var clipboardSocket=clipboardTicket is null?null:await listener.AcceptTcpClientAsync(attach.Token);
+        using var clipboardData=clipboardSocket is null?null:new SslStream(clipboardSocket.GetStream(),false);
+        if(clipboardData is not null)
+        {
+            clipboardSocket!.NoDelay=true;
+            await clipboardData.AuthenticateAsServerAsync(new SslServerAuthenticationOptions{ServerCertificate=certificate,EnabledSslProtocols=SslProtocols.Tls12|SslProtocols.Tls13},attach.Token);
+            var clipboardBinding=await Wire.Read(clipboardData,attach.Token,8*1024);
+            if(clipboardBinding!=new Packet("clipboard-v2",Text:clipboardBinding.Text)||!clipboardTicket!.Consume(clipboardBinding.Text,DateTimeOffset.UtcNow))throw new AuthenticationException("Clipboard binding rejected");
+            await Wire.Write(clipboardData,new("clipboard-approved-v2"),attach.Token);
         }
         listener.Stop();
         using var session = CancellationTokenSource.CreateLinkedTokenSource(stop);
@@ -80,14 +91,22 @@ internal static class VideoHostSession
             }
             finally { data.Dispose();if(fileResumes is not null&&(stop.IsCancellationRequested||Volatile.Read(ref explicitFileRevocation)!=0))await fileResumes.Clear(); }
         }, session.Token);
+        using var clipboardLifetime=CancellationTokenSource.CreateLinkedTokenSource(session.Token,clipboardRevoked);
         var clipboardUpdates = Channel.CreateBounded<ClipboardTextUpdate>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest });
-        await using var clipboard = features.Contains(SessionCapabilities.ClipboardText)
+        await using var clipboard = clipboardData is null&&features.Contains(SessionCapabilities.ClipboardText)
             ? new ClipboardSynchronizer(() => synthetic ? new TestTextClipboard(backend == "test-clipboard-failure") : new WindowsTextClipboard(), gate,
-                update => clipboardUpdates.Writer.TryWrite(update), session.Token, HostSessionLog.Write) : null;
+                update => clipboardUpdates.Writer.TryWrite(update), clipboardLifetime.Token, HostSessionLog.Write) : null;
         if (clipboard is not null) _ = clipboard.Completion.ContinueWith(_ => clipboardUpdates.Writer.TryComplete(), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-        using var revokeRegistration = clipboardRevoked.Register(() => { gate.RevokeFeature(SessionCapabilities.ClipboardText); clipboardUpdates.Writer.TryComplete(); });
+        await using var richClipboard=clipboardData is null?null:new ClipboardContentSession(clipboardData,()=>synthetic?new TestContentClipboard(backend=="test-clipboard-rich-failure"):new WindowsTextClipboard(),gate,clipboardLifetime.Token,HostSessionLog.Write);
+        using var revokeRegistration = clipboardRevoked.Register(() => { SessionCapabilities.RevokeClipboard(gate);clipboardUpdates.Writer.TryComplete();richClipboard?.Stop();clipboardSocket?.Close(); });
         var clipboardSender = Task.Run(async () =>
         {
+            if(richClipboard is not null)
+            {
+                await richClipboard.Completion;
+                if(!session.IsCancellationRequested)foreach(string feature in features.Where(SessionCapabilities.IsClipboard))await WriteControl(new("capability-revoked-v2",Features:[feature]));
+                await Task.Delay(Timeout.Infinite,session.Token);return;
+            }
             long clipboardSequence = 0;
             await foreach (var update in clipboardUpdates.Reader.ReadAllAsync(session.Token))
                 if (gate.Allows(SessionCapabilities.ClipboardText)) await WriteControl(ClipboardTextProtocol.Encode(update, ++clipboardSequence));
@@ -115,7 +134,7 @@ internal static class VideoHostSession
                 }
                 else if (packet.Kind == "clipboard-state-v2")
                 {
-                    gate.RevokeFeature(SessionCapabilities.ClipboardText); clipboardUpdates.Writer.TryComplete();
+                    SessionCapabilities.RevokeClipboard(gate); clipboardUpdates.Writer.TryComplete();richClipboard?.Stop();clipboardSocket?.Close();
                 }
                 else if (packet.Kind == "file-state-v2")
                 {
@@ -172,7 +191,7 @@ internal static class VideoHostSession
             }
             catch (Exception error) when (error is IOException or OperationCanceledException or ObjectDisposedException) { }
         }
-        session.Cancel(); controlSocket.Close(); mediaSocket.Close(); dataSocket?.Close(); queue.Complete();
+        session.Cancel(); controlSocket.Close(); mediaSocket.Close(); dataSocket?.Close(); clipboardSocket?.Close();richClipboard?.Stop(); queue.Complete();
         try { if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure.Error).Throw(); await first; }
         finally
         {

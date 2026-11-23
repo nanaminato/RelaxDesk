@@ -27,7 +27,7 @@ internal sealed class HostProcess
     {
         if(Running) throw new InvalidOperationException("共享已在运行");
         if(!IPAddress.TryParse(ip,out var address)||address.Equals(IPAddress.Any)||address.Equals(IPAddress.IPv6Any)||port is <1 or >65535)throw new ArgumentException("请选择有效的本机 IP 和端口");
-        if(backend!="dxgi"&&!((backend is "test-hardware" or "test-clipboard")&&IPAddress.IsLoopback(address)))throw new ArgumentException("测试后端只用于本机回归");
+        if(backend!="dxgi"&&!((backend is "test-hardware" or "test-clipboard" or "test-clipboard-rich")&&IPAddress.IsLoopback(address)))throw new ArgumentException("测试后端只用于本机回归");
         var start=new ProcessStartInfo(Path.GetExtension(application).Equals(".exe",StringComparison.OrdinalIgnoreCase)?application:"dotnet") {UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true};
         if(!application.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))start.ArgumentList.Add(application);
         start.ArgumentList.Add("--shell");
@@ -57,7 +57,7 @@ internal sealed class HostProcess
                     if(type=="approval-request")
                     {
                         if(id is not {Length:32}||!id.All(char.IsAsciiHexDigit))throw new IOException("Host request identity missing");
-                        SessionId=id;ClipboardRequested=features.Contains(RelaxDesk.Core.SessionCapabilities.ClipboardText);FilesRequested=features.Contains(RelaxDesk.Core.SessionCapabilities.FileTransfer);
+                        SessionId=id;ClipboardRequested=features.Any(RelaxDesk.Core.SessionCapabilities.IsClipboard);FilesRequested=features.Contains(RelaxDesk.Core.SessionCapabilities.FileTransfer);
                     }
                     Pending=type=="approval-request";
                     if(type is "session-ended" or "listening") {SessionId=null;ClipboardRequested=FilesRequested=false;}

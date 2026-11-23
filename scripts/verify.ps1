@@ -90,6 +90,12 @@ try {
             Run-App $smokeDll $hostDll $mode
             if ($LASTEXITCODE) { throw "Clipboard smoke failed: $mode" }
         }
+        Run-App $smokeDll $hostDll --clipboard-binding
+        if ($LASTEXITCODE) { throw 'Clipboard binding isolation failed' }
+        foreach ($mode in @('--clipboard-rich','--clipboard-rich-denied','--clipboard-rich-failure','--clipboard-rich-transport','--clipboard-rich-replay','--clipboard-rich-format-denied')) {
+            Run-App $smokeDll $hostDll $mode
+            if ($LASTEXITCODE) { throw "Rich clipboard smoke failed: $mode" }
+        }
         foreach ($mode in @('--video-software', '--video-hardware', '--video-recovery', '--video-stalled', '--video-producer-failure', '--video-runtime-fallback', '--video-capture-recovery', '--video-capture-exhausted', '--video-control-timeout', '--video-idle-control')) {
             Run-App $smokeDll $hostDll $mode
             if ($LASTEXITCODE) { throw "Video smoke failed: $mode" }
@@ -99,6 +105,10 @@ try {
     }
     if($LargeFiles){Run-App $smokeDll $hostDll --file-resume-large (Join-Path $root 'build/file-resume-verification');if($LASTEXITCODE){throw '>1GiB production TLS file-resume verification failed'}}
     if ($Wpf) {
+        foreach($consent in @('granted','denied')) {
+            Run-App $viewer --rich-clipboard-session-contracts $hostDll $consent
+            if ($LASTEXITCODE) { throw "Viewer rich clipboard session failed: $consent" }
+        }
         if ($SkipInteractiveInput) { Write-Output 'SKIP keyboard foreground/interactive-input contracts (explicitly requested)' }
         else { Run-App $viewer --keyboard-contracts; if ($LASTEXITCODE) { throw 'Keyboard routing contracts failed' } }
         Run-App $viewer --file-ui-contracts $hostDll (Join-Path $root 'build/file-ui-verification')

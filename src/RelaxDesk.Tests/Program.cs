@@ -24,6 +24,7 @@ foreach (string invalid in new[] { "anything", "https://localhost/", invitation.
 { try { ConnectionInvitation.Parse(invalid); throw new Exception("Invalid invitation accepted"); } catch (FormatException) { Check(true); } }
 if (args is ["--core"]) { Console.WriteLine($"PASS {count} protocol/access/media checks (TLS not run)"); return; }
 count += await InputTlsChecks.Run();
+count += await ClipboardSessionTlsChecks.Run();
 count += await ApprovalTlsChecks.Run();
 count += await PinnedApprovalChecks.Run();
 count += await FeatureTlsChecks.Run();

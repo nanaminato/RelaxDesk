@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.Text.Json;
 namespace RelaxDesk.Core;
 
-public record Packet(string Kind, long Sequence = 0, int Width = 0, int Height = 0, byte[]? Data = null, string? Text = null, int X = 0, int Y = 0, int Code = 0, bool Up = false, double CaptureMs = 0, double EncodeMs = 0, string[]? Capabilities = null, string[]? Features = null, string? Origin = null, long Revision = 0, string? DataTicket = null, bool FileResume = false, string? FileScope = null,int InputVersion=0,RemoteInput? Input=null)
+public record Packet(string Kind, long Sequence = 0, int Width = 0, int Height = 0, byte[]? Data = null, string? Text = null, int X = 0, int Y = 0, int Code = 0, bool Up = false, double CaptureMs = 0, double EncodeMs = 0, string[]? Capabilities = null, string[]? Features = null, string? Origin = null, long Revision = 0, string? DataTicket = null, bool FileResume = false, string? FileScope = null,int InputVersion=0,RemoteInput? Input=null,string? ClipboardTicket=null)
 {
     public override string ToString() => $"Packet kind={Kind} sequence={Sequence} (payload redacted)";
 }
@@ -37,7 +37,7 @@ public sealed class AccessGate
     public bool Approved { get { lock (sync) return approved; } }
     private long sequence;
     int inputVersion;
-    static bool ValidStop(Packet packet)=>packet.Code==0&&!packet.Up&&packet.Text is null&&packet.Data is null&&packet.Features is null&&packet.Capabilities is null&&packet.Origin is null&&packet.Revision==0&&packet.DataTicket is null&&!packet.FileResume&&packet.FileScope is null&&packet.X==0&&packet.Y==0&&packet.Width==0&&packet.Height==0&&packet.CaptureMs==0&&packet.EncodeMs==0&&packet.Input is null&&packet.InputVersion==0;
+    static bool ValidStop(Packet packet)=>packet.Code==0&&!packet.Up&&packet.Text is null&&packet.Data is null&&packet.Features is null&&packet.Capabilities is null&&packet.Origin is null&&packet.Revision==0&&packet.DataTicket is null&&!packet.FileResume&&packet.FileScope is null&&packet.X==0&&packet.Y==0&&packet.Width==0&&packet.Height==0&&packet.CaptureMs==0&&packet.EncodeMs==0&&packet.Input is null&&packet.InputVersion==0&&packet.ClipboardTicket is null;
     public void Approve(IEnumerable<string>? grantedFeatures = null,int inputVersion=0)
     {
         if(inputVersion is not (0 or InputProtocol.Version))throw new InvalidDataException("Unsupported input version");
@@ -52,7 +52,7 @@ public sealed class AccessGate
         lock (sync)
         {
             if(p.Kind=="input-v2"){if(!approved||inputVersion!=InputProtocol.Version||p.Sequence<=sequence||!InputProtocol.ValidPacket(p))return false;sequence=p.Sequence;return true;}
-            if(p.Input is not null||p.InputVersion!=0)return false;
+            if(p.Input is not null||p.InputVersion!=0||p.ClipboardTicket is not null)return false;
             if (!approved || p.Sequence <= sequence || p.Kind != "input" || p.Code < 0 || p.Code > 259 || p.X < 0 || p.X > 65535 || p.Y < 0 || p.Y > 65535) return false;
             sequence = p.Sequence; return true;
         }
@@ -62,7 +62,7 @@ public sealed class AccessGate
         lock (sync)
         {
             if (p.Kind is "input" or "input-v2") return Accept(p);
-            if(p.Input is not null||p.InputVersion!=0)return false;
+            if(p.Input is not null||p.InputVersion!=0||p.ClipboardTicket is not null)return false;
             if (p.Kind == "file-state-v2")
             {
                 if (!approved || p.Sequence <= sequence || !originalFeatures.Contains(SessionCapabilities.FileTransfer) || !ValidStop(p)) return false;
@@ -70,7 +70,7 @@ public sealed class AccessGate
             }
             if (p.Kind is "clipboard-text-v2" or "clipboard-state-v2")
             {
-                if (!approved || p.Sequence <= sequence || !(p.Kind == "clipboard-state-v2" ? originalFeatures : features).Contains(SessionCapabilities.ClipboardText)) return false;
+                if (!approved || p.Sequence <= sequence || !(p.Kind == "clipboard-state-v2" ? originalFeatures.Any(SessionCapabilities.IsClipboard) : features.Contains(SessionCapabilities.ClipboardText))) return false;
                 if (p.Kind == "clipboard-text-v2" ? !ClipboardTextProtocol.IsValid(p) : !ValidStop(p)) return false;
                 sequence = p.Sequence; return true;
             }

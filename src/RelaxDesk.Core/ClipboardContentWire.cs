@@ -21,9 +21,17 @@ public static class ClipboardContentWire
         await stream.WriteAsync(length,ct);await stream.WriteAsync(header,ct);
         foreach(var part in new[]{text,update.Content.Png,html})if(part is not null)await stream.WriteAsync(part,ct);
     }
-    public static async Task<(long Sequence,ClipboardContentUpdate Update)> Read(Stream stream,CancellationToken ct=default)
+    public static async Task<(long Sequence,ClipboardContentUpdate Update)> Read(Stream stream,CancellationToken ct=default,TimeSpan? transferTimeout=null)
     {
-        byte[] length=new byte[4];await stream.ReadExactlyAsync(length,ct);int size=BinaryPrimitives.ReadInt32LittleEndian(length);
+        var budget=transferTimeout??TimeSpan.FromSeconds(10);if(budget<=TimeSpan.Zero||budget>TimeSpan.FromSeconds(30))throw new ArgumentOutOfRangeException(nameof(transferTimeout));
+        byte[] length=new byte[4];int first=await stream.ReadAsync(length.AsMemory(0,1),ct);if(first==0)throw new EndOfStreamException();
+        using var deadline=CancellationTokenSource.CreateLinkedTokenSource(ct);deadline.CancelAfter(budget);
+        try{return await ReadBody(stream,length,deadline.Token);}
+        catch(OperationCanceledException)when(!ct.IsCancellationRequested){throw new IOException("Clipboard content transfer timed out");}
+    }
+    static async Task<(long Sequence,ClipboardContentUpdate Update)> ReadBody(Stream stream,byte[] length,CancellationToken ct)
+    {
+        await stream.ReadExactlyAsync(length.AsMemory(1),ct);int size=BinaryPrimitives.ReadInt32LittleEndian(length);
         if(size is <2 or >MaximumHeaderBytes)throw new InvalidDataException("Invalid clipboard header length");
         byte[] bytes=new byte[size];await stream.ReadExactlyAsync(bytes,ct);
         using(var document=JsonDocument.Parse(bytes))
@@ -49,17 +57,22 @@ public static class ClipboardContentWire
 // is the cross-direction Lamport value; it is not the transport sequence.
 public sealed class ClipboardContentReceiver(AccessGate gate,Func<ClipboardContentUpdate,bool> receive)
 {
+    readonly object sync=new();
     long sequence;
     public bool TryAccept(long candidate,ClipboardContentUpdate update)
     {
         if(candidate<=0||!ClipboardContentRules.Valid(update))return false;
         var formats=ClipboardFormats.Granted(gate);if(!formats.Allows(update.Content))return false;
-        bool accepted=false;
-        gate.TryExecuteFeature(formats.Permission(update.Content),()=>
+        var owned=update with{Content=update.Content.Own()};
+        lock(sync)
         {
-            if(candidate<=sequence||!ClipboardFormats.Granted(gate).Allows(update.Content)||!receive(update))return;
-            sequence=candidate;accepted=true;
-        });
-        return accepted;
+            bool accepted=false;
+            gate.TryExecuteFeature(formats.Permission(owned.Content),()=>
+            {
+                if(candidate<=sequence||!ClipboardFormats.Granted(gate).Allows(owned.Content)||!receive(owned))return;
+                sequence=candidate;accepted=true;
+            });
+            return accepted;
+        }
     }
 }
