@@ -1,5 +1,7 @@
 # Text clipboard synchronization
 
+Image/HTML continuation: the [bounded content/codec/Windows adapter foundation](CLIPBOARD-CONTENT.md) is implemented, but its dedicated session binding and consent/UI are not yet connected. Existing production text behavior below remains the current user-facing capability.
+
 Implemented as the next office slice; no per-slice package is produced at the owner's request. A final package/test pass is deferred until the development goal is ready.
 
 Both endpoints opt in. Viewer requests text clipboard on the connection form; Host sees a separate unchecked permission in the approval card. Ordinary Approve grants screen/input only. CLI uses `APPROVE_CLIPBOARD` for the additional requested feature. Neither side transmits the pre-existing clipboard at startup: the first supported snapshot establishes a local baseline. Copy new text after approval.

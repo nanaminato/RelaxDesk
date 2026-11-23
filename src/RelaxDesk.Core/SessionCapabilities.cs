@@ -5,12 +5,14 @@ namespace RelaxDesk.Core;
 public static class SessionCapabilities
 {
     public const string ClipboardText = "clipboard.text";
+    public const string ClipboardImage = "clipboard.image";
+    public const string ClipboardHtml = "clipboard.html";
     public const string FileTransfer = "file.transfer";
     public static string[] Validate(string[]? features)
     {
         if (features is null) return [];
         if (features.Length > 8 || features.Distinct(StringComparer.Ordinal).Count() != features.Length ||
-            features.Any(feature => feature is not (ClipboardText or FileTransfer))) throw new InvalidDataException("Unsupported session capabilities");
+            features.Any(feature => feature is not (ClipboardText or ClipboardImage or ClipboardHtml or FileTransfer))) throw new InvalidDataException("Unsupported session capabilities");
         return features.ToArray();
     }
     public static string[] Grant(string[]? requested, bool allowClipboard, bool allowFiles = false) => Validate(requested)

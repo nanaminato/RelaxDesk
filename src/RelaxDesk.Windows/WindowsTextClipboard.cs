@@ -3,9 +3,10 @@ using RelaxDesk.Core;
 
 namespace RelaxDesk.Windows;
 
-// CF_UNICODETEXT only, no delayed rendering or OLE/UI dependency. Lifetime and
-// all Win32 calls stay on the synchronizer thread; ownership uses a real HWND.
-public sealed class WindowsTextClipboard : ITextClipboard
+// The legacy interface uses CF_UNICODETEXT; the rich interface is in the
+// WindowsContentClipboard partial. No delayed rendering or OLE/UI dependency.
+// All Win32 calls stay on the synchronizer thread; ownership uses a real HWND.
+public sealed partial class WindowsTextClipboard : ITextClipboard
 {
     const uint UnicodeText = 13;
     static int activeWorker;
@@ -111,6 +112,6 @@ public sealed class WindowsTextClipboard : ITextClipboard
     {
         if (window == 0) return; Verify();
         if (!DestroyWindow(window)) throw new IOException("Clipboard worker window destruction failed");
-        window = 0; cached = null; Interlocked.Exchange(ref activeWorker, 0);
+        window = 0; cached = null;richCached=null; Interlocked.Exchange(ref activeWorker, 0);
     }
 }

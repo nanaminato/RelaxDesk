@@ -55,6 +55,8 @@ try {
     if ($LASTEXITCODE) { throw 'Windows contracts failed' }
     Run-App $smokeDll --input-contracts
     if ($LASTEXITCODE) { throw 'Input contracts failed' }
+    Run-App $smokeDll --clipboard-image-contracts
+    if ($LASTEXITCODE) { throw 'Clipboard PNG/BMP codec contracts failed' }
     & $probe --present-contracts
     if ($LASTEXITCODE) { throw 'Present state contracts failed' }
     & $probe --capture-contracts

@@ -57,3 +57,5 @@ RD int32_t rd_renderer_probe_pixel(void* renderer, uint32_t x, uint32_t y, uint3
 RD void rd_renderer_destroy(void* renderer);
 RD void rd_get_live_resources(rd_live_resources* resources);
 RD const char* rd_last_error();
+RD int32_t rd_clipboard_image_decode(const uint8_t* data,uint32_t bytes,uint32_t format,uint32_t width,uint32_t height,uint8_t* bgra,uint32_t capacity);
+RD int32_t rd_clipboard_image_encode(const uint8_t* bgra,uint32_t bytes,uint32_t width,uint32_t height,uint8_t* png,uint32_t capacity,uint32_t* written);

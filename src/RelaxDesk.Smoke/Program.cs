@@ -5,6 +5,7 @@ using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using RelaxDesk.Core;
+if(args is ["--clipboard-image-contracts"]){try{RelaxDesk.Windows.ClipboardImageContracts.Run();}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is ["--input-contracts"]){RelaxDesk.Windows.InputContracts.Run();return;}
 if(args is ["--file-resume-contracts",var resumeFixtures]){await RelaxDesk.Windows.FileResumeContracts.Run(resumeFixtures);return;}
 if(args is [var largeResumeHost,"--file-resume-large",var largeResumeFixtures]){await LargeFileResumeSmoke.Run(largeResumeHost,largeResumeFixtures);return;}
