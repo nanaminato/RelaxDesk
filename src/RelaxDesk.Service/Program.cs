@@ -4,6 +4,12 @@ using RelaxDesk.Service;
 using RelaxDesk.Session;
 
 if(args is ["--version"]){Console.WriteLine(BuildIdentity.Display);return;}
+if(args.Length>0&&args[0] is "--install-service" or "--uninstall-service")
+{
+    try{await SetupCommands.Run(args);}
+    catch(Exception error){Console.Error.WriteLine($"service_setup_failed error_type={error.GetType().Name} reason={error.Message}");Environment.ExitCode=1;}
+    return;
+}
 if(args is ["--service","--owner-sid",var user])
 {
     try{NativeService.Run(LocalAgentPipe.CanonicalUser(user));}
@@ -22,5 +28,5 @@ if(args is ["--pipe-contract-server",var pipe,"--owner-sid",var owner])
     catch(Exception error){Console.Error.WriteLine($"broker_contract_failed error_type={error.GetType().Name} hresult=0x{error.HResult:X8}");Environment.ExitCode=1;}
     return;
 }
-Console.WriteLine("RelaxDesk session broker: SCM --service --owner-sid <explicit user SID>; no capture, input, network listener, process launch or installation command.");
+Console.WriteLine("RelaxDesk broker: --install-service --package <bundle> --owner-sid <user SID> [--automatic|--manual] [--start] [--what-if]; --uninstall-service --owner-sid <user SID> [--what-if]. Changes require explicit administrator elevation. No desktop permission or firewall change.");
 Environment.ExitCode=2;

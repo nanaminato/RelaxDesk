@@ -56,6 +56,8 @@ try {
     if ($LASTEXITCODE) { throw 'Core/TLS checks failed' }
     Run-App $smokeDll $serviceDll --broker-contracts
     if ($LASTEXITCODE) { throw 'Local broker identity/lease/IPC failed' }
+    Run-App $smokeDll $serviceDll --service-setup-contracts (Join-Path $root 'build/machine-service-setup-verification')
+    if ($LASTEXITCODE) { throw 'Machine service deployment/ACL/transaction contracts failed' }
     Run-App $smokeDll --windows-contracts
     if ($LASTEXITCODE) { throw 'Windows contracts failed' }
     Run-App $smokeDll --session-contracts

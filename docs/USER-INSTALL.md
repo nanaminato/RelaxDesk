@@ -1,6 +1,6 @@
 # Current-user installation, upgrade and removal
 
-Implemented source: `scripts/Install-RelaxDesk.ps1`, `scripts/Uninstall-RelaxDesk.ps1`, shared `RelaxDesk.Setup.psm1`, and the future bundle's `Install-RelaxDesk.cmd`. Packaging scripts now include these files but have **not** been executed for this slice. Existing distributed archives are unchanged. Optional service installation remains separate, unfinished work.
+Implemented source: `scripts/Install-RelaxDesk.ps1`, `scripts/Uninstall-RelaxDesk.ps1`, shared `RelaxDesk.Setup.psm1`, and the future bundle's `Install-RelaxDesk.cmd`. Packaging scripts now include these files but have **not** been executed for this slice. Existing distributed archives are unchanged. Optional [machine service installation](MACHINE-SERVICE-INSTALL.md) is separately implemented in source; actual elevated deployment remains unaccepted.
 
 ## Install
 
@@ -47,4 +47,4 @@ The registered command uses Windows PowerShell without changing execution policy
 
 API conventions: [uninstall registration values](https://learn.microsoft.com/en-us/windows/win32/msi/uninstall-registry-key), [WSH shortcut targets and working directories](https://learn.microsoft.com/en-us/troubleshoot/windows-client/admin-development/create-desktop-shortcut-with-wsh).
 
-The optional [broker executable and HostShell lease mode](SESSION-BROKER.md) now exist in source. A future user bundle may carry the executable, but copying it does not register a service. Machine service installation must be a separate explicit operation with protected binaries and reviewed ACLs; current-user app directories are not suitable service image paths. No such machine installer has been run or accepted.
+The optional [broker executable and HostShell lease mode](SESSION-BROKER.md) now exist in source. A future user bundle may carry the executable, but copying it does not register a service. Machine service installation must be a separate explicit operation with protected binaries and reviewed ACLs; current-user app directories are not suitable service image paths. The [explicit machine setup entry](MACHINE-SERVICE-INSTALL.md) now has source/contract evidence; actual privileged install/start/removal has not been run or accepted.

@@ -58,6 +58,7 @@ internal static class NativeService
                 State(2);
                 using var identity=WindowsIdentity.GetCurrent();using var process=Process.GetCurrentProcess();
                 if(process.SessionId!=0||identity.User?.IsWellKnown(WellKnownSidType.LocalServiceSid)!=true)throw new SecurityException("Broker requires LocalService in Session 0");
+                ServiceDeploymentTrust.RequireRuntime(AppContext.BaseDirectory,approvedUser);
                 broker=new(approvedUser,diagnostic:text=>Log(text));
                 if(Volatile.Read(ref stopRequested)!=0)broker.RequestStop();
                 broker.Run(CancellationToken.None,()=>State(4)).GetAwaiter().GetResult();
