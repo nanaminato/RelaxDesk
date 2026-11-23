@@ -44,6 +44,8 @@ public sealed partial class ViewerWindow
                 if (window.connectionPhase != ConnectionPhase.Failed || window.connectionGeneration != 1 || window.connectionRun is not null || window.session is not null || !window.ConnectionPanelVisible)
                     throw new IOException("Invalid media/UI fault retried or left active session state");
                 if (!window.status.Text.Contains(mode == "cpu-submit" ? "画面显示失败" : mode == "viewer-update" ? "界面更新失败" : "视频解码失败")) throw new IOException("Pipeline failure misclassified in UI");
+                if (window.connectionError?.Stage != mode || window.connectionError.CorrelationId == "none" || window.errorReport.Text.Contains(original.Message) || window.errorReport.Text.Contains(token) || window.errorReport.Text.Contains(pin))
+                    throw new IOException("Actual pipeline error detail missing or disclosed sensitive data");
                 await host.WaitForExitAsync(deadline.Token); string output = await logs;
                 if (host.ExitCode != 0 || !output.Contains("session_cleanup native_live_resources=0") || !GraphicsDiagnostics.Resources().Empty)
                     throw new IOException("Pipeline fault leaked Host/Viewer resources");

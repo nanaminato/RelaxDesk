@@ -32,6 +32,7 @@ internal static class OfficeAcceptanceCases
         foreach (string mode in new[] { "viewport", "input-ui", "hwnd", "ui", "toolbar" })
             Add("office-viewer-" + mode, a.Viewer, "--" + mode + "-contracts");
         Add("office-viewer-diagnostics", a.Viewer, "--diagnostic-log-contracts", Folder("viewer-diagnostics"));
+        Add("office-viewer-error-details", a.Viewer, "--error-details-contracts", Folder("error-details"));
         foreach (string mode in new[] { "cpu-decode", "cpu-submit", "viewer-update" })
             Add("office-viewer-failure-" + mode, a.Viewer, "--pipeline-failure-contracts", a.Host, mode);
         foreach (string mode in new[] { "display", "display-legacy", "topology", "topology-race", "audio" })

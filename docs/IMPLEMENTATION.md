@@ -2,6 +2,8 @@
 
 ## Current office continuation checkpoint — 2026-11-24
 
+Viewer now exposes [safe error details and async local copying](ERROR-DETAILS.md), backed by immutable bounded metadata rather than exception messages or user fields. [Evidence](../benchmarks/2026-11-24-error-details-validation.md): 2,070 Core/TLS checks and 76 shared office executable cases pass; actual WPF UI/privacy/timeout and production Host/TLS fault population are distinct from pending real clipboard/Home acceptance. No intermediate package.
+
 The [shared office acceptance suite](OFFICE-ACCEPTANCE.md) now drives developer DLLs and future packaged EXEs from one 75-case definition, with bounded output/manifest verification, strict failed-evidence handling and explicit physical exclusions. [Validation](../benchmarks/2026-11-24-office-collector-validation.md) records a real full-suite reconnect failure and the media/control shutdown-order repair, rather than waiving it. New `Test-Office.cmd` and collector recipe are source-prepared; a new self-contained bundle is still deferred.
 
 Viewer now [retains first pipeline failures and distinguishes stages](DIAGNOSTICS.md#viewer-first-failure-and-stage-attribution), including controlled CPU submission/post-frame UI teardown and transport-only automatic retry. [Actual WPF/TLS fault injection and regression evidence](../benchmarks/2026-11-24-viewer-failure-validation.md) verifies original exception identity, UI messages, no inappropriate retry and native cleanup; physical GPU/scanout remains pending.

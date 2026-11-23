@@ -37,7 +37,8 @@ public sealed class App : Application
         try
         {
             var app = new App();
-            if(args is ["--pipeline-failure-contracts",var pipelineHost,var pipelineStage])ViewerWindow.VerifyPipelineFailure(app,pipelineHost,pipelineStage);
+            if(args is ["--error-details-contracts",var errorFixtures])ViewerWindow.VerifyErrorDetails(app,errorFixtures);
+            else if(args is ["--pipeline-failure-contracts",var pipelineHost,var pipelineStage])ViewerWindow.VerifyPipelineFailure(app,pipelineHost,pipelineStage);
             else if(args is ["--diagnostic-log-contracts",var diagnosticFixtures])DiagnosticLogVerification.Run(app,diagnosticFixtures);
             else if(args is ["--viewport-contracts"])ViewerWindow.VerifyViewport(app);
             else if(args is ["--audio-session-contracts",var audioHost])ViewerWindow.VerifyAudioSession(app,audioHost);
@@ -106,7 +107,7 @@ public sealed partial class ViewerWindow : Window
                 ApplyInvitation();
                 if (legacy.IsChecked == true) await Connect(); else await ConnectVideo();
             }
-            catch (Exception error) { status.Text = error.Message; }
+            catch (Exception error) { status.Text = error.Message; ShowConnectionError(error, "configuration"); }
         };
         disconnect.Click += (_, _) => { StopLocalPreview(); StopConnection(); };
         Closed += (_, _) => { StopLocalPreview(); StopConnection(); };
@@ -177,7 +178,8 @@ public sealed partial class ViewerWindow : Window
         ++connectionGeneration; Exception? attemptError=null; bool established=false,restoreFullScreen=target.FullScreen; string[] retryFeatures=target.Features;long connectedAt=0;bool fileTransportInterrupted=false;
         while (outgoing.Reader.TryRead(out _)) { }
         using var connection = new SessionClient { RequestedFeatures = target.Features,RequestedDisplayVersion=target.DisplayVersion,RequestedVideoVersion=VideoSettingsProtocol.Version }; using var abort = cancellation.Token.Register(connection.Dispose);
-        connection.PhaseChanged+=phase=>{if(ReferenceEquals(session,cancellation)&&!cancellation.IsCancellationRequested)SetConnectionPhase(phase);};
+        string attemptStage = "connect";
+        connection.PhaseChanged+=phase=>{attemptStage=phase switch { ConnectionPhase.Authenticating=>"authenticating",ConnectionPhase.AwaitingApproval=>"awaiting-approval",ConnectionPhase.Negotiating=>"negotiating",ConnectionPhase.Connected=>"session-setup",_=>"connect" };if(ReferenceEquals(session,cancellation)&&!cancellation.IsCancellationRequested)SetConnectionPhase(phase);};
         ClipboardSynchronizer? clipboard = null;
         Task? fileVerification = null;
         Task? clipboardVerification=null;
@@ -492,7 +494,7 @@ public sealed partial class ViewerWindow : Window
             if(ended is not null)System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ended).Throw();
         }
         catch (OperationCanceledException error) when (cancellation.IsCancellationRequested) { attemptError=error; status.Text = "已断开连接"; }
-        catch (Exception e) { attemptError=e; if (smoke is null) ViewerSessionLog.Record("connection-error", e); status.Text = "连接已断开：" + e.Message + "。请保留 Host 的 session_end 日志。"; }
+        catch (Exception e) { attemptError=e; if (smoke is null) ViewerSessionLog.Record("connection-error", e); if(e is not RemoteSessionEndedException)ShowConnectionError(e,lastPipelineFailure?.Stage??attemptStage); status.Text = "连接已断开：" + e.Message + "。请保留 Host 的 session_end 日志。"; }
         finally
         {
             heartbeat?.Stop(); cancellation.Cancel();EndStatistics();EndVideoSettings(); EndDisplaySession(); EndViewport(); ResetInputState(); CompositionTarget.Rendering -= Rendering; ReleaseHeldInputs(); cpu.Clear(); image.Visibility = Visibility.Visible;
@@ -523,6 +525,7 @@ public sealed partial class ViewerWindow : Window
     }
     async Task Connect()
     {
+        using var diagnosticScope = DiagnosticCorrelation.Begin(); ClearConnectionError();
         StopLocalPreview(); connectionCard.IsEnabled = false; disconnect.IsEnabled = true; connect.IsEnabled = false; using var cancellation = new CancellationTokenSource(); session = cancellation; sequence = 0; ResetInputState();
         connectionEnded = new(TaskCreationOptions.RunContinuationsAsynchronously);
         while (outgoing.Reader.TryRead(out _)) { }
@@ -554,7 +557,7 @@ public sealed partial class ViewerWindow : Window
             }
             finally { cancellation.Cancel(); client.Close(); try { await writer; } catch (Exception e) when (e is IOException or OperationCanceledException or ObjectDisposedException) { } }
         }
-        catch (Exception e) { status.Text = $"Disconnected: {e.Message}"; }
+        catch (Exception e) { if(!cancellation.IsCancellationRequested){ShowConnectionError(e,"legacy");ViewerSessionLog.Record("legacy-connection-error",e);} status.Text = $"Disconnected: {e.Message}"; }
         finally { ReleaseHeldInputs(); ResetInputState(); session = null; image.Source = null; connect.IsEnabled = true; connectionCard.IsEnabled = true; disconnect.IsEnabled = false; ShowConnectedView(false); connectionEnded.TrySetResult(); }
     }
 }

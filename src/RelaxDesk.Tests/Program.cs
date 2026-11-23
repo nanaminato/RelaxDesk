@@ -22,6 +22,7 @@ count += WorkerRestartChecks.Run();
 count += await AudioChecks.Run();
 count += AudioSessionChecks.Policies();
 count += ConnectionHistoryChecks.Run();
+count += ConnectionErrorDetailsChecks.Run();
 count += await MetricsChecks.Run();
 count += await VideoSettingsChecks.Run();
 count += DisplayChecks.Run();

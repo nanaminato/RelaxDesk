@@ -17,6 +17,7 @@ public sealed partial class ViewerWindow
     void SetConnectionPhase(ConnectionPhase phase)
     {
         connectionPhase = phase;
+        if (phase == ConnectionPhase.Connected) ClearConnectionError();
         status.Text = phase switch
         {
             ConnectionPhase.Connecting => "正在连接远程电脑…",
@@ -31,8 +32,9 @@ public sealed partial class ViewerWindow
     async Task ConnectVideo()
     {
         if (connectionRun is not null) return;
+        ClearConnectionError();
         if (!IPAddress.TryParse(host.Text.Trim(), out var address) || address.Equals(IPAddress.Any) || address.Equals(IPAddress.IPv6Any) || !int.TryParse(port.Text, out int number) || number is < 1 or > 65535)
-        { status.Text = "请输入有效的远程 IP 和端口。"; return; }
+        { status.Text = "请输入有效的远程 IP 和端口。"; ShowConnectionError(new FormatException("Invalid endpoint"), "configuration"); return; }
         var target = new ConnectionTarget(address.ToString(), number, pinnedConnection.IsChecked == true, fingerprint.Text, token.Password, RequestedFeatures(), fullScreen,requestTopology.IsChecked==true?DisplayProtocol.TopologyVersion:DisplayProtocol.Version);
         using var lifetime = new CancellationTokenSource(); connectionRun = lifetime;
         connectionEnded = new(TaskCreationOptions.RunContinuationsAsynchronously);

@@ -101,6 +101,8 @@ try {
         if ($LASTEXITCODE) { throw "Security smoke failed: $mode" }
     }
     if ($Wpf) {
+        Run-App $viewer --error-details-contracts (Join-Path $root 'build/error-details-verification')
+        if($LASTEXITCODE){throw 'Viewer safe error details/lifecycle failed'}
         foreach($failureStage in @('cpu-decode','cpu-submit','viewer-update')){
             Run-App $viewer --pipeline-failure-contracts $hostDll $failureStage
             if($LASTEXITCODE){throw "Viewer original pipeline failure lost: $failureStage"}

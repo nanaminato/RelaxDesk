@@ -22,7 +22,8 @@ public sealed partial class ViewerWindow
         actions.Children.Add(full); actions.Children.Add(disconnect); DockPanel.SetDock(actions, Dock.Right); toolbar.Children.Add(actions);
         toolbar.Children.Add(new TextBlock { Text = "RelaxDesk   " + BuildIdentity.Display, ToolTip = BuildIdentity.Version, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(20, 0, 0, 0), FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
         windowToolbar = toolbar; DockPanel.SetDock(toolbar, Dock.Top); root.Children.Add(toolbar);
-        var footer = new Border { Background = Brushes.White, Padding = new Thickness(18, 9, 18, 9) }; status.Text = "准备连接"; status.TextWrapping = TextWrapping.Wrap; status.Foreground = Brushes.DimGray; footer.Child = status; DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
+        var footer = new Border { Background = Brushes.White, Padding = new Thickness(18, 9, 18, 9) }; status.Text = "准备连接"; status.TextWrapping = TextWrapping.Wrap; status.Foreground = Brushes.DimGray;
+        var footerContent = new StackPanel(); footerContent.Children.Add(status); BuildErrorDetails(footerContent); footer.Child = footerContent; DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
         connectionFooter = footer;
         renderPanel.Background = Background;
         image.Focusable = true; BuildViewport();

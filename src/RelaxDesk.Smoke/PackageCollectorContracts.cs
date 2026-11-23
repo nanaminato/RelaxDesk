@@ -51,7 +51,7 @@ internal sealed partial class PackageCollector
         Check(await collector.Exec("unwritable", application, ["--collector-output-fixture", "10"]) != 0 && collector.steps.Last().status == "FAIL", "Child exit 0 hid failed evidence write");
         var applications = new OfficeApplications("host", "viewer", "shell", "service", "smoke", "tests");
         var cases = OfficeAcceptanceCases.Create(applications, fixture);
-        foreach (string requirement in new[] { "office-core-tls", "office-collector", "office-broker", "office-service-setup", "office-file-resume", "office-persistent-host", "office-network-shaped", "office-topology", "office-viewer-audio", "office-viewer-file-session", "office-viewer-reconnect", "office-viewer-video-settings-static", "office-viewer-failure-viewer-update", "office-viewer-diagnostics", "office-host-recovery" })
+        foreach (string requirement in new[] { "office-core-tls", "office-collector", "office-broker", "office-service-setup", "office-file-resume", "office-persistent-host", "office-network-shaped", "office-topology", "office-viewer-audio", "office-viewer-file-session", "office-viewer-reconnect", "office-viewer-video-settings-static", "office-viewer-failure-viewer-update", "office-viewer-diagnostics", "office-viewer-error-details", "office-host-recovery" })
             Check(cases.Any(test => test.Name == requirement), "Office acceptance omitted " + requirement);
         string[] forbidden = ["--keyboard-contracts", "--capture-test", "--capture-diagnose", "--video-desktop", "--render-test", "--present-diagnose"];
         Check(cases.All(test => !test.Arguments.Any(argument => forbidden.Contains(argument))), "Physical action entered synthetic office suite");
