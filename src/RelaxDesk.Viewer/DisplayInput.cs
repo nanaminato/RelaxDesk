@@ -21,7 +21,7 @@ public sealed partial class ViewerWindow
     void RefreshDisplayMenu()
     {
         sessionToolbar?.SetDisplays(displaySession?.Snapshot,displaySession?.Ready==true,SelectRemoteDisplay);
-        bool inputReady=inputAuthorized&&(displaySession is null||displaySession.Ready);
+        bool inputReady=inputAuthorized&&viewportInputReady&&(displaySession is null||displaySession.Ready);
         sessionToolbar?.SetRemoteInputReady(inputReady);
         sessionToolbar?.SetTextInput(inputReady&&inputVersion==2?OpenTextInput:null);
     }
@@ -29,7 +29,7 @@ public sealed partial class ViewerWindow
     {
         if(displaySession?.Ready!=true||session is null||session.IsCancellationRequested)return;
         if(id==displaySession.Snapshot.Selected){RefreshDisplayMenu();return;}
-        ReleaseHeldInputs();CloseTextInput();long generation=displaySession.Begin(id);
+        ReleaseHeldInputs();CloseTextInput();ResetViewportPan();long generation=displaySession.Begin(id);
         if(!outgoing.TryWrite(new("display-select-v2",++sequence,DisplayId:id,DisplayGeneration:generation))){session.Cancel();return;}
         StartDisplayDeadline();RefreshDisplayMenu();status.Text="正在切换屏幕，等待新画面后恢复输入…";
     }

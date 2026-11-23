@@ -13,7 +13,10 @@ public sealed class NativeVideoHost : HwndHost
     public Action? InputFocusLost;
     public Action? InputCaptureLost;
     public Action? RenderInvalidated;
-    int videoWidth, videoHeight;
+    sealed record VideoSize(int Width,int Height);
+    VideoSize? videoSize;
+    ViewportOptions viewport=new();
+    public void SetViewport(ViewportOptions options){if(!options.Valid)throw new ArgumentException("Invalid viewport");Volatile.Write(ref viewport,options);RenderInvalidated?.Invoke();}
     nint previousIme;
     bool keyboardAttached, keyboardOwned;
     Action<string[]>? filesDropped;
@@ -26,7 +29,7 @@ public sealed class NativeVideoHost : HwndHost
     [DllImport("user32.dll")] static extern nint GetAncestor(nint hwnd, uint flags);
     [DllImport("imm32.dll")] static extern nint ImmAssociateContext(nint hwnd, nint context);
     [DllImport("imm32.dll")] static extern uint ImmGetVirtualKey(nint hwnd);
-    public void SetVideoSize(int width, int height) { Volatile.Write(ref videoWidth, width); Volatile.Write(ref videoHeight, height); }
+    public void SetVideoSize(int width, int height) { Volatile.Write(ref videoSize,new(width,height)); }
     [StructLayout(LayoutKind.Sequential)] struct Rect { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")] static extern bool GetClientRect(nint hwnd, out Rect rect);
     [DllImport("user32.dll")] static extern nint SetFocus(nint hwnd);
@@ -66,8 +69,21 @@ public sealed class NativeVideoHost : HwndHost
     {
         var point=new Point{X=(short)((long)packed&65535),Y=(short)((long)packed>>16)};
         if(screen&&!ScreenToClient(hwnd,ref point))return false;
-        if(!GetClientRect(hwnd,out var rect)||!PointerPosition.TryNormalize(point.X,point.Y,rect.Right,rect.Bottom,Volatile.Read(ref videoWidth),Volatile.Read(ref videoHeight),dragging,out int x,out int y))return false;
+        if(!GetClientRect(hwnd,out var rect)||!TryPosition(point.X,point.Y,rect.Right,rect.Bottom,dragging,out int x,out int y))return false;
         RichInput?.Invoke(new("move",X:x,Y:y));return true;
+    }
+    internal bool TryPosition(double x,double y,int width,int height,bool dragging,out int nx,out int ny)
+    {
+        nx=ny=0;var size=Volatile.Read(ref videoSize);int vw=size?.Width??0,vh=size?.Height??0;
+        if(width<=0||height<=0||width>8192||height>8192||vw<=0||vh<=0)return false;
+        return VideoViewport.Calculate(width,height,vw,vh,Volatile.Read(ref viewport)).TryNormalize(x,y,dragging,out nx,out ny);
+    }
+    bool SendLegacyPosition(nint hwnd,nint packed,bool dragging,bool screen=false)
+    {
+        var point=new Point{X=(short)((long)packed&65535),Y=(short)((long)packed>>16)};
+        if(screen&&!ScreenToClient(hwnd,ref point))return false;
+        if(!GetClientRect(hwnd,out var client)||!TryPosition(point.X,point.Y,client.Right,client.Bottom,dragging,out int nx,out int ny))return false;
+        Input?.Invoke(0,false,nx,ny);return true;
     }
     bool RouteRichPointer(nint hwnd,int message,nint wParam,nint lParam)
     {
@@ -143,19 +159,12 @@ public sealed class NativeVideoHost : HwndHost
         if(RichInput is not null&&RouteRichPointer(hwnd,message,wParam,lParam)){handled=true;return message is 0x20B or 0x20C or 0x20D?1:0;}
         if (message == MouseMove)
         {
-            int width = Volatile.Read(ref videoWidth), height = Volatile.Read(ref videoHeight);
-            if (width > 0 && height > 0 && GetClientRect(hwnd, out var client) && client.Right > 0 && client.Bottom > 0)
-            {
-                double scale = Math.Min((double)client.Right / width, (double)client.Bottom / height);
-                double x = ((short)((long)lParam & 0xffff) - (client.Right - width * scale) / 2) / (width * scale);
-                double y = ((short)(((long)lParam >> 16) & 0xffff) - (client.Bottom - height * scale) / 2) / (height * scale);
-                if (x >= 0 && x <= 1 && y >= 0 && y <= 1) Input?.Invoke(0, false, (int)(x * 65535), (int)(y * 65535));
-            }
+            SendLegacyPosition(hwnd,lParam,GetCapture()==hwnd);
             handled = true;
         }
-        else if (message is LeftDown or RightDown) { FocusRemoteKeyboard(); SetCapture(hwnd); Input?.Invoke(message == LeftDown ? 256 : 257, false, 0, 0); handled = true; }
-        else if (message is LeftUp or RightUp) { Input?.Invoke(message == LeftUp ? 256 : 257, true, 0, 0); if (((long)wParam & 3) == 0) ReleaseCapture(); handled = true; }
-        else if (message == Wheel) { Input?.Invoke((short)(((long)wParam >> 16) & 0xffff) > 0 ? 258 : 259, false, 0, 0); handled = true; }
+        else if (message is LeftDown or RightDown) { if(SendLegacyPosition(hwnd,lParam,false)){FocusRemoteKeyboard();SetCapture(hwnd);pointerButtons.Add(message==LeftDown?1:2);Input?.Invoke(message == LeftDown ? 256 : 257, false, 0, 0);}handled = true; }
+        else if (message is LeftUp or RightUp) { if(pointerButtons.Remove(message==LeftUp?1:2)){SendLegacyPosition(hwnd,lParam,true);Input?.Invoke(message == LeftUp ? 256 : 257, true, 0, 0);}if(pointerButtons.Count==0&&GetCapture()==hwnd)ReleaseCapture();handled = true; }
+        else if (message == Wheel) { if(SendLegacyPosition(hwnd,lParam,false,true))Input?.Invoke((short)(((long)wParam >> 16) & 0xffff) > 0 ? 258 : 259, false, 0, 0); handled = true; }
         else if (message is 0x100 or 0x101 or 0x104 or 0x105 or 0x102 or 0x103 or 0x106 or 0x107 or 0x286) handled = RouteKeyboard(new MSG { hwnd = hwnd, message = message, wParam = wParam, lParam = lParam });
         // HwndHost enforces layout geometry on WM_WINDOWPOSCHANGING and clears
         // its HWND on WM_NCDESTROY. Skipping the base loses both contracts.

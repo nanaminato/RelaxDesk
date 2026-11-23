@@ -6,6 +6,8 @@ Host now returns to Listening after each separately authorized session. HostShel
 
 File-transfer UI checkpoint: [scoped directory + third pinned TLS stream](docs/FILE-TRANSFER.md), Host folder consent, Viewer directory browser, recursive queue, confirmed drag-drop and live revoke are implemented. [Automated evidence](benchmarks/2026-11-23-file-ui-validation.md). Cross-session resume is implemented in memory; physical Home acceptance remains pending; no new package until the final milestone.
 
+Viewer now offers [fit, physical 1:1, custom zoom and local panning](docs/VIEWPORT.md), with shared CPU/GPU/input geometry and redraw readiness. Physical mixed-DPI and pointer landing acceptance remain pending.
+
 Current development source adds [independently authorized text/image/HTML clipboard](docs/CLIPBOARD-CONTENT.md) and [rich keyboard/pointer input with explicit local-IME text submission](docs/INPUT-PROTOCOL.md). Production Host/Viewer clipboard integration is tested with isolated providers; real Windows clipboard/Home application and IME acceptance remain pending. Packaging is deferred until the final milestone at the owner's request; the existing 0.4.2 ZIP predates these features.
 
 2026-11-23 continuation: bounded capture recovery/control liveness, remote shortcut menu and pointer-motion coalescing are delivered as a self-contained 0.4.2 acceptance slice. See [product readiness](docs/PRODUCT-READINESS.md) and [exact build/test evidence](benchmarks/2026-11-23-office-readiness.md). This historical package predates clipboard, file and reconnect development; physical Home acceptance remains open.
@@ -102,6 +104,6 @@ Windows acceptance package: run `Start-Host.cmd` on the shared PC and `Start-Vie
 
 Confirmed file clipboard now reuses the scoped queue and independently approved file/clipboard capabilities. It publishes CF_HDROP only after complete staging, with clipboard-version conflict checks and acknowledged Host publication. See [file clipboard contract](docs/FILE-CLIPBOARD.md). Physical Explorer paste remains pending; no per-slice package.
 
-Host-selected screens and all-screen capture/input now support physical negative origins. Unrotated single screens retain DXGI/GPU encode; rotated/all-screen scope uses explicit GDI compatibility. See [display contract and remaining P4 work](docs/DISPLAYS.md). Zoom and physical multi-monitor/DPI acceptance remain open.
+Host-selected screens and all-screen capture/input now support physical negative origins. Unrotated single screens retain DXGI/GPU encode; rotated/all-screen scope uses explicit GDI compatibility. See [display contract and remaining P4 work](docs/DISPLAYS.md). Live topology refresh and physical multi-monitor/DPI acceptance remain open.
 
-Viewer live screen selection is now negotiated within the approved Host scope. Input pauses until a matching new-generation frame is displayed; capture/encoder and same-size decoder state are replaced. See [display protocol and limits](docs/DISPLAYS.md). Zoom, live topology refresh and physical P4 acceptance remain open. No per-slice package.
+Viewer live screen selection is now negotiated within the approved Host scope. Input pauses until a matching new-generation frame is displayed; capture/encoder and same-size decoder state are replaced. See [display protocol and limits](docs/DISPLAYS.md). Live topology refresh and physical P4 acceptance remain open. No per-slice package.

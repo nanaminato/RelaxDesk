@@ -22,6 +22,10 @@ public sealed partial class ViewerWindow
                 using var lifetime=new CancellationTokenSource();window.session=lifetime;window.inputVersion=2;
                 window.SendRawKey(65,(nint)((30L<<16)|1),false);Check(window.outgoing.Depth==0);
                 window.inputAuthorized=true;
+                window.SendRawKey(65,(nint)((30L<<16)|1),false);Check(window.outgoing.Depth==0);
+                // Isolated non-injecting adapter fixture: authorize a submitted
+                // viewport independently of the renderer tests.
+                window.viewportInputReady=true;
                 window.SendRawKey(0x11,(nint)((29L<<16)|(1L<<24)|1),false);
                 Check(window.outgoing.TryRead(out var key)&&key?.Input is{VirtualKey:0xA3,ScanCode:29,Extended:true,Up:false});
                 Check(window.richHeld.Count==1);

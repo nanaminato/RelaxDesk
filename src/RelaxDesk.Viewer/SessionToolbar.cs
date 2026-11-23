@@ -40,6 +40,21 @@ internal sealed class SessionToolbar : IDisposable
     internal ContextMenu ShortcutMenu { get; }
     readonly MenuItem displays=new(){Header="显示器（Host 未开放切换）",IsEnabled=false};
     internal MenuItem DisplaysAction=>displays;
+    readonly MenuItem zoom=new(){Header="画面缩放"};
+    internal MenuItem ZoomAction=>zoom;
+    public void SetViewport(ViewportOptions options,Action<int> set)
+    {
+        zoom.Items.Clear();zoom.Header=options.Zoom==0?"画面缩放 · 适应窗口":$"画面缩放 · {options.Zoom}%";
+        foreach(int percent in new[]{0,50,75,100,125,150,200,300,400})
+        {
+            var item=new MenuItem{Header=percent==0?"适应窗口（保持比例）":percent==100?"1:1 · 100%（物理像素）":$"{percent}%",IsCheckable=true,IsChecked=options.Zoom==percent,Tag=percent};
+            item.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;set(percent);};zoom.Items.Add(item);
+        }
+        var custom=new StackPanel{Orientation=Orientation.Horizontal};var value=new TextBox{Text=(options.Zoom==0?100:options.Zoom).ToString(),Width=60,MaxLength=3};
+        var apply=new Button{Content="应用",Padding=new(8,2,8,2)};custom.Children.Add(new TextBlock{Text="自定义 25–400%  ",VerticalAlignment=VerticalAlignment.Center});custom.Children.Add(value);custom.Children.Add(apply);
+        var entry=new MenuItem{Header=custom,StaysOpenOnClick=true};zoom.Items.Add(new Separator());zoom.Items.Add(entry);
+        apply.Click+=(_,_)=>{if(int.TryParse(value.Text,out int percent)&&percent is >=25 and <=400){ShortcutMenu.IsOpen=false;set(percent);}else value.ToolTip="请输入 25–400 之间的整数百分比";};
+    }
     public void SetRemoteInputReady(bool ready){foreach(var item in ShortcutMenu.Items.OfType<MenuItem>().Where(item=>item.Tag is RemoteShortcut))item.IsEnabled=ready;}
     public void SetDisplays(DisplaySessionInfo? state,bool ready,Action<string>? select)
     {
@@ -99,6 +114,7 @@ internal sealed class SessionToolbar : IDisposable
         ShortcutMenu.Items.Add(textInput);
         ShortcutMenu.Items.Add(fileClipboard);fileClipboard.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;openFileClipboard?.Invoke();};
         ShortcutMenu.Items.Add(displays);
+        ShortcutMenu.Items.Add(zoom);
         clipboard.Click += (_, _) => { ShortcutMenu.IsOpen = false; disableClipboard?.Invoke(); };
         ShortcutsButton.Click += (_, _) => { ShortcutMenu.PlacementTarget = ShortcutsButton; ShortcutMenu.IsOpen = true; Reveal(); };
         controls.Children.Add(endpoint); controls.Children.Add(FilesButton); controls.Children.Add(ShortcutsButton); controls.Children.Add(full); controls.Children.Add(DisconnectButton);

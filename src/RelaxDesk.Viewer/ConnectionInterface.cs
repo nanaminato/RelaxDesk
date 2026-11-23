@@ -25,7 +25,7 @@ public sealed partial class ViewerWindow
         var footer = new Border { Background = Brushes.White, Padding = new Thickness(18, 9, 18, 9) }; status.Text = "准备连接"; status.TextWrapping = TextWrapping.Wrap; status.Foreground = Brushes.DimGray; footer.Child = status; DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
         connectionFooter = footer;
         renderPanel.Background = Background;
-        image.Focusable = true; renderPanel.Children.Add(image);
+        image.Focusable = true; BuildViewport();
         var form = new StackPanel();
         form.Children.Add(new TextBlock { Text = "连接到远程电脑", FontSize = 26, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 10) });
         form.Children.Add(new TextBlock { Text = "输入 IP 和端口，Host 确认授权后进入桌面。意外断开后会有限重试，仍需 Host 重新允许。", Foreground = Brushes.DimGray, TextWrapping = TextWrapping.Wrap });
@@ -78,7 +78,7 @@ public sealed partial class ViewerWindow
             sessionToolbar.SetSession(host.Text, fullScreen);
             sessionToolbar.SetClipboard(sessionPermissions is{} clipboardGate&&ClipboardFormats.Granted(clipboardGate).Any, DisableClipboard);
             sessionToolbar.SetTextInput(inputAuthorized&&inputVersion==2?OpenTextInput:null);
-            RefreshFileToolbar();RefreshFileClipboardToolbar();RefreshDisplayMenu();
+            RefreshFileToolbar();RefreshFileClipboardToolbar();RefreshDisplayMenu();sessionToolbar.SetViewport(CurrentViewport,SetViewportZoom);
         }
         else
         {
@@ -97,6 +97,7 @@ public sealed partial class ViewerWindow
         void Draw()
         {
             image.Source = BitmapSource.Create(960, 540, 96, 96, PixelFormats.Bgr32, null, CodecVerification.Pattern(960, 540, frame++ % 200), 960 * 4);
+            SetViewportVideoSize(960,540);
             status.Text = "本机预览 · 无网络连接 · 输入不会发往其他电脑";
         }
         Draw(); previewTimer = new() { Interval = TimeSpan.FromMilliseconds(100) }; previewTimer.Tick += (_, _) => Draw(); previewTimer.Start();
@@ -104,7 +105,7 @@ public sealed partial class ViewerWindow
     internal void StopLocalPreview()
     {
         if (!previewing) return;
-        previewTimer?.Stop(); previewTimer = null; previewing = false; image.Source = null; disconnect.IsEnabled = false; ShowConnectedView(false); status.Text = "预览已结束，准备连接";
+        previewTimer?.Stop(); previewTimer = null; previewing = false;EndViewport(); image.Source = null; disconnect.IsEnabled = false; ShowConnectedView(false); status.Text = "预览已结束，准备连接";
     }
     internal void ToggleFullScreen()
     {

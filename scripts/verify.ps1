@@ -55,6 +55,8 @@ try {
     if ($LASTEXITCODE) { throw 'Windows contracts failed' }
     Run-App $smokeDll --display-contracts
     if ($LASTEXITCODE) { throw 'Display topology/input contracts failed' }
+    Run-App $smokeDll --viewport-contracts
+    if ($LASTEXITCODE) { throw 'Managed/native viewport parity failed' }
     Run-App $smokeDll $hostDll --display-denied
     if ($LASTEXITCODE) { throw 'Missing display session rejection failed' }
     Run-App $smokeDll $hostDll --display-switch
@@ -74,6 +76,8 @@ try {
         if ($LASTEXITCODE) { throw "Security smoke failed: $mode" }
     }
     if ($Wpf) {
+        Run-App $viewer --viewport-contracts
+        if ($LASTEXITCODE) { throw 'Viewer viewport/zoom contracts failed' }
         Run-App $viewer --display-session-contracts $hostDll
         if ($LASTEXITCODE) { throw 'Viewer live display switching failed' }
         foreach($consent in @('granted','deny-clipboard','deny-files')) {
@@ -89,6 +93,8 @@ try {
         if ($LASTEXITCODE) { throw 'WPF Host approval/stop contracts failed' }
     }
     if ($Graphics) {
+        & $probe --viewport-render-contracts
+        if ($LASTEXITCODE) { throw 'GPU viewport draw/crop contracts failed' }
         Run-App $smokeDll $hostDll --persistent-host (Join-Path $root 'build/persistent-host-verification')
         if ($LASTEXITCODE) { throw 'Persistent Host authorization/lifecycle failed' }
         $fileFixtures = Join-Path $root 'build/file-transfer-validation'

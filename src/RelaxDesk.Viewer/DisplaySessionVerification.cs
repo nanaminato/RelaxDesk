@@ -46,7 +46,12 @@ public sealed partial class ViewerWindow
                     if(state.Selected!=id||window.image.Source is not BitmapSource bitmap||bitmap.PixelWidth!=bounds.Width||bitmap.PixelHeight!=bounds.Height)throw new IOException("Presented image does not match selected display");
                     if(window.sessionToolbar.DisplaysAction.Items.Cast<MenuItem>().Count(item=>item.IsChecked)!=1)throw new IOException("Selected display mark lost");
                 }
-                window.ToggleFullScreen();window.ToggleFullScreen();if(!window.displaySession.Ready)throw new IOException("Fullscreen lost display readiness");
+                long displayGeneration=window.displaySession.Generation;
+                window.sessionToolbar.ZoomAction.Items.OfType<MenuItem>().Single(item=>item.Tag is int zoom&&zoom==200).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                long before=window.sequence;window.SendRich(new("key",VirtualKey:65));if(window.sequence!=before||window.viewportInputReady)throw new IOException("Input escaped while viewport was changing");
+                await Until(()=>window.viewportInputReady);window.horizontalPan.Value=window.horizontalPan.Maximum;await Until(()=>window.viewportInputReady);
+                if(window.displaySession.Generation!=displayGeneration||window.CurrentViewport.Zoom!=200)throw new IOException("Local zoom changed remote screen generation");
+                window.ToggleFullScreen();window.ToggleFullScreen();await Until(()=>window.viewportInputReady);if(!window.displaySession.Ready)throw new IOException("Fullscreen lost display readiness");
                 window.SendRich(new("move",X:65535,Y:65535));
                 window.StopConnection();await running;
                 if(window.displaySession is not null||window.displayDeadline is not null||window.sessionToolbar is not null)throw new IOException("Display UI/state leaked after disconnect");

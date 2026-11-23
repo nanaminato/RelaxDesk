@@ -44,12 +44,12 @@ public sealed partial class ViewerWindow
     void OpenTextInput()
     {
         if(displaySession is not null&&!displaySession.Ready)return;
-        if(!inputAuthorized||inputVersion!=2||session is null||session.IsCancellationRequested)return;
+        if(!viewportInputReady||!inputAuthorized||inputVersion!=2||session is null||session.IsCancellationRequested)return;
         ReleaseHeldInputs();if(textInput is not null){textInput.Activate();return;}
         var current=session;
         var dialog=new TextInputWindow(this,text=>
         {
-            if(!ReferenceEquals(session,current)||current.IsCancellationRequested||!inputAuthorized||inputVersion!=2||displaySession is not null&&!displaySession.Ready)return false;
+            if(!ReferenceEquals(session,current)||current.IsCancellationRequested||!viewportInputReady||!inputAuthorized||inputVersion!=2||displaySession is not null&&!displaySession.Ready)return false;
             SendRich(new("text",Text:text));return !current.IsCancellationRequested;
         });
         textInput=dialog;dialog.Closed+=(_,_)=>{if(ReferenceEquals(textInput,dialog))textInput=null;};dialog.Show();

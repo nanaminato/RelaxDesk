@@ -35,7 +35,8 @@ public sealed class App : Application
         try
         {
             var app = new App();
-            if(args is ["--display-session-contracts",var displayHost])ViewerWindow.VerifyDisplaySession(app,displayHost);
+            if(args is ["--viewport-contracts"])ViewerWindow.VerifyViewport(app);
+            else if(args is ["--display-session-contracts",var displayHost])ViewerWindow.VerifyDisplaySession(app,displayHost);
             else if(args is ["--file-clipboard-contracts",var fileClipboardHost,var fileClipboardOutput,var fileClipboardMode])ViewerWindow.VerifyFileClipboard(app,fileClipboardHost,fileClipboardOutput,fileClipboardMode);
             else if(args is ["--rich-clipboard-session-contracts",var clipboardHost,var clipboardConsent])RichClipboardSessionVerification.Run(app,clipboardHost,clipboardConsent=="denied");
             else if(args is ["--input-ui-contracts"])ViewerWindow.VerifyInputUi(app);
@@ -121,7 +122,7 @@ public sealed partial class ViewerWindow : Window
     }
     void Send(int code, bool up, int x = 0, int y = 0)
     {
-        if (smoke is not null || !inputAuthorized || session is null || session.IsCancellationRequested) return;
+        if (smoke is not null || !inputAuthorized || !viewportInputReady || session is null || session.IsCancellationRequested) return;
         if(inputVersion==2){SendRich(code switch{0=>new("move",X:x,Y:y),256=>new("button",Button:1,Up:up),257=>new("button",Button:2,Up:up),258=>new("wheel",WheelY:120),259=>new("wheel",WheelY:-120),_=>new("key",VirtualKey:code,Up:up)});return;}
         if (!outgoing.Writer.TryWrite(new Packet("input", ++sequence, X: x, Y: y, Code: code, Up: up))) { session.Cancel(); return; }
         heldInputs.Update(code, up);
@@ -177,7 +178,7 @@ public sealed partial class ViewerWindow : Window
         long heartbeatReplies = 0;
         var pacing = Stopwatch.StartNew(); double last = 0;
         System.Windows.Threading.DispatcherTimer? heartbeat = null;
-        void Presented(bool gpu, MediaFrame frame, double decodeMs)
+        void Presented(bool gpu, MediaFrame frame, double decodeMs,ViewportOptions? drawnViewport=null)
         {
             if (gpu) Interlocked.Increment(ref gpuFrames); else Interlocked.Increment(ref cpuFrames);
             metrics.Frame(0); double now = pacing.Elapsed.TotalMilliseconds; if (last > 0) metrics.Add("frame_interval", now - last); last = now;
@@ -186,6 +187,7 @@ public sealed partial class ViewerWindow : Window
             {
                 if(!ReferenceEquals(session,cancellation)||cancellation.IsCancellationRequested)return;
                 if(displaySession is not null&&!displaySession.AcceptFrame(frame))return;
+                SetViewportVideoSize(frame.Width,frame.Height);if(gpu&&drawnViewport is not null)ViewportDrawn(drawnViewport);
                 status.Text = $"已连接 · {frame.Width} × {frame.Height} · {(gpu ? "GPU 显示" : "兼容显示")}";
                 DisplayPresented(frame);ExerciseWindow(count);
                 if (smoke is not null && !smoke.FileTransfer && !smoke.RichClipboardTest && !smoke.ReconnectTest && !smoke.IdleSessionTest && !smoke.IdleRepaintTest && !smoke.FixedMediaBudget && count >= smoke.Frames && !smoke.CloseWhileStreaming) cancellation.Cancel();
@@ -196,7 +198,7 @@ public sealed partial class ViewerWindow : Window
         {
             if (!decoded.TryRead(out var frame) || frame is null) return;
             if(displaySession is not null&&!displaySession.AcceptFrame(frame.Frame))return;
-            metrics.Add("render_submit", cpu.Submit(frame)); metrics.Add("decode", frame.DecodeMilliseconds);
+            metrics.Add("render_submit", cpu.Submit(frame));if(!viewportInputReady)ApplyViewport(); metrics.Add("decode", frame.DecodeMilliseconds);
             metrics.Add("readback", frame.Timing.ReadbackMs); metrics.Add("decode_to_render_submit", Stopwatch.GetElapsedTime(frame.DecodedAt).TotalMilliseconds);
             Presented(false, frame.Frame, frame.DecodeMilliseconds);
             if (budgetComplete && decoded.Depth == 0) cancellation.Cancel();
@@ -244,7 +246,7 @@ public sealed partial class ViewerWindow : Window
         {
             try
             {
-                nativeView = new() { Input = Send, RichInput = inputVersion==2?SendRich:null, InputBacklogExceeded = ()=>cancellation.Cancel(), InputFocusLost = ReleaseHeldInputs, InputCaptureLost = ReleaseMouseButtons, RenderInvalidated = () => repaintSignal.Set() }; renderPanel.Children.Add(nativeView); renderPanel.UpdateLayout();
+                nativeView = new() { Input = Send, RichInput = inputVersion==2?SendRich:null, InputBacklogExceeded = ()=>cancellation.Cancel(), InputFocusLost = ReleaseHeldInputs, InputCaptureLost = ReleaseMouseButtons, RenderInvalidated = () => repaintSignal.Set() }; videoPanel.Children.Add(nativeView); nativeView.SetViewport(CurrentViewport);renderPanel.UpdateLayout();
                 nativeView.SetFilesDrop(fileQueue?.Enabled==true?FilesDropped:null);
                 hwnd = nativeView.Handle; if (hwnd == 0) throw new InvalidOperationException("Render child HWND not available");
                 image.Visibility = Visibility.Collapsed;
@@ -345,7 +347,11 @@ public sealed partial class ViewerWindow : Window
                         {
                             try
                             {
-                                if ((displaySession is null||displaySession.AcceptFrame(retained.Frame))&&renderer.Present(retained.Surface, retained.Frame.Metadata)) Interlocked.Increment(ref idleRepaints);
+                                var idleViewport=CurrentViewport;
+                                if ((displaySession is null||displaySession.AcceptFrame(retained.Frame))&&renderer.Present(retained.Surface, retained.Frame.Metadata,idleViewport))
+                                {
+                                    Interlocked.Increment(ref idleRepaints);_ = Dispatcher.BeginInvoke(()=>{if(ReferenceEquals(session,cancellation)&&!cancellation.IsCancellationRequested)ViewportDrawn(idleViewport);});
+                                }
                                 CollectRenderState();
                             }
                             catch (System.Runtime.InteropServices.ExternalException e) { RecoverGpu(e); }
@@ -367,12 +373,12 @@ public sealed partial class ViewerWindow : Window
                                 if (generation != decoder.Generation) { renderer?.Dispose(); renderer = null; lastRendererResizes = 0; lastHidden = lastOccluded = lastBusy = 0; reportedOcclusion = false; generation = decoder.Generation; }
                                 if (renderer is null) { renderer = new(surface.Surface, hwnd); rendererGenerations++; }
                                 nativeView!.SetVideoSize(frame.Width, frame.Height);
-                                bool shown = renderer.Present(surface.Surface, frame.Metadata);
+                                var drawnViewport=CurrentViewport;bool shown = renderer.Present(surface.Surface, frame.Metadata,drawnViewport);
                                 if(smoke is not null && receivedFrames==1)Console.WriteLine("render_environment="+renderer.Diagnostics());
                                 metrics.Add("decode", surface.DecodeMilliseconds); metrics.Add("gpu_draw_submit", renderer.Timing.DrawMs); metrics.Add("present_call", renderer.Timing.PresentMs);
                                 metrics.Add("readback", surface.Timing.ReadbackMs); Interlocked.Add(ref readbackBytes, checked((long)surface.Timing.ReadbackBytes));
                                 CollectRenderState();
-                                if (shown) Presented(true, frame, surface.DecodeMilliseconds); else Interlocked.Increment(ref skipped);
+                                if (shown) Presented(true, frame, surface.DecodeMilliseconds,drawnViewport); else Interlocked.Increment(ref skipped);
                                 BudgetReached(); continue;
                             }
                             catch (Exception e) when (e is System.Runtime.InteropServices.ExternalException or NotSupportedException)
@@ -406,7 +412,7 @@ public sealed partial class ViewerWindow : Window
         catch (Exception e) { attemptError=e; if (smoke is null) ViewerSessionLog.Record("connection-error", e); status.Text = "连接已断开：" + e.Message + "。请保留 Host 的 session_end 日志。"; }
         finally
         {
-            heartbeat?.Stop(); cancellation.Cancel(); EndDisplaySession(); ResetInputState(); CompositionTarget.Rendering -= Rendering; ReleaseHeldInputs(); cpu.Clear(); image.Visibility = Visibility.Visible;
+            heartbeat?.Stop(); cancellation.Cancel(); EndDisplaySession(); EndViewport(); ResetInputState(); CompositionTarget.Rendering -= Rendering; ReleaseHeldInputs(); cpu.Clear(); image.Visibility = Visibility.Visible;
             restoreFullScreen=fullScreen;
             if(established)retryFeatures=connection.Features.Where(feature=>sessionPermissions?.Allows(feature)==true||feature==SessionCapabilities.FileTransfer&&fileTransportInterrupted&&!filePermissionStoppedByUser).ToArray();
             bool recoverFiles=attemptError is not null&&ConnectionRecovery.IsTransient(attemptError)&&connectionRun?.IsCancellationRequested==false&&retryFeatures.Contains(SessionCapabilities.FileTransfer);
@@ -416,7 +422,7 @@ public sealed partial class ViewerWindow : Window
             if(fileVerification is not null)await fileVerification;
             if(clipboardVerification is not null)await clipboardVerification;
             await EndFileSession(recoverFiles,connection.VerifiedFingerprint);
-            if (nativeView is not null) { renderPanel.Children.Remove(nativeView); nativeView.Dispose(); nativeView = null; }
+            if (nativeView is not null) { videoPanel.Children.Remove(nativeView); nativeView.Dispose(); nativeView = null; }
             session = null; ShowConnectedView(false);
             string report = $"renderer={(gpuFrames > 0 && cpuFrames == 0 ? "d3d11" : "cpu-or-fallback")} gpu_frames={gpuFrames} cpu_frames={cpuFrames} full_frame_readback_bytes={readbackBytes} received_frames={receivedFrames} resizes={resizeCount} renderer_generations={rendererGenerations} keyframe_requests={keyframeRequests} simulated_device_losses={simulatedLosses} idle_repaints={idleRepaints} hidden={hiddenPresents} occluded={occludedPresents} gpu_busy={busyPresents} " + metrics.Report(decoded.Dropped + skipped, decoded.Depth);
             if (smoke is not null && !smoke.ReconnectTest)
@@ -457,7 +463,7 @@ public sealed partial class ViewerWindow : Window
                     if (packet.Kind != "frame-v1" || packet.Width <= 0 || packet.Height <= 0 || (long)packet.Width * packet.Height > 8_294_400 || packet.Data is null) throw new InvalidDataException("Invalid frame");
                     var timer = System.Diagnostics.Stopwatch.StartNew(); byte[] pixels = new byte[checked(packet.Width * packet.Height * 4)];
                     using var zip = new DeflateStream(new MemoryStream(packet.Data), CompressionMode.Decompress); zip.ReadExactly(pixels); if (zip.ReadByte() != -1) throw new InvalidDataException("Oversized frame");
-                    image.Source = BitmapSource.Create(packet.Width, packet.Height, 96, 96, PixelFormats.Bgr32, null, pixels, packet.Width * 4);
+                    image.Source = BitmapSource.Create(packet.Width, packet.Height, 96, 96, PixelFormats.Bgr32, null, pixels, packet.Width * 4);SetViewportVideoSize(packet.Width,packet.Height);
                     status.Text = $"Frame {packet.Sequence} | capture {packet.CaptureMs:F1} ms | encode {packet.EncodeMs:F1} ms | decode/update {timer.Elapsed.TotalMilliseconds:F1} ms";
                 }
             }

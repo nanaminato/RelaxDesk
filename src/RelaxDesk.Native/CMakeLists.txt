@@ -6,6 +6,6 @@ add_library(RelaxDesk.Native SHARED graphics.cpp codec.cpp diagnostics.cpp rende
 target_compile_definitions(RelaxDesk.Native PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(RelaxDesk.Native PRIVATE /W4 /EHsc)
 target_link_libraries(RelaxDesk.Native PRIVATE d3d11 dxgi d3dcompiler dwmapi mfplat mf mfuuid wmcodecdspuuid ole32 oleaut32 wtsapi32 user32 advapi32 windowscodecs shcore)
-add_executable(RelaxDesk.NativeProbe probe.cpp probe_present.cpp)
+add_executable(RelaxDesk.NativeProbe probe.cpp probe_present.cpp probe_viewport.cpp)
 target_compile_definitions(RelaxDesk.NativeProbe PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_link_libraries(RelaxDesk.NativeProbe PRIVATE RelaxDesk.Native user32 gdi32 d3d11 dxgi)

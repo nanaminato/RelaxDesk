@@ -38,7 +38,7 @@ A session retains a validated immutable topology snapshot. Before capture/input 
 
 ## Remaining P4 work
 
-Refresh/recovery on hotplug without whole-session reconnect, 1:1 and zoom controls, exact custom fractional-DPI metadata, and expanded toolbar/mixed-DPI tests remain to implement. Host scope selection and Viewer live switching are implemented; the multi-monitor/DPI milestone remains open. Real secondary/rotated/all-screen capture, HDR appearance and actual pointer landing require physical Home dual-PC acceptance. No package is generated for this slice.
+[Fit, physical 1:1, custom zoom and pan](VIEWPORT.md) are implemented. Refresh/recovery on hotplug without whole-session reconnect, exact custom fractional-DPI metadata, and expanded physical toolbar/mixed-DPI tests remain to implement. Host scope selection and Viewer live switching are implemented; the multi-monitor/DPI milestone remains open. Real secondary/rotated/all-screen capture, HDR appearance and actual pointer landing require physical Home dual-PC acceptance. No package is generated for this slice.
 
 References: [display enumeration](https://learn.microsoft.com/en-us/windows/win32/gdi/enumeration-and-display-control), [DPI APIs](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/dpi-related-apis-and-registry-settings), [duplication rotation and pointer semantics](https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/desktop-dup-api).
 

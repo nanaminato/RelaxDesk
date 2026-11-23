@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using RelaxDesk.Core;
 namespace RelaxDesk.Windows;
 
 [StructLayout(LayoutKind.Sequential)]
@@ -49,8 +50,9 @@ public sealed class D3D11Renderer : IDisposable
     public bool OutputBlocked { get; private set; }
     public string Diagnostics() {NativeMethods.Check(NativeMethods.rd_renderer_diagnostics(context.Value,out var json));return Marshal.PtrToStringUTF8(json)??"{}";}
     public D3D11Renderer(GpuVideoFrame frame, nint hwnd) => context = new(frame, hwnd);
-    public bool Present(GpuVideoFrame frame, byte[] metadata)
+    public bool Present(GpuVideoFrame frame, byte[] metadata,ViewportOptions? viewport=null)
     {
+        if(viewport is not null)NativeMethods.Check(NativeMethods.rd_renderer_set_view(context.Value,viewport.Zoom,viewport.PanX,viewport.PanY));
         int hr = NativeMethods.rd_renderer_draw(context.Value, frame.NativeFrame, metadata, (uint)metadata.Length);
         NativeMethods.Check(hr);
         hr = NativeMethods.rd_renderer_present(context.Value, out var timing);

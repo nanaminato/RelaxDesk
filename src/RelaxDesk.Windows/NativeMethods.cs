@@ -42,6 +42,7 @@ internal static class NativeMethods
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_window_destroy(nint child);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_renderer_create(nint frame, nint hwnd, out nint renderer);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_renderer_draw(nint renderer, nint frame, byte[] metadata, uint bytes);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_renderer_set_view(nint renderer,int zoom,double panX,double panY);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_renderer_present(nint renderer, out RenderTiming timing);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_renderer_diagnostics(nint renderer, out nint json);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern void rd_renderer_destroy(nint renderer);

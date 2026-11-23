@@ -8,6 +8,7 @@
 #include <sstream>
 #include <dwmapi.h>
 #include "present_state.h"
+#include "viewport.h"
 
 namespace {
 struct window_dpi_scope {
@@ -58,6 +59,7 @@ struct renderer_context {
     std::vector<uint8_t> shape_bytes;
     rd_render_timing timing{};
     bool drawn=false;
+    int zoom=0;double pan_x=.5,pan_y=.5;
     HRESULT last_present=S_OK;
     present_state visibility;
     HRESULT last_test=S_OK;
@@ -128,7 +130,7 @@ struct renderer_context {
         D3D11_BUFFER_DESC buffer{};buffer.ByteWidth=48;buffer.Usage=D3D11_USAGE_DEFAULT;buffer.BindFlags=D3D11_BIND_CONSTANT_BUFFER;check(graphics.device->CreateBuffer(&buffer,nullptr,&constants),"cursor constants");
         D3D11_RASTERIZER_DESC state{};state.FillMode=D3D11_FILL_SOLID;state.CullMode=D3D11_CULL_NONE;state.DepthClipEnable=TRUE;check(graphics.device->CreateRasterizerState(&state,&rasterizer),"cursor rasterizer");
     }
-    void pointer(const uint8_t* metadata,UINT bytes,float scale,float origin_x,float origin_y){
+    void pointer(const uint8_t* metadata,UINT bytes,float scale_x,float scale_y,float origin_x,float origin_y,const RECT& clip){
         if(bytes<64||bytes>1024*1024)check(E_INVALIDARG,"renderer metadata size");
         auto field=[&](UINT i){int32_t value;memcpy(&value,metadata+i*4,4);return value;};
         int dirty=field(1),moves=field(2),shape_size=field(3);
@@ -139,10 +141,10 @@ struct renderer_context {
         if((type!=1&&type!=2&&type!=4)||!w||w>4096||!h||full_height>8192||!pitch||static_cast<uint64_t>(pitch)*full_height>shape_size||(mono?(full_height%2||pitch<(w+7)/8):pitch<w*4))check(E_INVALIDARG,"renderer pointer bounds");
         const uint8_t* source=metadata+64+dirty+moves;
         if(type==4)for(UINT y=0;y<h;++y)for(UINT x=0;x<w;++x)if(source[y*pitch+x*4+3]!=0&&source[y*pitch+x*4+3]!=255)check(E_INVALIDARG,"masked pointer alpha");
-        float x=origin_x+field(4)*scale,y=origin_y+field(5)*scale,sw=w*scale,sh=h*scale;
+        float x=origin_x+field(4)*scale_x,y=origin_y+field(5)*scale_y,sw=w*scale_x,sh=h*scale_y;
         // Clamp in floating point before conversion: a hostile peer can send INT_MIN/MAX pointer coordinates.
-        int left=static_cast<int>(std::clamp(floor(static_cast<double>(x)),0.0,static_cast<double>(width))),top=static_cast<int>(std::clamp(floor(static_cast<double>(y)),0.0,static_cast<double>(height)));
-        int right=static_cast<int>(std::clamp(ceil(static_cast<double>(x+sw)),0.0,static_cast<double>(width))),bottom=static_cast<int>(std::clamp(ceil(static_cast<double>(y+sh)),0.0,static_cast<double>(height)));
+        int left=static_cast<int>(std::clamp(floor(static_cast<double>(x)),static_cast<double>(clip.left),static_cast<double>(clip.right))),top=static_cast<int>(std::clamp(floor(static_cast<double>(y)),static_cast<double>(clip.top),static_cast<double>(clip.bottom)));
+        int right=static_cast<int>(std::clamp(ceil(static_cast<double>(x+sw)),static_cast<double>(clip.left),static_cast<double>(clip.right))),bottom=static_cast<int>(std::clamp(ceil(static_cast<double>(y+sh)),static_cast<double>(clip.top),static_cast<double>(clip.bottom)));
         if(right<=left||bottom<=top)return;
         shaders();
         if(shape_width!=w||shape_height!=h||shape_type!=type||shape_pitch!=pitch||shape_bytes.size()!=static_cast<size_t>(shape_size)||!std::equal(shape_bytes.begin(),shape_bytes.end(),source)){
@@ -170,14 +172,15 @@ struct renderer_context {
         setup_processor(frame);
         D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC in{};in.ViewDimension=D3D11_VPIV_DIMENSION_TEXTURE2D;in.Texture2D.ArraySlice=frame.subresource;
         ComPtr<ID3D11VideoProcessorInputView> input;check(video->CreateVideoProcessorInputView(frame.texture.Get(),enumerator.Get(),&in,&input),"renderer NV12 input view");
-        float scale=std::min(static_cast<float>(width)/frame.width,static_cast<float>(height)/frame.height);
-        float ox=(width-frame.width*scale)/2,oy=(height-frame.height*scale)/2;
-        RECT src{0,0,static_cast<LONG>(frame.width),static_cast<LONG>(frame.height)},destination{static_cast<LONG>(ox),static_cast<LONG>(oy),static_cast<LONG>(ox+frame.width*scale),static_cast<LONG>(oy+frame.height*scale)},target{0,0,static_cast<LONG>(width),static_cast<LONG>(height)};
+        auto view=viewport_layout(width,height,frame.width,frame.height,zoom,pan_x,pan_y);
+        float sx=static_cast<float>(view.destination_width)/view.source_width,sy=static_cast<float>(view.destination_height)/view.source_height;
+        float ox=view.destination_x-view.source_x*sx,oy=view.destination_y-view.source_y*sy;
+        RECT src{view.source_x,view.source_y,view.source_x+view.source_width,view.source_y+view.source_height},destination{view.destination_x,view.destination_y,view.destination_x+view.destination_width,view.destination_y+view.destination_height},target{0,0,static_cast<LONG>(width),static_cast<LONG>(height)};
         video_commands->VideoProcessorSetStreamSourceRect(processor.Get(),0,TRUE,&src);video_commands->VideoProcessorSetStreamDestRect(processor.Get(),0,TRUE,&destination);video_commands->VideoProcessorSetOutputTargetRect(processor.Get(),TRUE,&target);
         D3D11_VIDEO_COLOR black{};black.RGBA.A=1;video_commands->VideoProcessorSetOutputBackgroundColor(processor.Get(),FALSE,&black);
         D3D11_VIDEO_PROCESSOR_COLOR_SPACE yuv{};yuv.YCbCr_Matrix=1;yuv.Nominal_Range=1;D3D11_VIDEO_PROCESSOR_COLOR_SPACE rgb{};rgb.YCbCr_Matrix=1;rgb.Nominal_Range=2;video_commands->VideoProcessorSetStreamColorSpace(processor.Get(),0,&yuv);video_commands->VideoProcessorSetOutputColorSpace(processor.Get(),&rgb);
         D3D11_VIDEO_PROCESSOR_STREAM stream{};stream.Enable=TRUE;stream.pInputSurface=input.Get();check(video_commands->VideoProcessorBlt(processor.Get(),output_view.Get(),0,1,&stream),"NV12 direct to swapchain video processor");
-        pointer(metadata,bytes,scale,ox,oy);timing.draw_ms=elapsed_ms(start);drawn=true;return true;
+        pointer(metadata,bytes,sx,sy,ox,oy,destination);timing.draw_ms=elapsed_ms(start);drawn=true;return true;
     }
     HRESULT present(){
         lifetime.verify();if(!drawn)return S_FALSE;auto start=ticks();HRESULT hr=swap->Present(0,DXGI_PRESENT_DO_NOT_WAIT);last_present=hr;timing.present_ms=elapsed_ms(start);drawn=false;
@@ -198,6 +201,8 @@ RD int32_t rd_window_create(void* parent,void** child){if(!parent||!child)return
     HWND hwnd=CreateWindowExW(0,L"RelaxDeskD3D11Surface",L"",WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS|WS_CLIPCHILDREN,0,0,1,1,static_cast<HWND>(parent),nullptr,GetModuleHandleW(nullptr),nullptr);check(hwnd?S_OK:HRESULT_FROM_WIN32(GetLastError()),"create render child HWND");++live_resources[5];*child=hwnd;});}
 RD int32_t rd_window_destroy(void* child){if(!child)return E_INVALIDARG;return guarded([&]{check(DestroyWindow(static_cast<HWND>(child))?S_OK:HRESULT_FROM_WIN32(GetLastError()),"destroy render child HWND");--live_resources[5];});}
 RD int32_t rd_renderer_create(void* frame,void* hwnd,void** renderer){if(!frame||!hwnd||!renderer)return E_INVALIDARG;*renderer=nullptr;return guarded([&]{*renderer=new renderer_context(*static_cast<gpu_frame*>(frame),static_cast<HWND>(hwnd));});}
+RD int32_t rd_viewport_calculate(int32_t width,int32_t height,int32_t video_width,int32_t video_height,int32_t zoom,double pan_x,double pan_y,rd_viewport* layout){if(!layout)return E_POINTER;return guarded([&]{*layout=viewport_layout(width,height,video_width,video_height,zoom,pan_x,pan_y);});}
+RD int32_t rd_renderer_set_view(void* renderer,int32_t zoom,double pan_x,double pan_y){if(!renderer)return E_POINTER;return guarded([&]{auto& r=*static_cast<renderer_context*>(renderer);r.lifetime.verify();viewport_layout(1,1,1,1,zoom,pan_x,pan_y);r.zoom=zoom;r.pan_x=pan_x;r.pan_y=pan_y;});}
 RD int32_t rd_renderer_draw(void* renderer,void* frame,const uint8_t* metadata,uint32_t bytes){if(!renderer||!frame||!metadata)return E_INVALIDARG;bool rendered=false;HRESULT hr=guarded([&]{rendered=static_cast<renderer_context*>(renderer)->draw(*static_cast<gpu_frame*>(frame),metadata,bytes);});return FAILED(hr)?hr:rendered?S_OK:S_FALSE;}
 RD int32_t rd_renderer_present(void* renderer,rd_render_timing* timing){if(!renderer||!timing)return E_INVALIDARG;HRESULT result=S_OK;HRESULT hr=guarded([&]{auto& r=*static_cast<renderer_context*>(renderer);result=r.present();*timing=r.timing;});return FAILED(hr)?hr:result;}
 RD int32_t rd_renderer_diagnostics(void* renderer,const char** json){if(!renderer||!json)return E_INVALIDARG;static thread_local std::string text;return guarded([&]{

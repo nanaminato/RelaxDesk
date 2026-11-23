@@ -14,6 +14,7 @@ public sealed partial class ViewerWindow
     {
         if(smoke is not null||!inputAuthorized||inputVersion!=InputProtocol.Version||session is null||session.IsCancellationRequested)return;
         if(displaySession is not null&&!displaySession.Ready)return;
+        if(!viewportInputReady)return;
         if(!InputProtocol.Valid(input)){session.Cancel();return;}
         if(!outgoing.TryWrite(InputProtocol.Encode(input,++sequence,displaySession?.Generation??0))){session.Cancel();return;}
         richHeld.Update(input);
@@ -26,21 +27,21 @@ public sealed partial class ViewerWindow
     }
     bool BitmapPosition(Point point,bool dragging)
     {
-        var dpi=System.Windows.Media.VisualTreeHelper.GetDpi(image);
-        if(image.Source is not BitmapSource bitmap||!PointerPosition.TryNormalize(point.X*dpi.DpiScaleX,point.Y*dpi.DpiScaleY,image.ActualWidth*dpi.DpiScaleX,image.ActualHeight*dpi.DpiScaleY,bitmap.PixelWidth,bitmap.PixelHeight,dragging,out int x,out int y))return false;
+        var dpi=System.Windows.Media.VisualTreeHelper.GetDpi(videoPanel);
+        if(!TryViewportLayout(out var layout)||!layout.TryNormalize(point.X*dpi.DpiScaleX,point.Y*dpi.DpiScaleY,dragging,out int x,out int y))return false;
         Send(0,false,x,y);return true;
     }
     void ConfigurePointerInput()
     {
-        image.MouseMove+=(_,e)=>{if(IsActive)BitmapPosition(e.GetPosition(image),Mouse.Captured==image);};
+        image.MouseMove+=(_,e)=>{if(IsActive)BitmapPosition(e.GetPosition(videoPanel),Mouse.Captured==image);};
         image.MouseDown+=(_,e)=>
         {
-            if(!IsActive||!BitmapPosition(e.GetPosition(image),false))return;
+            if(!IsActive||!BitmapPosition(e.GetPosition(videoPanel),false))return;
             image.Focus();Mouse.Capture(image);SendPointerButton(e.ChangedButton,false);e.Handled=true;
         };
         image.MouseUp+=(_,e)=>
         {
-            if(Mouse.Captured==image||image.IsMouseOver){BitmapPosition(e.GetPosition(image),Mouse.Captured==image);SendPointerButton(e.ChangedButton,true);}
+            if(Mouse.Captured==image||image.IsMouseOver){BitmapPosition(e.GetPosition(videoPanel),Mouse.Captured==image);SendPointerButton(e.ChangedButton,true);}
             if(e.LeftButton==MouseButtonState.Released&&e.RightButton==MouseButtonState.Released&&e.MiddleButton==MouseButtonState.Released&&e.XButton1==MouseButtonState.Released&&e.XButton2==MouseButtonState.Released)Mouse.Capture(null);
             e.Handled=true;
         };
