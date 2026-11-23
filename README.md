@@ -4,6 +4,8 @@ Source now includes [independently authorized system audio](docs/AUDIO.md): sepa
 
 Viewer source also includes [IP/port-only recent connections](docs/CONNECTION-HISTORY.md) and an explicitly opened [live statistics panel](docs/LIVE-STATISTICS.md). Statistics distinguish application bytes, control RTT and processing/API timings from physical end-to-end measurements. These additions are not in the historical distributed ZIP.
 
+Negotiated [FPS/target bitrate controls](docs/VIDEO-SETTINGS.md) now use keyframe-confirmed settings generations. [Controlled TCP delay/bandwidth/interruption tests](docs/NETWORK-VALIDATION.md) exercise real encrypted Host/decoder paths with synthetic pixels; they do not establish physical Home or office performance. Final unified packaging remains deferred.
+
 Scoped [file task and byte resume](docs/FILE-RESUME.md) is now implemented: fresh Host authorization, fixed identity/directory scope, explicit continue/discard, five-minute tickets, SHA-256 and bounded partial retention. Actual WPF/TLS directory recovery and real non-sparse files above 1GiB pass [recorded checks](benchmarks/2026-11-23-file-resume-validation.md). Physical Home/network/input acceptance remains pending; no per-slice package.
 
 Host now returns to Listening after each separately authorized session. HostShell distinguishes session disconnect from global stop; [lifecycle and security contract](docs/SESSION-LIFECYCLE.md). Viewer now reconnects with bounded backoff, the original certificate pin and fresh Host consent; revoked optional features and old input are not replayed. File tasks can now resume under a new grant and explicit confirmation. No package is generated for this slice.

@@ -66,6 +66,10 @@ try {
     if ($LASTEXITCODE) { throw 'Windows session contracts failed' }
     Run-App $smokeDll --capture-refresh-contracts
     if($LASTEXITCODE){throw 'Explicit capture refresh contracts failed'}
+    foreach($networkMode in @('shaped','media-cut','control-cut')){
+        Run-App $smokeDll $hostDll --network-impairment $networkMode
+        if($LASTEXITCODE){throw "Network impairment/cleanup failed: $networkMode"}
+    }
     Run-App $smokeDll $hostDll --session-unavailable
     if ($LASTEXITCODE) { throw 'Windows session shutdown failed' }
     Run-App $smokeDll --display-contracts
