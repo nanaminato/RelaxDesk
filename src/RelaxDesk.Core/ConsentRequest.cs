@@ -1,6 +1,6 @@
 namespace RelaxDesk.Core;
 
-public enum ConsentDecision { Deny, ScreenAndInput, Clipboard, Files, All }
+public enum ConsentDecision { Deny, ScreenAndInput, Clipboard, Files, All, Audio, ClipboardAudio, FilesAudio, AllAudio }
 
 // Fresh one-shot local approval. This is not a remote credential: its identifier
 // prevents delayed UI/IPC actions from approving a different connection.

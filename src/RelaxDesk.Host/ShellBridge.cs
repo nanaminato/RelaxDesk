@@ -40,16 +40,9 @@ internal sealed class ShellBridge : IDisposable
                         case "DISCONNECT": scope.Lifetime.Cancel(); break;
                         case "REVOKE_CLIPBOARD": scope.Clipboard.Cancel(); break;
                         case "REVOKE_FILES": scope.Files.Cancel(); break;
+                        case "REVOKE_AUDIO":scope.Audio.Cancel();break;
                         default:
-                            ConsentDecision? decision = parts[0] switch
-                            {
-                                "APPROVE" => ConsentDecision.ScreenAndInput,
-                                "APPROVE_CLIPBOARD" => ConsentDecision.Clipboard,
-                                "APPROVE_FILES" => ConsentDecision.Files,
-                                "APPROVE_ALL" => ConsentDecision.All,
-                                "DENY" => ConsentDecision.Deny,
-                                _ => null
-                            };
+                            ConsentDecision? decision = AudioConsent.Parse(parts[0]);
                             if (decision.HasValue && scope.Requested) scope.Consent.TryDecide(parts[1], decision.Value);
                             break;
                     }
@@ -64,13 +57,14 @@ internal sealed class ShellBridge : IDisposable
     {
         readonly ShellBridge owner;
         internal readonly ConsentRequest Consent = new();
-        internal readonly CancellationTokenSource Lifetime, Clipboard = new(), Files = new();
+        internal readonly CancellationTokenSource Lifetime, Clipboard = new(), Files = new(),Audio=new();
         internal bool Requested;
         bool disposed;
         public string Id => Consent.Id;
         public CancellationToken Token => Lifetime.Token;
         public CancellationToken ClipboardRevoked => Clipboard.Token;
         public CancellationToken FilesRevoked => Files.Token;
+        public CancellationToken AudioRevoked=>Audio.Token;
         internal Session(ShellBridge owner, CancellationToken stop)
         { this.owner = owner; Lifetime = CancellationTokenSource.CreateLinkedTokenSource(stop); }
         public Task<ConsentDecision> Request(string endpoint, string[] features, CancellationToken cancellation)
@@ -90,7 +84,7 @@ internal sealed class ShellBridge : IDisposable
                 if (disposed) return;
                 disposed = true;
                 if (ReferenceEquals(owner.current, this)) owner.current = null;
-                Consent.Dispose(); Lifetime.Cancel(); Lifetime.Dispose(); Clipboard.Dispose(); Files.Dispose();
+                Consent.Dispose(); Lifetime.Cancel(); Lifetime.Dispose(); Clipboard.Dispose(); Files.Dispose();Audio.Dispose();
             }
         }
     }

@@ -68,6 +68,15 @@ internal sealed class SessionToolbar : IDisposable
         }
     }
     readonly MenuItem clipboard = new() { Header = "剪贴板未授权 / 已关闭", IsEnabled = false };
+    readonly MenuItem audio=new(){Header="声音未授权 / 已关闭",IsEnabled=false};
+    internal MenuItem AudioAction=>audio;
+    public void SetAudio(bool enabled,double volume,bool muted,Action<double,bool> adjust,Action stop)
+    {
+        audio.IsEnabled=enabled;audio.Header=!enabled?"声音未授权 / 已关闭":muted?"声音 · 已静音":$"声音 · {volume*100:0}%";audio.Items.Clear();if(!enabled)return;
+        var mute=new MenuItem{Header="静音",IsCheckable=true,IsChecked=muted};mute.Click+=(_,_)=>adjust(volume,!muted);audio.Items.Add(mute);
+        foreach(int percent in new[]{0,25,50,75,100}){var item=new MenuItem{Header=$"音量 {percent}%",IsCheckable=true,IsChecked=Math.Abs(volume-percent/100d)<0.001};item.Click+=(_,_)=>adjust(percent/100d,muted);audio.Items.Add(item);}
+        audio.Items.Add(new Separator());var end=new MenuItem{Header="停止声音传输（重新开启需重新授权）"};end.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;stop();};audio.Items.Add(end);
+    }
     internal MenuItem ClipboardAction => clipboard;
     readonly MenuItem fileClipboard=new(){Header="文件剪贴板…",IsEnabled=false};
     Action? openFileClipboard;
@@ -115,6 +124,7 @@ internal sealed class SessionToolbar : IDisposable
         ShortcutMenu.Items.Add(fileClipboard);fileClipboard.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;openFileClipboard?.Invoke();};
         ShortcutMenu.Items.Add(displays);
         ShortcutMenu.Items.Add(zoom);
+        ShortcutMenu.Items.Add(audio);
         clipboard.Click += (_, _) => { ShortcutMenu.IsOpen = false; disableClipboard?.Invoke(); };
         ShortcutsButton.Click += (_, _) => { ShortcutMenu.PlacementTarget = ShortcutsButton; ShortcutMenu.IsOpen = true; Reveal(); };
         controls.Children.Add(endpoint); controls.Children.Add(FilesButton); controls.Children.Add(ShortcutsButton); controls.Children.Add(full); controls.Children.Add(DisconnectButton);

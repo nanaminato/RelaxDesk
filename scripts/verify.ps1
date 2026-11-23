@@ -114,6 +114,10 @@ try {
         if($LASTEXITCODE){throw 'Service coordination failed'}
         Run-App $shell --recovery-contracts $hostDll
         if($LASTEXITCODE){throw 'Worker recovery failed'}
+        Run-App $shell --audio-contracts $hostDll
+        if($LASTEXITCODE){throw 'Host audio consent/isolation failed'}
+        Run-App $viewer --audio-session-contracts $hostDll
+        if($LASTEXITCODE){throw 'Viewer audio session/UI failed'}
     }
     if ($Graphics) {
         & $probe --viewport-render-contracts

@@ -11,6 +11,9 @@ public sealed class SessionClient : IDisposable
     readonly TcpClient media = new() { NoDelay = true };
     readonly TcpClient clipboard = new() { NoDelay = true };
     readonly TcpClient data = new() { NoDelay = true };
+    readonly TcpClient audio=new(){NoDelay=true};
+    public SslStream? AudioData{get;private set;}
+    public string? AudioFailure{get;private set;}
     public SslStream Control { get; private set; } = null!;
     public SslStream Media { get; private set; } = null!;
     public SslStream? ClipboardData{get;private set;}
@@ -42,9 +45,10 @@ public sealed class SessionClient : IDisposable
     {
         string expected = fingerprint.Replace(" ", "").Replace(":", "").ToUpperInvariant();
         if ((!approvalOnly || expected.Length != 0) && (expected.Length != 64 || !expected.All(Uri.IsHexDigit))) throw new AuthenticationException("Trusted SHA256 fingerprint required");
-        async Task<SslStream> Open(TcpClient socket, bool firstContact = false)
+        async Task<SslStream> Open(TcpClient socket, bool firstContact = false,CancellationToken? deadline=null)
         {
-            await socket.ConnectAsync(host, port, ct);
+            var token=deadline??ct;
+            await socket.ConnectAsync(host, port, token);
             if (ReferenceEquals(socket, control)) PhaseChanged?.Invoke(ConnectionPhase.Authenticating);
             var stream = new SslStream(socket.GetStream(), false, (_, cert, _, _) =>
             {
@@ -53,7 +57,7 @@ public sealed class SessionClient : IDisposable
                 if (firstContact && expected.Length == 0) expected = presented;
                 return presented == expected;
             });
-            try { await stream.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = "RelaxDesk", EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, ct); return stream; }
+            try { await stream.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = "RelaxDesk", EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, token); return stream; }
             catch { stream.Dispose(); throw; }
         }
         PhaseChanged?.Invoke(ConnectionPhase.Connecting);
@@ -80,6 +84,8 @@ public sealed class SessionClient : IDisposable
         SupportsFileResume=approval.FileResume;FileScope=approval.FileScope;
         if (Capabilities.Any(c => c is not ("h264" or "deflate"))) throw new InvalidDataException("Unknown negotiated capability");
         bool richClipboard=SessionCapabilities.RichClipboard(Features);
+        bool sound=Features.Contains(SessionCapabilities.SystemAudio);
+        if(sound?(approval.AudioTicket is not {Length:64}||!approval.AudioTicket.All(char.IsAsciiHexDigit)||new[]{approval.Text,approval.DataTicket,approval.ClipboardTicket}.Contains(approval.AudioTicket)):approval.AudioTicket is not null)throw new AuthenticationException("Missing/unsolicited audio binding ticket");
         if(richClipboard?(approval.ClipboardTicket is not {Length:64}||!approval.ClipboardTicket.All(char.IsAsciiHexDigit)||approval.ClipboardTicket==approval.Text||approval.ClipboardTicket==approval.DataTicket):approval.ClipboardTicket is not null)throw new AuthenticationException("Missing/unsolicited clipboard binding ticket");
         PhaseChanged?.Invoke(ConnectionPhase.Negotiating);
         Media = await Open(media);
@@ -99,7 +105,19 @@ public sealed class SessionClient : IDisposable
             await Wire.Write(ClipboardData,new("clipboard-v2",Text:approval.ClipboardTicket),ct);
             if((await Wire.Read(ClipboardData,ct,8*1024))!=new Packet("clipboard-approved-v2"))throw new AuthenticationException("Clipboard data channel rejected");
         }
+        if(sound)
+        {
+            using var audioAttach=CancellationTokenSource.CreateLinkedTokenSource(ct);audioAttach.CancelAfter(TimeSpan.FromSeconds(5));
+            try
+            {
+                AudioData=await Open(audio,deadline:audioAttach.Token);
+                await Wire.Write(AudioData,new("audio-v2",Text:approval.AudioTicket),audioAttach.Token);
+                if(await Wire.Read(AudioData,audioAttach.Token,8*1024)!=new Packet("audio-approved-v2"))throw new AuthenticationException("Audio binding rejected");
+            }
+            catch(Exception e)when(!ct.IsCancellationRequested&&e is IOException or AuthenticationException or OperationCanceledException or SocketException)
+            {AudioData?.Dispose();AudioData=null;audio.Dispose();AudioFailure=e.GetType().Name;}
+        }
         PhaseChanged?.Invoke(ConnectionPhase.Connected);
     }
-    public void Dispose() { control.Dispose(); media.Dispose(); data.Dispose(); clipboard.Dispose(); ClipboardData?.Dispose(); Control?.Dispose(); Media?.Dispose(); Data?.Dispose(); }
+    public void Dispose() { control.Dispose(); media.Dispose(); data.Dispose(); clipboard.Dispose();audio.Dispose();AudioData?.Dispose(); ClipboardData?.Dispose(); Control?.Dispose(); Media?.Dispose(); Data?.Dispose(); }
 }

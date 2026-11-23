@@ -20,6 +20,7 @@ count += await SessionAgentChecks.Run();
 count += RecoveryChecks.Run();
 count += WorkerRestartChecks.Run();
 count += await AudioChecks.Run();
+count += AudioSessionChecks.Policies();
 count += DisplayChecks.Run();
 count += DisplayTopologyChecks.Run();
 count += ViewportChecks.Run();
@@ -34,6 +35,7 @@ if (args is ["--core"]) { Console.WriteLine($"PASS {count} protocol/access/media
 count += await InputTlsChecks.Run();
 count += await DisplayTlsChecks.Run();
 count += await ClipboardSessionTlsChecks.Run();
+count += await AudioSessionChecks.Tls();
 count += await ApprovalTlsChecks.Run();
 count += await PinnedApprovalChecks.Run();
 count += await FeatureTlsChecks.Run();

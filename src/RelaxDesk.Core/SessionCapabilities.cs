@@ -9,6 +9,7 @@ public static class SessionCapabilities
     public const string ClipboardHtml = "clipboard.html";
     public const string ClipboardFiles = "clipboard.files";
     public const string FileTransfer = "file.transfer";
+    public const string SystemAudio="audio.system";
     public static bool IsClipboard(string feature)=>feature is ClipboardText or ClipboardImage or ClipboardHtml or ClipboardFiles;
     public static bool RichClipboard(IEnumerable<string> features)=>features.Any(feature=>feature is ClipboardImage or ClipboardHtml or ClipboardFiles);
     public static void RevokeClipboard(AccessGate gate){foreach(string feature in new[]{ClipboardText,ClipboardImage,ClipboardHtml,ClipboardFiles})gate.RevokeFeature(feature);}
@@ -17,11 +18,11 @@ public static class SessionCapabilities
     {
         if (features is null) return [];
         if (features.Length > 8 || features.Distinct(StringComparer.Ordinal).Count() != features.Length ||
-            features.Any(feature => feature is not (ClipboardText or ClipboardImage or ClipboardHtml or ClipboardFiles or FileTransfer))||features.Contains(ClipboardFiles)&&!features.Contains(FileTransfer)) throw new InvalidDataException("Unsupported session capabilities");
+            features.Any(feature => feature is not (ClipboardText or ClipboardImage or ClipboardHtml or ClipboardFiles or FileTransfer or SystemAudio))||features.Contains(ClipboardFiles)&&!features.Contains(FileTransfer)) throw new InvalidDataException("Unsupported session capabilities");
         return features.ToArray();
     }
-    public static string[] Grant(string[]? requested, bool allowClipboard, bool allowFiles = false) => Validate(requested)
-        .Where(feature => IsClipboard(feature) && allowClipboard&&(feature!=ClipboardFiles||allowFiles) || feature == FileTransfer && allowFiles).ToArray();
+    public static string[] Grant(string[]? requested, bool allowClipboard, bool allowFiles = false,bool allowAudio=false) => Validate(requested)
+        .Where(feature => IsClipboard(feature) && allowClipboard&&(feature!=ClipboardFiles||allowFiles) || feature == FileTransfer && allowFiles||feature==SystemAudio&&allowAudio).ToArray();
     public static string[] ValidateGrant(string[]? requested, string[]? granted)
     {
         var result = Validate(granted); var offered = Validate(requested);

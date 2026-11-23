@@ -15,7 +15,7 @@ internal static class VideoHostSession
 {
     sealed record QueuedFrame(MediaFrame Frame, long EnqueuedAt);
     public static async Task Run(TcpListener listener, TcpClient controlSocket, SslStream control, X509Certificate2 certificate,
-        Packet hello, string backend, CancellationToken stop, string[]? grantedFeatures = null, CancellationToken clipboardRevoked = default, string? selectedFileRoot = null, CancellationToken filesRevoked = default,FileTransferResumeStore? fileResumes=null,string? selectedDisplay=null)
+        Packet hello, string backend, CancellationToken stop, string[]? grantedFeatures = null, CancellationToken clipboardRevoked = default, string? selectedFileRoot = null, CancellationToken filesRevoked = default,FileTransferResumeStore? fileResumes=null,string? selectedDisplay=null,CancellationToken audioRevoked=default)
     {
         string[] capabilities = (hello.Capabilities ?? []).Intersect(["h264", "deflate"]).ToArray();
         if (capabilities.Length == 0) throw new InvalidDataException("No common media codec");
@@ -27,6 +27,7 @@ internal static class VideoHostSession
         var displays=hello.DisplayVersion!=0&&(!synthetic||backend is "test-displays" or "test-topology" or "test-topology-init-race")?new HostDisplaySession(displaySelection,synthetic?selectedDisplay:null,hello.DisplayVersion,backend=="test-topology"):null;
         int displayVersion=displays?.Version??0;
         var features = SessionCapabilities.ValidateGrant(hello.Features, grantedFeatures);
+        if(audioRevoked.IsCancellationRequested||synthetic&&backend is not ("test-audio" or "test-audio-failure"))features=features.Where(feature=>feature!=SessionCapabilities.SystemAudio).ToArray();
         if (synthetic && backend is not ("test-clipboard" or "test-clipboard-failure" or "test-clipboard-rich" or "test-clipboard-rich-failure" or "test-clipboard-files")) features = features.Where(feature=>!SessionCapabilities.IsClipboard(feature)).ToArray();
         if (clipboardRevoked.IsCancellationRequested) features = features.Where(feature=>!SessionCapabilities.IsClipboard(feature)).ToArray();
         if (filesRevoked.IsCancellationRequested) features = features.Where(feature=>feature is not (SessionCapabilities.FileTransfer or SessionCapabilities.ClipboardFiles)).ToArray();
@@ -37,7 +38,8 @@ internal static class VideoHostSession
         var ticket = new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15));
         var dataTicket = fileRoot is null ? null : new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15));
         var clipboardTicket=SessionCapabilities.RichClipboard(features)?new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15)):null;
-        await Wire.Write(control, new Packet("approved-v2", Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features, DataTicket: dataTicket?.Value,FileResume:resumeFiles,FileScope:fileScope,InputVersion:hello.InputVersion,ClipboardTicket:clipboardTicket?.Value,DisplayVersion:displayVersion,DisplayState:displays?.Switch.Snapshot), stop);
+        var audioTicket=features.Contains(SessionCapabilities.SystemAudio)?new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15)):null;
+        await Wire.Write(control, new Packet("approved-v2", Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features, DataTicket: dataTicket?.Value,FileResume:resumeFiles,FileScope:fileScope,InputVersion:hello.InputVersion,ClipboardTicket:clipboardTicket?.Value,DisplayVersion:displayVersion,DisplayState:displays?.Switch.Snapshot,AudioTicket:audioTicket?.Value), stop);
         using var attach = CancellationTokenSource.CreateLinkedTokenSource(stop); attach.CancelAfter(TimeSpan.FromSeconds(15));
         using var mediaSocket = await listener.AcceptTcpClientAsync(attach.Token); mediaSocket.NoDelay = true; mediaSocket.SendBufferSize = 64 * 1024;
         using var media = new SslStream(mediaSocket.GetStream(), false);
@@ -65,6 +67,23 @@ internal static class VideoHostSession
             if(clipboardBinding!=new Packet("clipboard-v2",Text:clipboardBinding.Text)||!clipboardTicket!.Consume(clipboardBinding.Text,DateTimeOffset.UtcNow))throw new AuthenticationException("Clipboard binding rejected");
             await Wire.Write(clipboardData,new("clipboard-approved-v2"),attach.Token);
         }
+        TcpClient? audioSocket=null;SslStream? audioData=null;
+        if(audioTicket is not null)
+        {
+            using var audioAttach=CancellationTokenSource.CreateLinkedTokenSource(stop);audioAttach.CancelAfter(TimeSpan.FromSeconds(5));
+            try
+            {
+                audioSocket=await listener.AcceptTcpClientAsync(audioAttach.Token);audioSocket.NoDelay=true;
+                audioData=new(audioSocket.GetStream(),false);
+                await audioData.AuthenticateAsServerAsync(new SslServerAuthenticationOptions{ServerCertificate=certificate,EnabledSslProtocols=SslProtocols.Tls12|SslProtocols.Tls13},audioAttach.Token);
+                var audioBinding=await Wire.Read(audioData,audioAttach.Token,8192);
+                if(audioBinding!=new Packet("audio-v2",Text:audioBinding.Text)||!audioTicket.Consume(audioBinding.Text,DateTimeOffset.UtcNow))throw new AuthenticationException("Audio binding rejected");
+                await Wire.Write(audioData,new("audio-approved-v2"),audioAttach.Token);
+            }
+            catch(Exception e)when(!stop.IsCancellationRequested&&e is IOException or AuthenticationException or OperationCanceledException or SocketException)
+            {HostSessionLog.Write($"audio_disabled stage=attach error_type={e.GetType().Name}");audioData?.Dispose();audioSocket?.Dispose();audioData=null;audioSocket=null;}
+        }
+        using var ownedAudioSocket=audioSocket;using var ownedAudioData=audioData;
         listener.Stop();
         using var session = CancellationTokenSource.CreateLinkedTokenSource(stop);
         var queue = new LatestQueue<QueuedFrame>();
@@ -77,6 +96,25 @@ internal static class VideoHostSession
             try { await Wire.Write(control, packet, deadline.Token); }
             finally { controlWrite.Release(); }
         }
+        using var audioLifetime=CancellationTokenSource.CreateLinkedTokenSource(session.Token,audioRevoked);
+        using var audioRevoke=audioRevoked.Register(()=>{gate.RevokeFeature(SessionCapabilities.SystemAudio);audioData?.Dispose();});
+        var audioWorker=audioTicket is null?Task.CompletedTask:Task.Run(async()=>
+        {
+            try
+            {
+                if(audioData is not null&&gate.Allows(SessionCapabilities.SystemAudio))
+                {
+                    await using var sound=new AudioStreamSession(audioData,true,()=>synthetic?new TestAudioEndpoint(backend=="test-audio-failure"):new WindowsAudio(true),audioLifetime.Token,HostSessionLog.Write);
+                    await sound.Completion;
+                }
+            }
+            catch(Exception e){HostSessionLog.Write($"audio_disabled stage=worker error_type={e.GetType().Name}");}
+            finally
+            {
+                gate.RevokeFeature(SessionCapabilities.SystemAudio);audioData?.Dispose();
+                if(!session.IsCancellationRequested)try{await WriteControl(new("capability-revoked-v2",Features:[SessionCapabilities.SystemAudio]));}catch(Exception e){HostSessionLog.Write($"audio_notification_failed error_type={e.GetType().Name}");}
+            }
+        });
         var clipboardReady=new TaskCompletionSource<IFileClipboardPublisher?>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var fileSession = CancellationTokenSource.CreateLinkedTokenSource(session.Token, filesRevoked);
         int explicitFileRevocation=0;
@@ -165,6 +203,7 @@ internal static class VideoHostSession
                 {
                     Interlocked.Exchange(ref explicitFileRevocation,1);gate.RevokeFeature(SessionCapabilities.FileTransfer); fileSession.Cancel(); dataSocket?.Close();
                 }
+                else if(packet.Kind=="audio-state-v2"){gate.RevokeFeature(SessionCapabilities.SystemAudio);audioLifetime.Cancel();audioData?.Dispose();}
                 else if (packet.Kind == "keyframe-v2") Interlocked.Exchange(ref forceKeyFrame, 1);
                 else if (packet.Kind == "ping-v2")
                 {
@@ -173,7 +212,7 @@ internal static class VideoHostSession
             }
         }, session.Token);
         var producer = Task.Factory.StartNew(() => Produce(queue, backend, capabilities, () => Interlocked.Exchange(ref forceKeyFrame, 0) != 0,
-            (stage, frames, error) => { if (!session.IsCancellationRequested) failures.Record("capture-encode", stage, frames, error); }, session.Token,displaySelection,displays,(state,topology)=>WriteControl(new(topology?"display-topology-v2":"display-state-v2",DisplayState:state)).GetAwaiter().GetResult(),()=>inputDesktop?.ReleaseAll()),
+            (stage, frames, error) => { if (!session.IsCancellationRequested) failures.Record("capture-encode", stage, frames, error); }, session.Token,displaySelection,displays,(state,topology)=>WriteControl(new(topology?"display-topology-v2":"display-state-v2",DisplayState:state)).GetAwaiter().GetResult(),()=>inputDesktop?.ReleaseAll(),audioTicket is not null),
             session.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         var sender = Task.Run(async () =>
         {
@@ -220,12 +259,13 @@ internal static class VideoHostSession
             }
             catch (Exception error) when (error is IOException or OperationCanceledException or ObjectDisposedException) { }
         }
-        session.Cancel(); controlSocket.Close(); mediaSocket.Close(); dataSocket?.Close(); clipboardSocket?.Close();richClipboard?.Stop(); queue.Complete();
+        session.Cancel(); controlSocket.Close(); mediaSocket.Close(); dataSocket?.Close(); clipboardSocket?.Close();audioSocket?.Close();richClipboard?.Stop(); queue.Complete();
         try { if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure.Error).Throw(); await first; }
         finally
         {
             try { await Task.WhenAll(observedInput, observedSender, observedProducer, observedClipboard,observedSession); } catch (Exception) { /* Causal failure is reported above; join all workers. */ }
             try { await fileWorker; } catch (Exception error) { HostSessionLog.Write($"file_worker_shutdown error_type={error.GetType().Name} hresult=0x{error.HResult:X8}"); }
+            await audioWorker;
             if(fileResumes is not null&&(stop.IsCancellationRequested||failure?.Error is WindowsSessionUnavailableException||Volatile.Read(ref explicitFileRevocation)!=0))await fileResumes.Clear();
             gate.Revoke(); try{inputDesktop?.ReleaseAll();}catch(IOException error){HostSessionLog.Write($"input_cleanup_deferred error_type={error.GetType().Name}");}
             try
@@ -244,7 +284,7 @@ internal static class VideoHostSession
         catch (Exception error) { if (!ct.IsCancellationRequested) failures.Record(worker, worker, 0, error); throw; }
     }
 
-    static void Produce(LatestQueue<QueuedFrame> queue, string backend, string[] capabilities, Func<bool> requestedKeyFrame, Action<string, long, Exception> failed, CancellationToken ct,WindowsDisplaySelection? displaySelection,HostDisplaySession? displays,Action<DisplaySessionInfo,bool> displayChanged,Action releaseInput)
+    static void Produce(LatestQueue<QueuedFrame> queue, string backend, string[] capabilities, Func<bool> requestedKeyFrame, Action<string, long, Exception> failed, CancellationToken ct,WindowsDisplaySelection? displaySelection,HostDisplaySession? displays,Action<DisplaySessionInfo,bool> displayChanged,Action releaseInput,bool commonClock=false)
     {
         bool synthetic = backend.StartsWith("test-", StringComparison.Ordinal);
         ICaptureBackend? capture = null; H264Encoder? encoder = null;
@@ -304,7 +344,7 @@ internal static class VideoHostSession
                         colorPoll = clock.ElapsedMilliseconds + 1000; string status = dxgi.ColorStatus;
                         if (status != lastColor) { Console.WriteLine("capture_color " + status); lastColor = status; }
                     }
-                    long timestamp = (long)(clock.Elapsed.TotalSeconds * 10_000_000);
+                    long timestamp = commonClock?(long)(Stopwatch.GetTimestamp()*(10_000_000d/Stopwatch.Frequency)):(long)(clock.Elapsed.TotalSeconds * 10_000_000);
                     bool force = requestedKeyFrame() || queue.Dropped != previousDrops || sequence == 0 || forceNextKeyFrame;
                     previousDrops = queue.Dropped; timer.Restart();
                     if (encoder is not null && (encoderWidth != frame.Width || encoderHeight != frame.Height)) { encoder.Dispose(); encoder = null; force = true; }

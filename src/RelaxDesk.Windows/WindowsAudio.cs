@@ -6,7 +6,7 @@ namespace RelaxDesk.Windows;
 
 // Apartment-owned WASAPI shared streams. Create/use/dispose on one dedicated STA.
 // Host authorization and transport belong to the caller; construction opens a device.
-public sealed class WindowsAudio:IDisposable
+public sealed class WindowsAudio:IAudioEndpoint
 {
     readonly int owner=Environment.CurrentManagedThreadId;
     readonly bool capture;
@@ -60,12 +60,15 @@ public sealed class WindowsAudio:IDisposable
     {
         Guard();if(capture||samples.Length%AudioProtocol.FrameBytes!=0||samples.Length>AudioProtocol.MaximumFrames*AudioProtocol.FrameBytes)throw new ArgumentException("Invalid render data");
         Check(client!.GetCurrentPadding(out uint padding));if(padding>capacity)throw new IOException("Audio padding exceeds capacity");
-        uint frames=Math.Min(capacity-padding,(uint)(samples.Length/AudioProtocol.FrameBytes));if(frames==0)return 0;
+        uint targetPadding=Math.Min(capacity,(uint)(AudioProtocol.Rate/25));
+        uint frames=Math.Min(padding>=targetPadding?0:targetPadding-padding,(uint)(samples.Length/AudioProtocol.FrameBytes));if(frames==0)return 0;
         var sink=(IAudioRenderClient)service!;Check(sink.GetBuffer(frames,out nint target));
-        try{byte[] copy=samples[..checked((int)frames*AudioProtocol.FrameBytes)].ToArray();Marshal.Copy(copy,0,target,copy.Length);}
-        finally{Check(sink.ReleaseBuffer(frames,0));}
+        bool copied=false;
+        try{byte[] copy=samples[..checked((int)frames*AudioProtocol.FrameBytes)].ToArray();Marshal.Copy(copy,0,target,copy.Length);copied=true;}
+        finally{Check(sink.ReleaseBuffer(frames,copied?0u:2u));}
         return checked((int)frames*AudioProtocol.FrameBytes);
     }
+    public void Flush(){Guard();if(capture)throw new InvalidOperationException("Only playback can flush");Check(client!.Stop());Check(client.Reset());Check(client.Start());}
     public void Dispose()
     {
         if(disposed)return;if(owner!=Environment.CurrentManagedThreadId)throw new InvalidOperationException("Dispose audio on owner apartment");disposed=true;

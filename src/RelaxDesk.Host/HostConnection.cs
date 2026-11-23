@@ -29,15 +29,16 @@ internal static class HostConnection
             else if (hello.Kind is not ("hello-v1" or "hello-v2") || hello.Text is null || !CryptographicOperations.FixedTimeEquals(System.Text.Encoding.UTF8.GetBytes(hello.Text), System.Text.Encoding.UTF8.GetBytes(token))) throw new AuthenticationException("Pairing rejected");
         }
         if (shell is null && hello.Kind != "request-v2") Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests screen + input. Type APPROVE to allow this session:");
-        if(hello.ClipboardTicket is not null||hello.Input is not null||hello.InputVersion is not (0 or InputProtocol.Version)||hello.Kind=="hello-v1"&&hello.InputVersion!=0)throw new AuthenticationException("Invalid input negotiation request");
+        if(hello.AudioTicket is not null||hello.ClipboardTicket is not null||hello.Input is not null||hello.InputVersion is not (0 or InputProtocol.Version)||hello.Kind=="hello-v1"&&hello.InputVersion!=0)throw new AuthenticationException("Invalid input negotiation request");
         if(!DisplayProtocol.Supported(hello.DisplayVersion)||hello.DisplayVersion!=0&&(hello.Kind=="hello-v1"||hello.InputVersion!=InputProtocol.Version)||hello.DisplayState is not null||hello.DisplayId is not null||hello.DisplayGeneration!=0)throw new AuthenticationException("Invalid display negotiation request");
         var requestedFeatures = SessionCapabilities.Validate(hello.Features);
         if(hello.FileScope is not null||hello.FileResume&&(!requestedFeatures.Contains(SessionCapabilities.FileTransfer)||hello.Kind=="hello-v1"))throw new AuthenticationException("Invalid file resume request");
         if (hello.Kind == "hello-v1" && requestedFeatures.Length != 0) throw new AuthenticationException("Session extensions require v2");
         if (shell is null && requestedFeatures.Any(SessionCapabilities.IsClipboard)) Console.WriteLine("Optional bidirectional clipboard requested: "+SessionCapabilities.ClipboardDescription(requestedFeatures)+". Type APPROVE_CLIPBOARD to allow exactly these requested formats; APPROVE grants screen/input only.");
         if (shell is null && requestedFeatures.Contains(SessionCapabilities.FileTransfer)) Console.WriteLine("Optional file.transfer requested. APPROVE_FILES grants access only to the configured local directory; APPROVE_ALL grants all requested configured features. APPROVE grants screen/input only.");
+        if(shell is null&&requestedFeatures.Contains(SessionCapabilities.SystemAudio))Console.WriteLine("Optional system output mix requested (may include other applications). APPROVE_AUDIO grants sound only in addition to screen/input; append _AUDIO to a clipboard/files/all approval to separately allow sound. APPROVE_ALL alone does not grant sound.");
         string? approval = await RequestConsent(client, shell, requestedFeatures, stop);
-        if (approval is not ("APPROVE" or "APPROVE_CLIPBOARD" or "APPROVE_FILES" or "APPROVE_ALL"))
+        if(approval is null||AudioConsent.Parse(approval) is null or ConsentDecision.Deny)
         {
             if (shell is not null) ShellBridge.Emit("denied", sessionId: shell.Id);
             if (hello.Kind is "hello-v2" or "request-v2")
@@ -52,7 +53,7 @@ internal static class HostConnection
         if (hello.Kind is "hello-v2" or "request-v2")
         {
             await VideoHostSession.Run(listener, client, tls, cert, hello, backend, stop,
-                SessionCapabilities.Grant(requestedFeatures, approval is "APPROVE_CLIPBOARD" or "APPROVE_ALL", selectedFileRoot is not null && approval is "APPROVE_FILES" or "APPROVE_ALL"), shell?.ClipboardRevoked ?? default, selectedFileRoot, shell?.FilesRevoked ?? default,fileResumes,selectedDisplay);
+                SessionCapabilities.Grant(requestedFeatures, AudioConsent.Base(approval) is "APPROVE_CLIPBOARD" or "APPROVE_ALL", selectedFileRoot is not null && AudioConsent.Base(approval) is "APPROVE_FILES" or "APPROVE_ALL",AudioConsent.AllowsAudio(approval)), shell?.ClipboardRevoked ?? default, selectedFileRoot, shell?.FilesRevoked ?? default,fileResumes,selectedDisplay,shell?.AudioRevoked??default);
             return;
         }
         listener.Stop();
@@ -84,14 +85,7 @@ internal static class HostConnection
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop);
         deadline.CancelAfter(TimeSpan.FromSeconds(60));
         Task<string?> decision = shell is null ? Console.In.ReadLineAsync(deadline.Token).AsTask() : ReadShell();
-        async Task<string?> ReadShell() => (await shell!.Request(client.Client.RemoteEndPoint?.ToString() ?? "unknown", features, deadline.Token)) switch
-        {
-            ConsentDecision.ScreenAndInput => "APPROVE",
-            ConsentDecision.Clipboard => "APPROVE_CLIPBOARD",
-            ConsentDecision.Files => "APPROVE_FILES",
-            ConsentDecision.All => "APPROVE_ALL",
-            _ => "DENY"
-        };
+        async Task<string?> ReadShell()=>AudioConsent.Command(await shell!.Request(client.Client.RemoteEndPoint?.ToString()??"unknown",features,deadline.Token));
         async Task WatchPeer()
         {
             while (true)

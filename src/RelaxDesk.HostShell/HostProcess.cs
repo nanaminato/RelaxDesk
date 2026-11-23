@@ -19,6 +19,7 @@ internal sealed class HostProcess
     public bool Pending { get; private set; }
     public bool ClipboardRequested { get; private set; }
     public bool FilesRequested { get; private set; }
+    public bool AudioRequested{get;private set;}
     bool fileRootConfigured;
     public event Action<HostEvent>? Changed;
     public event Action<string>? Diagnostic;
@@ -29,7 +30,7 @@ internal sealed class HostProcess
     {
         if(Running) throw new InvalidOperationException("共享已在运行");
         if(!IPAddress.TryParse(ip,out var address)||address.Equals(IPAddress.Any)||address.Equals(IPAddress.IPv6Any)||port is <1 or >65535)throw new ArgumentException("请选择有效的本机 IP 和端口");
-        if(backend!="dxgi"&&!((backend is "test-hardware" or "test-clipboard" or "test-clipboard-rich" or "test-clipboard-files" or "test-session-unavailable")&&IPAddress.IsLoopback(address)))throw new ArgumentException("测试后端只用于本机回归");
+        if(backend!="dxgi"&&!((backend is "test-hardware" or "test-clipboard" or "test-clipboard-rich" or "test-clipboard-files" or "test-session-unavailable" or "test-audio" or "test-audio-failure")&&IPAddress.IsLoopback(address)))throw new ArgumentException("测试后端只用于本机回归");
         var start=new ProcessStartInfo(Path.GetExtension(application).Equals(".exe",StringComparison.OrdinalIgnoreCase)?application:"dotnet") {UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true};
         if(!application.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))start.ArgumentList.Add(application);
         start.ArgumentList.Add("--shell");
@@ -61,10 +62,10 @@ internal sealed class HostProcess
                     if(type=="approval-request")
                     {
                         if(id is not {Length:32}||!id.All(char.IsAsciiHexDigit))throw new IOException("Host request identity missing");
-                        SessionId=id;ClipboardRequested=features.Any(RelaxDesk.Core.SessionCapabilities.IsClipboard);FilesRequested=features.Contains(RelaxDesk.Core.SessionCapabilities.FileTransfer);
+                        SessionId=id;ClipboardRequested=features.Any(RelaxDesk.Core.SessionCapabilities.IsClipboard);FilesRequested=features.Contains(RelaxDesk.Core.SessionCapabilities.FileTransfer);AudioRequested=features.Contains(RelaxDesk.Core.SessionCapabilities.SystemAudio);
                     }
                     Pending=type=="approval-request";
-                    if(type is "session-ended" or "listening") {SessionId=null;ClipboardRequested=FilesRequested=false;}
+                    if(type is "session-ended" or "listening") {SessionId=null;ClipboardRequested=FilesRequested=AudioRequested=false;}
                     if(type!="ended")Emit(new(type,address,id,features));continue;
                 }
                 lock(Lines){if(Lines.Count>=200)Lines.RemoveAt(0);Lines.Add(line);}
@@ -75,7 +76,7 @@ internal sealed class HostProcess
         }
         try {await Task.WhenAll(Read(child.StandardOutput),Read(child.StandardError),child.WaitForExitAsync());if(child.ExitCode!=0)Diagnostic?.Invoke($"Host exit_code={child.ExitCode}");}
         catch(Exception e){Diagnostic?.Invoke(e.Message);}
-        finally {int? exit=child.HasExited?child.ExitCode:null;Pending=false;SessionId=null;ClipboardRequested=FilesRequested=false;process=null;child.Dispose();Emit(new(stopping?"stopped":"ended",ExitCode:exit));}
+        finally {int? exit=child.HasExited?child.ExitCode:null;Pending=false;SessionId=null;ClipboardRequested=FilesRequested=AudioRequested=false;process=null;child.Dispose();Emit(new(stopping?"stopped":"ended",ExitCode:exit));}
     }
     async Task Send(Process child,string command)
     {
@@ -84,15 +85,16 @@ internal sealed class HostProcess
         catch(Exception e) when(e is IOException or ObjectDisposedException or InvalidOperationException) { }
         finally {commands.Release();}
     }
-    public Task Decide(bool allow, bool allowClipboard = false, bool allowFiles = false, string? expectedSessionId = null)
+    public Task Decide(bool allow, bool allowClipboard = false, bool allowFiles = false, string? expectedSessionId = null,bool allowAudio=false)
     {
         var child=process;string? id=expectedSessionId??SessionId;if(child is null||!Pending||id is null||id!=SessionId)return Task.CompletedTask;
         bool clipboard=allowClipboard&&ClipboardRequested,files=allowFiles&&FilesRequested&&fileRootConfigured;
-        string command=!allow?"DENY":clipboard&&files?"APPROVE_ALL":files?"APPROVE_FILES":clipboard?"APPROVE_CLIPBOARD":"APPROVE";
+        string command=RelaxDesk.Core.AudioConsent.Command(allow,clipboard,files,allowAudio&&AudioRequested);
         Pending=false;return Send(child,command+" "+id);
     }
     public Task RevokeClipboard(string? expectedSessionId=null)=>SessionCommand("REVOKE_CLIPBOARD",expectedSessionId);
     public Task RevokeFiles(string? expectedSessionId=null)=>SessionCommand("REVOKE_FILES",expectedSessionId);
+    public Task RevokeAudio(string? expectedSessionId=null)=>SessionCommand("REVOKE_AUDIO",expectedSessionId);
     public Task Disconnect(string? expectedSessionId=null)=>SessionCommand("DISCONNECT",expectedSessionId);
     Task SessionCommand(string command,string? expectedSessionId)
     {

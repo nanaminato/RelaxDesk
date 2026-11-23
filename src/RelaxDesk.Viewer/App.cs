@@ -36,6 +36,7 @@ public sealed class App : Application
         {
             var app = new App();
             if(args is ["--viewport-contracts"])ViewerWindow.VerifyViewport(app);
+            else if(args is ["--audio-session-contracts",var audioHost])ViewerWindow.VerifyAudioSession(app,audioHost);
             else if(args is ["--display-legacy-session-contracts",var legacyDisplayHost])ViewerWindow.VerifyDisplaySession(app,legacyDisplayHost,false,true);
             else if(args is ["--topology-race-contracts",var raceHost])ViewerWindow.VerifyDisplaySession(app,raceHost,false,false,true);
             else if(args is ["--topology-session-contracts",var topologyHost])ViewerWindow.VerifyDisplaySession(app,topologyHost,true);
@@ -193,6 +194,7 @@ public sealed partial class ViewerWindow : Window
                 SetViewportVideoSize(frame.Width,frame.Height);if(gpu&&drawnViewport is not null)ViewportDrawn(drawnViewport);
                 status.Text = $"已连接 · {frame.Width} × {frame.Height} · {(gpu ? "GPU 显示" : "兼容显示")}";
                 DisplayPresented(frame);ExerciseWindow(count);
+                audioSession?.VideoPresented(frame.Timestamp100ns);
                 if (smoke is not null && !smoke.FileTransfer && !smoke.RichClipboardTest && !smoke.ReconnectTest && !smoke.IdleSessionTest && !smoke.IdleRepaintTest && !smoke.FixedMediaBudget && count >= smoke.Frames && !smoke.CloseWhileStreaming) cancellation.Cancel();
             }
             if (Dispatcher.CheckAccess()) Update(); else Dispatcher.BeginInvoke(Update);
@@ -229,6 +231,7 @@ public sealed partial class ViewerWindow : Window
             StartDisplaySession(connection);
             await StartFileSession(connection,cancellation.Token);
             StartRichClipboard(connection,permissionGate,cancellation.Token);
+            StartAudio(connection,permissionGate,cancellation.Token);
             if (connection.ClipboardData is null&&permissionGate.Allows(SessionCapabilities.ClipboardText))
                 clipboard = new ClipboardSynchronizer(() => new WindowsTextClipboard(), permissionGate, QueueClipboardUpdate, cancellation.Token,
                     message => Dispatcher.BeginInvoke(() => { if (!ReferenceEquals(sessionPermissions, permissionGate) || cancellation.IsCancellationRequested) return; status.Text = message; if (!permissionGate.Allows(SessionCapabilities.ClipboardText)) DisableClipboard(); }));
@@ -306,6 +309,7 @@ public sealed partial class ViewerWindow : Window
                             if (!ReferenceEquals(sessionPermissions, permissionGate)) return;
                             if(SessionCapabilities.IsClipboard(feature)){StopFileClipboard();SessionCapabilities.RevokeClipboard(permissionGate);richClipboardSession?.Stop();sessionToolbar?.SetClipboard(false,null);}
                             else if(feature==SessionCapabilities.FileTransfer){StopFileClipboard();if(packet.Text=="transport")fileQueue?.Interrupt();else fileQueue?.Disable("Host已关闭文件权限");sessionToolbar?.SetFiles(null);nativeView?.SetFilesDrop(null);}
+                            else if(feature==SessionCapabilities.SystemAudio){audioSession?.Stop();RefreshAudioToolbar();}
                             if(feature==SessionCapabilities.FileTransfer)Interlocked.Increment(ref fileRevocationReplies);
                             status.Text="会话能力已关闭；重新开启需要重新连接并授权。";
                         });
@@ -438,6 +442,7 @@ public sealed partial class ViewerWindow : Window
             bool recoverFiles=attemptError is not null&&ConnectionRecovery.IsTransient(attemptError)&&connectionRun?.IsCancellationRequested==false&&retryFeatures.Contains(SessionCapabilities.FileTransfer);
             sessionPermissions?.Revoke(); sessionPermissions = null; Interlocked.Exchange(ref pendingClipboard, null);
             await EndRichClipboard();
+            await EndAudio();
             if (clipboard is not null) await clipboard.DisposeAsync();
             if(fileVerification is not null)await fileVerification;
             if(clipboardVerification is not null)await clipboardVerification;

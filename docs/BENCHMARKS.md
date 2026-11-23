@@ -58,3 +58,5 @@ See [2026-11-22 report](../benchmarks/2026-11-22-report.md) and its raw CPU/GPU/
 Same-device GPU decoder→HwndHost SwapChain and stage instrumentation are implemented. Final visibility/performance acceptance is blocked by RDP DXGI_STATUS_OCCLUDED; physical Home validation is pending. See [current evidence and timing definitions](../benchmarks/2026-11-22-gpu-display-report.md).
 
 2026-11-24 [logon and bounded worker recovery evidence](../benchmarks/2026-11-24-logon-recovery-validation.md) records installation, state, WPF/TLS and full regression results. These are functional checks using synthetic media; they make no physical latency or MSTSC performance claim.
+
+2026-11-24 [audio session evidence](../benchmarks/2026-11-24-audio-session-validation.md) records independent TLS permissions, actual WPF audio UI/workers with synthetic endpoints and shared QPC scheduling. Empty WASAPI initialization verifies API access, not real sound capture, audibility, speaker/Present timing or Home/LAN performance. Fixed PCM's 1.536 Mbit/s is calculated payload, not measured NIC throughput.

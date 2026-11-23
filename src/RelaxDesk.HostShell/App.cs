@@ -11,6 +11,7 @@ public sealed class App:Application
         if(args is ["--service-contracts",var serviceHost,var service])ServiceVerification.Run(app,serviceHost,service);
         else if(args is ["--shell-contracts",var host,var output]) ShellVerification.Run(app,host,output);
         else if(args is ["--recovery-contracts",var recoveryHost])RecoveryVerification.Run(app,recoveryHost);
+        else if(args is ["--audio-contracts",var audioHost])AudioVerification.Run(app,audioHost);
         else
         {
             bool logon=args.Contains("--logon"),serviceMode=args.Contains("--service-agent");

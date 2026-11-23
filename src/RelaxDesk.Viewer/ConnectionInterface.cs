@@ -34,6 +34,7 @@ public sealed partial class ViewerWindow
         requestClipboard.Margin = new Thickness(0, 10, 0, 4); form.Children.Add(requestClipboard);
         form.Children.Add(requestClipboardImage);form.Children.Add(requestClipboardHtml);
         requestFiles.Margin=new Thickness(0,2,0,4);form.Children.Add(requestFiles);form.Children.Add(requestFileClipboard);
+        form.Children.Add(requestAudio);
         var advanced = new StackPanel();
         void Field(string name, FrameworkElement control) { advanced.Children.Add(new TextBlock { Text = name }); advanced.Children.Add(control); }
         advanced.Children.Add(pinnedConnection);
@@ -78,7 +79,7 @@ public sealed partial class ViewerWindow
             sessionToolbar.SetSession(host.Text, fullScreen);
             sessionToolbar.SetClipboard(sessionPermissions is{} clipboardGate&&ClipboardFormats.Granted(clipboardGate).Any, DisableClipboard);
             sessionToolbar.SetTextInput(inputAuthorized&&inputVersion==2?OpenTextInput:null);
-            RefreshFileToolbar();RefreshFileClipboardToolbar();RefreshDisplayMenu();sessionToolbar.SetViewport(CurrentViewport,SetViewportZoom);
+            RefreshFileToolbar();RefreshFileClipboardToolbar();RefreshDisplayMenu();RefreshAudioToolbar();sessionToolbar.SetViewport(CurrentViewport,SetViewportZoom);
         }
         else
         {
