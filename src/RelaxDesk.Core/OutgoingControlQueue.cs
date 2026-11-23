@@ -2,8 +2,8 @@ using System.Runtime.CompilerServices;
 
 namespace RelaxDesk.Core;
 
-// Keep key/button/control ordering. Only absolute pointer moves may be replaced
-// or discarded. A queue containing only reliable events fails closed on overflow.
+// Keep key/button/control ordering. Only adjacent absolute pointer moves may
+// be replaced. Never evict a move preceding a click: it establishes its position.
 public sealed class OutgoingControlQueue(int capacity = 256)
 {
     readonly int capacity = capacity > 0 ? capacity : throw new ArgumentOutOfRangeException(nameof(capacity));
@@ -20,16 +20,9 @@ public sealed class OutgoingControlQueue(int capacity = 256)
         {
             if (IsMove(packet) && packets.Last is {} last && IsMove(last.Value))
             { last.Value = packet; return true; }
-            bool release = true;
-            if (packets.Count == capacity)
-            {
-                var node = packets.First;
-                while (node is not null && !IsMove(node.Value)) node = node.Next;
-                if (node is null) return false;
-                packets.Remove(node); release = false;
-            }
+            if (packets.Count == capacity) return false;
             packets.AddLast(packet);
-            if (release) available.Release();
+            available.Release();
             return true;
         }
     }

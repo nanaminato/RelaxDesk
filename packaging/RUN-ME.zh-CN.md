@@ -1,5 +1,11 @@
 # RelaxDesk Windows Home 验收包（实验版，win-x64）
 
+## v0.4.2 办公可靠性切片
+
+两端完整更新。Host 仍需每次明确允许。捕获/设备丢失最多重建三次，恢复首帧请求关键帧；v2 控制通道超过20秒没有完整消息会停止会话并尝试释放按键。静态桌面仍通过5秒心跳保活。工具栏“快捷键”可发送常见编辑键、Alt+Tab、Win+E/D/R、Ctrl+Shift+Esc；Ctrl+Alt+End/安全注意序列不支持。Ctrl+C/V 当前只作用于远端自身剪贴板，尚未跨机同步；没有文件传输、自动重连或多屏选择。
+
+可在命令提示符运行 `Test-Office.cmd > office-result.txt 2>&1`，执行合成图像/实际编解码/TLS恢复、恢复耗尽和心跳清理检查（约一分钟，不需要SDK）。这不会证明真实桌面可见或输入正确。`Viewer/RelaxDesk.Viewer.exe --keyboard-contracts` 需要可获得前台焦点的交互环境；在当前开发运行器受阻，不能报告通过。Home 双机、真实中文/日文 IME、NVIDIA设备重置与HDR观感仍待测试。完整目标机日志仍用 `Collect-Logs.cmd`。
+
 请将 ZIP **全部解压**到可写的本地文件夹，再运行。不要在压缩包内直接启动，不要只复制 EXE。包内附带 .NET 运行时，不需要安装 .NET SDK、Visual Studio、Python 或 Git；默认入口直接运行包内自包含 EXE，不执行 .ps1 文件；显示驱动清单使用系统自带 PowerShell 的只读查询。仅支持 x64，不支持 ARM64/x86。本包未经代码签名，不会安装服务、设置开机启动或修改系统安全策略。
 
 ## 一键验收

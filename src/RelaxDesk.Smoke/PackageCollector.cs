@@ -133,8 +133,8 @@ internal sealed class PackageCollector
                 else if (comparison != 0) status = comparison == 2 ? "BLOCKED" : "FAIL";
                 else
                 {
-                    bool good = true;
-                    foreach (string mode in new[] { "--video-software", "--video-hardware", "--video-recovery", "--video-stalled", "--video-producer-failure", "--video-runtime-fallback" }) { if (await Exec(mode[2..], smoke, [host, mode]) != 0) { good = false; break; } }
+                    bool good = await Exec("viewer-keyboard-contracts", viewer, ["--keyboard-contracts"], 30) == 0;
+                    foreach (string mode in new[] { "--video-software", "--video-hardware", "--video-recovery", "--video-stalled", "--video-producer-failure", "--video-runtime-fallback", "--video-capture-recovery", "--video-capture-exhausted", "--video-control-timeout", "--video-idle-control" }) { if (!good || await Exec(mode[2..], smoke, [host, mode]) != 0) { good = false; break; } }
                     if (good) good = await Exec("native-render", probe, ["--render-test"], 45) == 0;
                     if (good)
                         foreach (string mode in new[] { "approval-cpu", "hardware-cpu", "gpu", "gpu-window", "gpu-idle", "gpu-resolution", "gpu-recovery", "gpu-device-fallback", "gpu-fallback", "gpu-close", "desktop-gpu" })

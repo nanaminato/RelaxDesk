@@ -45,15 +45,15 @@ internal static class ShortcutChecks
         Check(sent.Select(p => p.Sequence).SequenceEqual(new long[] { 10000, 10001, 10003, 10004 }));
         Check(sent[0].X == 10000 && sent[2].X == 30 && sent[^1].Up);
         Check(queue.Depth == 0);
-        // Pressure evicts a move, never a reliable event or release.
+        // Pressure must not evict the move that establishes a click's position.
         Check(queue.TryWrite(new("input", 1, Code: 0)));
-        Check(queue.TryWrite(new("input", 2, Code: 65)));
+        Check(queue.TryWrite(new("input", 2, Code: 256)));
         Check(queue.TryWrite(new("ping-v2", 3)));
-        Check(queue.TryWrite(new("input", 4, Code: 65, Up: true)));
-        Check(queue.TryWrite(new("keyframe-v2", 5)));
+        Check(queue.TryWrite(new("input", 4, Code: 256, Up: true)));
+        Check(!queue.TryWrite(new("keyframe-v2", 5)));
         Check(!queue.TryWrite(new("input", 6, Code: 66)));
         sent.Clear(); while (queue.TryRead(out var next)) sent.Add(next!);
-        Check(sent.Select(p => p.Sequence).SequenceEqual(new long[] { 2, 3, 4, 5 }));
+        Check(sent.Select(p => p.Sequence).SequenceEqual(new long[] { 1, 2, 3, 4 }));
         using var cancelled = new CancellationTokenSource();
         await using var reader = queue.ReadAllAsync(cancelled.Token).GetAsyncEnumerator();
         var waiting = reader.MoveNextAsync().AsTask();

@@ -1,1 +1,1 @@
-<Project><PropertyGroup><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors><Version>0.4.1</Version><InformationalVersion Condition="'$(InformationalVersion)' == ''">0.4.1-dev</InformationalVersion></PropertyGroup></Project>
+<Project><PropertyGroup><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors><Version>0.4.2</Version><InformationalVersion Condition="'$(InformationalVersion)' == ''">0.4.2-dev</InformationalVersion></PropertyGroup></Project>
