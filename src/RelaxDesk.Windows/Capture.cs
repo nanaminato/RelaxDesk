@@ -17,7 +17,8 @@ public interface ICaptureBackend : IDisposable
 
 public sealed class GdiCaptureBackend : ICaptureBackend
 {
-    readonly Desktop desktop = new();
+    readonly Desktop desktop;
+    public GdiCaptureBackend(WindowsDisplaySelection? selection=null)=>desktop=new(selection);
     public string Name => "gdi";
     public CapturedFrame Capture(int timeoutMilliseconds = 100) => new(desktop.Width, desktop.Height, desktop.Capture(),
         new(Stopwatch.GetTimestamp(), 1, [], [], 0, 0, false, 0, 0, 0, 0, 0, 0, []));
@@ -29,11 +30,12 @@ public sealed class DxgiCaptureBackend : ICaptureBackend
 {
     sealed class Context : ThreadOwned
     {
-        public Context() => NativeMethods.Check(NativeMethods.rd_capture_create(out Handle));
+        public Context(string? device) {if(device is null)NativeMethods.Check(NativeMethods.rd_capture_create(out Handle));else NativeMethods.Check(NativeMethods.rd_capture_create_display(device,out Handle));}
         internal nint Value { get { Verify(); return Handle; } }
         protected override void Destroy(nint handle) => NativeMethods.rd_capture_destroy(handle);
     }
-    readonly Context context = new();
+    readonly Context context;
+    public DxgiCaptureBackend(string? device=null)=>context=new(device);
     internal nint NativeContext => context.Value;
     public string Name => "dxgi";
     public string ColorStatus { get { NativeMethods.Check(NativeMethods.rd_capture_color_status(context.Value, out var json)); return System.Runtime.InteropServices.Marshal.PtrToStringUTF8(json) ?? "{}"; } }

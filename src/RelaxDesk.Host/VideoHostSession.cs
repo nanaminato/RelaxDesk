@@ -15,13 +15,14 @@ internal static class VideoHostSession
 {
     sealed record QueuedFrame(MediaFrame Frame, long EnqueuedAt);
     public static async Task Run(TcpListener listener, TcpClient controlSocket, SslStream control, X509Certificate2 certificate,
-        Packet hello, string backend, CancellationToken stop, string[]? grantedFeatures = null, CancellationToken clipboardRevoked = default, string? selectedFileRoot = null, CancellationToken filesRevoked = default,FileTransferResumeStore? fileResumes=null)
+        Packet hello, string backend, CancellationToken stop, string[]? grantedFeatures = null, CancellationToken clipboardRevoked = default, string? selectedFileRoot = null, CancellationToken filesRevoked = default,FileTransferResumeStore? fileResumes=null,string? selectedDisplay=null)
     {
         string[] capabilities = (hello.Capabilities ?? []).Intersect(["h264", "deflate"]).ToArray();
         if (capabilities.Length == 0) throw new InvalidDataException("No common media codec");
         bool synthetic = backend.StartsWith("test-", StringComparison.Ordinal);
         if (synthetic && !IPAddress.IsLoopback(((IPEndPoint)controlSocket.Client.LocalEndPoint!).Address))
             throw new AuthenticationException("Synthetic video testing is loopback-only");
+        var displaySelection=synthetic?null:new WindowsDisplaySelection(selectedDisplay);
         var features = SessionCapabilities.ValidateGrant(hello.Features, grantedFeatures);
         if (synthetic && backend is not ("test-clipboard" or "test-clipboard-failure" or "test-clipboard-rich" or "test-clipboard-rich-failure" or "test-clipboard-files")) features = features.Where(feature=>!SessionCapabilities.IsClipboard(feature)).ToArray();
         if (clipboardRevoked.IsCancellationRequested) features = features.Where(feature=>!SessionCapabilities.IsClipboard(feature)).ToArray();
@@ -125,7 +126,8 @@ internal static class VideoHostSession
         }, session.Token);
         int forceKeyFrame = 1;
         var failures = new FirstSessionFailure();
-        using var inputDesktop = synthetic ? null : new Desktop();
+        if(displaySelection is not null)HostSessionLog.Write($"capture_display device={displaySelection.Device} x={displaySelection.Bounds.X} y={displaySelection.Bounds.Y} width={displaySelection.Bounds.Width} height={displaySelection.Bounds.Height} compatibility_gdi={displaySelection.RequiresGdi}");
+        using var inputDesktop = synthetic ? null : new Desktop(displaySelection);
         var input = Task.Run(async () =>
         {
             while (true)
@@ -158,7 +160,7 @@ internal static class VideoHostSession
             }
         }, session.Token);
         var producer = Task.Factory.StartNew(() => Produce(queue, backend, capabilities, () => Interlocked.Exchange(ref forceKeyFrame, 0) != 0,
-            (stage, frames, error) => { if (!session.IsCancellationRequested) failures.Record("capture-encode", stage, frames, error); }, session.Token),
+            (stage, frames, error) => { if (!session.IsCancellationRequested) failures.Record("capture-encode", stage, frames, error); }, session.Token,displaySelection),
             session.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         var sender = Task.Run(async () =>
         {
@@ -225,7 +227,7 @@ internal static class VideoHostSession
         catch (Exception error) { if (!ct.IsCancellationRequested) failures.Record(worker, worker, 0, error); throw; }
     }
 
-    static void Produce(LatestQueue<QueuedFrame> queue, string backend, string[] capabilities, Func<bool> requestedKeyFrame, Action<string, long, Exception> failed, CancellationToken ct)
+    static void Produce(LatestQueue<QueuedFrame> queue, string backend, string[] capabilities, Func<bool> requestedKeyFrame, Action<string, long, Exception> failed, CancellationToken ct,WindowsDisplaySelection? displaySelection)
     {
         bool synthetic = backend.StartsWith("test-", StringComparison.Ordinal);
         ICaptureBackend? capture = null; H264Encoder? encoder = null;
@@ -245,7 +247,8 @@ internal static class VideoHostSession
                 try
                 {
                     if (backend == "test-idle" && sequence >= 1) { ct.WaitHandle.WaitOne(); break; }
-                    stage = "capture-init"; capture ??= synthetic ? null : CreateCapture(backend);
+                    stage = "capture-init"; capture ??= synthetic ? null : CreateCapture(backend,displaySelection);
+                    if(capture is DxgiCaptureBackend)displaySelection?.EnsureCurrent();
                     stage = "capture-frame";
                     if ((backend == "test-capture-recovery" && sequence >= 4 && !injectedCaptureLoss) || (backend == "test-capture-exhausted" && sequence >= 4))
                     {
@@ -364,13 +367,13 @@ internal static class VideoHostSession
             if (producerFailure is null && cleanupFailure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(cleanupFailure).Throw();
         }
     }
-    static ICaptureBackend CreateCapture(string backend)
+    static ICaptureBackend CreateCapture(string backend,WindowsDisplaySelection? selection)
     {
-        if (backend == "gdi") return new GdiCaptureBackend();
-        try { return new DxgiCaptureBackend(); }
+        if (backend == "gdi"||selection?.RequiresGdi==true){if(selection?.RequiresGdi==true)Console.WriteLine("capture_compatibility reason=rotated-or-all-displays path=gdi cpu_readback=True hdr_precision=system-sdr");return new GdiCaptureBackend(selection); }
+        try { return new DxgiCaptureBackend(selection?.Device); }
         catch (ExternalException e) when (backend == "auto" && e.HResult is unchecked((int)0x887A0004) or unchecked((int)0x887A0002))
-        { Console.WriteLine($"DXGI unsupported: {e.Message}; using GDI compatibility fallback"); return new GdiCaptureBackend(); }
-        catch (Exception e) when (backend == "auto" && e is DllNotFoundException or BadImageFormatException)
-        { Console.WriteLine($"DXGI native module unavailable: {e.Message}; using GDI compatibility fallback"); return new GdiCaptureBackend(); }
+        { Console.WriteLine($"DXGI unsupported: {e.Message}; using GDI compatibility fallback"); return new GdiCaptureBackend(selection); }
+        catch (Exception e) when (backend == "auto" && e is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException)
+        { Console.WriteLine($"DXGI native module unavailable: {e.Message}; using GDI compatibility fallback"); return new GdiCaptureBackend(selection); }
     }
 }

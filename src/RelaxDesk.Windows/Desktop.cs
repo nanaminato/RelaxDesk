@@ -16,13 +16,18 @@ public sealed class Desktop : IDisposable
     [DllImport("gdi32.dll")] static extern bool DeleteObject(nint obj);
     [DllImport("gdi32.dll")] static extern bool DeleteDC(nint dc);
     [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll")] static extern nint SetThreadDpiAwarenessContext(nint context);
     [StructLayout(LayoutKind.Sequential)] struct Info { public uint Size; public int Width, Height; public ushort Planes, Bits; public uint Compression, ImageSize; public int X, Y; public uint Used, Important, Color; }
     public int Width { get; }
     public int Height { get; }
-    readonly WindowsInputSession input=new();
-    public Desktop()
+    readonly WindowsInputSession input;
+    readonly WindowsDisplaySelection? selection;
+    readonly int originX,originY;
+    public Desktop(WindowsDisplaySelection? selection=null)
     {
-        SetProcessDPIAware(); Width = GetSystemMetrics(0); Height = GetSystemMetrics(1);
+        this.selection=selection;input=selection is null?new():new(selection);
+        SetProcessDPIAware(); Width = selection?.Bounds.Width??GetSystemMetrics(0); Height = selection?.Bounds.Height??GetSystemMetrics(1);
+        originX=selection?.Bounds.X??0;originY=selection?.Bounds.Y??0;
         if (Width <= 0 || Height <= 0 || (long)Width * Height > 8_294_400) throw new InvalidOperationException("Unsupported primary display size");
 
     }
@@ -38,7 +43,14 @@ public sealed class Desktop : IDisposable
     }
     public byte[] Capture()
     {
+        nint previousDpi=SetThreadDpiAwarenessContext(-4);
+        if(previousDpi==0)throw new IOException("Per-monitor capture DPI context unavailable");
+        try{return CapturePhysical();}finally{SetThreadDpiAwarenessContext(previousDpi);}
+    }
+    byte[] CapturePhysical()
+    {
         EnsureInteractiveDesktop();
+        selection?.EnsureCurrent();
         // GDI display DCs are thread-affine. Keep their complete lifetime in this synchronous call.
         nint screen = 0, memory = 0, bitmap = 0, previous = 0;
         try
@@ -48,12 +60,12 @@ public sealed class Desktop : IDisposable
             bitmap = CreateCompatibleBitmap(screen, Width, Height); ValidateHandle(bitmap, 7, "CreateCompatibleBitmap");
             previous = SelectObject(memory, bitmap);
             if (previous == 0 || previous == -1 || GetCurrentObject(memory, 7) != bitmap) throw new IOException("SelectObject did not select capture bitmap");
-            if (!BitBlt(memory, 0, 0, Width, Height, screen, 0, 0, 0x40CC0020))
+            if (!BitBlt(memory, 0, 0, Width, Height, screen, originX, originY, 0x40CC0020))
             {
                 int first = Marshal.GetLastWin32Error();
                 // Access denial is a security/session restriction, not a request to retry another desktop.
                 if (first == 5) throw new IOException("BitBlt CAPTUREBLT denied (Win32 5); run in the authorized interactive console session");
-                if (!BitBlt(memory, 0, 0, Width, Height, screen, 0, 0, 0x00CC0020))
+                if (!BitBlt(memory, 0, 0, Width, Height, screen, originX, originY, 0x00CC0020))
                     throw new IOException($"BitBlt failed: CAPTUREBLT Win32 {first}; SRCCOPY Win32 {Marshal.GetLastWin32Error()}");
             }
             byte[] pixels = new byte[checked(Width * Height * 4)];

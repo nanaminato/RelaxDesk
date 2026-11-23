@@ -5,6 +5,8 @@ using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using RelaxDesk.Core;
+if(args is [var displayHost,"--display-denied"]){try{await DisplaySmoke.Run(displayHost);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
+if(args is ["--display-contracts"]){try{RelaxDesk.Windows.DisplayContracts.Run();}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is["--file-clipboard-contracts",var fileClipboardFixtures]){try{await RelaxDesk.Windows.FileClipboardContracts.Run(fileClipboardFixtures);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is[var richBindingHost,"--clipboard-binding"]){try{await RichClipboardBindingSmoke.Run(richBindingHost);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is[var richClipboardHost,var richClipboardMode]&&richClipboardMode is "--clipboard-rich" or "--clipboard-rich-denied" or "--clipboard-rich-failure" or "--clipboard-rich-transport" or "--clipboard-rich-replay" or "--clipboard-rich-format-denied"){try{await RichClipboardSmoke.Run(richClipboardHost,richClipboardMode);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}

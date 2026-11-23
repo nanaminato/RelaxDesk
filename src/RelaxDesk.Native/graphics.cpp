@@ -22,7 +22,8 @@ void capture_context::initialize() {
     for(UINT a=0;;++a){ComPtr<IDXGIAdapter1> adapter;HRESULT hr=factory->EnumAdapters1(a,&adapter);if(hr==DXGI_ERROR_NOT_FOUND)break;check(hr,"EnumAdapters1");
         for(UINT o=0;;++o){ComPtr<IDXGIOutput> candidate;hr=adapter->EnumOutputs(o,&candidate);if(hr==DXGI_ERROR_NOT_FOUND)break;check(hr,"EnumOutputs");
             DXGI_OUTPUT_DESC desc{};check(candidate->GetDesc(&desc),"GetDesc output");
-            if(!desc.AttachedToDesktop||desc.DesktopCoordinates.left!=0||desc.DesktopCoordinates.top!=0)continue;
+            if(!desc.AttachedToDesktop)continue;
+            if(selected_device.empty()?(desc.DesktopCoordinates.left!=0||desc.DesktopCoordinates.top!=0):selected_device!=desc.DeviceName)continue;
             if(desc.Rotation!=DXGI_MODE_ROTATION_IDENTITY)check(DXGI_ERROR_UNSUPPORTED,"rotated output unsupported");
             output=desc;candidate.As(&color_output);refresh_color();
             graphics.create(adapter.Get());ComPtr<IDXGIOutput5> output5;
@@ -42,7 +43,7 @@ void capture_context::initialize() {
             duplication->GetDesc(&duplication_desc);output=desc;return;
         }
     }
-    check(DXGI_ERROR_NOT_FOUND,"no attached primary DXGI output");
+    check(DXGI_ERROR_NOT_FOUND,"selected DXGI output is not attached");
 }
 bool capture_context::accept_surface(const DXGI_OUTDUPL_FRAME_INFO& info,IDXGIResource* resource) {
     auto action=classify_capture(info,texture!=nullptr);
@@ -94,6 +95,7 @@ void capture_context::acquire(uint32_t timeout,rd_frame& result) {
     if(!has_desktop)throw failure{S_FALSE};
 }
 RD int32_t rd_capture_create(void** context){if(!context)return E_POINTER;*context=nullptr;return guarded([&]{auto c=std::make_unique<capture_context>();c->initialize();*context=c.release();});}
+RD int32_t rd_capture_create_display(const wchar_t* name,void** context){if(!context)return E_POINTER;*context=nullptr;if(!name||wcsnlen_s(name,33)==0||wcsnlen_s(name,33)>31)return E_INVALIDARG;return guarded([&]{auto c=std::make_unique<capture_context>();c->selected_device=name;c->initialize();*context=c.release();});}
 RD int32_t rd_capture_next(void* context,uint32_t timeout,rd_frame* frame){if(!context||!frame||timeout>1000)return E_INVALIDARG;return guarded([&]{static_cast<capture_context*>(context)->acquire(timeout,*frame);});}
 RD int32_t rd_capture_blob(void* context,uint32_t kind,const void** data,uint32_t* bytes){if(!context||!data||!bytes)return E_INVALIDARG;return guarded([&]{auto& c=*static_cast<capture_context*>(context);c.lifetime.verify();
     if(kind==0){*data=c.dirty.data();*bytes=static_cast<uint32_t>(c.dirty.size()*sizeof(RECT));}

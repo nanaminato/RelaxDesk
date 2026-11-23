@@ -56,6 +56,7 @@ struct desktop_converter {
     void convert(gpu& graphics,ID3D11Texture2D* source,ID3D11Texture2D* target,const desktop_color& color);
 };
 struct capture_context {
+    std::wstring selected_device;
     resource_counter tracked{0};
     runtime lifetime; gpu graphics;
     ComPtr<IDXGIOutputDuplication> duplication;

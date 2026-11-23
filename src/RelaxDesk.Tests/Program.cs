@@ -17,6 +17,7 @@ count += await ClipboardFileChecks.Run();
 count += await FileProtocolChecks.Run();
 count += await ConsentChecks.Run();
 count += RecoveryChecks.Run();
+count += DisplayChecks.Run();
 var invitation = new ConnectionInvitation("192.168.1.2", 48200, new string('A', 64), new string('B', 32));
 Check(ConnectionInvitation.Parse(invitation.Encode()) == invitation);
 Check(ConnectionInvitation.Parse((invitation with { Host = "::1" }).Encode()).Host == "::1");

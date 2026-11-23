@@ -12,7 +12,7 @@ namespace RelaxDesk.Host;
 internal static class HostConnection
 {
     public static async Task Run(TcpListener listener, TcpClient client, X509Certificate2 cert, string token,
-        string backend, string? selectedFileRoot, ShellBridge.Session? shell, CancellationToken stop,FileTransferResumeStore? fileResumes=null)
+        string backend, string? selectedFileRoot, ShellBridge.Session? shell, CancellationToken stop,FileTransferResumeStore? fileResumes=null,string? selectedDisplay=null)
     {
         Packet hello;
         using var tls = new SslStream(client.GetStream(), false);
@@ -50,13 +50,13 @@ internal static class HostConnection
         if (hello.Kind is "hello-v2" or "request-v2")
         {
             await VideoHostSession.Run(listener, client, tls, cert, hello, backend, stop,
-                SessionCapabilities.Grant(requestedFeatures, approval is "APPROVE_CLIPBOARD" or "APPROVE_ALL", selectedFileRoot is not null && approval is "APPROVE_FILES" or "APPROVE_ALL"), shell?.ClipboardRevoked ?? default, selectedFileRoot, shell?.FilesRevoked ?? default,fileResumes);
+                SessionCapabilities.Grant(requestedFeatures, approval is "APPROVE_CLIPBOARD" or "APPROVE_ALL", selectedFileRoot is not null && approval is "APPROVE_FILES" or "APPROVE_ALL"), shell?.ClipboardRevoked ?? default, selectedFileRoot, shell?.FilesRevoked ?? default,fileResumes,selectedDisplay);
             return;
         }
         listener.Stop();
         if (backend.StartsWith("test-", StringComparison.Ordinal)) throw new AuthenticationException("Synthetic mode requires v2");
         var gate = new AccessGate(); gate.Approve();
-        using var desktop = new Desktop();
+        using var desktop = new Desktop(new WindowsDisplaySelection(selectedDisplay));
         await Wire.Write(tls, new Packet("approved-v1"), stop);
         using var session = CancellationTokenSource.CreateLinkedTokenSource(stop);
         var input = Task.Run(async () => { try { while (true) { var p = await Wire.Read(tls, session.Token); if (!gate.TryExecuteInput(p, () => { session.Token.ThrowIfCancellationRequested(); desktop.Inject(p.Code, p.Up, p.X, p.Y); })) throw new InvalidDataException("Unauthorized/invalid input"); } } finally { session.Cancel(); } });

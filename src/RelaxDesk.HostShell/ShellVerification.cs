@@ -21,8 +21,10 @@ internal static class ShellVerification
             using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(60));
             try
             {
-                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);Snapshot("host-idle.png");
+                await Until(()=>window.DisplayEnumerationFinished);await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);Snapshot("host-idle.png");
+                if(!window.DisplayConfigurationEnabled||window.DisplayChoiceCount<2)throw new IOException("Physical display metadata choices missing");
                 int port=Port();await window.StartSharing("127.0.0.1",port,"test-hardware");await Until(()=>window.Status=="等待连接");
+                if(window.DisplayConfigurationEnabled)throw new IOException("Running Host allowed scope selection change");
                 using(var viewer=new SessionClient())
                 {
                     var connection=viewer.ConnectByApproval("127.0.0.1",port,timeout.Token);
@@ -35,6 +37,8 @@ internal static class ShellVerification
                     await window.StopSharing();await window.Host.Finished.WaitAsync(TimeSpan.FromSeconds(10));
                 }
                 if(window.Host.Running||window.Host.Pending)throw new IOException("Stop left child/session running");
+                if(!window.DisplayConfigurationEnabled)throw new IOException("Stopped Host did not restore display choice");
+                Console.WriteLine("PASS WPF Host display selection: real metadata choices, fixed scope while listening, settings restored after stop; synthetic video only, physical secondary capture pending");
                 port=Port();await window.StartSharing("127.0.0.1",port,"test-hardware");await Until(()=>window.Status=="等待连接");
                 using(var viewer=new SessionClient())
                 {

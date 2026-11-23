@@ -13,8 +13,10 @@ bool shellMode = args.Length > 0 && args[0] == "--shell";
 if (shellMode) args = args[1..];
 bool listenMode = args.Length > 0 && args[0] == "--listen";
 if (listenMode) args = args[1..];
-string? selectedFileRoot = null;
-if (args is ["--file-root", var authorizedDirectory, .. var remaining]) { selectedFileRoot = Path.GetFullPath(authorizedDirectory); args = remaining; }
+string? selectedFileRoot = null,selectedDisplay=null;
+while(args is [var option,var value,.. var remaining]&&option is "--file-root" or "--display")
+{if(option=="--file-root")selectedFileRoot=Path.GetFullPath(value);else selectedDisplay=value;args=remaining;}
+if(args is ["--list-displays"]){Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(WindowsDisplays.Enumerate()));return;}
 bool interactiveLaunch = args.Length == 0;
 if (args is ["--version"]) { Console.WriteLine(BuildIdentity.Display); return; }
 if (args.Length == 0)
@@ -64,7 +66,7 @@ if (args is ["--capture-test"])
     catch (IOException e) { Console.Error.WriteLine($"Capture test failed: {e.Message}"); Environment.ExitCode = 1; return; }
 }
 if (args.Length is < 2 or > 3 || !IPAddress.TryParse(args[0], out var address) || !int.TryParse(args[1], out int port) || port is < 1 or > 65535 || IPAddress.Any.Equals(address) || IPAddress.IPv6Any.Equals(address))
-{ Console.WriteLine("Usage: RelaxDesk.Host [--listen] [--file-root <local directory>] <specific LAN IP> <port> [backend]"); return; }
+{ Console.WriteLine("Usage: RelaxDesk.Host [--listen] [--file-root <local directory>] [--display <device name|all>] <specific LAN IP> <port> [backend]"); return; }
 string backend = args.Length == 3 ? args[2] : "auto";
 if (backend is not ("auto" or "dxgi" or "gdi" or "test-software" or "test-hardware" or "test-deflate" or "test-resolution" or "test-idle" or "test-producer-failure" or "test-runtime-fallback" or "test-capture-recovery" or "test-capture-exhausted" or "test-clipboard" or "test-clipboard-failure" or "test-clipboard-rich" or "test-clipboard-rich-failure" or "test-clipboard-files")) throw new ArgumentException("Unknown capture backend");
 if (backend.StartsWith("test-", StringComparison.Ordinal) && !IPAddress.IsLoopback(address)) throw new ArgumentException("Synthetic test is loopback-only");
@@ -87,7 +89,7 @@ try
         {
             using var client = await listener.AcceptTcpClientAsync(stop.Token); client.NoDelay = true;
             using var scope = shell?.Begin();
-            try { await HostConnection.Run(listener, client, cert, token, backend, selectedFileRoot, scope, scope?.Token ?? stop.Token,fileResumes); }
+            try { await HostConnection.Run(listener, client, cert, token, backend, selectedFileRoot, scope, scope?.Token ?? stop.Token,fileResumes,selectedDisplay); }
             finally { if (shellMode) ShellBridge.Emit("session-ended", sessionId: scope!.Id); }
         }
         catch (Exception e) when (e is IOException or AuthenticationException or OperationCanceledException or SocketException or InvalidDataException or System.Runtime.InteropServices.ExternalException or System.Threading.Channels.ChannelClosedException)

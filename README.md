@@ -101,3 +101,5 @@ Windows Home local-console one-command validation: `powershell.exe -NoProfile -F
 Windows acceptance package: run `Start-Host.cmd` on the shared PC and `Start-Viewer.cmd` on the client. Host approval is a WPF button; IP and port are sufficient. HDR-to-SDR GPU mapping is implemented and synthetic-color tested; physical HDR appearance remains pending. See [package instructions](packaging/RUN-ME.zh-CN.md).
 
 Confirmed file clipboard now reuses the scoped queue and independently approved file/clipboard capabilities. It publishes CF_HDROP only after complete staging, with clipboard-version conflict checks and acknowledged Host publication. See [file clipboard contract](docs/FILE-CLIPBOARD.md). Physical Explorer paste remains pending; no per-slice package.
+
+Host-selected screens and all-screen capture/input now support physical negative origins. Unrotated single screens retain DXGI/GPU encode; rotated/all-screen scope uses explicit GDI compatibility. See [display contract and remaining P4 work](docs/DISPLAYS.md). Viewer live switching/zoom and physical multi-monitor/DPI acceptance remain open.

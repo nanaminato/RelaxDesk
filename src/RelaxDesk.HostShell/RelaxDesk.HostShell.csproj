@@ -1,4 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk">
  <PropertyGroup><TargetFramework>net11.0-windows</TargetFramework><OutputType>WinExe</OutputType><UseWPF>true</UseWPF><ApplicationManifest>app.manifest</ApplicationManifest><PlatformTarget>x64</PlatformTarget></PropertyGroup>
- <ItemGroup><ProjectReference Include="../RelaxDesk.Core/RelaxDesk.Core.csproj"/><Compile Include="../SharedUI/ModernTheme.cs" Link="ModernTheme.cs"/></ItemGroup>
+ <ItemGroup><ProjectReference Include="../RelaxDesk.Core/RelaxDesk.Core.csproj"/><ProjectReference Include="../RelaxDesk.Windows/RelaxDesk.Windows.csproj"/><Compile Include="../SharedUI/ModernTheme.cs" Link="ModernTheme.cs"/></ItemGroup>
 </Project>
