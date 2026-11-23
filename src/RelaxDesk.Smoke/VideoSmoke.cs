@@ -21,6 +21,7 @@ internal static class VideoSmoke
         using var client = new SessionClient();
         try
         {
+            ChildProcess.Report(process, "host");
             string fingerprint = (await process.StandardOutput.ReadLineAsync(timeout.Token) ?? throw new IOException("No fingerprint")).Split(": ")[1];
             string token = (await process.StandardOutput.ReadLineAsync(timeout.Token) ?? throw new IOException("No token")).Split(": ")[1];
             await process.StandardOutput.ReadLineAsync(timeout.Token);

@@ -21,11 +21,13 @@ internal static class WpfSmoke
         Process? viewer = null;
         try
         {
+            ChildProcess.Report(host, "host");
             string fingerprint = (await host.StandardOutput.ReadLineAsync(timeout.Token) ?? throw new IOException("No fingerprint")).Split(": ")[1];
             string token = (await host.StandardOutput.ReadLineAsync(timeout.Token) ?? throw new IOException("No token")).Split(": ")[1];
             string connectionLine = await host.StandardOutput.ReadLineAsync(timeout.Token) ?? ""; await Task.Delay(100, timeout.Token);
             var viewerStart = ChildProcess.Create(viewerPath, "--render-smoke");
             viewer = Process.Start(viewerStart) ?? throw new IOException("Viewer launch failed");
+            ChildProcess.Report(viewer, "viewer");
             await viewer.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new { Host = "127.0.0.1", Port = port, Fingerprint = approvalOnly ? "" : fingerprint, Token = approvalOnly ? "" : token, ConnectionCode = !approvalOnly && connectionLine.StartsWith("Connection code: ", StringComparison.Ordinal) ? connectionLine[17..] : null, Renderer = gpu ? "gpu" : "cpu", HardwareDecode = mode != "software", Frames = frames, ExerciseWindow = mode == "gpu-window", RequireGpu = gpu && mode is not ("gpu-fallback" or "gpu-device-fallback"), SimulateDeviceLoss = mode == "gpu-device-fallback", SimulateGap = mode == "gpu-recovery", IdleRepaintTest = mode == "gpu-idle", IdleSessionTest = mode == "cpu-idle-long", FixedMediaBudget = fixedBudget, CloseWhileStreaming = mode == "gpu-close" })); await viewer.StandardInput.FlushAsync();
             string prompt = await host.StandardOutput.ReadLineAsync(timeout.Token) ?? throw new IOException("Missing approval request");
             if (!prompt.Contains("APPROVE")) throw new IOException("No consent");

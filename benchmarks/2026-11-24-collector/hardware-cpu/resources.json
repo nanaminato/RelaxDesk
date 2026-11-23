@@ -1,0 +1,302 @@
+[
+  {
+    "GpuError": null,
+    "StartedUtcTicks": 639310692067624864,
+    "GpuEngines": [],
+    "WorkingSetBytes": 33914880,
+    "GpuMemory": [],
+    "Utc": "2026-11-23T22:20:07.5172844Z",
+    "ProcessId": 26720,
+    "CpuPercent": null
+  },
+  {
+    "GpuError": null,
+    "StartedUtcTicks": 639310692071244388,
+    "GpuEngines": [],
+    "WorkingSetBytes": 69550080,
+    "GpuMemory": [],
+    "Utc": "2026-11-23T22:20:07.5250524Z",
+    "ProcessId": 23772,
+    "CpuPercent": null
+  },
+  {
+    "GpuError": null,
+    "StartedUtcTicks": 639310692067624864,
+    "GpuEngines": [
+      {
+        "UtilizationPercent": 3,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_0_engtype_3D"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_10_engtype_"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_11_engtype_"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_12_engtype_"
+      },
+      {
+        "UtilizationPercent": 7,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_1_engtype_VideoDecode"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_2_engtype_Copy"
+      },
+      {
+        "UtilizationPercent": 3,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_3_engtype_VideoProcessing"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_4_engtype_VideoDecode"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_5_engtype_Compute"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_6_engtype_GSC"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_7_engtype_"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_8_engtype_"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_9_engtype_"
+      }
+    ],
+    "WorkingSetBytes": 181272576,
+    "GpuMemory": [
+      {
+        "SharedBytes": 48816128,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0",
+        "DedicatedBytes": 0,
+        "TotalCommittedBytes": 57683968
+      }
+    ],
+    "Utc": "2026-11-23T22:20:08.8672388Z",
+    "ProcessId": 26720,
+    "CpuPercent": 2.370994753740389
+  },
+  {
+    "GpuError": null,
+    "StartedUtcTicks": 639310692071244388,
+    "GpuEngines": [
+      {
+        "UtilizationPercent": 4,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_0_engtype_3D"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_10_engtype_"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_11_engtype_"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_12_engtype_"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_1_engtype_VideoDecode"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_2_engtype_Copy"
+      },
+      {
+        "UtilizationPercent": 4,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_3_engtype_VideoProcessing"
+      },
+      {
+        "UtilizationPercent": 3,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_4_engtype_VideoDecode"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_5_engtype_Compute"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_6_engtype_GSC"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_7_engtype_"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_8_engtype_"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_9_engtype_"
+      }
+    ],
+    "WorkingSetBytes": 217346048,
+    "GpuMemory": [
+      {
+        "SharedBytes": 63180800,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0",
+        "DedicatedBytes": 0,
+        "TotalCommittedBytes": 70164480
+      }
+    ],
+    "Utc": "2026-11-23T22:20:08.8760070Z",
+    "ProcessId": 23772,
+    "CpuPercent": 2.6046457285439986
+  },
+  {
+    "GpuError": null,
+    "StartedUtcTicks": 639310692067624864,
+    "GpuEngines": [
+      {
+        "UtilizationPercent": 2,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_0_engtype_3D"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_10_engtype_"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_11_engtype_"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_12_engtype_"
+      },
+      {
+        "UtilizationPercent": 7,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_1_engtype_VideoDecode"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_2_engtype_Copy"
+      },
+      {
+        "UtilizationPercent": 3,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_3_engtype_VideoProcessing"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_4_engtype_VideoDecode"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_5_engtype_Compute"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_6_engtype_GSC"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_7_engtype_"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_8_engtype_"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0_eng_9_engtype_"
+      }
+    ],
+    "WorkingSetBytes": 186269696,
+    "GpuMemory": [
+      {
+        "SharedBytes": 48816128,
+        "Instance": "pid_26720_luid_0x00000000_0x0000975A_phys_0",
+        "DedicatedBytes": 0,
+        "TotalCommittedBytes": 57683968
+      }
+    ],
+    "Utc": "2026-11-23T22:20:10.1919725Z",
+    "ProcessId": 26720,
+    "CpuPercent": 1.4090562411835352
+  },
+  {
+    "GpuError": null,
+    "StartedUtcTicks": 639310692071244388,
+    "GpuEngines": [
+      {
+        "UtilizationPercent": 5,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_0_engtype_3D"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_10_engtype_"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_11_engtype_"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_12_engtype_"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_1_engtype_VideoDecode"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_2_engtype_Copy"
+      },
+      {
+        "UtilizationPercent": 4,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_3_engtype_VideoProcessing"
+      },
+      {
+        "UtilizationPercent": 3,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_4_engtype_VideoDecode"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_5_engtype_Compute"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_6_engtype_GSC"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_7_engtype_"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_8_engtype_"
+      },
+      {
+        "UtilizationPercent": 0,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0_eng_9_engtype_"
+      }
+    ],
+    "WorkingSetBytes": 235593728,
+    "GpuMemory": [
+      {
+        "SharedBytes": 63180800,
+        "Instance": "pid_23772_luid_0x00000000_0x0000975A_phys_0",
+        "DedicatedBytes": 0,
+        "TotalCommittedBytes": 70164480
+      }
+    ],
+    "Utc": "2026-11-23T22:20:10.2028965Z",
+    "ProcessId": 23772,
+    "CpuPercent": 3.892270556453719
+  }
+]

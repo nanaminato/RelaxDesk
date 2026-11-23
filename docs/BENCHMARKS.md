@@ -40,6 +40,8 @@ Frame capture P95 <=5ms, encode/decode P95 <=8ms, and LAN input-to-photon P95 <=
 
 ## Integrity
 
+Use the [current collector commands and evidence rules](BENCHMARK-COLLECTION.md) for isolated builds or final bundles. [Collector validation](../benchmarks/2026-11-24-benchmark-collector-validation.md) includes actual raw synthetic traces, explicit process identity/exit status and limits; it does not add matched office or physical acceptance.
+
 Do not compare native MSTSC RDP sessions with physical-desktop streaming without labeling that fundamental architectural difference. Publish failed results and limitations. Automated microbenchmarks cannot replace actual home-edition interactive tests.
 
 

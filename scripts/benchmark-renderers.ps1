@@ -1,37 +1,52 @@
-param([int]$Frames = 120, [string]$OutputDirectory = 'benchmarks/latest-renderers', [string]$PackageRoot = '')
+param([int]$Frames = 120, [string]$OutputDirectory = 'benchmarks/latest-renderers', [string]$PackageRoot = '', [string]$ArtifactsDirectory = '',
+      [ValidateSet('deflate','software','hardware-cpu','gpu')][string[]]$Modes = @('deflate','software','hardware-cpu','gpu'))
 $ErrorActionPreference = 'Stop'
+Import-Module "$PSScriptRoot/RelaxDesk.Benchmark.psm1" -Force
+if ($ArtifactsDirectory -and $PackageRoot) { throw 'Choose an artifacts directory or a package root' }
+if (!$Modes.Count -or @($Modes | Select-Object -Unique).Count -ne $Modes.Count) { throw 'Choose distinct renderer modes' }
 if ($Frames -lt 60 -or $Frames -gt 1800) { throw 'Frames must be 60..1800' }
 $root = Split-Path $PSScriptRoot -Parent
 if ($PackageRoot) { $root = [IO.Path]::GetFullPath($PackageRoot) }
 $output = [IO.Path]::GetFullPath((Join-Path $root $OutputDirectory))
-[IO.Directory]::CreateDirectory($output) | Out-Null
+if (Test-Path -LiteralPath $output) { throw 'Choose a new output directory; prior evidence is retained' }
 $hostDll = Join-Path $root 'src/RelaxDesk.Host/bin/Release/net11.0-windows/RelaxDesk.Host.dll'
 $viewerDll = Join-Path $root 'src/RelaxDesk.Viewer/bin/Release/net11.0-windows/RelaxDesk.Viewer.dll'
 $smokeDll = Join-Path $root 'src/RelaxDesk.Smoke/bin/Release/net11.0-windows/RelaxDesk.Smoke.dll'
+if ($ArtifactsDirectory) {
+    $artifacts = [IO.Path]::GetFullPath((Join-Path $root $ArtifactsDirectory))
+    $hostDll = Join-Path $artifacts 'bin/RelaxDesk.Host/release/RelaxDesk.Host.dll'
+    $viewerDll = Join-Path $artifacts 'bin/RelaxDesk.Viewer/release/RelaxDesk.Viewer.dll'
+    $smokeDll = Join-Path $artifacts 'bin/RelaxDesk.Smoke/release/RelaxDesk.Smoke.dll'
+}
 if ($PackageRoot) {
     $hostDll = Join-Path $root 'Host/RelaxDesk.Host.exe'; $viewerDll = Join-Path $root 'Viewer/RelaxDesk.Viewer.exe'
     $smokeDll = Join-Path $root 'Tools/Smoke/RelaxDesk.Smoke.exe'
 }
-foreach ($mode in @('deflate', 'software', 'hardware-cpu', 'gpu')) {
+foreach ($application in @($smokeDll,$hostDll,$viewerDll)) { if (!(Test-Path -LiteralPath $application -PathType Leaf)) { throw "Missing benchmark application: $application" } }
+[IO.Directory]::CreateDirectory($output) | Out-Null
+Write-BenchmarkManifest -Output $output -Frames $Frames -Modes $Modes -Applications @($smokeDll,$hostDll,$viewerDll)
+foreach ($mode in $Modes) {
     $directory = Join-Path $output $mode
     [IO.Directory]::CreateDirectory($directory) | Out-Null
-    $arguments = @(('"{0}"' -f $smokeDll), ('"{0}"' -f $hostDll), '--wpf-budget', ('"{0}"' -f $viewerDll), $mode, $Frames)
+    $arguments = @($smokeDll,$hostDll,'--wpf-budget',$viewerDll,$mode,"$Frames")
     $executable = 'dotnet'
     if ($PackageRoot) { $executable = $smokeDll; $arguments = $arguments[1..($arguments.Count-1)] }
-    $driver = Start-Process $executable -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $directory 'video.txt') -RedirectStandardError (Join-Path $directory 'errors.txt')
+    $quoted = @($arguments | ForEach-Object { ConvertTo-BenchmarkArgument $_ })
+    $driver = Start-Process $executable -ArgumentList $quoted -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $directory 'video.txt') -RedirectStandardError (Join-Path $directory 'errors.txt')
+    $completed = $false
     try {
-        $children = @()
-        for ($attempt = 0; $attempt -lt 50; $attempt++) {
-            $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $($driver.Id)" | Where-Object { $_.CommandLine -like '*RelaxDesk.Host.dll*' -or $_.CommandLine -like '*RelaxDesk.Viewer.dll*' -or $_.ExecutablePath -eq $hostDll -or $_.ExecutablePath -eq $viewerDll })
-            if ($children.Count -eq 2) { break }
-            Start-Sleep -Milliseconds 100
-        }
-        if ($children.Count -ne 2) { throw "Missing Host/Viewer for $mode; inspect errors.txt" }
-        $children | Select-Object ProcessId, Name, CommandLine | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $directory 'processes.json') -Encoding utf8
-        & "$PSScriptRoot/measure-resources.ps1" -ProcessIds @($children.ProcessId) -Seconds ([Math]::Max(10, $Frames / 10 + 10)) -StopWhenProcessId $driver.Id -OutputPath (Join-Path $directory 'resources.json')
-        $driver.WaitForExit()
-        if ($driver.ExitCode) { throw "Renderer benchmark failed: $mode; inspect $directory" }
+        $null = $driver.Handle
+        $children = @(Get-BenchmarkProcesses -Driver $driver -Log (Join-Path $directory 'video.txt') -Roles @('host','viewer'))
+        ConvertTo-Json -InputObject $children -Depth 4 | Set-Content -LiteralPath (Join-Path $directory 'processes.json') -Encoding utf8
+        $starts = @{}; foreach ($entry in $children) { $starts[[int]$entry.ProcessId] = [long]$entry.StartedUtcTicks }
+        & "$PSScriptRoot/measure-resources.ps1" -ProcessIds @($children.ProcessId) -ExpectedProcessStarts $starts -Seconds ([Math]::Max(30, $Frames / 10 + 15)) -StopWhenProcessId $driver.Id -OutputPath (Join-Path $directory 'resources.json')
+        if (!$driver.WaitForExit(5000)) { throw 'Benchmark did not exit within its bounded sample window' }
+        if ($null -eq $driver.ExitCode -or $driver.ExitCode -ne 0) { throw "Renderer benchmark failed or exit code unavailable: $mode; inspect $directory" }
+        $completed = $true
         Write-Output "PASS renderer benchmark mode=$mode received_media_budget=$Frames"
     }
-    finally { if (!$driver.HasExited) { & taskkill.exe /PID $driver.Id /T /F | Out-Null }; $driver.Dispose() }
+    finally {
+        [pscustomobject]@{Status=$(if($completed){'PASS'}else{'FAIL'});ExitCode=$(if($driver.HasExited){$driver.ExitCode}else{$null})} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $directory 'result.json') -Encoding utf8
+        if (!$driver.HasExited) { & taskkill.exe /PID $driver.Id /T /F | Out-Null }; $driver.Dispose()
+    }
 }
