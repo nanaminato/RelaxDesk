@@ -21,6 +21,7 @@ public sealed partial class ViewerWindow
     }
     string[] RequestedFeatures()
     {
+        if (smoke?.ReconnectTest==true)return [SessionCapabilities.FileTransfer];
         if (smoke is not null) return smoke.FileTransfer ? [SessionCapabilities.FileTransfer] : [];
         var features = new List<string>(); if (requestClipboard.IsChecked == true) features.Add(SessionCapabilities.ClipboardText); if (requestFiles.IsChecked == true) features.Add(SessionCapabilities.FileTransfer); return features.ToArray();
     }

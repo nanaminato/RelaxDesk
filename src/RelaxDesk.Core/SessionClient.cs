@@ -17,6 +17,7 @@ public sealed class SessionClient : IDisposable
     public string[] RequestedFeatures { get; init; } = [];
     public string[] Features { get; private set; } = [];
     public string VerifiedFingerprint { get; private set; } = "";
+    public event Action<ConnectionPhase>? PhaseChanged;
     public Task Connect(string host, int port, string fingerprint, string token, CancellationToken ct) => ConnectInternal(host, port, fingerprint, token, false, ct);
     // First-contact LAN approval: trust only this TLS session's presented cert,
     // then pin the media channel to that exact certificate. Host consent remains
@@ -34,6 +35,7 @@ public sealed class SessionClient : IDisposable
         async Task<SslStream> Open(TcpClient socket, bool firstContact = false)
         {
             await socket.ConnectAsync(host, port, ct);
+            if (ReferenceEquals(socket, control)) PhaseChanged?.Invoke(ConnectionPhase.Authenticating);
             var stream = new SslStream(socket.GetStream(), false, (_, cert, _, _) =>
             {
                 if (cert is null) return false;
@@ -44,15 +46,19 @@ public sealed class SessionClient : IDisposable
             try { await stream.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = "RelaxDesk", EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, ct); return stream; }
             catch { stream.Dispose(); throw; }
         }
+        PhaseChanged?.Invoke(ConnectionPhase.Connecting);
         Control = await Open(control, approvalOnly);
         VerifiedFingerprint = expected;
         var requestedFeatures = SessionCapabilities.Validate(RequestedFeatures);
         await Wire.Write(Control, new Packet(approvalOnly ? "request-v2" : "hello-v2", Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], Features: requestedFeatures.Length == 0 ? null : requestedFeatures), ct);
+        PhaseChanged?.Invoke(ConnectionPhase.AwaitingApproval);
         var approval = await Wire.Read(Control, ct);
+        if (approval == new Packet("denied-v2")) throw new HostConsentRejectedException();
         if (approval.Kind != "approved-v2" || approval.Text is null || approval.Capabilities is not { Length: > 0 }) throw new AuthenticationException("Host approval/capabilities missing");
         Capabilities = approval.Capabilities;
         Features = SessionCapabilities.ValidateGrant(requestedFeatures, approval.Features);
         if (Capabilities.Any(c => c is not ("h264" or "deflate"))) throw new InvalidDataException("Unknown negotiated capability");
+        PhaseChanged?.Invoke(ConnectionPhase.Negotiating);
         Media = await Open(media);
         await Wire.Write(Media, new Packet("media-v2", Text: approval.Text), ct);
         if ((await Wire.Read(Media, ct)).Kind != "media-approved-v2") throw new AuthenticationException("Media channel rejected");
@@ -64,6 +70,7 @@ public sealed class SessionClient : IDisposable
             if ((await Wire.Read(Data, ct, 8 * 1024)).Kind != "data-approved-v2") throw new AuthenticationException("File data channel rejected");
         }
         else if (approval.DataTicket is not null) throw new AuthenticationException("Unrequested file data ticket");
+        PhaseChanged?.Invoke(ConnectionPhase.Connected);
     }
     public void Dispose() { control.Dispose(); media.Dispose(); data.Dispose(); Control?.Dispose(); Media?.Dispose(); Data?.Dispose(); }
 }

@@ -115,3 +115,10 @@ NOT VERIFIED: physical HDR capture/tone-map appearance on NVIDIA or Windows Home
 ## 2026-11-23 — Connected Viewer toolbar (0.4.1)
 
 Connected sessions collapse fixed header/footer and use the entire client area with aspect ratio preserved. A nonactivating owned WPF window overlays the native HwndHost safely; it retracts to a 5-DIP central top tab, expands on hover and hides after pointer departure. It follows client origin/DPI/resize, hides on minimize/deactivation and releases timer/window on disconnect/close. Fullscreen, return-to-window and disconnect remain available; connection errors/status return with the form. No protocol, authentication or HDR changes. Real HWND test covers airspace hit-testing, simulated-pointer hide/reveal, fullscreen actions, minimize/restore, disconnect/owner-close disposal. Physical pointer and multi-monitor DPI validation on Windows Home remain pending.
+
+
+## Office continuation — 2026-11-23
+
+Implemented source now includes independently authorized text clipboard, scoped third-channel file transfer with Host folder consent and Viewer recursive queues/confirmed drops, persistent single-controller Host and bounded pinned Viewer reconnect with fresh consent. See [current product ledger](PRODUCT-READINESS.md) and [lifecycle evidence](../benchmarks/2026-11-23-reconnect-validation.md). Core/TLS 656 and executable WPF/Host/relay tests pass; these do not close physical Home phase exits.
+
+Next: scoped cross-session file-task/byte resume, remaining scan-code/precision-pointer/TextCommit and advanced clipboard formats, monitor/DPI selection, Windows session/service integration and audio. Owner defers packaging and physical operator tests to the final milestone; environment-blocked tests remain explicit skips while other development continues.

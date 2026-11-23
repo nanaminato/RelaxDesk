@@ -17,7 +17,7 @@ using System.Text.Json;
 using System.Net;
 namespace RelaxDesk.Viewer;
 
-public sealed record ViewerSmokeSettings(string Host, int Port, string Fingerprint, string Token, string Renderer = "cpu", bool HardwareDecode = true, int Frames = 60, bool ExerciseWindow = false, bool RequireGpu = false, bool CloseWhileStreaming = false, bool FixedMediaBudget = false, bool SimulateDeviceLoss = false, bool SimulateGap = false, bool IdleRepaintTest = false, bool IdleSessionTest = false, string? ConnectionCode = null, bool FileTransfer = false, string? FileFixtureRoot = null);
+public sealed record ViewerSmokeSettings(string Host, int Port, string Fingerprint, string Token, string Renderer = "cpu", bool HardwareDecode = true, int Frames = 60, bool ExerciseWindow = false, bool RequireGpu = false, bool CloseWhileStreaming = false, bool FixedMediaBudget = false, bool SimulateDeviceLoss = false, bool SimulateGap = false, bool IdleRepaintTest = false, bool IdleSessionTest = false, string? ConnectionCode = null, bool FileTransfer = false, string? FileFixtureRoot = null, bool ReconnectTest = false);
 public sealed class App : Application
 {
     [System.Runtime.InteropServices.DllImport("user32.dll")] static extern nint SetThreadDpiAwarenessContext(nint context);
@@ -42,6 +42,7 @@ public sealed class App : Application
             else if (args is ["--ui-contracts", var output]) ViewerUiVerification.Run(app, output);
             else if(args is ["--file-ui-contracts",var fileHost,var fileOutput])FileUiVerification.Run(app,fileHost,fileOutput);
             else if(args is ["--file-session-contracts",var sessionHost,var sessionOutput])FileSessionVerification.Run(app,sessionHost,sessionOutput);
+            else if(args is ["--reconnect-contracts",var recoveryHost,var recoveryOutput])ReconnectVerification.Run(app,recoveryHost,recoveryOutput);
             else app.Run(new ViewerWindow(smoke));
         }
         finally { if (previousDpi != 0) SetThreadDpiAwarenessContext(previousDpi); }
@@ -90,8 +91,8 @@ public sealed partial class ViewerWindow : Window
             }
             catch (Exception error) { status.Text = error.Message; }
         };
-        disconnect.Click += (_, _) => { StopLocalPreview(); session?.Cancel(); };
-        Closed += (_, _) => { StopLocalPreview(); session?.Cancel(); };
+        disconnect.Click += (_, _) => { StopLocalPreview(); StopConnection(); };
+        Closed += (_, _) => { StopLocalPreview(); StopConnection(); };
         image.MouseMove += (_, e) => { if (image.Source is not BitmapSource bitmap) return; var p = e.GetPosition(image); double scale = Math.Min(image.ActualWidth / bitmap.PixelWidth, image.ActualHeight / bitmap.PixelHeight); double x = (p.X - (image.ActualWidth - bitmap.PixelWidth * scale) / 2) / (bitmap.PixelWidth * scale); double y = (p.Y - (image.ActualHeight - bitmap.PixelHeight * scale) / 2) / (bitmap.PixelHeight * scale); if (x >= 0 && x <= 1 && y >= 0 && y <= 1) Send(0, false, (int)(x * 65535), (int)(y * 65535)); };
         image.MouseDown += (_, e) =>
         {
@@ -106,16 +107,16 @@ public sealed partial class ViewerWindow : Window
         Deactivated += (_, _) => ReleaseHeldInputs();
         Closing += async (_, e) =>
         {
-            if (session is null) return;
+            if (session is null && connectionRun is null) return;
             e.Cancel = true; if (closing) return; closing = true;
-            session.Cancel(); await connectionEnded.Task; closing = false; Close();
+            StopConnection(); await connectionEnded.Task; closing = false; Close();
         };
         if (smoke is not null)
         {
             ShowActivated = false; Topmost = true; gpuRendering.IsChecked = smoke.Renderer == "gpu"; host.Text = smoke.Host; port.Text = smoke.Port.ToString(); fingerprint.Text = smoke.Fingerprint; token.Password = smoke.Token;
             pinnedConnection.IsChecked = !string.IsNullOrEmpty(smoke.Fingerprint);
             if (smoke.ConnectionCode is not null) { invitation.Text = smoke.ConnectionCode; fingerprint.Clear(); token.Clear(); }
-            Loaded += async (_, _) => { ApplyInvitation(); await ConnectVideo(); if (!smoke.FixedMediaBudget && smokeFrames < smoke.Frames) { Console.Error.WriteLine("WPF render smoke incomplete: " + status.Text); Environment.ExitCode = 1; } Close(); };
+            Loaded += async (_, _) => { ApplyInvitation(); await ConnectVideo(); if(smoke.ReconnectTest)return; if (!smoke.FixedMediaBudget && smokeFrames < smoke.Frames) { Console.Error.WriteLine("WPF render smoke incomplete: " + status.Text); Environment.ExitCode = 1; } Close(); };
         }
     }
     void Send(int code, bool up, int x = 0, int y = 0)
@@ -155,12 +156,13 @@ public sealed partial class ViewerWindow : Window
         }
         if (smoke?.CloseWhileStreaming == true && count >= smoke.Frames) Close();
     }
-    async Task ConnectVideo()
+    async Task<AttemptResult> ConnectVideoAttempt(ConnectionTarget target, string? previousPin, CancellationToken lifetime, Action onConnected)
     {
-        StopLocalPreview(); connectionCard.IsEnabled = false; disconnect.IsEnabled = true; connect.IsEnabled = false; using var cancellation = new CancellationTokenSource(); session = cancellation; sequence = 0;
-        connectionEnded = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        StopLocalPreview(); connectionCard.IsEnabled = false; disconnect.IsEnabled = true; connect.IsEnabled = false; using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime); session = cancellation; sequence = 0;
+        ++connectionGeneration; Exception? attemptError=null; bool established=false,restoreFullScreen=target.FullScreen; string[] retryFeatures=target.Features;long connectedAt=0;
         while (outgoing.Reader.TryRead(out _)) { }
-        using var connection = new SessionClient { RequestedFeatures = RequestedFeatures() }; using var abort = cancellation.Token.Register(connection.Dispose);
+        using var connection = new SessionClient { RequestedFeatures = target.Features }; using var abort = cancellation.Token.Register(connection.Dispose);
+        connection.PhaseChanged+=phase=>{if(ReferenceEquals(session,cancellation)&&!cancellation.IsCancellationRequested)SetConnectionPhase(phase);};
         ClipboardSynchronizer? clipboard = null;
         Task? fileVerification = null;
         var decoded = new LatestQueue<DecodedMedia>(1); var cpu = new CpuBitmapRenderer(image);
@@ -179,9 +181,10 @@ public sealed partial class ViewerWindow : Window
             int count = Interlocked.Increment(ref smokeFrames);
             void Update()
             {
+                if(!ReferenceEquals(session,cancellation)||cancellation.IsCancellationRequested)return;
                 status.Text = $"已连接 · {frame.Width} × {frame.Height} · {(gpu ? "GPU 显示" : "兼容显示")}";
                 ExerciseWindow(count);
-                if (smoke is not null && !smoke.FileTransfer && !smoke.IdleSessionTest && !smoke.IdleRepaintTest && !smoke.FixedMediaBudget && count >= smoke.Frames && !smoke.CloseWhileStreaming) cancellation.Cancel();
+                if (smoke is not null && !smoke.FileTransfer && !smoke.ReconnectTest && !smoke.IdleSessionTest && !smoke.IdleRepaintTest && !smoke.FixedMediaBudget && count >= smoke.Frames && !smoke.CloseWhileStreaming) cancellation.Cancel();
             }
             if (Dispatcher.CheckAccess()) Update(); else Dispatcher.BeginInvoke(Update);
         }
@@ -198,9 +201,19 @@ public sealed partial class ViewerWindow : Window
         {
             if (smoke is null) ViewerSessionLog.Record("connect-start");
             status.Text = "正在连接，等待被控端允许…";
-            if (!IPAddress.TryParse(host.Text.Trim(), out var target) || target.Equals(IPAddress.Any) || target.Equals(IPAddress.IPv6Any) || !int.TryParse(port.Text, out int targetPort) || targetPort is < 1 or > 65535) throw new FormatException("请输入有效的远程 IP 和端口。");
-            if (pinnedConnection.IsChecked == true) await connection.Connect(target.ToString(), targetPort, fingerprint.Text, token.Password, cancellation.Token);
-            else await connection.ConnectByApproval(target.ToString(), targetPort, cancellation.Token);
+            using(var connecting=CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token))
+            {
+                connecting.CancelAfter(TimeSpan.FromSeconds(75));
+                try
+                {
+            if(previousPin is not null)await connection.ConnectByPinnedApproval(target.Host,target.Port,previousPin,connecting.Token);
+            else if(target.Strict)await connection.Connect(target.Host,target.Port,target.Pin,target.Token,connecting.Token);
+            else await connection.ConnectByApproval(target.Host,target.Port,connecting.Token);
+                }
+                catch(OperationCanceledException error)when(!cancellation.IsCancellationRequested)
+                {throw new IOException("Timed out waiting for Host connection/approval",error);}
+            }
+            established=true;connectedAt=Stopwatch.GetTimestamp();onConnected();
             token.Clear();
             var permissionGate = new AccessGate(); permissionGate.Approve(connection.Features); sessionPermissions = permissionGate;
             StartFileSession(connection,cancellation.Token);
@@ -209,6 +222,8 @@ public sealed partial class ViewerWindow : Window
                     message => Dispatcher.BeginInvoke(() => { if (!ReferenceEquals(sessionPermissions, permissionGate) || cancellation.IsCancellationRequested) return; status.Text = message; if (!permissionGate.Allows(SessionCapabilities.ClipboardText)) DisableClipboard(); }));
             status.Text = "已获授权，正在接收桌面…";
             ShowConnectedView(true);
+            if(target.FullScreen&&!fullScreen)ToggleFullScreen();
+            if(previousPin is not null)outgoing.TryWrite(new("keyframe-v2",++sequence));
             if(smoke?.FileTransfer==true)fileVerification=ExerciseFileSession(cancellation);
             heartbeat = new() { Interval = TimeSpan.FromSeconds(5) };
             heartbeat.Tick += (_, _) =>
@@ -236,6 +251,7 @@ public sealed partial class ViewerWindow : Window
                 while (true)
                 {
                     var packet = await SessionControl.Read(connection.Control, cancellation.Token);
+                    if(ConnectionRecovery.IsExplicitEnd(packet))throw new RemoteSessionEndedException();
                     if (packet.Kind == "pong-v2") { Interlocked.Increment(ref heartbeatReplies); continue; }
                     if (packet.Kind == "clipboard-text-v2")
                     {
@@ -262,8 +278,8 @@ public sealed partial class ViewerWindow : Window
             });
             var receiver = Task.Factory.StartNew(() =>
             {
-                void KeyFrame() { Interlocked.Increment(ref keyframeRequests); Dispatcher.BeginInvoke(() => { if (!outgoing.Writer.TryWrite(new Packet("keyframe-v2", ++sequence))) cancellation.Cancel(); }); }
-                void Diagnostic(string message) => Dispatcher.BeginInvoke(() => status.Text = message);
+                void KeyFrame() { Interlocked.Increment(ref keyframeRequests); Dispatcher.BeginInvoke(() => { if(!ReferenceEquals(session,cancellation)||cancellation.IsCancellationRequested)return; if (!outgoing.Writer.TryWrite(new Packet("keyframe-v2", ++sequence))) cancellation.Cancel(); }); }
+                void Diagnostic(string message) => Dispatcher.BeginInvoke(() => {if(ReferenceEquals(session,cancellation)&&!cancellation.IsCancellationRequested)status.Text = message;});
                 MediaDecoder decoder = new(KeyFrame, Diagnostic, smoke?.HardwareDecode ?? true); D3D11Renderer? renderer = null;
                 DecodedSurface? retained = null; Task<MediaFrame>? pendingRead = null; Task? ioNotification = null;
                 using var ioReady = new AutoResetEvent(false);
@@ -298,7 +314,7 @@ public sealed partial class ViewerWindow : Window
                     if (lost && retries++ < 2) { Diagnostic("GPU device lost; recreating decoder and swapchain"); decoder = new(KeyFrame, Diagnostic); generation = -1; KeyFrame(); return; }
                     if (smoke?.RequireGpu == true) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error).Throw();
                     gpu = false; decoder = new(KeyFrame, Diagnostic, preferHardware: false); KeyFrame();
-                    Dispatcher.BeginInvoke(() => { if (nativeView is not null) nativeView.Visibility = Visibility.Collapsed; image.Visibility = Visibility.Visible; status.Text = "Using CPU display fallback: " + error.Message; });
+                    Dispatcher.BeginInvoke(() => { if(!ReferenceEquals(session,cancellation)||cancellation.IsCancellationRequested)return; if (nativeView is not null) nativeView.Visibility = Visibility.Collapsed; image.Visibility = Visibility.Visible; status.Text = "Using CPU display fallback: " + error.Message; });
                 }
                 try
                 {
@@ -364,21 +380,27 @@ public sealed partial class ViewerWindow : Window
             var first = await Task.WhenAny(writer, control, receiver);
             if (smoke is null) ViewerSessionLog.Record(first == writer ? "control-write-end" : first == control ? "control-read-end" : "media-decode-render-end", first.Exception?.GetBaseException());
             cancellation.Cancel(); connection.Dispose();
-            try { await first; } finally { try { await Task.WhenAll(writer, control, receiver); } catch (Exception) { } }
+            Exception? ended=null;
+            try { await first; } catch(Exception error){ended=error;}
+            try { await Task.WhenAll(writer,control,receiver); } catch(Exception) { }
+            if(control.Exception?.GetBaseException() is RemoteSessionEndedException remoteEnd)throw remoteEnd;
+            if(ended is not null)System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ended).Throw();
         }
-        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { status.Text = "已断开连接"; }
-        catch (Exception e) { if (smoke is null) ViewerSessionLog.Record("connection-error", e); status.Text = "连接已断开：" + e.Message + "。请保留 Host 的 session_end 日志。"; }
+        catch (OperationCanceledException error) when (cancellation.IsCancellationRequested) { attemptError=error; status.Text = "已断开连接"; }
+        catch (Exception e) { attemptError=e; if (smoke is null) ViewerSessionLog.Record("connection-error", e); status.Text = "连接已断开：" + e.Message + "。请保留 Host 的 session_end 日志。"; }
         finally
         {
             heartbeat?.Stop(); cancellation.Cancel(); CompositionTarget.Rendering -= Rendering; ReleaseHeldInputs(); cpu.Clear(); image.Visibility = Visibility.Visible;
+            restoreFullScreen=fullScreen;
+            if(established)retryFeatures=connection.Features.Where(feature=>sessionPermissions?.Allows(feature)==true).ToArray();
             sessionPermissions?.Revoke(); sessionPermissions = null; Interlocked.Exchange(ref pendingClipboard, null);
             if (clipboard is not null) await clipboard.DisposeAsync();
             if(fileVerification is not null)await fileVerification;
             await EndFileSession();
             if (nativeView is not null) { renderPanel.Children.Remove(nativeView); nativeView.Dispose(); nativeView = null; }
-            session = null; connect.IsEnabled = true; connectionCard.IsEnabled = true; disconnect.IsEnabled = false; ShowConnectedView(false);
+            session = null; ShowConnectedView(false);
             string report = $"renderer={(gpuFrames > 0 && cpuFrames == 0 ? "d3d11" : "cpu-or-fallback")} gpu_frames={gpuFrames} cpu_frames={cpuFrames} full_frame_readback_bytes={readbackBytes} received_frames={receivedFrames} resizes={resizeCount} renderer_generations={rendererGenerations} keyframe_requests={keyframeRequests} simulated_device_losses={simulatedLosses} idle_repaints={idleRepaints} hidden={hiddenPresents} occluded={occludedPresents} gpu_busy={busyPresents} " + metrics.Report(decoded.Dropped + skipped, decoded.Depth);
-            if (smoke is not null)
+            if (smoke is not null && !smoke.ReconnectTest)
             {
                 var resources = GraphicsDiagnostics.Resources();
                 bool visibilityVerified = !smoke.FixedMediaBudget || !smoke.RequireGpu || (gpuFrames >= smoke.Frames * .9 && hiddenPresents == 0 && occludedPresents == 0);
@@ -387,8 +409,8 @@ public sealed partial class ViewerWindow : Window
                 else { Environment.ExitCode = 1; Console.Error.WriteLine("FAIL WPF " + report + $" resources_empty={resources.Empty}"); }
             }
             else Debug.WriteLine("viewer " + report);
-            connectionEnded.TrySetResult();
         }
+        return new(attemptError,established,connection.VerifiedFingerprint,retryFeatures,restoreFullScreen,established&&receivedFrames>0&&Stopwatch.GetElapsedTime(connectedAt)>=TimeSpan.FromSeconds(30));
     }
     async Task Connect()
     {

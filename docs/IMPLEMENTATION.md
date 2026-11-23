@@ -1,12 +1,16 @@
 # RelaxDesk implementation and evidence
 
+## Bounded Viewer reconnect
+
+Viewer v2 now restores approved sessions after transport failures with five exponential/jittered retries within a 120-second outage window, fixed approved identity and new Host consent/tickets. New attempts rebuild video/cursor/optional workers, request an IDR, clear queued/held input and restore fullscreen. Revoked/denied optional capabilities are not requested again automatically. Denial/identity/protocol errors and user disconnect stop retries. Core/TLS 656 and actual WPF/Host/relay tests cover success, revoked files, stale input, cancellation, changed certificate and five-retry exhaustion. [Contract](SESSION-LIFECYCLE.md), [evidence](../benchmarks/2026-11-23-reconnect-validation.md). File tasks/byte resume and physical Home/network soak remain pending; no package.
+
 ## Persistent Host and per-connection consent
 
-HostShell and interactive Host now return to Listening after teardown; CLI `--listen` opts into this behavior while existing scripted launches remain single-session. One controller, fresh correlated consent IDs, scoped revoke/disconnect, default-off optional grants and per-process certificate identity have production-process/WPF evidence. Core/TLS 622; [contract](SESSION-LIFECYCLE.md), [validation](../benchmarks/2026-11-23-session-lifecycle-validation.md). Viewer automatic reconnect is next; physical Home testing remains pending. No packaging.
+HostShell and interactive Host now return to Listening after teardown; CLI `--listen` opts into this behavior while existing scripted launches remain single-session. One controller, fresh correlated consent IDs, scoped revoke/disconnect, default-off optional grants and per-process certificate identity have production-process/WPF evidence. Core/TLS 622; [contract](SESSION-LIFECYCLE.md), [validation](../benchmarks/2026-11-23-session-lifecycle-validation.md). Viewer automatic reconnect is now implemented; physical Home testing remains pending. No packaging.
 
 ## File transfer UI and queue checkpoint
 
-Current source includes Host folder selection/default-off consent and Viewer remote browser, recursive bounded queue, confirmed native/WPF drops, overwrite choices, pause/cancel/retry and live file-only revocation. Release build has zero warnings/errors; Core/TLS 599, Windows file contracts 29, WPF file UI 22 plus cleanup and actual Viewer/Host session checks pass. Complete nonphysical regression exited 0, with explicit foreground/physical graphics skips. [Contract](FILE-TRANSFER.md), [evidence](../benchmarks/2026-11-23-file-ui-validation.md). Cross-session resume is not implemented. Persistent Host and secure reconnect are next prerequisites. No package until the final milestone. Physical Home/LAN acceptance remains pending.
+Current source includes Host folder selection/default-off consent and Viewer remote browser, recursive bounded queue, confirmed native/WPF drops, overwrite choices, pause/cancel/retry and live file-only revocation. Release build has zero warnings/errors; Core/TLS 599, Windows file contracts 29, WPF file UI 22 plus cleanup and actual Viewer/Host session checks pass. Complete nonphysical regression exited 0, with explicit foreground/physical graphics skips. [Contract](FILE-TRANSFER.md), [evidence](../benchmarks/2026-11-23-file-ui-validation.md). Cross-session resume is not implemented. Persistent Host and secure reconnect are now available; scoped resume is next. No package until the final milestone. Physical Home/LAN acceptance remains pending.
 
 ## Independently authorized Unicode text clipboard
 

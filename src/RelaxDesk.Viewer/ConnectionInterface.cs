@@ -28,7 +28,7 @@ public sealed partial class ViewerWindow
         image.Focusable = true; renderPanel.Children.Add(image);
         var form = new StackPanel();
         form.Children.Add(new TextBlock { Text = "连接到远程电脑", FontSize = 26, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 10) });
-        form.Children.Add(new TextBlock { Text = "输入 IP 和端口，Host 确认授权后进入桌面。", Foreground = Brushes.DimGray, TextWrapping = TextWrapping.Wrap });
+        form.Children.Add(new TextBlock { Text = "输入 IP 和端口，Host 确认授权后进入桌面。意外断开后会有限重试，仍需 Host 重新允许。", Foreground = Brushes.DimGray, TextWrapping = TextWrapping.Wrap });
         form.Children.Add(new TextBlock { Text = "远程电脑 IP", Margin = new Thickness(0, 16, 0, 0) }); form.Children.Add(host);
         form.Children.Add(new TextBlock { Text = "端口" }); form.Children.Add(port);
         requestClipboard.Margin = new Thickness(0, 10, 0, 4); form.Children.Add(requestClipboard);

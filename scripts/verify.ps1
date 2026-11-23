@@ -96,6 +96,8 @@ try {
         if ($LASTEXITCODE) { throw 'File panel/queue/drop contracts failed' }
         Run-App $viewer --file-session-contracts $hostDll (Join-Path $root 'build/file-ui-verification')
         if ($LASTEXITCODE) { throw 'Viewer file-session integration failed' }
+        Run-App $viewer --reconnect-contracts $hostDll (Join-Path $root 'build/reconnect-verification')
+        if ($LASTEXITCODE) { throw 'Viewer pinned reconnect/consent/lifecycle failed' }
         Run-App $viewer --toolbar-contracts
         if ($LASTEXITCODE) { throw 'Toolbar lifecycle failed' }
         Run-App $viewer --ui-contracts

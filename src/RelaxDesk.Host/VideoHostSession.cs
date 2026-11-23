@@ -156,7 +156,20 @@ internal static class VideoHostSession
         string worker = failures.First?.Worker ?? (first == observedInput ? "control-read" : first == observedSender ? "media-send" : "capture-encode");
         var failure = failures.First;
         HostSessionLog.Write($"session_end worker={worker} stage={failure?.Stage ?? "shutdown"} completed_frames={failure?.CompletedFrames ?? 0} state={first.Status} error_type={failure?.Error.GetType().Name ?? "none"} hresult=0x{failure?.Error.HResult ?? 0:X8} reason={failure?.Error.Message ?? "worker completed/cancelled"}");
-        gate.Revoke(); session.Cancel(); controlSocket.Close(); mediaSocket.Close(); dataSocket?.Close(); queue.Complete();
+        gate.Revoke();
+        if (stop.IsCancellationRequested)
+        {
+            // Bounded terminal notice distinguishes local stop from network loss.
+            using var terminal = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+            try
+            {
+                await controlWrite.WaitAsync(terminal.Token);
+                try { await Wire.Write(control, new("session-ended-v2", Text: "host-ended"), terminal.Token); }
+                finally { controlWrite.Release(); }
+            }
+            catch (Exception error) when (error is IOException or OperationCanceledException or ObjectDisposedException) { }
+        }
+        session.Cancel(); controlSocket.Close(); mediaSocket.Close(); dataSocket?.Close(); queue.Complete();
         try { if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure.Error).Throw(); await first; }
         finally
         {

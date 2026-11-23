@@ -1,0 +1,7 @@
+PASS actual WPF recovery: loopback network cut, fresh Host approval, same identity, revoked files not requested again, fresh decoder/video/toolbar, fullscreen restored, old held/queued input cleared, explicit Host end stops retry, native resources zero
+PASS WPF denied recovery stops with no repeated consent request
+PASS WPF user disconnect cancels pending backoff without a new connection
+PASS WPF changed Host certificate stops recovery before approval; no identity downgrade; all Viewer native resources released
+PASS WPF unavailable Host exhausts exactly five real backoff retries and releases resources
+
+

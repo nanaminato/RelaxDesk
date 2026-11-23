@@ -1,0 +1,5 @@
+PASS first-contact approval request and changed-media-certificate rejection (TLS)
+PASS pinned fresh approval: missing/invalid pins rejected, changed control certificate rejected before request, fresh consent nonce/media tickets per session, no implicit optional grants, explicit denial rejected
+PASS optional v2 feature TLS negotiation: older Host omission, explicit clipboard/file grants, unsolicited/unknown grant rejection, independent media/data tickets
+PASS third TLS data channel certificate must match control/media pin
+PASS 656 protocol/access/TLS integration checks
