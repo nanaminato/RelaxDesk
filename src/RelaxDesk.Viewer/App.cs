@@ -35,7 +35,8 @@ public sealed class App : Application
         try
         {
             var app = new App();
-            if(args is ["--file-clipboard-contracts",var fileClipboardHost,var fileClipboardOutput,var fileClipboardMode])ViewerWindow.VerifyFileClipboard(app,fileClipboardHost,fileClipboardOutput,fileClipboardMode);
+            if(args is ["--display-session-contracts",var displayHost])ViewerWindow.VerifyDisplaySession(app,displayHost);
+            else if(args is ["--file-clipboard-contracts",var fileClipboardHost,var fileClipboardOutput,var fileClipboardMode])ViewerWindow.VerifyFileClipboard(app,fileClipboardHost,fileClipboardOutput,fileClipboardMode);
             else if(args is ["--rich-clipboard-session-contracts",var clipboardHost,var clipboardConsent])RichClipboardSessionVerification.Run(app,clipboardHost,clipboardConsent=="denied");
             else if(args is ["--input-ui-contracts"])ViewerWindow.VerifyInputUi(app);
             else if (args is ["--hwnd-contracts"]) HwndLifecycleVerification.Run(app);
@@ -162,7 +163,7 @@ public sealed partial class ViewerWindow : Window
         StopLocalPreview(); connectionCard.IsEnabled = false; disconnect.IsEnabled = true; connect.IsEnabled = false; using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime); session = cancellation; sequence = 0; ResetInputState();
         ++connectionGeneration; Exception? attemptError=null; bool established=false,restoreFullScreen=target.FullScreen; string[] retryFeatures=target.Features;long connectedAt=0;bool fileTransportInterrupted=false;
         while (outgoing.Reader.TryRead(out _)) { }
-        using var connection = new SessionClient { RequestedFeatures = target.Features }; using var abort = cancellation.Token.Register(connection.Dispose);
+        using var connection = new SessionClient { RequestedFeatures = target.Features,RequestedDisplayVersion=DisplayProtocol.Version }; using var abort = cancellation.Token.Register(connection.Dispose);
         connection.PhaseChanged+=phase=>{if(ReferenceEquals(session,cancellation)&&!cancellation.IsCancellationRequested)SetConnectionPhase(phase);};
         ClipboardSynchronizer? clipboard = null;
         Task? fileVerification = null;
@@ -184,8 +185,9 @@ public sealed partial class ViewerWindow : Window
             void Update()
             {
                 if(!ReferenceEquals(session,cancellation)||cancellation.IsCancellationRequested)return;
+                if(displaySession is not null&&!displaySession.AcceptFrame(frame))return;
                 status.Text = $"已连接 · {frame.Width} × {frame.Height} · {(gpu ? "GPU 显示" : "兼容显示")}";
-                ExerciseWindow(count);
+                DisplayPresented(frame);ExerciseWindow(count);
                 if (smoke is not null && !smoke.FileTransfer && !smoke.RichClipboardTest && !smoke.ReconnectTest && !smoke.IdleSessionTest && !smoke.IdleRepaintTest && !smoke.FixedMediaBudget && count >= smoke.Frames && !smoke.CloseWhileStreaming) cancellation.Cancel();
             }
             if (Dispatcher.CheckAccess()) Update(); else Dispatcher.BeginInvoke(Update);
@@ -193,6 +195,7 @@ public sealed partial class ViewerWindow : Window
         void Rendering(object? sender, EventArgs args)
         {
             if (!decoded.TryRead(out var frame) || frame is null) return;
+            if(displaySession is not null&&!displaySession.AcceptFrame(frame.Frame))return;
             metrics.Add("render_submit", cpu.Submit(frame)); metrics.Add("decode", frame.DecodeMilliseconds);
             metrics.Add("readback", frame.Timing.ReadbackMs); metrics.Add("decode_to_render_submit", Stopwatch.GetElapsedTime(frame.DecodedAt).TotalMilliseconds);
             Presented(false, frame.Frame, frame.DecodeMilliseconds);
@@ -218,6 +221,7 @@ public sealed partial class ViewerWindow : Window
             established=true;connectedAt=Stopwatch.GetTimestamp();onConnected();
             token.Clear();
             var permissionGate = new AccessGate(); permissionGate.Approve(connection.Features); sessionPermissions = permissionGate; inputVersion=connection.InputVersion;inputAuthorized=true;
+            StartDisplaySession(connection);
             await StartFileSession(connection,cancellation.Token);
             StartRichClipboard(connection,permissionGate,cancellation.Token);
             if (connection.ClipboardData is null&&permissionGate.Allows(SessionCapabilities.ClipboardText))
@@ -257,7 +261,13 @@ public sealed partial class ViewerWindow : Window
                     var packet = await SessionControl.Read(connection.Control, cancellation.Token);
                     if(ConnectionRecovery.IsExplicitEnd(packet))throw new RemoteSessionEndedException();
                     if (packet.Kind == "pong-v2") { Interlocked.Increment(ref heartbeatReplies); continue; }
-                    if (packet.Kind == "clipboard-text-v2")
+                    if(packet.Kind=="display-state-v2")
+                    {
+                        if(displaySession is null||packet.DisplayState is null||packet!=new Packet("display-state-v2",DisplayState:packet.DisplayState))throw new InvalidDataException("Unnegotiated or malformed display update");
+                        displaySession.Receive(packet.DisplayState);
+                        _ = Dispatcher.BeginInvoke(()=>{if(!ReferenceEquals(session,cancellation)||cancellation.IsCancellationRequested)return;RefreshDisplayMenu();if(!outgoing.TryWrite(new("keyframe-v2",++sequence)))cancellation.Cancel();});
+                    }
+                    else if (packet.Kind == "clipboard-text-v2")
                     {
                         if(!connection.Features.Contains(SessionCapabilities.ClipboardText)||connection.ClipboardData is not null)throw new InvalidDataException("Unnegotiated clipboard message/channel");
                         var update = ClipboardTextProtocol.Decode(packet);
@@ -327,7 +337,7 @@ public sealed partial class ViewerWindow : Window
                     {
                         if (pendingRead is null)
                         {
-                            pendingRead = MediaProtocol.Read(connection.Media, cancellation.Token);
+                            pendingRead = MediaProtocol.Read(connection.Media, cancellation.Token,connection.DisplayVersion!=0);
                             ioNotification = pendingRead.ContinueWith(_ => ioReady.Set(), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
                         }
                         int signal = WaitHandle.WaitAny(wake,renderer?.OutputBlocked==true?100:Timeout.Infinite); if (signal == 2) break;
@@ -335,7 +345,7 @@ public sealed partial class ViewerWindow : Window
                         {
                             try
                             {
-                                if (renderer.Present(retained.Surface, retained.Frame.Metadata)) Interlocked.Increment(ref idleRepaints);
+                                if ((displaySession is null||displaySession.AcceptFrame(retained.Frame))&&renderer.Present(retained.Surface, retained.Frame.Metadata)) Interlocked.Increment(ref idleRepaints);
                                 CollectRenderState();
                             }
                             catch (System.Runtime.InteropServices.ExternalException e) { RecoverGpu(e); }
@@ -343,6 +353,7 @@ public sealed partial class ViewerWindow : Window
                         if (!pendingRead.IsCompleted) continue;
                         var frame = pendingRead.GetAwaiter().GetResult(); ioNotification?.GetAwaiter().GetResult(); pendingRead = null; ioNotification = null;
                         Interlocked.Increment(ref receivedFrames); metrics.Traffic(MediaProtocol.HeaderSize + frame.Metadata.Length + frame.Data.Length);
+                        if(displaySession is not null&&!displaySession.AcceptFrame(frame))continue;
                         string capability = frame.Codec == MediaCodec.H264 ? "h264" : "deflate";
                         if (!connection.Capabilities.Contains(capability)) throw new InvalidDataException("Unnegotiated codec");
                         if (smoke?.SimulateGap == true && !simulatedGap && receivedFrames == 15) { simulatedGap = true; continue; }
@@ -395,7 +406,7 @@ public sealed partial class ViewerWindow : Window
         catch (Exception e) { attemptError=e; if (smoke is null) ViewerSessionLog.Record("connection-error", e); status.Text = "连接已断开：" + e.Message + "。请保留 Host 的 session_end 日志。"; }
         finally
         {
-            heartbeat?.Stop(); cancellation.Cancel(); ResetInputState(); CompositionTarget.Rendering -= Rendering; ReleaseHeldInputs(); cpu.Clear(); image.Visibility = Visibility.Visible;
+            heartbeat?.Stop(); cancellation.Cancel(); EndDisplaySession(); ResetInputState(); CompositionTarget.Rendering -= Rendering; ReleaseHeldInputs(); cpu.Clear(); image.Visibility = Visibility.Visible;
             restoreFullScreen=fullScreen;
             if(established)retryFeatures=connection.Features.Where(feature=>sessionPermissions?.Allows(feature)==true||feature==SessionCapabilities.FileTransfer&&fileTransportInterrupted&&!filePermissionStoppedByUser).ToArray();
             bool recoverFiles=attemptError is not null&&ConnectionRecovery.IsTransient(attemptError)&&connectionRun?.IsCancellationRequested==false&&retryFeatures.Contains(SessionCapabilities.FileTransfer);

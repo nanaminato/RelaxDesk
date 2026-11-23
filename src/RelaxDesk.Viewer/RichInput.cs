@@ -13,8 +13,9 @@ public sealed partial class ViewerWindow
     void SendRich(RemoteInput input)
     {
         if(smoke is not null||!inputAuthorized||inputVersion!=InputProtocol.Version||session is null||session.IsCancellationRequested)return;
+        if(displaySession is not null&&!displaySession.Ready)return;
         if(!InputProtocol.Valid(input)){session.Cancel();return;}
-        if(!outgoing.TryWrite(InputProtocol.Encode(input,++sequence))){session.Cancel();return;}
+        if(!outgoing.TryWrite(InputProtocol.Encode(input,++sequence,displaySession?.Generation??0))){session.Cancel();return;}
         richHeld.Update(input);
     }
     void SendRawKey(int key,nint flags,bool up)

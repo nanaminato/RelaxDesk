@@ -102,4 +102,6 @@ Windows acceptance package: run `Start-Host.cmd` on the shared PC and `Start-Vie
 
 Confirmed file clipboard now reuses the scoped queue and independently approved file/clipboard capabilities. It publishes CF_HDROP only after complete staging, with clipboard-version conflict checks and acknowledged Host publication. See [file clipboard contract](docs/FILE-CLIPBOARD.md). Physical Explorer paste remains pending; no per-slice package.
 
-Host-selected screens and all-screen capture/input now support physical negative origins. Unrotated single screens retain DXGI/GPU encode; rotated/all-screen scope uses explicit GDI compatibility. See [display contract and remaining P4 work](docs/DISPLAYS.md). Viewer live switching/zoom and physical multi-monitor/DPI acceptance remain open.
+Host-selected screens and all-screen capture/input now support physical negative origins. Unrotated single screens retain DXGI/GPU encode; rotated/all-screen scope uses explicit GDI compatibility. See [display contract and remaining P4 work](docs/DISPLAYS.md). Zoom and physical multi-monitor/DPI acceptance remain open.
+
+Viewer live screen selection is now negotiated within the approved Host scope. Input pauses until a matching new-generation frame is displayed; capture/encoder and same-size decoder state are replaced. See [display protocol and limits](docs/DISPLAYS.md). Zoom, live topology refresh and physical P4 acceptance remain open. No per-slice package.

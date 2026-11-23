@@ -38,6 +38,20 @@ internal sealed class SessionToolbar : IDisposable
     public void SetFiles(Action? open,int recoveryCount=0){openFiles=open;FilesButton.IsEnabled=open is not null;FilesButton.Content=recoveryCount>0?"文件续传":"文件";FilesButton.ToolTip=recoveryCount>0?$"有{recoveryCount}项中断任务，打开后确认继续":"上传、下载与任务队列（需Host授权）";endpoint.MaxWidth=recoveryCount>0?140:170;}
     internal Button ShortcutsButton { get; }
     internal ContextMenu ShortcutMenu { get; }
+    readonly MenuItem displays=new(){Header="显示器（Host 未开放切换）",IsEnabled=false};
+    internal MenuItem DisplaysAction=>displays;
+    public void SetRemoteInputReady(bool ready){foreach(var item in ShortcutMenu.Items.OfType<MenuItem>().Where(item=>item.Tag is RemoteShortcut))item.IsEnabled=ready;}
+    public void SetDisplays(DisplaySessionInfo? state,bool ready,Action<string>? select)
+    {
+        displays.Items.Clear();displays.IsEnabled=state is not null;displays.Header=state is null?"显示器（Host 未开放切换）":ready?"显示器":"显示器（等待新画面…）";
+        if(state is null)return;
+        foreach(string id in state.Allowed)
+        {
+            string label=id=="all"?"全部屏幕（兼容捕获）":state.Displays.Single(d=>d.Id==id).ToString();
+            var item=new MenuItem{Header=label,IsCheckable=true,IsChecked=id==state.Selected,IsEnabled=ready,Tag=id};
+            item.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;select?.Invoke(id);};displays.Items.Add(item);
+        }
+    }
     readonly MenuItem clipboard = new() { Header = "剪贴板未授权 / 已关闭", IsEnabled = false };
     internal MenuItem ClipboardAction => clipboard;
     readonly MenuItem fileClipboard=new(){Header="文件剪贴板…",IsEnabled=false};
@@ -84,6 +98,7 @@ internal sealed class SessionToolbar : IDisposable
         ShortcutMenu.Items.Add(new Separator()); ShortcutMenu.Items.Add(clipboard);
         ShortcutMenu.Items.Add(textInput);
         ShortcutMenu.Items.Add(fileClipboard);fileClipboard.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;openFileClipboard?.Invoke();};
+        ShortcutMenu.Items.Add(displays);
         clipboard.Click += (_, _) => { ShortcutMenu.IsOpen = false; disableClipboard?.Invoke(); };
         ShortcutsButton.Click += (_, _) => { ShortcutMenu.PlacementTarget = ShortcutsButton; ShortcutMenu.IsOpen = true; Reveal(); };
         controls.Children.Add(endpoint); controls.Children.Add(FilesButton); controls.Children.Add(ShortcutsButton); controls.Children.Add(full); controls.Children.Add(DisconnectButton);

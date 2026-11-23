@@ -32,9 +32,9 @@ public static class InputProtocol
             _=>false
         };
     }
-    public static bool ValidPacket(Packet packet)=>packet.Sequence>0&&Valid(packet.Input)&&packet==new Packet("input-v2",packet.Sequence,Input:packet.Input);
-    public static Packet Encode(RemoteInput input,long sequence)
-    {var packet=new Packet("input-v2",sequence,Input:input);if(!ValidPacket(packet))throw new InvalidDataException("Invalid extended input");return packet;}
+    public static bool ValidPacket(Packet packet,bool displayVersion=false)=>packet.Sequence>0&&Valid(packet.Input)&&(displayVersion?packet.DisplayGeneration is >=1 and <=1_000_000:packet.DisplayGeneration==0)&&packet==new Packet("input-v2",packet.Sequence,Input:packet.Input,DisplayGeneration:packet.DisplayGeneration);
+    public static Packet Encode(RemoteInput input,long sequence,long displayGeneration=0)
+    {var packet=new Packet("input-v2",sequence,Input:input,DisplayGeneration:displayGeneration);if(!ValidPacket(packet,displayGeneration!=0))throw new InvalidDataException("Invalid extended input");return packet;}
     public static int ResolveKey(int key,int scan,bool extended)=>key switch{0x10=>scan==0x36?0xA1:0xA0,0x11=>extended?0xA3:0xA2,0x12=>extended?0xA5:0xA4,_=>key};
     public static RemoteInput[] KeyMessage(int key,long flags,bool up)
     {

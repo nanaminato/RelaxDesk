@@ -78,6 +78,7 @@ public sealed class WindowsInputSession : IDisposable
     public WindowsInputSession():this(batch=>SendInput((uint)batch.Length,batch,Marshal.SizeOf<NativeInput>()),Desktop.EnsureInteractiveDesktop,
         ()=>new(new(0,0,GetSystemMetrics(0),GetSystemMetrics(1)),new(GetSystemMetrics(76),GetSystemMetrics(77),GetSystemMetrics(78),GetSystemMetrics(79))),true){}
     public WindowsInputSession(WindowsDisplaySelection selection):this(batch=>SendInput((uint)batch.Length,batch,Marshal.SizeOf<NativeInput>()),Desktop.EnsureInteractiveDesktop,()=>{selection.EnsureCurrent();return selection.InputGeometry;},true){}
+    public WindowsInputSession(Func<WindowsDisplaySelection> selection):this(batch=>SendInput((uint)batch.Length,batch,Marshal.SizeOf<NativeInput>()),Desktop.EnsureInteractiveDesktop,()=>{var current=selection();current.EnsureCurrent();return current.InputGeometry;},true){}
     internal WindowsInputSession(Func<NativeInput[],uint> send,Action ensure,Func<InputGeometry> geometry,bool production=false)
     {this.send=send;this.ensure=ensure;this.geometry=geometry;this.production=production;}
     void Record(NativeInput input)

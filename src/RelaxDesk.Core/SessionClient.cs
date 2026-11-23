@@ -20,6 +20,9 @@ public sealed class SessionClient : IDisposable
     public string[] Features { get; private set; } = [];
     public int RequestedInputVersion {get;init;}=InputProtocol.Version;
     public int InputVersion {get;private set;}
+    public int RequestedDisplayVersion {get;init;}
+    public int DisplayVersion {get;private set;}
+    public DisplaySessionInfo? DisplayState {get;private set;}
     public bool RequestFileResume {get;init;}=true;
     public bool SupportsFileResume {get;private set;}
     public string? FileScope {get;private set;}
@@ -58,14 +61,18 @@ public sealed class SessionClient : IDisposable
         VerifiedFingerprint = expected;
         var requestedFeatures = SessionCapabilities.Validate(RequestedFeatures);
         if(RequestedInputVersion is not (0 or InputProtocol.Version))throw new InvalidDataException("Unsupported requested input version");
+        if(RequestedDisplayVersion is not (0 or DisplayProtocol.Version)||RequestedDisplayVersion!=0&&RequestedInputVersion!=InputProtocol.Version)throw new InvalidDataException("Unsupported requested display version");
         bool requestResume=RequestFileResume&&requestedFeatures.Contains(SessionCapabilities.FileTransfer);
-        await Wire.Write(Control, new Packet(approvalOnly ? "request-v2" : "hello-v2", Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], Features: requestedFeatures.Length == 0 ? null : requestedFeatures,FileResume:requestResume,InputVersion:RequestedInputVersion), ct);
+        await Wire.Write(Control, new Packet(approvalOnly ? "request-v2" : "hello-v2", Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], Features: requestedFeatures.Length == 0 ? null : requestedFeatures,FileResume:requestResume,InputVersion:RequestedInputVersion,DisplayVersion:RequestedDisplayVersion), ct);
         PhaseChanged?.Invoke(ConnectionPhase.AwaitingApproval);
         var approval = await Wire.Read(Control, ct);
         if (approval == new Packet("denied-v2")) throw new HostConsentRejectedException();
         if (approval.Kind != "approved-v2" || approval.Text is null || approval.Capabilities is not { Length: > 0 }) throw new AuthenticationException("Host approval/capabilities missing");
         if(approval.Input is not null||approval.InputVersion is not (0 or InputProtocol.Version)||approval.InputVersion!=0&&approval.InputVersion!=RequestedInputVersion)throw new AuthenticationException("Unrequested/invalid input version");
         InputVersion=approval.InputVersion;
+        if(approval.DisplayVersion is not (0 or DisplayProtocol.Version)||approval.DisplayVersion!=0&&(RequestedDisplayVersion!=approval.DisplayVersion||InputVersion!=InputProtocol.Version)||approval.DisplayId is not null||approval.DisplayGeneration!=0||approval.DisplayVersion==0&&approval.DisplayState is not null||approval.DisplayVersion!=0&&approval.DisplayState is null)throw new AuthenticationException("Unrequested or invalid display negotiation");
+        DisplayVersion=approval.DisplayVersion;DisplayState=approval.DisplayState is null?null:DisplayProtocol.Validate(approval.DisplayState);
+        if(DisplayState is not null&&DisplayState.Generation!=1)throw new AuthenticationException("Invalid initial display generation");
         Capabilities = approval.Capabilities;
         Features = SessionCapabilities.ValidateGrant(requestedFeatures, approval.Features);
         if(approval.FileResume&&(!requestResume||!Features.Contains(SessionCapabilities.FileTransfer)||approval.FileScope is not {Length:32}||!Guid.TryParseExact(approval.FileScope,"N",out _))||!approval.FileResume&&approval.FileScope is not null)throw new AuthenticationException("Unrequested/invalid file resume scope");

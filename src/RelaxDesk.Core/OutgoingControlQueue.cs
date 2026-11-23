@@ -18,7 +18,7 @@ public sealed class OutgoingControlQueue(int capacity = 256)
     {
         lock (sync)
         {
-            if (IsMove(packet) && packets.Last is {} last && IsMove(last.Value)&&last.Value.Kind==packet.Kind)
+            if (IsMove(packet) && packets.Last is {} last && IsMove(last.Value)&&last.Value.Kind==packet.Kind&&last.Value.DisplayGeneration==packet.DisplayGeneration)
             { last.Value = packet; return true; }
             if (packets.Count == capacity) return false;
             packets.AddLast(packet);

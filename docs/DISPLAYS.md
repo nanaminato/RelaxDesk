@@ -10,6 +10,18 @@ dotnet <Host.dll> --listen --display all 192.168.1.10 48200 dxgi
 
 Use the exact current device name returned by enumeration. Names are session/topology identifiers, not permanent hardware identities. Omit `--display` to choose the current primary screen for each newly approved session. File-root and display options may appear in either order. Existing TLS/pinning, one-use tickets and fresh Host consent remain required. The v1 compatibility path also binds capture and input to the selected geometry.
 
+## Viewer live selection
+
+Connected Viewer's toolbar → shortcuts → **显示器** now selects a screen without reconnecting. Host's original choice is the authorization boundary: a selected single screen exposes only that screen; **全部屏幕** exposes its constituent screens and the all-screen union. Viewer cannot expand the scope. HostShell configuration remains fixed while listening. Current topology metadata is sent only after explicit Host consent; enumeration itself creates no capture devices. New clients request `DisplayVersion: 1` separately from input/clipboard/file features; old peers may omit it and retain fixed-screen behavior.
+
+Each negotiated session begins at display generation 1. Approval includes validated metadata, allowed IDs and the selected ID. `display-select-v2` carries the current generation, target ID and the shared replay sequence. Host releases held keys/buttons and closes its input gate before accepting a switch. The capture/encode owner thread disposes both old resources, activates the selected geometry, increments the generation, sends `display-state-v2`, and starts a fresh encoder/keyframe. Media sequence numbers remain continuous.
+
+The binary media header's formerly zero 64-bit field at byte offset 64 carries the generation **only when negotiated**. Old readers still require zero; negotiated readers require 1–1,000,000. Rich input packets carry the same `DisplayGeneration`. Legacy input is rejected on negotiated display sessions. Metadata-only fields on unrelated control messages are rejected. Adjacent pointer coalescing never crosses generation boundaries.
+
+Viewer disables input during the switch, ignores old-generation queued/retained frames, validates new dimensions against the selected physical rectangle, and resets the decoder even if two screens have identical dimensions. Separate control/media sockets may deliver the new keyframe before its state message; Viewer discards it and requests another keyframe after the state update. It sends `display-ready-v2` only after submitting/presenting a matching decoded frame. This ready command precedes new input in the same ordered control queue. Host drops old-generation and unready input while preserving its replay sequence, and never reinterprets it under new coordinates. First-frame readiness uses the same barrier. Viewer ends an attempt after 15 seconds without matching displayed output; existing reconnect still requires fresh consent and new display negotiation.
+
+WPF integration and real Host/TLS/H264 tests use loopback synthetic multi-screen surfaces and non-injecting input callbacks. This establishes control/codec/lifecycle behavior, not physical monitor capture, actual Windows input or visible GPU correctness. See [live-switch evidence](../benchmarks/2026-11-24-display-switch-validation.md).
+
 ## Capture and input
 
 Unrotated single screens use their exact DXGI device/output and associated adapter, including screens at negative virtual-desktop origins. Existing HDR-to-SDR shader and same-device GPU encoder remain unchanged. Output selection never silently redirects an absent device to the primary display.
@@ -26,7 +38,7 @@ A session retains a validated immutable topology snapshot. Before capture/input 
 
 ## Remaining P4 work
 
-Viewer-requested live switching, a negotiated display generation to reject stale input/frames, refresh/recovery on hotplug without whole-session reconnect, 1:1 and zoom controls, exact custom fractional-DPI metadata, and expanded toolbar/mixed-DPI tests remain to implement. This first functional slice adds Host-selected capture/input; it does not complete the multi-monitor/DPI milestone. Real secondary/rotated/all-screen capture, HDR appearance and actual pointer landing require physical Home dual-PC acceptance. No package is generated for this slice.
+Refresh/recovery on hotplug without whole-session reconnect, 1:1 and zoom controls, exact custom fractional-DPI metadata, and expanded toolbar/mixed-DPI tests remain to implement. Host scope selection and Viewer live switching are implemented; the multi-monitor/DPI milestone remains open. Real secondary/rotated/all-screen capture, HDR appearance and actual pointer landing require physical Home dual-PC acceptance. No package is generated for this slice.
 
 References: [display enumeration](https://learn.microsoft.com/en-us/windows/win32/gdi/enumeration-and-display-control), [DPI APIs](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/dpi-related-apis-and-registry-settings), [duplication rotation and pointer semantics](https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/desktop-dup-api).
 

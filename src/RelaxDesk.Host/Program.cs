@@ -68,7 +68,7 @@ if (args is ["--capture-test"])
 if (args.Length is < 2 or > 3 || !IPAddress.TryParse(args[0], out var address) || !int.TryParse(args[1], out int port) || port is < 1 or > 65535 || IPAddress.Any.Equals(address) || IPAddress.IPv6Any.Equals(address))
 { Console.WriteLine("Usage: RelaxDesk.Host [--listen] [--file-root <local directory>] [--display <device name|all>] <specific LAN IP> <port> [backend]"); return; }
 string backend = args.Length == 3 ? args[2] : "auto";
-if (backend is not ("auto" or "dxgi" or "gdi" or "test-software" or "test-hardware" or "test-deflate" or "test-resolution" or "test-idle" or "test-producer-failure" or "test-runtime-fallback" or "test-capture-recovery" or "test-capture-exhausted" or "test-clipboard" or "test-clipboard-failure" or "test-clipboard-rich" or "test-clipboard-rich-failure" or "test-clipboard-files")) throw new ArgumentException("Unknown capture backend");
+if (backend is not ("auto" or "dxgi" or "gdi" or "test-software" or "test-hardware" or "test-deflate" or "test-resolution" or "test-idle" or "test-producer-failure" or "test-runtime-fallback" or "test-capture-recovery" or "test-capture-exhausted" or "test-clipboard" or "test-clipboard-failure" or "test-clipboard-rich" or "test-clipboard-rich-failure" or "test-clipboard-files" or "test-displays")) throw new ArgumentException("Unknown capture backend");
 if (backend.StartsWith("test-", StringComparison.Ordinal) && !IPAddress.IsLoopback(address)) throw new ArgumentException("Synthetic test is loopback-only");
 using var cert = SessionCertificate.Create();
 bool persistent = shellMode || listenMode || interactiveLaunch;

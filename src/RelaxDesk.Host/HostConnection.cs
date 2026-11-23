@@ -30,6 +30,7 @@ internal static class HostConnection
         }
         if (shell is null && hello.Kind != "request-v2") Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests screen + input. Type APPROVE to allow this session:");
         if(hello.ClipboardTicket is not null||hello.Input is not null||hello.InputVersion is not (0 or InputProtocol.Version)||hello.Kind=="hello-v1"&&hello.InputVersion!=0)throw new AuthenticationException("Invalid input negotiation request");
+        if(hello.DisplayVersion is not (0 or DisplayProtocol.Version)||hello.DisplayVersion!=0&&(hello.Kind=="hello-v1"||hello.InputVersion!=InputProtocol.Version)||hello.DisplayState is not null||hello.DisplayId is not null||hello.DisplayGeneration!=0)throw new AuthenticationException("Invalid display negotiation request");
         var requestedFeatures = SessionCapabilities.Validate(hello.Features);
         if(hello.FileScope is not null||hello.FileResume&&(!requestedFeatures.Contains(SessionCapabilities.FileTransfer)||hello.Kind=="hello-v1"))throw new AuthenticationException("Invalid file resume request");
         if (hello.Kind == "hello-v1" && requestedFeatures.Length != 0) throw new AuthenticationException("Session extensions require v2");

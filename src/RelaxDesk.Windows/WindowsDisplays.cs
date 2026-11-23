@@ -36,6 +36,8 @@ public sealed class WindowsDisplaySelection
     public DisplayBounds VirtualDesktop {get;}
     public bool RequiresGdi {get;}
     readonly DisplayInfo[] snapshot;
+    public DisplayInfo[] Topology=>snapshot.ToArray();
+    public WindowsDisplaySelection Select(string device)=>new(snapshot,device);
     public WindowsDisplaySelection(string? device):this(WindowsDisplays.Enumerate(),device){}
     internal WindowsDisplaySelection(DisplayInfo[] displays,string? device)
     {

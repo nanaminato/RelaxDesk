@@ -57,6 +57,8 @@ try {
     if ($LASTEXITCODE) { throw 'Display topology/input contracts failed' }
     Run-App $smokeDll $hostDll --display-denied
     if ($LASTEXITCODE) { throw 'Missing display session rejection failed' }
+    Run-App $smokeDll $hostDll --display-switch
+    if ($LASTEXITCODE) { throw 'Display switch generation/scope failed' }
     Run-App $smokeDll --input-contracts
     if ($LASTEXITCODE) { throw 'Input contracts failed' }
     Run-App $smokeDll --clipboard-image-contracts
@@ -72,6 +74,8 @@ try {
         if ($LASTEXITCODE) { throw "Security smoke failed: $mode" }
     }
     if ($Wpf) {
+        Run-App $viewer --display-session-contracts $hostDll
+        if ($LASTEXITCODE) { throw 'Viewer live display switching failed' }
         foreach($consent in @('granted','deny-clipboard','deny-files')) {
             Run-App $viewer --file-clipboard-contracts $hostDll (Join-Path $root 'build/file-clipboard-verification') $consent
             if ($LASTEXITCODE) { throw "Viewer file clipboard failed: $consent" }

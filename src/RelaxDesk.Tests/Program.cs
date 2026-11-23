@@ -18,6 +18,7 @@ count += await FileProtocolChecks.Run();
 count += await ConsentChecks.Run();
 count += RecoveryChecks.Run();
 count += DisplayChecks.Run();
+count += await DisplaySwitchChecks.Run();
 var invitation = new ConnectionInvitation("192.168.1.2", 48200, new string('A', 64), new string('B', 32));
 Check(ConnectionInvitation.Parse(invitation.Encode()) == invitation);
 Check(ConnectionInvitation.Parse((invitation with { Host = "::1" }).Encode()).Host == "::1");
@@ -26,6 +27,7 @@ foreach (string invalid in new[] { "anything", "https://localhost/", invitation.
 { try { ConnectionInvitation.Parse(invalid); throw new Exception("Invalid invitation accepted"); } catch (FormatException) { Check(true); } }
 if (args is ["--core"]) { Console.WriteLine($"PASS {count} protocol/access/media checks (TLS not run)"); return; }
 count += await InputTlsChecks.Run();
+count += await DisplayTlsChecks.Run();
 count += await ClipboardSessionTlsChecks.Run();
 count += await ApprovalTlsChecks.Run();
 count += await PinnedApprovalChecks.Run();

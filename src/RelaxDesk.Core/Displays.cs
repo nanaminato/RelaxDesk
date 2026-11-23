@@ -15,7 +15,7 @@ public static class DisplayTopology
     public const int MaximumDisplays=32;
     public static DisplayInfo[] Validate(DisplayInfo[] displays)
     {
-        if(displays.Length is <1 or >MaximumDisplays||displays.Select(d=>d.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count()!=displays.Length||displays.Count(d=>d.Primary)!=1||displays.Any(d=>!d.Bounds.Valid||d.Id.Length is <1 or >32||d.Id.Any(c=>c<32)||d.Rotation is not (0 or 90 or 180 or 270)||d.DpiX is <48 or >960||d.DpiY is <48 or >960))throw new InvalidDataException("Invalid display topology");
+        if(displays is null||displays.Any(d=>d is null||d.Bounds is null||d.Id is null)||displays.Length is <1 or >MaximumDisplays||displays.Select(d=>d.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count()!=displays.Length||displays.Count(d=>d.Primary)!=1||displays.Any(d=>!d.Bounds.Valid||d.Id.Length is <1 or >32||d.Id.Any(c=>c<32)||d.Rotation is not (0 or 90 or 180 or 270)||d.DpiX is <48 or >960||d.DpiY is <48 or >960))throw new InvalidDataException("Invalid display topology");
         return displays.ToArray();
     }
     public static DisplayBounds Union(DisplayInfo[] displays)
