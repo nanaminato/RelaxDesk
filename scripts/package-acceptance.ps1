@@ -17,7 +17,7 @@ try {
     $native = Join-Path $root "$NativeBuildDirectory/Release/RelaxDesk.Native.dll"
     $probe = Join-Path $root "$NativeBuildDirectory/Release/RelaxDesk.NativeProbe.exe"
     if (!(Test-Path $native) -or !(Test-Path $probe)) { throw 'Native build missing' }
-    $projects = [ordered]@{'RelaxDesk.Host'='Host';'RelaxDesk.Viewer'='Viewer';'RelaxDesk.HostShell'='HostUi';'RelaxDesk.Smoke'='Tools/Smoke';'RelaxDesk.Tests'='Tools/Tests'}
+    $projects = [ordered]@{'RelaxDesk.Host'='Host';'RelaxDesk.Viewer'='Viewer';'RelaxDesk.HostShell'='HostUi';'RelaxDesk.Service'='Service';'RelaxDesk.Smoke'='Tools/Smoke';'RelaxDesk.Tests'='Tools/Tests'}
     foreach ($project in $projects.Keys) {
         dotnet publish "src/$project/$project.csproj" --artifacts-path $artifacts -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false "-p:InformationalVersion=$productVersion" "-p:FileVersion=$fileVersion" -p:IncludeSourceRevisionInInformationalVersion=false "-p:RelaxDeskNativePath=$native" -o (Join-Path $output $projects[$project])
         if ($LASTEXITCODE) { throw "Publish failed: $project" }

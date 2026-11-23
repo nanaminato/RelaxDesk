@@ -36,6 +36,7 @@ try {
     $smokeDll = Join-Path $root 'src/RelaxDesk.Smoke/bin/Release/net11.0-windows/RelaxDesk.Smoke.dll'
     $viewer = Join-Path $root 'src/RelaxDesk.Viewer/bin/Release/net11.0-windows/RelaxDesk.Viewer.dll'
     $tests = Join-Path $root 'src/RelaxDesk.Tests/bin/Release/net11.0/RelaxDesk.Tests.dll'
+    $serviceDll = Join-Path $root 'src/RelaxDesk.Service/bin/Release/net11.0-windows/RelaxDesk.Service.dll'
     $probe = Join-Path $root "$NativeBuildDirectory/Release/RelaxDesk.NativeProbe.exe"
     if ($ArtifactsDirectory -and !$PackageRoot) {
         $artifacts = if ([IO.Path]::IsPathRooted($ArtifactsDirectory)) { [IO.Path]::GetFullPath($ArtifactsDirectory) } else { [IO.Path]::GetFullPath((Join-Path $root $ArtifactsDirectory)) }
@@ -43,14 +44,18 @@ try {
         $smokeDll = Join-Path $artifacts 'bin/RelaxDesk.Smoke/release/RelaxDesk.Smoke.dll'
         $viewer = Join-Path $artifacts 'bin/RelaxDesk.Viewer/release/RelaxDesk.Viewer.dll'
         $tests = Join-Path $artifacts 'bin/RelaxDesk.Tests/release/RelaxDesk.Tests.dll'
+        $serviceDll = Join-Path $artifacts 'bin/RelaxDesk.Service/release/RelaxDesk.Service.dll'
     }
     if ($PackageRoot) {
         $hostDll = Join-Path $root 'Host/RelaxDesk.Host.exe'; $viewer = Join-Path $root 'Viewer/RelaxDesk.Viewer.exe'
         $smokeDll = Join-Path $root 'Tools/Smoke/RelaxDesk.Smoke.exe'; $tests = Join-Path $root 'Tools/Tests/RelaxDesk.Tests.exe'
         $probe = Join-Path $root 'Tools/Native/RelaxDesk.NativeProbe.exe'
+        $serviceDll = Join-Path $root 'Service/RelaxDesk.Service.exe'
     }
     Run-App $tests
     if ($LASTEXITCODE) { throw 'Core/TLS checks failed' }
+    Run-App $smokeDll $serviceDll --broker-contracts
+    if ($LASTEXITCODE) { throw 'Local broker identity/lease/IPC failed' }
     Run-App $smokeDll --windows-contracts
     if ($LASTEXITCODE) { throw 'Windows contracts failed' }
     Run-App $smokeDll --session-contracts
@@ -103,6 +108,8 @@ try {
         if ($PackageRoot) { $shell = Join-Path $root 'HostUi/RelaxDesk.HostShell.exe' }
         Run-App $shell --shell-contracts $hostDll (Join-Path $root 'build/host-shell-verification')
         if ($LASTEXITCODE) { throw 'WPF Host approval/stop contracts failed' }
+        Run-App $shell --service-contracts $hostDll $serviceDll
+        if ($LASTEXITCODE) { throw 'WPF service lease/owned Host cleanup failed' }
     }
     if ($Graphics) {
         & $probe --viewport-render-contracts

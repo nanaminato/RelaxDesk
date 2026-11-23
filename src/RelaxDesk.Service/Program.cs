@@ -1,0 +1,26 @@
+using System.Security.Principal;
+using RelaxDesk.Core;
+using RelaxDesk.Service;
+using RelaxDesk.Session;
+
+if(args is ["--version"]){Console.WriteLine(BuildIdentity.Display);return;}
+if(args is ["--service","--owner-sid",var user])
+{
+    try{NativeService.Run(LocalAgentPipe.CanonicalUser(user));}
+    catch(Exception error){Console.Error.WriteLine($"broker_start_failed error_type={error.GetType().Name} hresult=0x{error.HResult:X8}");Environment.ExitCode=1;}
+    return;
+}
+if(args is ["--pipe-contract-server",var pipe,"--owner-sid",var owner])
+{
+    if(pipe==LocalAgentPipe.Name){Console.Error.WriteLine("Contract server requires a test pipe");Environment.ExitCode=1;return;}
+    try
+    {
+        var broker=new SessionBrokerServer(owner,pipe,Console.WriteLine);
+        _=Task.Run(async()=>{try{while(await Console.In.ReadLineAsync() is {} command){if(command=="STOP")break;if(command.StartsWith("INVALIDATE ",StringComparison.Ordinal)&&uint.TryParse(command[11..],out uint session))broker.InvalidateSession(session);}}finally{broker.RequestStop();}});
+        await broker.Run(CancellationToken.None,()=>Console.WriteLine("BROKER_READY"));
+    }
+    catch(Exception error){Console.Error.WriteLine($"broker_contract_failed error_type={error.GetType().Name} hresult=0x{error.HResult:X8}");Environment.ExitCode=1;}
+    return;
+}
+Console.WriteLine("RelaxDesk session broker: SCM --service --owner-sid <explicit user SID>; no capture, input, network listener, process launch or installation command.");
+Environment.ExitCode=2;

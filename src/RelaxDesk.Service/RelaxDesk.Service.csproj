@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net11.0-windows</TargetFramework><OutputType>Exe</OutputType><PlatformTarget>x64</PlatformTarget></PropertyGroup><ItemGroup><ProjectReference Include="../RelaxDesk.Session/RelaxDesk.Session.csproj" /></ItemGroup></Project>

@@ -30,7 +30,7 @@ Viewer Disconnect/close cancels the entire run and cannot schedule a retry. Host
 
 The WPF `--reconnect-contracts <Host.dll> <output-directory>` suite uses a real TCP relay cut and actual Host/Viewer paths, verifies new consent, fullscreen/input reset, revoked feature suppression, rejection/user cancellation/changed identity, exactly five retries against an unavailable Host and zero owned native resources. [Recorded evidence](../benchmarks/2026-11-23-reconnect-validation.md). A loopback relay and synthetic frames do not prove physical LAN/adapter/driver or foreground input behavior.
 
-This is not a Windows service, logon/reboot recovery, secure-desktop/UAC implementation or reboot-persistent file resume. Physical Windows Home desktop and held-input cleanup require local-console dual-PC testing; synthetic media and zero native resource counters cannot prove those behaviors.
+The interactive Host remains an ordinary-user process. Optional [service broker coordination](SESSION-BROKER.md) now has source and console/WPF evidence; actual SCM deployment, logon/reboot recovery, secure-desktop/UAC control and reboot-persistent file resume remain unaccepted. Physical Windows Home desktop and held-input cleanup require local-console dual-PC testing; synthetic media and zero native resource counters cannot prove those behaviors.
 
 ## Windows session boundary
 

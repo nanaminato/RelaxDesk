@@ -10,7 +10,7 @@ The existing canonical `session-ended-v2` / `host-ended` notice is sent best eff
 
 These are checked snapshots, not an atomic security boundary around OS transitions. WTS active state alone does not identify lock/unlock, secure desktop or elevated targets. Native capture permissions, Windows object access, input desktop restrictions and UIPI remain authoritative. Elevated ordinary-desktop application input can still be denied by UIPI. A release attempted while the original desktop is inaccessible remains deferred; tests do not claim physical held-key release. The watch is bounded polling, not a real-time event guarantee. An already authorized in-flight file operation can race a transition before teardown; no new file grant is created.
 
-No calls change desktop/window-station assignments, obtain another user's token, launch another session, disable UAC, unlock Windows or change RDP components. Service/agent IPC, user-switch/logon/reboot worker coordination, installer and audio remain subsequent work. This slice does not implement secure desktop control.
+The interactive desktop guard never changes desktop/window-station assignments, obtains a launch token, launches another session, disables UAC, unlocks Windows or changes RDP components. Current-user setup and [local service/agent IPC](SESSION-BROKER.md) are now implemented in separate layers; the broker queries an explicitly authorized local peer identity under temporary impersonation, without launching/elevating it. Actual SCM deployment, user-switch/logon/reboot worker coordination, machine service installer and audio remain subsequent work. Secure desktop control is unsupported.
 
 ## Reproduce
 
