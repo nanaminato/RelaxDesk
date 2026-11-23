@@ -16,6 +16,9 @@ public sealed class SessionClient : IDisposable
     public string[] Capabilities { get; private set; } = [];
     public string[] RequestedFeatures { get; init; } = [];
     public string[] Features { get; private set; } = [];
+    public bool RequestFileResume {get;init;}=true;
+    public bool SupportsFileResume {get;private set;}
+    public string? FileScope {get;private set;}
     public string VerifiedFingerprint { get; private set; } = "";
     public event Action<ConnectionPhase>? PhaseChanged;
     public Task Connect(string host, int port, string fingerprint, string token, CancellationToken ct) => ConnectInternal(host, port, fingerprint, token, false, ct);
@@ -50,13 +53,16 @@ public sealed class SessionClient : IDisposable
         Control = await Open(control, approvalOnly);
         VerifiedFingerprint = expected;
         var requestedFeatures = SessionCapabilities.Validate(RequestedFeatures);
-        await Wire.Write(Control, new Packet(approvalOnly ? "request-v2" : "hello-v2", Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], Features: requestedFeatures.Length == 0 ? null : requestedFeatures), ct);
+        bool requestResume=RequestFileResume&&requestedFeatures.Contains(SessionCapabilities.FileTransfer);
+        await Wire.Write(Control, new Packet(approvalOnly ? "request-v2" : "hello-v2", Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], Features: requestedFeatures.Length == 0 ? null : requestedFeatures,FileResume:requestResume), ct);
         PhaseChanged?.Invoke(ConnectionPhase.AwaitingApproval);
         var approval = await Wire.Read(Control, ct);
         if (approval == new Packet("denied-v2")) throw new HostConsentRejectedException();
         if (approval.Kind != "approved-v2" || approval.Text is null || approval.Capabilities is not { Length: > 0 }) throw new AuthenticationException("Host approval/capabilities missing");
         Capabilities = approval.Capabilities;
         Features = SessionCapabilities.ValidateGrant(requestedFeatures, approval.Features);
+        if(approval.FileResume&&(!requestResume||!Features.Contains(SessionCapabilities.FileTransfer)||approval.FileScope is not {Length:32}||!Guid.TryParseExact(approval.FileScope,"N",out _))||!approval.FileResume&&approval.FileScope is not null)throw new AuthenticationException("Unrequested/invalid file resume scope");
+        SupportsFileResume=approval.FileResume;FileScope=approval.FileScope;
         if (Capabilities.Any(c => c is not ("h264" or "deflate"))) throw new InvalidDataException("Unknown negotiated capability");
         PhaseChanged?.Invoke(ConnectionPhase.Negotiating);
         Media = await Open(media);

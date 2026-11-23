@@ -15,7 +15,7 @@ internal static class VideoHostSession
 {
     sealed record QueuedFrame(MediaFrame Frame, long EnqueuedAt);
     public static async Task Run(TcpListener listener, TcpClient controlSocket, SslStream control, X509Certificate2 certificate,
-        Packet hello, string backend, CancellationToken stop, string[]? grantedFeatures = null, CancellationToken clipboardRevoked = default, string? selectedFileRoot = null, CancellationToken filesRevoked = default)
+        Packet hello, string backend, CancellationToken stop, string[]? grantedFeatures = null, CancellationToken clipboardRevoked = default, string? selectedFileRoot = null, CancellationToken filesRevoked = default,FileTransferResumeStore? fileResumes=null)
     {
         string[] capabilities = (hello.Capabilities ?? []).Intersect(["h264", "deflate"]).ToArray();
         if (capabilities.Length == 0) throw new InvalidDataException("No common media codec");
@@ -28,9 +28,11 @@ internal static class VideoHostSession
         if (filesRevoked.IsCancellationRequested) features = features.Where(feature=>feature!=SessionCapabilities.FileTransfer).ToArray();
         var fileRoot = features.Contains(SessionCapabilities.FileTransfer) && selectedFileRoot is not null ? new WindowsFileRoot(selectedFileRoot) : null;
         if (fileRoot is null) features = features.Where(feature=>feature!=SessionCapabilities.FileTransfer).ToArray();
+        bool resumeFiles=hello.FileResume&&fileRoot is not null&&fileResumes is not null;
+        string? fileScope=resumeFiles?await fileResumes!.Scope():null;
         var ticket = new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15));
         var dataTicket = fileRoot is null ? null : new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15));
-        await Wire.Write(control, new Packet("approved-v2", Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features, DataTicket: dataTicket?.Value), stop);
+        await Wire.Write(control, new Packet("approved-v2", Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features, DataTicket: dataTicket?.Value,FileResume:resumeFiles,FileScope:fileScope), stop);
         using var attach = CancellationTokenSource.CreateLinkedTokenSource(stop); attach.CancelAfter(TimeSpan.FromSeconds(15));
         using var mediaSocket = await listener.AcceptTcpClientAsync(attach.Token); mediaSocket.NoDelay = true; mediaSocket.SendBufferSize = 64 * 1024;
         using var media = new SslStream(mediaSocket.GetStream(), false);
@@ -61,21 +63,22 @@ internal static class VideoHostSession
             finally { controlWrite.Release(); }
         }
         using var fileSession = CancellationTokenSource.CreateLinkedTokenSource(session.Token, filesRevoked);
-        using var fileRevokeRegistration = filesRevoked.Register(() => { gate.RevokeFeature(SessionCapabilities.FileTransfer); dataSocket?.Close(); });
+        int explicitFileRevocation=0;
+        using var fileRevokeRegistration = filesRevoked.Register(() => {Interlocked.Exchange(ref explicitFileRevocation,1);gate.RevokeFeature(SessionCapabilities.FileTransfer); dataSocket?.Close(); });
         var fileWorker = data is null ? Task.CompletedTask : Task.Run(async () =>
         {
-            try { await new FileTransferServer(fileRoot!, gate).Run(data, fileSession.Token); }
+            try { await new FileTransferServer(fileRoot!, gate,resumeFiles?fileResumes:null,()=>!stop.IsCancellationRequested&&!filesRevoked.IsCancellationRequested&&Volatile.Read(ref explicitFileRevocation)==0).Run(data, fileSession.Token); }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException or OperationCanceledException or System.Text.Json.JsonException)
             {
                 gate.RevokeFeature(SessionCapabilities.FileTransfer);
                 if (!session.IsCancellationRequested)
                 {
                     HostSessionLog.Write($"file_transfer_disabled stage=data-worker error_type={error.GetType().Name} hresult=0x{error.HResult:X8}");
-                    try { await WriteControl(new("capability-revoked-v2", Features: [SessionCapabilities.FileTransfer])); }
+                    try { await WriteControl(new("capability-revoked-v2", Features: [SessionCapabilities.FileTransfer],Text:Volatile.Read(ref explicitFileRevocation)==0&&error is IOException?"transport":null)); }
                     catch (Exception) when (session.IsCancellationRequested) { }
                 }
             }
-            finally { data.Dispose(); }
+            finally { data.Dispose();if(fileResumes is not null&&(stop.IsCancellationRequested||Volatile.Read(ref explicitFileRevocation)!=0))await fileResumes.Clear(); }
         }, session.Token);
         var clipboardUpdates = Channel.CreateBounded<ClipboardTextUpdate>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest });
         await using var clipboard = features.Contains(SessionCapabilities.ClipboardText)
@@ -116,7 +119,7 @@ internal static class VideoHostSession
                 }
                 else if (packet.Kind == "file-state-v2")
                 {
-                    gate.RevokeFeature(SessionCapabilities.FileTransfer); fileSession.Cancel(); dataSocket?.Close();
+                    Interlocked.Exchange(ref explicitFileRevocation,1);gate.RevokeFeature(SessionCapabilities.FileTransfer); fileSession.Cancel(); dataSocket?.Close();
                 }
                 else if (packet.Kind == "keyframe-v2") Interlocked.Exchange(ref forceKeyFrame, 1);
                 else if (packet.Kind == "ping-v2")
@@ -175,6 +178,7 @@ internal static class VideoHostSession
         {
             try { await Task.WhenAll(observedInput, observedSender, observedProducer, observedClipboard); } catch (Exception) { /* Causal failure is reported above; join all workers. */ }
             try { await fileWorker; } catch (Exception error) { HostSessionLog.Write($"file_worker_shutdown error_type={error.GetType().Name} hresult=0x{error.HResult:X8}"); }
+            if(fileResumes is not null&&(stop.IsCancellationRequested||Volatile.Read(ref explicitFileRevocation)!=0))await fileResumes.Clear();
             gate.Revoke(); inputDesktop?.ReleaseAll();
             try
             {

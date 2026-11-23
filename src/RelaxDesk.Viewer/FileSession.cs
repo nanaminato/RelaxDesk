@@ -7,11 +7,15 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
-    readonly CheckBox requestFiles = new() { Content = "请求文件传输（Host需选择目录并单独允许）", IsChecked = false };
+    readonly CheckBox requestFiles = new() { Content = "请求文件传输与短期续传（Host需选择目录并单独允许）", IsChecked = false };
     FileTransferClient? fileClient;
     FileTransferQueue? fileQueue;
     FileTransferWindow? fileWindow;
     long fileRevocationReplies;
+    TransferQueueRecovery? pendingFileRecovery;
+    bool filePermissionStoppedByUser;
+    Task recoveryCleanup=Task.CompletedTask;
+    string? activeFileScope,recoveryFileScope,recoveryPeerPin;
     bool fileSessionVerified;
     void ConfigureFileDrop()
     {
@@ -25,10 +29,12 @@ public sealed partial class ViewerWindow
         if (smoke is not null) return smoke.FileTransfer ? [SessionCapabilities.FileTransfer] : [];
         var features = new List<string>(); if (requestClipboard.IsChecked == true) features.Add(SessionCapabilities.ClipboardText); if (requestFiles.IsChecked == true) features.Add(SessionCapabilities.FileTransfer); return features.ToArray();
     }
-    void StartFileSession(SessionClient connection, CancellationToken ct)
+    async Task StartFileSession(SessionClient connection, CancellationToken ct)
     {
+        if(pendingFileRecovery is not null&&(!connection.SupportsFileResume||connection.FileScope!=recoveryFileScope||connection.VerifiedFingerprint!=recoveryPeerPin||!connection.Features.Contains(SessionCapabilities.FileTransfer)))await DiscardFileRecovery();
         if (connection.Data is null || !connection.Features.Contains(SessionCapabilities.FileTransfer)) return;
-        fileClient = new(connection.Data, ct); fileQueue = new(fileClient, ct);
+        activeFileScope=connection.FileScope;filePermissionStoppedByUser=false;
+        fileClient = new(connection.Data, ct,supportsResume:connection.SupportsFileResume); fileQueue = new(fileClient, ct);
         var activeQueue = fileQueue; int notified = 0;
         activeQueue.Changed += () =>
         {
@@ -40,24 +46,61 @@ public sealed partial class ViewerWindow
     {
         if (fileClient is null || fileQueue?.Enabled != true) return;
         ReleaseHeldInputs();
-        fileWindow ??= new(this, fileClient, fileQueue, session!.Token, StopFilePermission);
+        fileWindow ??= CreateFileWindow();
         fileWindow.Show(); fileWindow.Activate();
         try { await fileWindow.RefreshRemote(); } catch (Exception error) { status.Text = "文件列表暂不可用：" + error.GetType().Name; }
     }
     void FilesDropped(string[] paths)
     {
         if (fileClient is null || fileQueue?.Enabled != true || session is null || session.IsCancellationRequested) return;
-        ReleaseHeldInputs(); fileWindow ??= new(this, fileClient, fileQueue, session.Token, StopFilePermission); fileWindow.Show(); fileWindow.Activate(); fileWindow.PrepareUpload(paths);
+        ReleaseHeldInputs(); fileWindow ??= CreateFileWindow(); fileWindow.Show(); fileWindow.Activate(); fileWindow.PrepareUpload(paths);
     }
     void StopFilePermission()
     {
+        filePermissionStoppedByUser=true;_ = DiscardFileRecovery();
         sessionPermissions?.RevokeFeature(SessionCapabilities.FileTransfer); fileQueue?.Disable("文件权限已关闭"); sessionToolbar?.SetFiles(null); nativeView?.SetFilesDrop(null);
         if (session is not null && !session.IsCancellationRequested && !outgoing.TryWrite(new("file-state-v2", ++sequence))) session.Cancel();
     }
-    async Task EndFileSession()
+    FileTransferWindow CreateFileWindow()
     {
-        fileWindow?.CloseForSession(); fileWindow = null;
-        if (fileQueue is not null) { await fileQueue.DisposeAsync(); fileQueue = null; }
+        var window=new FileTransferWindow(this,fileClient!,fileQueue!,session!.Token,StopFilePermission);
+        if(pendingFileRecovery is {Count:>0} recovery)window.ConfigureRecovery(recovery.Count,RestoreFileRecovery,DiscardFileRecovery,()=>pendingFileRecovery?.Count>0);
+        return window;
+    }
+    async Task RestoreFileRecovery()
+    {
+        if(pendingFileRecovery is not {} recovery||fileQueue?.Enabled!=true)return;
+        pendingFileRecovery=null;
+        try{await fileQueue.Restore(recovery,session!.Token);}
+        finally{await recovery.DisposeAsync();RefreshFileToolbar();}
+    }
+    async Task DiscardFileRecovery()
+    {
+        await recoveryCleanup;
+        if(pendingFileRecovery is not {} recovery)return;pendingFileRecovery=null;
+        var client=fileClient;bool forget=client?.Active==true&&client.SupportsResume&&activeFileScope==recoveryFileScope;
+        recoveryCleanup=Task.Run(async()=>
+        {
+            try{if(forget){using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(2));await recovery.ForgetRemote(client!,deadline.Token);}}
+            finally{await recovery.DisposeAsync();}
+        });await recoveryCleanup;recoveryFileScope=recoveryPeerPin=null;RefreshFileToolbar();
+    }
+    void RefreshFileToolbar()=>sessionToolbar?.SetFiles(fileQueue?.Enabled==true?()=>_ = OpenFilePanel():null,pendingFileRecovery?.Count??0);
+    async Task EndFileSession(bool recover=false,string? pin=null)
+    {
+        await recoveryCleanup;
+        if(fileWindow is {} window){fileWindow=null;await window.CloseForSessionAsync();}
+        if (fileQueue is not null)
+        {
+            if(recover&&fileClient?.SupportsResume==true)
+            {
+                await DiscardFileRecovery();pendingFileRecovery=await fileQueue.DetachForRecovery();
+                recoveryFileScope=activeFileScope;recoveryPeerPin=pin;
+            }
+            else await fileQueue.DisposeAsync();
+            fileQueue = null;
+        }
         if (fileClient is not null) { await fileClient.DisposeAsync(); fileClient = null; }
+        activeFileScope=null;
     }
 }

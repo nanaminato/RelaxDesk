@@ -25,6 +25,11 @@ internal static class FileProtocolChecks
             var read=await FileDataProtocol.Read(bytes,default);Check(read.Kind==message.Kind&&read.Offset==message.Offset&&read.Length==message.Length&&read.Path==message.Path);
         }
         var valid=new TransferMessage("chunk",id,1,Offset:large,Data:[1]);
+        string resumeToken=new string('A',64),prefix=new string('B',64);
+        foreach(var resumeMessage in new[]{new TransferMessage("upload",id,1,"scope/file",Length:large,Resumable:true,ResumeToken:resumeToken),new("download",id,1,"scope/file",Offset:large,Resumable:true,ResumeToken:resumeToken,Hash:prefix),new("ready",id,1,Length:large,Offset:large,ResumeToken:resumeToken,Hash:prefix,Completed:true),new("committed",id,1),new("forget",id,1,ResumeToken:resumeToken)})
+        {using var wire=new MemoryStream();await FileDataProtocol.Write(wire,resumeMessage,default);wire.Position=0;var roundtrip=await FileDataProtocol.Read(wire,default);Check(roundtrip==resumeMessage&&!roundtrip.ToString().Contains(resumeToken)&&!roundtrip.ToString().Contains("scope/file"));}
+        Reject(()=>FileDataProtocol.Validate(new("forget",id,1)));
+        foreach(var invalidResume in new[]{new TransferMessage("upload",id,1,"file",Resumable:true,ResumeToken:"short"),new("upload",id,1,"file",ResumeToken:resumeToken),new("download",id,1,"file",Resumable:true,ResumeToken:resumeToken),new("ready",id,1,ResumeToken:resumeToken),new("ready",id,1,Length:1,Offset:2,ResumeToken:resumeToken,Hash:prefix),new("ready",id,1,Completed:true),new("ping",id,1,Resumable:true),new("chunk",id,1,Data:[1],ResumeToken:resumeToken),new("committed",id,1,Offset:1),new("upload",id,1,"file",Offset:1)})Reject(()=>FileDataProtocol.Validate(invalidResume));
         foreach(var invalid in new[]{valid with{Sequence=0},valid with{Id="bad"},valid with{Offset=-1},valid with{Data=[]},valid with{Data=new byte[TransferLimits.ChunkBytes+1]},valid with{Path="x"},valid with{Hash=new string('A',64)},valid with{Length=-1},valid with{Kind="unknown"},valid with{Entries=[]},valid with{Overwrite=true}})Reject(()=>FileDataProtocol.Validate(invalid));
         byte[] header=new byte[4];BinaryPrimitives.WriteInt32LittleEndian(header,FileDataProtocol.EnvelopeLimit+1);
         try{await FileDataProtocol.Read(new MemoryStream(header),default);throw new Exception("Oversize file data accepted");}catch(InvalidDataException){count++;}
@@ -32,6 +37,7 @@ internal static class FileProtocolChecks
         Check(SessionCapabilities.Grant([SessionCapabilities.FileTransfer],false,true) is [SessionCapabilities.FileTransfer]);
         var gate=new AccessGate();gate.Approve([SessionCapabilities.FileTransfer]);Check(gate.Allows(SessionCapabilities.FileTransfer)&&!gate.Allows(SessionCapabilities.ClipboardText));
         Check(!gate.AcceptControl(new("file-state-v2",1,Code:1)));Check(!gate.AcceptControl(new("file-state-v2",1,Features:[SessionCapabilities.ClipboardText])));
+        Check(!gate.AcceptControl(new("file-state-v2",1,FileResume:true)));Check(!gate.AcceptControl(new("file-state-v2",1,FileScope:Guid.NewGuid().ToString("N"))));
         Check(gate.AcceptControl(new("file-state-v2",1)));gate.RevokeFeature(SessionCapabilities.FileTransfer);Check(gate.AcceptControl(new("file-state-v2",2)));
         Check(gate.Accept(new("input",3,Code:65)));gate.Revoke();Check(!gate.Allows(SessionCapabilities.FileTransfer));Check(!gate.AcceptControl(new("file-state-v2",4)));
         return count;

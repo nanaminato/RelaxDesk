@@ -76,7 +76,7 @@ public sealed partial class ViewerWindow
                 session is null ? null : SendShortcut);
             sessionToolbar.SetSession(host.Text, fullScreen);
             sessionToolbar.SetClipboard(sessionPermissions?.Allows(SessionCapabilities.ClipboardText) == true, DisableClipboard);
-            sessionToolbar.SetFiles(fileQueue?.Enabled==true?()=>_ = OpenFilePanel():null);
+            RefreshFileToolbar();
         }
         else
         {

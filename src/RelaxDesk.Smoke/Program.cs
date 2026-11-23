@@ -5,6 +5,8 @@ using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using RelaxDesk.Core;
+if(args is ["--file-resume-contracts",var resumeFixtures]){await RelaxDesk.Windows.FileResumeContracts.Run(resumeFixtures);return;}
+if(args is [var largeResumeHost,"--file-resume-large",var largeResumeFixtures]){await LargeFileResumeSmoke.Run(largeResumeHost,largeResumeFixtures);return;}
 if (args is [var persistentHost, "--persistent-host", var persistentFixtures]) { await PersistentHostSmoke.Run(persistentHost, persistentFixtures); return; }
 if (args is ["--file-root-contracts", var fileFixture]) { await RelaxDesk.Windows.FileTransferContracts.Run(fileFixture); return; }
 if (args is [var fileHost, var fileMode, var fileOutput] && fileMode is "--file-transfer" or "--file-denied") { await FileTransferSmoke.Run(fileHost, fileOutput, fileMode=="--file-transfer"); return; }

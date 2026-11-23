@@ -1,4 +1,4 @@
-param([switch]$Graphics, [switch]$Wpf, [switch]$Capture, [switch]$SkipBuild, [string]$NativeBuildDirectory = 'build/native', [string]$PackageRoot = '', [string]$ArtifactsDirectory = '', [switch]$SkipInteractiveInput, [switch]$SkipPhysicalGraphics)
+param([switch]$Graphics, [switch]$Wpf, [switch]$Capture, [switch]$SkipBuild, [string]$NativeBuildDirectory = 'build/native', [string]$PackageRoot = '', [string]$ArtifactsDirectory = '', [switch]$SkipInteractiveInput, [switch]$SkipPhysicalGraphics,[switch]$LargeFiles)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 if ($PackageRoot) { $root = [IO.Path]::GetFullPath($PackageRoot); $SkipBuild = $true }
@@ -74,6 +74,8 @@ try {
         $fileFixtures = Join-Path $root 'build/file-transfer-validation'
         Run-App $smokeDll --file-root-contracts $fileFixtures
         if ($LASTEXITCODE) { throw 'Scoped file contracts failed' }
+        Run-App $smokeDll --file-resume-contracts (Join-Path $root 'build/file-resume-verification')
+        if ($LASTEXITCODE) { throw 'Scoped resume/expiry/cleanup contracts failed' }
         foreach ($mode in @('--file-transfer', '--file-denied', '--reject-data')) {
             Run-App $smokeDll $hostDll $mode $fileFixtures
             if ($LASTEXITCODE) { throw "File transfer smoke failed: $mode" }
@@ -89,6 +91,7 @@ try {
         Run-App $hostDll --codec-benchmark
         if ($LASTEXITCODE) { throw 'Codec benchmark failed' }
     }
+    if($LargeFiles){Run-App $smokeDll $hostDll --file-resume-large (Join-Path $root 'build/file-resume-verification');if($LASTEXITCODE){throw '>1GiB production TLS file-resume verification failed'}}
     if ($Wpf) {
         if ($SkipInteractiveInput) { Write-Output 'SKIP keyboard foreground/interactive-input contracts (explicitly requested)' }
         else { Run-App $viewer --keyboard-contracts; if ($LASTEXITCODE) { throw 'Keyboard routing contracts failed' } }
@@ -96,6 +99,8 @@ try {
         if ($LASTEXITCODE) { throw 'File panel/queue/drop contracts failed' }
         Run-App $viewer --file-session-contracts $hostDll (Join-Path $root 'build/file-ui-verification')
         if ($LASTEXITCODE) { throw 'Viewer file-session integration failed' }
+        Run-App $viewer --file-resume-session-contracts $hostDll (Join-Path $root 'build/file-resume-verification')
+        if ($LASTEXITCODE) { throw 'Viewer scoped file resume/reapproval/cleanup failed' }
         Run-App $viewer --reconnect-contracts $hostDll (Join-Path $root 'build/reconnect-verification')
         if ($LASTEXITCODE) { throw 'Viewer pinned reconnect/consent/lifecycle failed' }
         Run-App $viewer --toolbar-contracts

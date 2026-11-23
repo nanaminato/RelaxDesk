@@ -142,7 +142,7 @@ internal sealed class RecoveryHost : IAsyncDisposable
     {
         if (!child.HasExited) { await Send("STOP", null); await child.WaitForExitAsync(ct); }
         await output; string stderr = await errors;
-        if (child.ExitCode != 0 || stderr.Length != 0 || logs.Any(line => line.Contains("native_live_resources=1"))) throw new IOException("Recovery Host cleanup/exit failed: " + stderr);
+        if (child.ExitCode != 0 || stderr.Length != 0 || logs.Any(line => line.Contains("native_live_resources=1")||line.StartsWith("file_resume_cleanup_failed"))) throw new IOException("Recovery Host cleanup/exit failed: " + stderr);
     }
     public async ValueTask DisposeAsync()
     {

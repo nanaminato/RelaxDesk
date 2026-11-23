@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.Text.Json;
 namespace RelaxDesk.Core;
 
-public record Packet(string Kind, long Sequence = 0, int Width = 0, int Height = 0, byte[]? Data = null, string? Text = null, int X = 0, int Y = 0, int Code = 0, bool Up = false, double CaptureMs = 0, double EncodeMs = 0, string[]? Capabilities = null, string[]? Features = null, string? Origin = null, long Revision = 0, string? DataTicket = null)
+public record Packet(string Kind, long Sequence = 0, int Width = 0, int Height = 0, byte[]? Data = null, string? Text = null, int X = 0, int Y = 0, int Code = 0, bool Up = false, double CaptureMs = 0, double EncodeMs = 0, string[]? Capabilities = null, string[]? Features = null, string? Origin = null, long Revision = 0, string? DataTicket = null, bool FileResume = false, string? FileScope = null)
 {
     public override string ToString() => $"Packet kind={Kind} sequence={Sequence} (payload redacted)";
 }
@@ -36,7 +36,7 @@ public sealed class AccessGate
     readonly HashSet<string> originalFeatures = [];
     public bool Approved { get { lock (sync) return approved; } }
     private long sequence;
-    static bool ValidStop(Packet packet)=>packet.Code==0&&!packet.Up&&packet.Text is null&&packet.Data is null&&packet.Features is null&&packet.Capabilities is null&&packet.Origin is null&&packet.Revision==0&&packet.DataTicket is null&&packet.X==0&&packet.Y==0&&packet.Width==0&&packet.Height==0&&packet.CaptureMs==0&&packet.EncodeMs==0;
+    static bool ValidStop(Packet packet)=>packet.Code==0&&!packet.Up&&packet.Text is null&&packet.Data is null&&packet.Features is null&&packet.Capabilities is null&&packet.Origin is null&&packet.Revision==0&&packet.DataTicket is null&&!packet.FileResume&&packet.FileScope is null&&packet.X==0&&packet.Y==0&&packet.Width==0&&packet.Height==0&&packet.CaptureMs==0&&packet.EncodeMs==0;
     public void Approve(IEnumerable<string>? grantedFeatures = null)
     {
         var grants = SessionCapabilities.Validate(grantedFeatures?.ToArray());

@@ -10,13 +10,17 @@ namespace RelaxDesk.Windows;
 public sealed class WindowsFileRoot
 {
     readonly string root;
+    readonly string identity;
     public WindowsFileRoot(string selectedDirectory)
     {
         root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(selectedDirectory));
         if (!Path.IsPathFullyQualified(root) || root.StartsWith("\\", StringComparison.Ordinal) || new DriveInfo(Path.GetPathRoot(root)!).DriveType is not (DriveType.Fixed or DriveType.Removable or DriveType.Ram) || !Directory.Exists(root)) throw new IOException("A local existing directory must be selected");
         using var locked = DirectoryLease.Acquire(root, false);
         if (!FinalName(locked.Last).Equals(Extended(root), StringComparison.OrdinalIgnoreCase)) throw new IOException("Aliased transfer root unsupported");
+        identity = Stamp(Information(locked.Last));
     }
+    static string Stamp(FileInformation info) => $"{info.Volume:X8}:{info.IndexHigh:X8}{info.IndexLow:X8}:{info.Created.dwHighDateTime:X8}{info.Created.dwLowDateTime:X8}";
+    public bool SameIdentity() { using var lease=DirectoryLease.Acquire(root,false);return Stamp(Information(lease.Last))==identity; }
     internal static string Extended(string path) => path.StartsWith(@"\\?\", StringComparison.Ordinal) ? path : @"\\?\" + path;
     internal string Resolve(string relative, bool allowRoot = false)
     {
@@ -26,11 +30,13 @@ public sealed class WindowsFileRoot
         if (!full.Equals(root, StringComparison.OrdinalIgnoreCase) && !full.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) throw new IOException("Transfer path outside authorized root");
         return full;
     }
-    public void CreateDirectory(string relative) { string directory = Resolve(relative); EnsureSpace(1024 * 1024); using var lease = DirectoryLease.Acquire(directory, true); }
+    void VerifyIdentity() { if(!SameIdentity())throw new IOException("Selected directory identity changed"); }
+    public void CreateDirectory(string relative) { using var rootLease=DirectoryLease.Acquire(root,false);VerifyIdentity();string directory = Resolve(relative); EnsureSpace(1024 * 1024); using var lease = DirectoryLease.Acquire(directory, true); }
     public TransferEntry[] List(string relative, int offset)
     {
         if (offset is < 0 or > TransferPaths.MaximumEntries) throw new InvalidDataException("Invalid directory page");
         string directory = Resolve(relative, true); using var lease = DirectoryLease.Acquire(directory, false);
+        VerifyIdentity();
         var files = new DirectoryInfo(directory).EnumerateFileSystemInfos().Take(TransferPaths.MaximumEntries + 1).ToArray();
         if (files.Length > TransferPaths.MaximumEntries) throw new IOException("Directory entry limit exceeded");
         var result = new List<TransferEntry>();
@@ -51,6 +57,7 @@ public sealed class WindowsFileRoot
         SafeFileHandle? handle = null;
         try
         {
+            VerifyIdentity();
             handle = Open(file, 0x80000000, 1, 3, 0x48200000);
             var info = Information(handle);
             if ((info.Attributes & (0x400u | 0x10u)) != 0 || info.Links != 1 || !FinalName(handle).Equals(Extended(file), StringComparison.OrdinalIgnoreCase)) throw new IOException("Reparse/multilink/aliased file unsupported");
@@ -67,6 +74,7 @@ public sealed class WindowsFileRoot
     public IncomingTransferFile CreateUpload(string relative, long expectedBytes, bool overwrite)
     {
         if (expectedBytes is < 0 or > TransferLimits.MaximumFileBytes) throw new InvalidDataException("File exceeds transfer limit");
+        using var rootLease=DirectoryLease.Acquire(root,false);VerifyIdentity();
         string destination = Resolve(relative); EnsureSpace(Math.Max(expectedBytes, 1024 * 1024)); var lease = DirectoryLease.Acquire(Path.GetDirectoryName(destination)!, true);
         try
         {

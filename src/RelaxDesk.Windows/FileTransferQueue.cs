@@ -3,11 +3,11 @@ using RelaxDesk.Core;
 
 namespace RelaxDesk.Windows;
 
-public enum TransferJobState { Queued, Running, Paused, AwaitingOverwrite, Completed, Cancelled, Failed, Skipped, Retried }
+public enum TransferJobState { Queued, Running, Paused, AwaitingOverwrite, Completed, Cancelled, Failed, Skipped, Retried, Interrupted }
 public enum FileCollisionChoice { Overwrite, KeepBoth, Skip }
 public sealed record TransferQueueStatus(long Version, int Count, int Completed, int Failed, int Pending, long CompletedBytes, long TotalBytes, TransferJobSnapshot? Current);
 public sealed record TransferJobSnapshot(Guid Id, string Name, string Direction, string RemotePath, string LocalFolder,
-    TransferJobState State, long CompletedBytes, long TotalBytes, double BytesPerSecond, double? RemainingSeconds, string? Error)
+    TransferJobState State, long CompletedBytes, long TotalBytes, double BytesPerSecond, double? RemainingSeconds, string? Error, long ResumedFrom = 0)
 {
     public override string ToString() => $"TransferJob id={Id} state={State} (paths redacted)";
 }
@@ -16,13 +16,15 @@ public sealed record TransferJobSnapshot(Guid Id, string Name, string Direction,
 // All enumeration and file IO run on workers. UI receives coalescible snapshots.
 public sealed class FileTransferQueue : IAsyncDisposable
 {
-    sealed class Job
+    internal sealed class Job
     {
         public Guid Id = Guid.NewGuid();
         public required WindowsFileRoot LocalRoot;
         public required string LocalPath, LocalFolder, RemotePath;
-        public bool Download, Directory, Overwrite;
-        public long Total, Completed;
+        public bool Download, Directory, Overwrite, EligibleForRecovery = true, UserCancelled;
+        public TransferReadFile? Source;
+        public TransferResumeState? Resume;
+        public long Total, Completed, ResumedFrom;
         public double Speed; public double? Eta;
         public TransferJobState State;
         public string? Error;
@@ -37,19 +39,20 @@ public sealed class FileTransferQueue : IAsyncDisposable
     readonly Queue<Job> pending = new();
     readonly List<Job> jobs = [];
     readonly Task worker;
+    readonly TaskCompletionSource shutdown = new(TaskCreationOptions.RunContinuationsAsynchronously);
     bool disabled; int disposed;
     long version;
     public event Action? Changed;
     public FileTransferQueue(FileTransferClient client, CancellationToken session)
     { this.client = client; stop = CancellationTokenSource.CreateLinkedTokenSource(session); client.Closed += DataClosed; worker = Task.Run(Run); }
-    void DataClosed() => Disable("文件数据通道已断开，请重新连接并授权。");
+    void DataClosed() => StopQueue("文件数据通道已断开，请重新连接并授权。", client.SupportsResume);
     public bool Enabled { get { lock (sync) return !disabled && !stop.IsCancellationRequested; } }
     public bool Busy { get { lock (sync) return jobs.Any(job => job.State is TransferJobState.Running or TransferJobState.Paused); } }
     public TransferJobSnapshot[] Snapshot()
     {
         lock (sync) return jobs.Select(Copy).ToArray();
     }
-    static TransferJobSnapshot Copy(Job job) => new(job.Id, job.Directory ? Path.GetFileName(job.RemotePath) + "/" : Path.GetFileName(job.RemotePath), job.Download ? "下载" : "上传", job.RemotePath, job.LocalFolder, job.State, job.Completed, job.Total, job.State == TransferJobState.Paused ? 0 : job.Speed, job.Eta, job.Error);
+    static TransferJobSnapshot Copy(Job job) => new(job.Id, job.Directory ? Path.GetFileName(job.RemotePath) + "/" : Path.GetFileName(job.RemotePath), job.Download ? "下载" : "上传", job.RemotePath, job.LocalFolder, job.State, job.Completed, job.Total, job.State == TransferJobState.Paused ? 0 : job.Speed, job.Eta, job.Error, job.ResumedFrom);
     public TransferQueueStatus Status()
     {
         lock (sync)
@@ -146,7 +149,7 @@ public sealed class FileTransferQueue : IAsyncDisposable
         }
         Changed?.Invoke();
     }
-    static bool Active(Job job) => job.State is TransferJobState.Queued or TransferJobState.Running or TransferJobState.Paused or TransferJobState.AwaitingOverwrite;
+    static bool Active(Job job) => job.State is TransferJobState.Queued or TransferJobState.Running or TransferJobState.Paused or TransferJobState.AwaitingOverwrite or TransferJobState.Interrupted;
     public bool CanCancel(Guid id)
     {
         lock (sync)
@@ -161,11 +164,11 @@ public sealed class FileTransferQueue : IAsyncDisposable
         lock (sync)
         {
             var selected = jobs.FirstOrDefault(job => job.Id == id); if (selected is null) return;
-            sources = jobs.Where(job => Active(job) && (job.Id == id || selected.Directory && job.Download == selected.Download && job.RemotePath.StartsWith(selected.RemotePath + "/", StringComparison.Ordinal))).Select(job => job.Stop).ToArray();
+            sources = jobs.Where(job => Active(job) && (job.Id == id || selected.Directory && job.Download == selected.Download && job.RemotePath.StartsWith(selected.RemotePath + "/", StringComparison.Ordinal))).Select(job => { job.UserCancelled = true; job.EligibleForRecovery = false; return job.Stop; }).ToArray();
         }
         CancelSources(sources); Changed?.Invoke();
     }
-    public void CancelAll() { CancellationTokenSource[] sources; lock (sync) sources = jobs.Where(Active).Select(job => job.Stop).ToArray(); CancelSources(sources); Changed?.Invoke(); }
+    public void CancelAll() { CancellationTokenSource[] sources; lock (sync) sources = jobs.Where(Active).Select(job => { job.UserCancelled = true; job.EligibleForRecovery = false; return job.Stop; }).ToArray(); CancelSources(sources); Changed?.Invoke(); }
     public void ChooseCollision(Guid id, FileCollisionChoice choice) { lock (sync) jobs.FirstOrDefault(job => job.Id == id)?.Collision?.TrySetResult(choice); }
     public Guid Retry(Guid id)
     {
@@ -176,16 +179,62 @@ public sealed class FileTransferQueue : IAsyncDisposable
             if (source.State is not (TransferJobState.Failed or TransferJobState.Cancelled or TransferJobState.Skipped)) throw new InvalidOperationException("此任务不能重试");
             copy = NewJob(source.LocalRoot, source.LocalPath, source.LocalFolder, source.RemotePath, source.Download, source.Directory, source.Total);
         }
-        Add([copy]); lock (sync) { jobs.Single(job => job.Id == id).State = TransferJobState.Retried; version++; }
+        Add([copy]); lock (sync) { jobs.Single(job => job.Id == id).State = TransferJobState.Retried; jobs.Single(job => job.Id == id).EligibleForRecovery = false; version++; }
         Changed?.Invoke(); return copy.Id;
     }
     public void ClearFinished()
     { lock (sync) { jobs.RemoveAll(job => job.State is TransferJobState.Completed or TransferJobState.Cancelled or TransferJobState.Failed or TransferJobState.Skipped or TransferJobState.Retried); version++; } Changed?.Invoke(); }
-    public void Disable(string reason)
+    public void Disable(string reason) => StopQueue(reason, false);
+    public void Interrupt() => StopQueue("文件数据通道已中断，重新授权后可确认继续", client.SupportsResume);
+    void StopQueue(string reason, bool preserve)
     {
-        lock (sync) { disabled = true; foreach (var job in jobs.Where(job => job.State is TransferJobState.Queued or TransferJobState.Running or TransferJobState.Paused or TransferJobState.AwaitingOverwrite)) job.Error = reason; }
+        lock (sync) { disabled = true; foreach (var job in jobs) { if (!preserve) job.EligibleForRecovery = false; if (Active(job)) job.Error = reason; } }
         try { stop.Cancel(); } catch (ObjectDisposedException) { }
         Changed?.Invoke();
+    }
+    internal static async Task ReleaseResources(Job job)
+    {
+        Exception? failure = null;
+        if (job.Source is { } source) { job.Source = null; try { await source.DisposeAsync(); } catch (Exception error) { failure = error; } }
+        if (job.Resume is { } resume) { job.Resume = null; try { await resume.DisposeAsync(); } catch (Exception error) { failure ??= error; } }
+        if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+    }
+    public async Task Restore(TransferQueueRecovery recovery, CancellationToken ct)
+    {
+        var saved = recovery.Take(); var plan = new List<Job>();
+        try
+        {
+            await Task.Run(() =>
+            {
+                foreach (var root in saved.Select(job => job.LocalRoot).Distinct()) { ct.ThrowIfCancellationRequested(); if (!root.SameIdentity()) throw new IOException("本地目录已变化，请重新选择文件"); }
+                foreach (var previous in saved)
+                {
+                    var next = NewJob(previous.LocalRoot, previous.LocalPath, previous.LocalFolder, previous.RemotePath, previous.Download, previous.Directory, previous.Total);
+                    next.Overwrite = previous.Overwrite; next.Control.Paused = previous.Control.Paused; next.Completed = previous.Completed;
+                    next.Source = previous.Source; previous.Source = null; next.Resume = previous.Resume; previous.Resume = null; plan.Add(next);
+                }
+            }, ct);
+            ct.ThrowIfCancellationRequested(); Add(plan);
+        }
+        catch
+        {
+            foreach (var job in plan) { job.Stop.Dispose(); await ReleaseResources(job); }
+            foreach (var job in saved) await ReleaseResources(job); throw;
+        }
+    }
+    public async Task<TransferQueueRecovery> DetachForRecovery()
+    {
+        if (Interlocked.Exchange(ref disposed, 1) != 0) { await shutdown.Task; return new([]); }
+        try
+        {
+            client.Closed -= DataClosed; StopQueue("任务已中断，重新授权后可确认继续", true);
+            Exception? failure = null; try { await worker; } catch (Exception error) { failure = error; }
+            Job[] recoverable; lock (sync) recoverable = failure is null ? jobs.Where(job => job.EligibleForRecovery && !job.UserCancelled).ToArray() : [];
+            foreach (var job in jobs.Except(recoverable)) try { await ReleaseResources(job); } catch (Exception error) { failure ??= error; }
+            if (failure is not null) { foreach (var job in recoverable) try { await ReleaseResources(job); } catch (Exception) { } System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw(); }
+            return new(recoverable);
+        }
+        finally { stop.Dispose(); available.Dispose(); shutdown.TrySetResult(); }
     }
     async Task Run()
     {
@@ -197,7 +246,7 @@ public sealed class FileTransferQueue : IAsyncDisposable
                 TransferJobState end = TransferJobState.Completed; string? error = null;
                 try
                 {
-                    job.Stop.Token.ThrowIfCancellationRequested(); Update(job, value => value.State = TransferJobState.Running);
+                    job.Stop.Token.ThrowIfCancellationRequested(); Update(job, value => value.State = job.Control.Paused ? TransferJobState.Paused : TransferJobState.Running);
                     int alternate = 0;
                     string original = job.Download ? job.LocalPath : job.RemotePath;
                     while (true)
@@ -210,9 +259,10 @@ public sealed class FileTransferQueue : IAsyncDisposable
                             }
                             else
                             {
-                                void Progress(TransferProgress progress) => Update(job, value => { value.Completed = progress.Completed; value.Total = progress.Total; value.Speed = progress.BytesPerSecond; value.Eta = progress.RemainingSeconds; });
-                                if (job.Download) await client.Download(job.RemotePath, size => job.LocalRoot.CreateUpload(job.LocalPath, size, job.Overwrite), job.Stop.Token, job.Control, Progress);
-                                else { await using var source = job.LocalRoot.OpenRead(job.LocalPath); await client.Upload(job.RemotePath, source.Stream, job.Overwrite, job.Stop.Token, job.Control, Progress); }
+                                void Progress(TransferProgress progress) => Update(job, value => { value.Completed = progress.Completed; value.Total = progress.Total; value.Speed = progress.BytesPerSecond; value.Eta = progress.RemainingSeconds; value.ResumedFrom = job.Resume?.LastStartOffset ?? 0; });
+                                if (client.SupportsResume) job.Resume ??= new TransferResumeState(immutableUploadSource: true);
+                                if (job.Download) await client.Download(job.RemotePath, size => job.LocalRoot.CreateUpload(job.LocalPath, size, job.Overwrite), job.Stop.Token, job.Control, Progress, job.Resume);
+                                else { job.Source ??= job.LocalRoot.OpenRead(job.LocalPath); await client.Upload(job.RemotePath, job.Source.Stream, job.Overwrite, job.Stop.Token, job.Control, Progress, job.Resume); }
                             }
                             break;
                         }
@@ -240,9 +290,12 @@ public sealed class FileTransferQueue : IAsyncDisposable
                 catch (OperationCanceledException) { end = TransferJobState.Cancelled; }
                 catch (Exception failure)
                 {
-                    end = TransferJobState.Failed; error = failure is TransferRejectedException rejected ? rejected.Code switch { "disk-full" => "目标磁盘空间不足", "access-denied" => "未获文件访问权限", "invalid-data" => "数据或SHA-256校验失败", _ => "文件不可访问、被占用或路径不受支持" } : failure is InvalidDataException ? "数据或SHA-256校验失败" : failure is IOException ? "文件不可访问、被占用或空间不足" : failure.GetType().Name;
+                    end = TransferJobState.Failed; error = failure is TransferRejectedException rejected ? rejected.Code switch { "disk-full" => "目标磁盘空间不足", "access-denied" => "未获文件访问权限", "invalid-data" => "数据或SHA-256校验失败", "source-changed" => "源文件或续传前缀已变化，请重新选择文件", "busy" => "续传缓存已满，请放弃中断任务或等待到期后重试", _ => "文件不可访问、被占用或路径不受支持" } : failure is InvalidDataException ? "数据或SHA-256校验失败" : failure is IOException ? "文件不可访问、被占用或空间不足" : failure.GetType().Name;
                 }
                 finally { job.Stop.Dispose(); }
+                lock (sync) if (end is TransferJobState.Completed or TransferJobState.Skipped || job.UserCancelled || !client.SupportsResume || end == TransferJobState.Failed && client.Active) job.EligibleForRecovery = false;
+                if (!job.EligibleForRecovery) await ReleaseResources(job);
+                else if (end is TransferJobState.Failed or TransferJobState.Cancelled) end = TransferJobState.Interrupted;
                 Update(job, value => { value.State = end; value.Error = error ?? value.Error; value.Speed = 0; value.Collision = null; });
             }
         }
@@ -251,7 +304,7 @@ public sealed class FileTransferQueue : IAsyncDisposable
         {
             lock (sync)
             {
-                while (pending.TryDequeue(out var job)) { job.Stop.Dispose(); job.State = TransferJobState.Cancelled; }
+                while (pending.TryDequeue(out var job)) { job.Stop.Dispose(); job.State = client.SupportsResume && job.EligibleForRecovery ? TransferJobState.Interrupted : TransferJobState.Cancelled; }
                 version++;
             }
             Changed?.Invoke();
@@ -259,7 +312,13 @@ public sealed class FileTransferQueue : IAsyncDisposable
     }
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref disposed, 1) != 0) return;
-        client.Closed -= DataClosed; Disable("会话已结束"); await worker; stop.Dispose(); available.Dispose();
+        if (Interlocked.Exchange(ref disposed, 1) != 0) { await shutdown.Task; return; }
+        try
+        {
+            client.Closed -= DataClosed; Disable("会话已结束"); Exception? failure = null; try { await worker; } catch (Exception error) { failure = error; }
+            foreach (var job in jobs) try { await ReleaseResources(job); } catch (Exception error) { failure ??= error; }
+            if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+        finally { stop.Dispose(); available.Dispose(); shutdown.TrySetResult(); }
     }
 }

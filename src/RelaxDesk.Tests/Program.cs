@@ -25,6 +25,7 @@ count += await ApprovalTlsChecks.Run();
 count += await PinnedApprovalChecks.Run();
 count += await FeatureTlsChecks.Run();
 count += await FileTlsChecks.Run();
+count += await ResumeTlsChecks.Run();
 using var certificate = SessionCertificate.Create();
 var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0); listener.Start();
 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));

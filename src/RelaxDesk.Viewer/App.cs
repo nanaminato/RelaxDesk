@@ -43,6 +43,7 @@ public sealed class App : Application
             else if(args is ["--file-ui-contracts",var fileHost,var fileOutput])FileUiVerification.Run(app,fileHost,fileOutput);
             else if(args is ["--file-session-contracts",var sessionHost,var sessionOutput])FileSessionVerification.Run(app,sessionHost,sessionOutput);
             else if(args is ["--reconnect-contracts",var recoveryHost,var recoveryOutput])ReconnectVerification.Run(app,recoveryHost,recoveryOutput);
+            else if(args is ["--file-resume-session-contracts",var resumeHost,var resumeOutput])FileResumeSessionVerification.Run(app,resumeHost,resumeOutput);
             else app.Run(new ViewerWindow(smoke));
         }
         finally { if (previousDpi != 0) SetThreadDpiAwarenessContext(previousDpi); }
@@ -159,7 +160,7 @@ public sealed partial class ViewerWindow : Window
     async Task<AttemptResult> ConnectVideoAttempt(ConnectionTarget target, string? previousPin, CancellationToken lifetime, Action onConnected)
     {
         StopLocalPreview(); connectionCard.IsEnabled = false; disconnect.IsEnabled = true; connect.IsEnabled = false; using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime); session = cancellation; sequence = 0;
-        ++connectionGeneration; Exception? attemptError=null; bool established=false,restoreFullScreen=target.FullScreen; string[] retryFeatures=target.Features;long connectedAt=0;
+        ++connectionGeneration; Exception? attemptError=null; bool established=false,restoreFullScreen=target.FullScreen; string[] retryFeatures=target.Features;long connectedAt=0;bool fileTransportInterrupted=false;
         while (outgoing.Reader.TryRead(out _)) { }
         using var connection = new SessionClient { RequestedFeatures = target.Features }; using var abort = cancellation.Token.Register(connection.Dispose);
         connection.PhaseChanged+=phase=>{if(ReferenceEquals(session,cancellation)&&!cancellation.IsCancellationRequested)SetConnectionPhase(phase);};
@@ -216,7 +217,7 @@ public sealed partial class ViewerWindow : Window
             established=true;connectedAt=Stopwatch.GetTimestamp();onConnected();
             token.Clear();
             var permissionGate = new AccessGate(); permissionGate.Approve(connection.Features); sessionPermissions = permissionGate;
-            StartFileSession(connection,cancellation.Token);
+            await StartFileSession(connection,cancellation.Token);
             if (permissionGate.Allows(SessionCapabilities.ClipboardText))
                 clipboard = new ClipboardSynchronizer(() => new WindowsTextClipboard(), permissionGate, QueueClipboardUpdate, cancellation.Token,
                     message => Dispatcher.BeginInvoke(() => { if (!ReferenceEquals(sessionPermissions, permissionGate) || cancellation.IsCancellationRequested) return; status.Text = message; if (!permissionGate.Allows(SessionCapabilities.ClipboardText)) DisableClipboard(); }));
@@ -263,12 +264,13 @@ public sealed partial class ViewerWindow : Window
                     }
                     else if (packet.Kind == "capability-revoked-v2" && packet.Features is [var feature] && connection.Features.Contains(feature))
                     {
+                        if(feature==SessionCapabilities.FileTransfer)fileTransportInterrupted=packet.Text=="transport";
                         permissionGate.RevokeFeature(feature);
                         _ = Dispatcher.BeginInvoke(() =>
                         {
                             if (!ReferenceEquals(sessionPermissions, permissionGate)) return;
                             if(feature==SessionCapabilities.ClipboardText)sessionToolbar?.SetClipboard(false,null);
-                            else if(feature==SessionCapabilities.FileTransfer){fileQueue?.Disable("Host已关闭文件权限");sessionToolbar?.SetFiles(null);nativeView?.SetFilesDrop(null);}
+                            else if(feature==SessionCapabilities.FileTransfer){if(packet.Text=="transport")fileQueue?.Interrupt();else fileQueue?.Disable("Host已关闭文件权限");sessionToolbar?.SetFiles(null);nativeView?.SetFilesDrop(null);}
                             if(feature==SessionCapabilities.FileTransfer)Interlocked.Increment(ref fileRevocationReplies);
                             status.Text="会话能力已关闭；重新开启需要重新连接并授权。";
                         });
@@ -392,11 +394,12 @@ public sealed partial class ViewerWindow : Window
         {
             heartbeat?.Stop(); cancellation.Cancel(); CompositionTarget.Rendering -= Rendering; ReleaseHeldInputs(); cpu.Clear(); image.Visibility = Visibility.Visible;
             restoreFullScreen=fullScreen;
-            if(established)retryFeatures=connection.Features.Where(feature=>sessionPermissions?.Allows(feature)==true).ToArray();
+            if(established)retryFeatures=connection.Features.Where(feature=>sessionPermissions?.Allows(feature)==true||feature==SessionCapabilities.FileTransfer&&fileTransportInterrupted&&!filePermissionStoppedByUser).ToArray();
+            bool recoverFiles=attemptError is not null&&ConnectionRecovery.IsTransient(attemptError)&&connectionRun?.IsCancellationRequested==false&&retryFeatures.Contains(SessionCapabilities.FileTransfer);
             sessionPermissions?.Revoke(); sessionPermissions = null; Interlocked.Exchange(ref pendingClipboard, null);
             if (clipboard is not null) await clipboard.DisposeAsync();
             if(fileVerification is not null)await fileVerification;
-            await EndFileSession();
+            await EndFileSession(recoverFiles,connection.VerifiedFingerprint);
             if (nativeView is not null) { renderPanel.Children.Remove(nativeView); nativeView.Dispose(); nativeView = null; }
             session = null; ShowConnectedView(false);
             string report = $"renderer={(gpuFrames > 0 && cpuFrames == 0 ? "d3d11" : "cpu-or-fallback")} gpu_frames={gpuFrames} cpu_frames={cpuFrames} full_frame_readback_bytes={readbackBytes} received_frames={receivedFrames} resizes={resizeCount} renderer_generations={rendererGenerations} keyframe_requests={keyframeRequests} simulated_device_losses={simulatedLosses} idle_repaints={idleRepaints} hidden={hiddenPresents} occluded={occludedPresents} gpu_busy={busyPresents} " + metrics.Report(decoded.Dropped + skipped, decoded.Depth);

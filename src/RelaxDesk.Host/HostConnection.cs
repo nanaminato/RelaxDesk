@@ -12,7 +12,7 @@ namespace RelaxDesk.Host;
 internal static class HostConnection
 {
     public static async Task Run(TcpListener listener, TcpClient client, X509Certificate2 cert, string token,
-        string backend, string? selectedFileRoot, ShellBridge.Session? shell, CancellationToken stop)
+        string backend, string? selectedFileRoot, ShellBridge.Session? shell, CancellationToken stop,FileTransferResumeStore? fileResumes=null)
     {
         Packet hello;
         using var tls = new SslStream(client.GetStream(), false);
@@ -30,6 +30,7 @@ internal static class HostConnection
         }
         if (shell is null && hello.Kind != "request-v2") Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests screen + input. Type APPROVE to allow this session:");
         var requestedFeatures = SessionCapabilities.Validate(hello.Features);
+        if(hello.FileScope is not null||hello.FileResume&&(!requestedFeatures.Contains(SessionCapabilities.FileTransfer)||hello.Kind=="hello-v1"))throw new AuthenticationException("Invalid file resume request");
         if (hello.Kind == "hello-v1" && requestedFeatures.Length != 0) throw new AuthenticationException("Session extensions require v2");
         if (shell is null && requestedFeatures.Contains(SessionCapabilities.ClipboardText)) Console.WriteLine("Optional clipboard.text requested. Type APPROVE_CLIPBOARD to separately allow bidirectional text; APPROVE grants screen/input only.");
         if (shell is null && requestedFeatures.Contains(SessionCapabilities.FileTransfer)) Console.WriteLine("Optional file.transfer requested. APPROVE_FILES grants access only to the configured local directory; APPROVE_ALL grants all requested configured features. APPROVE grants screen/input only.");
@@ -48,7 +49,7 @@ internal static class HostConnection
         if (hello.Kind is "hello-v2" or "request-v2")
         {
             await VideoHostSession.Run(listener, client, tls, cert, hello, backend, stop,
-                SessionCapabilities.Grant(requestedFeatures, approval is "APPROVE_CLIPBOARD" or "APPROVE_ALL", selectedFileRoot is not null && approval is "APPROVE_FILES" or "APPROVE_ALL"), shell?.ClipboardRevoked ?? default, selectedFileRoot, shell?.FilesRevoked ?? default);
+                SessionCapabilities.Grant(requestedFeatures, approval is "APPROVE_CLIPBOARD" or "APPROVE_ALL", selectedFileRoot is not null && approval is "APPROVE_FILES" or "APPROVE_ALL"), shell?.ClipboardRevoked ?? default, selectedFileRoot, shell?.FilesRevoked ?? default,fileResumes);
             return;
         }
         listener.Stop();

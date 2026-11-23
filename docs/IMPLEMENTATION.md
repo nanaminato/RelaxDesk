@@ -1,8 +1,12 @@
 # RelaxDesk implementation and evidence
 
+## Scoped file task and byte resume
+
+Unexpected v2 interruption can now preserve an in-memory queue/partial for five minutes; fresh pinned Host consent, same directory identity and explicit Viewer confirmation are required. Eight Host entries/64GiB retained upload bound, one-use rotating tickets, SHA-256 prefix/full checks, current/previous hash snapshots, commit receipts, cancel/forget/revoke/expiry cleanup and joined UI/queue shutdown are implemented. Core/TLS 682, actual filesystem/TCP contracts and production WPF/Host/third-TLS directory recovery pass. Actual non-sparse 1GiB+17 files upload/download with remaining-byte counts and SHA-256, concurrent control pongs and native cleanup pass. [Contract](FILE-RESUME.md), [evidence](../benchmarks/2026-11-23-file-resume-validation.md). No crash/reboot resume, physical Home/input acceptance or new package is claimed.
+
 ## Bounded Viewer reconnect
 
-Viewer v2 now restores approved sessions after transport failures with five exponential/jittered retries within a 120-second outage window, fixed approved identity and new Host consent/tickets. New attempts rebuild video/cursor/optional workers, request an IDR, clear queued/held input and restore fullscreen. Revoked/denied optional capabilities are not requested again automatically. Denial/identity/protocol errors and user disconnect stop retries. Core/TLS 656 and actual WPF/Host/relay tests cover success, revoked files, stale input, cancellation, changed certificate and five-retry exhaustion. [Contract](SESSION-LIFECYCLE.md), [evidence](../benchmarks/2026-11-23-reconnect-validation.md). File tasks/byte resume and physical Home/network soak remain pending; no package.
+Viewer v2 now restores approved sessions after transport failures with five exponential/jittered retries within a 120-second outage window, fixed approved identity and new Host consent/tickets. New attempts rebuild video/cursor/optional workers, request an IDR, clear queued/held input and restore fullscreen. Revoked/denied optional capabilities are not requested again automatically. Denial/identity/protocol errors and user disconnect stop retries. Core/TLS 656 and actual WPF/Host/relay tests cover success, revoked files, stale input, cancellation, changed certificate and five-retry exhaustion. [Contract](SESSION-LIFECYCLE.md), [evidence](../benchmarks/2026-11-23-reconnect-validation.md). File tasks/byte resume now use fresh consent and a scoped confirmation; physical Home/network soak remains pending; no package.
 
 ## Persistent Host and per-connection consent
 
@@ -10,7 +14,7 @@ HostShell and interactive Host now return to Listening after teardown; CLI `--li
 
 ## File transfer UI and queue checkpoint
 
-Current source includes Host folder selection/default-off consent and Viewer remote browser, recursive bounded queue, confirmed native/WPF drops, overwrite choices, pause/cancel/retry and live file-only revocation. Release build has zero warnings/errors; Core/TLS 599, Windows file contracts 29, WPF file UI 22 plus cleanup and actual Viewer/Host session checks pass. Complete nonphysical regression exited 0, with explicit foreground/physical graphics skips. [Contract](FILE-TRANSFER.md), [evidence](../benchmarks/2026-11-23-file-ui-validation.md). Cross-session resume is not implemented. Persistent Host and secure reconnect are now available; scoped resume is next. No package until the final milestone. Physical Home/LAN acceptance remains pending.
+Current source includes Host folder selection/default-off consent and Viewer remote browser, recursive bounded queue, confirmed native/WPF drops, overwrite choices, pause/cancel/retry and live file-only revocation. Release build has zero warnings/errors; Core/TLS 599, Windows file contracts 29, WPF file UI 22 plus cleanup and actual Viewer/Host session checks pass. Complete nonphysical regression exited 0, with explicit foreground/physical graphics skips. [Contract](FILE-TRANSFER.md), [evidence](../benchmarks/2026-11-23-file-ui-validation.md). Scoped in-memory cross-session resume is now available after fresh consent and explicit confirmation. No package until the final milestone. Physical Home/LAN acceptance remains pending.
 
 ## Independently authorized Unicode text clipboard
 

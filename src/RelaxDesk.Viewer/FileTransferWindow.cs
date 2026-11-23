@@ -28,7 +28,7 @@ internal sealed class FileTransferWindow : Window
         public string Name => Value.Name;
         public string Direction => Value.Direction;
         public string State => Value.State == TransferJobState.Completed && Value.Name.EndsWith('/') ? "已创建目录" : StateText(Value.State);
-        public string Progress => $"{Bytes(Value.CompletedBytes)} / {Bytes(Value.TotalBytes)}";
+        public string Progress => $"{Bytes(Value.CompletedBytes)} / {Bytes(Value.TotalBytes)}"+(Value.ResumedFrom>0?" · 续传":"");
         public string Rate => Value.BytesPerSecond > 0 ? Bytes((long)Value.BytesPerSecond) + "/s" : "—";
         public string Eta
         {
@@ -56,12 +56,19 @@ internal sealed class FileTransferWindow : Window
     readonly ProgressBar totalProgress = new() { Minimum = 0, Maximum = 100, Height = 6, Margin = new(0, 6, 0, 6) };
     readonly Border confirmation = new() { Visibility = Visibility.Collapsed, Background = new SolidColorBrush(Color.FromRgb(232, 242, 255)), Padding = new(12), CornerRadius = new(8), Margin = new(0, 5, 0, 6) };
     readonly TextBlock confirmationText = new() { TextWrapping = TextWrapping.Wrap };
+    readonly Border recoveryNotice=new(){Visibility=Visibility.Collapsed,Background=new SolidColorBrush(Color.FromRgb(232,242,255)),Padding=new(12),CornerRadius=new(8),Margin=new(0,7,0,4)};
+    internal Button ContinueRecoveryButton {get;}=new(){Content="继续中断任务"};
+    readonly Button discardRecovery=new(){Content="放弃中断任务"};
+    internal Button DiscardRecoveryButton=>discardRecovery;
+    Func<bool>? recoveryValid;
+    readonly StackPanel browser=new(){Margin=new(0,8,0,0)};
     readonly Button pause = new() { Content = "暂停" }, cancel = new() { Content = "取消" }, retry = new() { Content = "重试" }, overwrite = new() { Content = "覆盖" }, keepBoth = new() { Content = "保留两份" }, skip = new() { Content = "跳过" }, openFolder = new() { Content = "打开本地目录" };
     readonly List<Button> commands = [];
     readonly Button next;
     string directory = "", pendingDirectory = ""; string[] pendingPaths = [];
     string? downloadDirectory;
     int page, lastListedCompletion; long revision = -1; bool planning, allowClose, hasNext;
+    Task commandFinished=Task.CompletedTask;
     internal int PendingUploadCount => pendingPaths.Length;
     internal int DisplayedJobs => rows.Count;
     internal int DisplayedRemoteEntries => entries.Count;
@@ -84,7 +91,7 @@ internal sealed class FileTransferWindow : Window
         var root = new Grid(); root.RowDefinitions.Add(new() { Height = GridLength.Auto }); root.RowDefinitions.Add(new() { Height = GridLength.Auto }); root.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); root.RowDefinitions.Add(new() { Height = GridLength.Auto }); root.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); root.RowDefinitions.Add(new() { Height = GridLength.Auto });
         var heading = new DockPanel(); StopFilesButton = new Button { Content = "关闭文件权限" }; StopFilesButton.Click += (_, _) => stopPermission(); DockPanel.SetDock(StopFilesButton, Dock.Right); heading.Children.Add(StopFilesButton);
         heading.Children.Add(new StackPanel { Children = { new TextBlock { Text = "文件传输", FontSize = 24, FontWeight = FontWeights.SemiBold }, new TextBlock { Text = "仅访问Host授权目录。拖入文件表示上传，不模拟远程应用内拖放；不传输链接或云占位符。", TextWrapping = TextWrapping.Wrap, Foreground = Brushes.SlateGray } } }); root.Children.Add(heading);
-        var browser = new StackPanel { Margin = new(0, 8, 0, 0) }; browser.Children.Add(breadcrumb); var actions = new WrapPanel();
+        browser.Children.Add(breadcrumb); var actions = new WrapPanel();
         actions.Children.Add(Command("上级", async () => { if (directory.Length > 0) { directory = ParentPath(directory); page = 0; await LoadRemote(); } }));
         actions.Children.Add(Command("刷新", LoadRemote));
         actions.Children.Add(Command("上传文件…", () => { var dialog = new OpenFileDialog { Title = "选择要上传的本地文件", Multiselect = true, CheckFileExists = true }; if (dialog.ShowDialog(this) == true) PrepareUpload(dialog.FileNames); return Task.CompletedTask; }));
@@ -98,7 +105,7 @@ internal sealed class FileTransferWindow : Window
         var totals = new StackPanel { Margin = new(0, 10, 0, 6) }; totals.Children.Add(summary); totals.Children.Add(totalProgress); totals.Children.Add(feedback); Grid.SetRow(totals, 3); root.Children.Add(totals);
         tasks.Columns.Add(Column("任务", nameof(JobRow.Name), new(1, DataGridLengthUnitType.Star))); tasks.Columns.Add(Column("方向", nameof(JobRow.Direction), new(55))); tasks.Columns.Add(Column("状态", nameof(JobRow.State), new(130))); tasks.Columns.Add(Column("进度", nameof(JobRow.Progress), new(180))); tasks.Columns.Add(Column("速度", nameof(JobRow.Rate), new(100))); tasks.Columns.Add(Column("预计剩余", nameof(JobRow.Eta), new(100))); tasks.ItemsSource = rows; tasks.SelectionChanged += (_, _) => UpdateActions();
         var expander = new Expander { Header = "传输队列", IsExpanded = true, Content = tasks }; Grid.SetRow(expander, 4); root.Children.Add(expander);
-        var footer = new StackPanel(); var taskActions = new WrapPanel(); foreach (var button in new[] { pause, cancel, retry, overwrite, keepBoth, skip, openFolder }) taskActions.Children.Add(button); var clear = new Button { Content = "清除已结束" }; clear.Click += (_, _) => queue.ClearFinished(); taskActions.Children.Add(clear); var cancelAll = new Button { Content = "取消全部" }; cancelAll.Click += (_, _) => queue.CancelAll(); taskActions.Children.Add(cancelAll); footer.Children.Add(taskActions); footer.Children.Add(selectedDetail); Grid.SetRow(footer, 5); root.Children.Add(footer);
+        var footer = new StackPanel(); var taskActions = new WrapPanel(); foreach (var button in new[] { pause, cancel, retry, overwrite, keepBoth, skip, openFolder }) taskActions.Children.Add(button); var clear = new Button { Content = "清除已结束" }; clear.Click += (_, _) => queue.ClearFinished(); taskActions.Children.Add(clear); var cancelAll = new Button { Content = "取消全部" }; cancelAll.Click += async (_, _) => {if(queue.Enabled)queue.CancelAll();else await queue.DisposeAsync();}; taskActions.Children.Add(cancelAll); footer.Children.Add(taskActions); footer.Children.Add(selectedDetail); Grid.SetRow(footer, 5); root.Children.Add(footer);
         pause.Click += (_, _) => { if (Selected is { } item) queue.Pause(item.Id, item.State != TransferJobState.Paused); }; cancel.Click += (_, _) => { if (Selected is { } item) queue.Cancel(item.Id); }; retry.Click += (_, _) => { try { if (Selected is { } item) queue.Retry(item.Id); } catch (Exception error) { feedback.Text = error.Message; } };
         overwrite.Click += (_, _) => Collision(FileCollisionChoice.Overwrite); keepBoth.Click += (_, _) => Collision(FileCollisionChoice.KeepBoth); skip.Click += (_, _) => Collision(FileCollisionChoice.Skip);
         openFolder.Click += (_, _) => { if (Selected is { } item) { var start = new ProcessStartInfo("explorer.exe") { UseShellExecute = false }; start.ArgumentList.Add(item.LocalFolder); Process.Start(start); } };
@@ -109,14 +116,24 @@ internal sealed class FileTransferWindow : Window
         Closed += (_, _) => { refresh.Stop(); stop.Cancel(); stop.Dispose(); }; UpdateActions();
     }
     static DataGridTextColumn Column(string title, string path, DataGridLength width) => new() { Header = title, Binding = new Binding(path), Width = width };
+    internal void ConfigureRecovery(int count,Func<Task> restore,Func<Task> discard,Func<bool>? valid=null)
+    {
+        recoveryValid=valid;var body=new StackPanel();body.Children.Add(new TextBlock{Text=$"有 {count} 项中断任务。已重新获得同一目录授权；确认后才会继续。续传有效期5分钟，过期自动清理；文件可能保持占用。",TextWrapping=TextWrapping.Wrap});
+        var actions=new WrapPanel();actions.Children.Add(ContinueRecoveryButton);actions.Children.Add(discardRecovery);body.Children.Add(actions);recoveryNotice.Child=body;recoveryNotice.Visibility=Visibility.Visible;
+        ContinueRecoveryButton.Click+=async(_,_)=>await RunCommand(async()=>{await restore();recoveryNotice.Visibility=Visibility.Collapsed;});
+        discardRecovery.Click+=async(_,_)=>await RunCommand(async()=>{await discard();recoveryNotice.Visibility=Visibility.Collapsed;});
+        commands.Add(ContinueRecoveryButton);commands.Add(discardRecovery);
+        browser.Children.Insert(0,recoveryNotice);
+    }
     Button Command(string text, Func<Task> action) { var button = new Button { Content = text }; button.Click += async (_, _) => await RunCommand(action); commands.Add(button); return button; }
     async Task RunCommand(Func<Task> action)
     {
         if (planning || !queue.Enabled) return; planning = true; SetCommands();
+        var completion=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);commandFinished=completion.Task;
         try { await action(); }
         catch (OperationCanceledException) { feedback.Text = "操作已取消。"; }
         catch (Exception error) { feedback.Text = error is TransferRejectedException rejected ? "文件操作失败：" + rejected.Code : error.Message; }
-        finally { planning = false; SetCommands(); RefreshJobs(); }
+        finally { planning = false; SetCommands(); RefreshJobs();completion.TrySetResult(); }
     }
     void SetCommands() { foreach (var command in commands) command.IsEnabled = !planning && queue.Enabled; ConfirmUploadButton.IsEnabled = !planning && queue.Enabled; next.IsEnabled = !planning && queue.Enabled && hasNext; }
     bool ChooseDownloadFolder()
@@ -160,6 +177,7 @@ internal sealed class FileTransferWindow : Window
     }
     internal void RefreshJobs()
     {
+        if(recoveryNotice.Visibility==Visibility.Visible&&recoveryValid?.Invoke()==false){recoveryNotice.Visibility=Visibility.Collapsed;feedback.Text="中断任务已过期或已处理，请重新选择文件。";}
         var state = queue.Status();
         if (state.Version != revision)
         {
@@ -177,7 +195,8 @@ internal sealed class FileTransferWindow : Window
         if (!planning && queue.Enabled && state.Pending == 0 && state.Completed != lastListedCompletion) { lastListedCompletion = state.Completed; _ = RefreshRemote(); }
     }
     internal void CloseForSession() { allowClose = true; Close(); }
+    internal async Task CloseForSessionAsync(){CloseForSession();await commandFinished;}
     static string ParentPath(string path) => path.Contains('/') ? path[..path.LastIndexOf('/')] : "";
-    static string StateText(TransferJobState state) => state switch { TransferJobState.Queued => "等待", TransferJobState.Running => "传输中", TransferJobState.Paused => "已暂停", TransferJobState.AwaitingOverwrite => "等待重名处理", TransferJobState.Completed => "完成（已校验）", TransferJobState.Cancelled => "已取消", TransferJobState.Failed => "失败", TransferJobState.Skipped => "已跳过", _ => "已重试" };
+    static string StateText(TransferJobState state) => state switch { TransferJobState.Queued => "等待", TransferJobState.Running => "传输中", TransferJobState.Paused => "已暂停", TransferJobState.AwaitingOverwrite => "等待重名处理", TransferJobState.Completed => "完成（已校验）", TransferJobState.Cancelled => "已取消", TransferJobState.Failed => "失败", TransferJobState.Skipped => "已跳过",TransferJobState.Interrupted=>"已中断，待重新授权", _ => "已重试" };
     static string Bytes(long bytes) { string[] units = ["B", "KiB", "MiB", "GiB", "TiB"]; double value = bytes; int unit = 0; while (value >= 1024 && unit < units.Length - 1) { value /= 1024; unit++; } return $"{value:F1} {units[unit]}"; }
 }

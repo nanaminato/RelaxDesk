@@ -73,6 +73,7 @@ bool persistent = shellMode || listenMode || interactiveLaunch;
 var listener = new TcpListener(address, port);
 using var stop = new CancellationTokenSource();
 using var shell = shellMode ? new ShellBridge(stop) : null;
+await using var fileResumes=selectedFileRoot is null?null:new FileTransferResumeStore(selectedFileRoot,diagnostic:HostSessionLog.Write);
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Cancel(); listener.Stop(); };
 try
 {
@@ -86,7 +87,7 @@ try
         {
             using var client = await listener.AcceptTcpClientAsync(stop.Token); client.NoDelay = true;
             using var scope = shell?.Begin();
-            try { await HostConnection.Run(listener, client, cert, token, backend, selectedFileRoot, scope, scope?.Token ?? stop.Token); }
+            try { await HostConnection.Run(listener, client, cert, token, backend, selectedFileRoot, scope, scope?.Token ?? stop.Token,fileResumes); }
             finally { if (shellMode) ShellBridge.Emit("session-ended", sessionId: scope!.Id); }
         }
         catch (Exception e) when (e is IOException or AuthenticationException or OperationCanceledException or SocketException or InvalidDataException or System.Runtime.InteropServices.ExternalException or System.Threading.Channels.ChannelClosedException)

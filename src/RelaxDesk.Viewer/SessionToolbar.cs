@@ -34,7 +34,7 @@ internal sealed class SessionToolbar : IDisposable
     internal Button DisconnectButton { get; }
     internal Button FilesButton {get;}
     Action? openFiles;
-    public void SetFiles(Action? open){openFiles=open;FilesButton.IsEnabled=open is not null;}
+    public void SetFiles(Action? open,int recoveryCount=0){openFiles=open;FilesButton.IsEnabled=open is not null;FilesButton.Content=recoveryCount>0?"文件续传":"文件";FilesButton.ToolTip=recoveryCount>0?$"有{recoveryCount}项中断任务，打开后确认继续":"上传、下载与任务队列（需Host授权）";endpoint.MaxWidth=recoveryCount>0?140:170;}
     internal Button ShortcutsButton { get; }
     internal ContextMenu ShortcutMenu { get; }
     readonly MenuItem clipboard = new() { Header = "剪贴板未授权 / 已关闭", IsEnabled = false };

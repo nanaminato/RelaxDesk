@@ -11,7 +11,7 @@ internal sealed partial class HostWindow
     string? selectedFileRoot;
     readonly TextBox fileRootLabel = new() { Text = "未选择目录（默认不开放文件访问）", IsReadOnly = true, Margin = new(0, 4, 0, 0) };
     readonly Button chooseFileRoot = new() { Content = "选择文件共享目录…" }, clearFileRoot = new() { Content = "清除" };
-    readonly CheckBox filesPermission = new() { Content = "允许在选定目录内上传、下载和列出文件", IsChecked = false, Visibility = Visibility.Collapsed, Margin = new(0, 8, 0, 0) };
+    readonly CheckBox filesPermission = new() { Content = "允许在选定目录内上传、下载、列出文件及短期续传", IsChecked = false, Visibility = Visibility.Collapsed, Margin = new(0, 8, 0, 0) };
     readonly Button revokeFiles = new() { Content = "停止文件传输", Visibility = Visibility.Collapsed };
     readonly TextBlock filesScopeLabel = new() { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.SlateGray, Margin = new(22, 4, 0, 0), Visibility = Visibility.Collapsed, FontSize = 12 };
     internal bool FilesChoiceVisible => filesPermission.Visibility == Visibility.Visible;
@@ -21,7 +21,7 @@ internal sealed partial class HostWindow
     {
         settings.Children.Add(new TextBlock { Text = "可选文件共享目录", FontWeight = FontWeights.SemiBold, Margin = new(0, 14, 0, 0) });
         settings.Children.Add(fileRootLabel);
-        settings.Children.Add(new TextBlock { Text = "仅开放你选择的普通本地目录；收到请求后仍需单独勾选允许。目录联接、云占位符及网络目录不支持。", TextWrapping = TextWrapping.Wrap, Foreground = Brushes.SlateGray, FontSize = 12 });
+        settings.Children.Add(new TextBlock { Text = "仅开放你选择的普通本地目录，收到请求后仍需单独允许。续传有效期5分钟；中断文件可能保持占用，到期或停止共享时清理。链接、云占位符及网络目录不支持。", TextWrapping = TextWrapping.Wrap, Foreground = Brushes.SlateGray, FontSize = 12 });
         var actions = new WrapPanel(); actions.Children.Add(chooseFileRoot); actions.Children.Add(clearFileRoot); settings.Children.Add(actions);
         chooseFileRoot.Click += async (_, _) =>
         {
@@ -47,7 +47,7 @@ internal sealed partial class HostWindow
     void ShowFileRequest(bool requested)
     {
         filesPermission.IsChecked = false; filesPermission.IsEnabled = selectedFileRoot is not null;
-        filesPermission.Content = selectedFileRoot is null ? "文件访问未开放（请停止共享后先选择目录）" : "允许在选定目录内上传、下载和列出文件";
+        filesPermission.Content = selectedFileRoot is null ? "文件访问未开放（请停止共享后先选择目录）" : "允许在选定目录内上传、下载、列出文件及短期续传";
         filesPermission.Visibility = requested ? Visibility.Visible : Visibility.Collapsed;
         filesScopeLabel.Text = selectedFileRoot is null ? "本次未开放任何文件目录。" : "仅此目录及其子目录：" + selectedFileRoot;
         filesScopeLabel.Visibility = filesPermission.Visibility;

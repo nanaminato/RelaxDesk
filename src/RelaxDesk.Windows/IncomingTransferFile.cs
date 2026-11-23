@@ -3,7 +3,7 @@ using RelaxDesk.Core;
 
 namespace RelaxDesk.Windows;
 
-public sealed class IncomingTransferFile : IIncomingTransferFile
+public sealed class IncomingTransferFile : IResumableIncomingTransferFile
 {
     readonly string destination, temporary;
     readonly bool overwrite;
@@ -14,6 +14,7 @@ public sealed class IncomingTransferFile : IIncomingTransferFile
     bool committed, disposed;
     public long ExpectedBytes { get; }
     public long ReceivedBytes { get; private set; }
+    public string PrefixHash => Convert.ToHexString(hash.GetCurrentHash());
     internal IncomingTransferFile(string destination, long expectedBytes, bool overwrite, IDisposable directoryLease, Action checkSpace)
     {
         this.destination = destination; ExpectedBytes = expectedBytes; this.overwrite = overwrite; this.directoryLease = directoryLease; this.checkSpace = checkSpace;
@@ -26,15 +27,17 @@ public sealed class IncomingTransferFile : IIncomingTransferFile
     {
         ObjectDisposedException.ThrowIf(disposed || committed, this);
         TransferLimits.ValidateChunk(ExpectedBytes, ReceivedBytes, offset, data.Length); ct.ThrowIfCancellationRequested(); checkSpace();
-        await stream.WriteAsync(data, ct); hash.AppendData(data); ReceivedBytes = checked(ReceivedBytes + data.Length);
+        try{await stream.WriteAsync(data, ct);}
+        catch{stream.SetLength(ReceivedBytes);stream.Position=ReceivedBytes;throw;}
+        hash.AppendData(data); ReceivedBytes = checked(ReceivedBytes + data.Length);
     }
     public async Task Commit(string expectedHash, CancellationToken ct)
     {
         ObjectDisposedException.ThrowIf(disposed || committed, this);
         if (ReceivedBytes != ExpectedBytes || expectedHash.Length != 64 || !expectedHash.All(char.IsAsciiHexDigit)) throw new InvalidDataException("Incomplete file or invalid SHA256");
-        byte[] actual = hash.GetHashAndReset();
+        byte[] actual = hash.GetCurrentHash();
         if (!CryptographicOperations.FixedTimeEquals(actual, Convert.FromHexString(expectedHash))) throw new InvalidDataException("File SHA256 mismatch");
-        await stream.FlushAsync(ct); await stream.DisposeAsync(); ct.ThrowIfCancellationRequested();
+        await stream.FlushAsync(ct);ct.ThrowIfCancellationRequested();await stream.DisposeAsync();
         if (File.Exists(destination) && (File.GetAttributes(destination) & FileAttributes.ReparsePoint) != 0) throw new IOException("Destination changed to reparse point");
         File.Move(temporary, destination, overwrite); committed = true;
     }

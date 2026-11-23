@@ -86,7 +86,7 @@ public sealed partial class ViewerWindow
         { SetConnectionPhase(lifetime.IsCancellationRequested ? ConnectionPhase.Disconnected : ConnectionPhase.Failed); if (!lifetime.IsCancellationRequested) status.Text = "自动重连已超时，请检查网络后手动连接。"; }
         finally
         {
-            lifetime.Cancel(); connectionRun = null;
+            lifetime.Cancel();await DiscardFileRecovery(); connectionRun = null;
             connect.IsEnabled = connectionCard.IsEnabled = true; disconnect.IsEnabled = false;
             connectionEnded.TrySetResult();
         }
