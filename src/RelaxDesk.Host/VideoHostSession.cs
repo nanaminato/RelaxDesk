@@ -32,7 +32,7 @@ internal static class VideoHostSession
         string? fileScope=resumeFiles?await fileResumes!.Scope():null;
         var ticket = new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15));
         var dataTicket = fileRoot is null ? null : new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15));
-        await Wire.Write(control, new Packet("approved-v2", Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features, DataTicket: dataTicket?.Value,FileResume:resumeFiles,FileScope:fileScope), stop);
+        await Wire.Write(control, new Packet("approved-v2", Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features, DataTicket: dataTicket?.Value,FileResume:resumeFiles,FileScope:fileScope,InputVersion:hello.InputVersion), stop);
         using var attach = CancellationTokenSource.CreateLinkedTokenSource(stop); attach.CancelAfter(TimeSpan.FromSeconds(15));
         using var mediaSocket = await listener.AcceptTcpClientAsync(attach.Token); mediaSocket.NoDelay = true; mediaSocket.SendBufferSize = 64 * 1024;
         using var media = new SslStream(mediaSocket.GetStream(), false);
@@ -53,7 +53,7 @@ internal static class VideoHostSession
         listener.Stop();
         using var session = CancellationTokenSource.CreateLinkedTokenSource(stop);
         var queue = new LatestQueue<QueuedFrame>();
-        var gate = new AccessGate(); gate.Approve(features);
+        var gate = new AccessGate(); gate.Approve(features,hello.InputVersion);
         using var controlWrite = new SemaphoreSlim(1);
         async Task WriteControl(Packet packet)
         {
@@ -102,10 +102,10 @@ internal static class VideoHostSession
             while (true)
             {
                 var packet = await SessionControl.Read(control, session.Token);
-                if (packet.Kind == "input")
+                if (packet.Kind is "input" or "input-v2")
                 {
                     if (synthetic) throw new AuthenticationException("Input disabled in synthetic video test");
-                    if (!gate.TryExecuteInput(packet, () => { session.Token.ThrowIfCancellationRequested(); inputDesktop!.Inject(packet.Code, packet.Up, packet.X, packet.Y); })) throw new AuthenticationException("Input authorization revoked");
+                    if (!gate.TryExecuteInput(packet, () => { session.Token.ThrowIfCancellationRequested(); if(packet.Input is {} rich)inputDesktop!.Inject(rich);else inputDesktop!.Inject(packet.Code, packet.Up, packet.X, packet.Y); })) throw new AuthenticationException("Input authorization revoked");
                     continue;
                 }
                 if (!gate.AcceptControl(packet)) throw new InvalidDataException("Unauthorized control event");

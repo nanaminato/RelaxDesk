@@ -8,6 +8,7 @@ Check(!gate.Accept(input)); gate.Approve(); Check(gate.Accept(input)); Check(!ga
 using var stream = new MemoryStream(); var packet = new Packet("frame-v1", 7, 2, 2, [1, 2, 3]); await Wire.Write(stream, packet); stream.Position = 0; var read = await Wire.Read(stream); Check(read.Kind == packet.Kind && read.Sequence == 7 && read.Data!.SequenceEqual(packet.Data!));
 await Reject([]); await Reject([1, 0, 0, 0]); await Reject([255, 255, 255, 255]); byte[] oversized = new byte[4]; BinaryPrimitives.WriteInt32LittleEndian(oversized, Wire.Limit + 1); await Reject(oversized); await Reject([5, 0, 0, 0, 123]); await Reject([2, 0, 0, 0, 123, 125, 0]);
 
+count += await InputChecks.Run();
 count += await MediaChecks.Run();
 count += await ShortcutChecks.Run();
 count += await ClipboardChecks.Run();
@@ -21,6 +22,7 @@ Check(!invitation.ToString().Contains(invitation.Token));
 foreach (string invalid in new[] { "anything", "https://localhost/", invitation.Encode()+"&token="+invitation.Token, invitation.Encode().Replace("192.168.1.2", "0.0.0.0"), invitation.Encode().Replace("48200", "0"), invitation.Encode().Replace("token=", "other="), invitation.Encode().Replace("fingerprint=", "fingerprint=x"), invitation.Encode()+"#secret" })
 { try { ConnectionInvitation.Parse(invalid); throw new Exception("Invalid invitation accepted"); } catch (FormatException) { Check(true); } }
 if (args is ["--core"]) { Console.WriteLine($"PASS {count} protocol/access/media checks (TLS not run)"); return; }
+count += await InputTlsChecks.Run();
 count += await ApprovalTlsChecks.Run();
 count += await PinnedApprovalChecks.Run();
 count += await FeatureTlsChecks.Run();

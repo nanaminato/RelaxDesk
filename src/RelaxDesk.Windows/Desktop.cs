@@ -15,16 +15,11 @@ public sealed class Desktop : IDisposable
     [DllImport("gdi32.dll", SetLastError = true)] static extern int GetDIBits(nint dc, nint bmp, uint start, uint lines, byte[] bits, ref Info info, uint usage);
     [DllImport("gdi32.dll")] static extern bool DeleteObject(nint obj);
     [DllImport("gdi32.dll")] static extern bool DeleteDC(nint dc);
-    [DllImport("user32.dll")] static extern uint SendInput(uint count, Input[] inputs, int size);
     [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
     [StructLayout(LayoutKind.Sequential)] struct Info { public uint Size; public int Width, Height; public ushort Planes, Bits; public uint Compression, ImageSize; public int X, Y; public uint Used, Important, Color; }
-    [StructLayout(LayoutKind.Sequential)] struct Mouse { public int X, Y; public uint Data, Flags, Time; public nuint Extra; }
-    [StructLayout(LayoutKind.Sequential)] struct Keyboard { public ushort Key, Scan; public uint Flags, Time; public nuint Extra; }
-    [StructLayout(LayoutKind.Explicit)] struct Union { [FieldOffset(0)] public Mouse Mouse; [FieldOffset(0)] public Keyboard Keyboard; }
-    [StructLayout(LayoutKind.Sequential)] struct Input { public uint Type; public Union Value; }
     public int Width { get; }
     public int Height { get; }
-    readonly HashSet<int> held = [];
+    readonly WindowsInputSession input=new();
     public Desktop()
     {
         SetProcessDPIAware(); Width = GetSystemMetrics(0); Height = GetSystemMetrics(1);
@@ -82,18 +77,8 @@ public sealed class Desktop : IDisposable
         if (value == 0 || GetObjectType(value) != type) throw new IOException($"{operation}: invalid GDI handle/type; Win32 {error}");
     }
 
-    public void Inject(int code, bool up, int x, int y)
-    {
-        EnsureInteractiveDesktop();
-        Input input;
-        if (code == 0) input = new() { Type = 0, Value = new() { Mouse = new() { X = x, Y = y, Flags = 0x8001 } } };
-        else if (code is 256 or 257) input = new() { Type = 0, Value = new() { Mouse = new() { Flags = code == 256 ? (up ? 4u : 2u) : (up ? 16u : 8u) } } };
-        else if (code is 258 or 259) input = new() { Type = 0, Value = new() { Mouse = new() { Data = unchecked((uint)(code == 258 ? 120 : -120)), Flags = 0x800 } } };
-        else if (code is > 0 and < 256) input = new() { Type = 1, Value = new() { Keyboard = new() { Key = (ushort)code, Flags = KeyboardInjectionFlags.ForVirtualKey(code, up) } } };
-        else throw new InvalidDataException("Unsupported input");
-        if (SendInput(1, [input], Marshal.SizeOf<Input>()) != 1) throw new IOException("Input unavailable (UIPI/desktop restriction)");
-        if (code is > 0 and < 258) { if (up) held.Remove(code); else held.Add(code); }
-    }
-    public void ReleaseAll() { foreach (int code in held.ToArray()) { try { Inject(code, true, 0, 0); } catch (IOException) { } } held.Clear(); }
-    public void Dispose() => ReleaseAll();
+    public void Inject(int code,bool up,int x,int y)=>input.InjectLegacy(code,up,x,y);
+    public void Inject(RelaxDesk.Core.RemoteInput value)=>input.Inject(value);
+    public void ReleaseAll(){try{input.ReleaseAll();}catch(IOException){}}
+    public void Dispose()=>input.Dispose();
 }

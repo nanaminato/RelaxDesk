@@ -53,6 +53,8 @@ try {
     if ($LASTEXITCODE) { throw 'Core/TLS checks failed' }
     Run-App $smokeDll --windows-contracts
     if ($LASTEXITCODE) { throw 'Windows contracts failed' }
+    Run-App $smokeDll --input-contracts
+    if ($LASTEXITCODE) { throw 'Input contracts failed' }
     & $probe --present-contracts
     if ($LASTEXITCODE) { throw 'Present state contracts failed' }
     & $probe --capture-contracts

@@ -29,6 +29,7 @@ internal static class HostConnection
             else if (hello.Kind is not ("hello-v1" or "hello-v2") || hello.Text is null || !CryptographicOperations.FixedTimeEquals(System.Text.Encoding.UTF8.GetBytes(hello.Text), System.Text.Encoding.UTF8.GetBytes(token))) throw new AuthenticationException("Pairing rejected");
         }
         if (shell is null && hello.Kind != "request-v2") Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests screen + input. Type APPROVE to allow this session:");
+        if(hello.Input is not null||hello.InputVersion is not (0 or InputProtocol.Version)||hello.Kind=="hello-v1"&&hello.InputVersion!=0)throw new AuthenticationException("Invalid input negotiation request");
         var requestedFeatures = SessionCapabilities.Validate(hello.Features);
         if(hello.FileScope is not null||hello.FileResume&&(!requestedFeatures.Contains(SessionCapabilities.FileTransfer)||hello.Kind=="hello-v1"))throw new AuthenticationException("Invalid file resume request");
         if (hello.Kind == "hello-v1" && requestedFeatures.Length != 0) throw new AuthenticationException("Session extensions require v2");

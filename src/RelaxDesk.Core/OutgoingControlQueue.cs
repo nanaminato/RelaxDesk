@@ -13,12 +13,12 @@ public sealed class OutgoingControlQueue(int capacity = 256)
     public OutgoingControlQueue Writer => this;
     public OutgoingControlQueue Reader => this;
     public int Depth { get { lock (sync) return packets.Count; } }
-    static bool IsMove(Packet packet) => packet.Kind == "input" && packet.Code == 0;
+    static bool IsMove(Packet packet) => packet.Kind == "input" && packet.Code == 0||packet.Kind=="input-v2"&&packet.Input?.Kind=="move";
     public bool TryWrite(Packet packet)
     {
         lock (sync)
         {
-            if (IsMove(packet) && packets.Last is {} last && IsMove(last.Value))
+            if (IsMove(packet) && packets.Last is {} last && IsMove(last.Value)&&last.Value.Kind==packet.Kind)
             { last.Value = packet; return true; }
             if (packets.Count == capacity) return false;
             packets.AddLast(packet);
