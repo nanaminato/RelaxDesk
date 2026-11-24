@@ -112,6 +112,18 @@ endpoint binding. Prefer the native MsQuic candidate after deployment checks.
 [QUIC DATAGRAM](https://www.rfc-editor.org/rfc/rfc9221.html)
 [DTLS 1.3](https://www.rfc-editor.org/rfc/rfc9147.html)
 
+The release candidate's runtime contains Schannel MsQuic 2.5.12. In an isolated
+Windows 11 comparison, the self-contained datagram probe passed with that
+library. Microsoft and NuGet signatures validated for the OpenSSL 2.5.13
+package. Its x64 DLL returned `0x80070057` while opening the Host listener
+with the current certificate path. The explicit UDP Viewer also reported
+that the Host did not offer UDP. The result rules out a DLL-only replacement.
+In-memory PKCS#12 is a documented OpenSSL credential option. Qualification
+requires a successful pinned handshake, wrong-certificate rejection, and
+real Windows 10 coverage before redistribution.
+[Microsoft OpenSSL package](https://www.nuget.org/packages/Microsoft.Native.Quic.MsQuic.OpenSSL/2.5.13)
+[MsQuic certificate API](https://github.com/microsoft/msquic/blob/v2.5.13/docs/api/QUIC_CREDENTIAL_CONFIG.md)
+
 Use the existing authenticated reliable control path to negotiate and bind
 each media attachment. Establish a path and measure it before switching.
 Give each video transport epoch bounded packet and frame sequence tracking,
