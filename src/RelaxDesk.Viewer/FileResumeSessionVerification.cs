@@ -21,7 +21,16 @@ public sealed partial class ViewerWindow
             var bitmap = new RenderTargetBitmap((int)content.ActualWidth, (int)content.ActualHeight, 96, 96, System.Windows.Media.PixelFormats.Pbgra32); bitmap.Render(content);
             var image = new PngBitmapEncoder(); image.Frames.Add(BitmapFrame.Create(bitmap)); using var output = File.Create(Path.Combine(fixture, name)); image.Save(output);
         }
-        var request = await driver.Request(ct); string? latest = request.Id; await driver.Send("APPROVE_FILES", latest);
+        using var approvalWait = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        Task<RecoveryHost.Notice> pendingApproval = driver.Request(approvalWait.Token);
+        if (await Task.WhenAny(pendingApproval, connectionEnded.Task) != pendingApproval)
+        {
+            approvalWait.Cancel();
+            try { await pendingApproval; }
+            catch (OperationCanceledException) when (approvalWait.IsCancellationRequested) { }
+            throw new IOException($"Viewer ended before Host approval: {status.Text}");
+        }
+        var request = await pendingApproval; string? latest = request.Id; await driver.Send("APPROVE_FILES", latest);
         await Until(() => smokeFrames > 0 && fileQueue?.Enabled == true);
         Check(fileClient!.SupportsResume && activeFileScope is { Length: 32 }, "Production Host did not negotiate scoped resume");
         string scope = activeFileScope!;

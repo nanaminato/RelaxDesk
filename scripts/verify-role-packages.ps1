@@ -132,6 +132,10 @@ try {
         $quicSession.Contains('PASS requested static desktop refresh delivered a decodable key frame over the same UDP path')) 'Packaged Host QUIC, fallback, or static refresh evidence missing'
     $autoFiles = Invoke-App 'packaged-auto-files' $SmokeApplication @($hostExe, '--file-transfer-auto', (Join-Path $output 'auto-file-fixtures')) 150
     Confirm ($autoFiles.Contains('PASS Auto switched from TCP to UDP during the same download, file SHA-256 verified and TLS control kept alive')) 'Packaged Host file integrity during Auto recovery evidence missing'
+    $resumeFiles = Invoke-App 'packaged-file-resume' $viewerExe @('--file-resume-session-contracts', $hostExe, (Join-Path $output 'file-resume-fixtures')) 150
+    Confirm ($resumeFiles.Contains('PASS production Host/Viewer/TLS directory upload recovery') -and
+        $resumeFiles.Contains('PASS production TLS directory download recovery') -and
+        $resumeFiles.Contains('PASS revoke before resume confirmation')) 'Packaged file resume or revocation evidence missing'
     $fallbackStatistics = Invoke-App 'packaged-viewer-fallback-statistics' $viewerExe @('--statistics-contracts', $hostExe, (Join-Path $output 'fallback-statistics-fixtures'), 'oversized') 150
     Confirm ($fallbackStatistics.Contains('PASS WPF shows the authenticated oversized UDP frame fallback reason')) 'Packaged Viewer fallback statistics evidence missing'
     $sessionEnd = Invoke-App 'packaged-host-session-end' $SmokeApplication @($hostExe, '--session-unavailable')
