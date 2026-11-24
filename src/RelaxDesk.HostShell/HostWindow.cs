@@ -107,7 +107,7 @@ internal sealed partial class HostWindow:Window
     internal async Task StartSharing(string? address=null,int? number=null,string backend="dxgi",bool recovering=false)
     {
         if(ServiceSetupBusy)return;
-        if(!recovering){if(RestartPending)return;restartBudget=new();restartBackend=backend;}
+        if(!recovering){if(RestartPending)return;restartBudget=new();restartBackend=backend;desktopNotice=null;}
         if(ServiceRequired&&!ServiceReady){state.Text="服务协调不可用";detail.Text="请先连接已授权的系统服务；没有开始共享。";UpdateServiceControls();return;}
         try{if(address is not null)ip.Text=address;if(number.HasValue)port.Text=number.Value.ToString();if(!int.TryParse(port.Text,out int selected))throw new ArgumentException("端口应为 1–65535");ip.IsEnabled=port.IsEnabled=start.IsEnabled=allowedModes.IsEnabled=false;SetFileConfigurationEnabled(false);SetDisplayConfigurationEnabled(false);stop.IsEnabled=true;state.Text="正在启动";await Host.Start(application,ip.Text.Trim(),selected,backend,selectedFileRoot,SelectedDisplay,guestOnly: allowedModes.SelectedIndex == 2, adminDisabled: allowedModes.SelectedIndex == 1, workOnly: allowedModes.SelectedIndex == 3);}
         catch(Exception e){state.Text="无法开始共享";detail.Text=e.Message;ip.IsEnabled=port.IsEnabled=start.IsEnabled=allowedModes.IsEnabled=true;SetFileConfigurationEnabled(true);SetDisplayConfigurationEnabled(true);stop.IsEnabled=false;}

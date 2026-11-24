@@ -177,6 +177,16 @@ internal static class ShellVerification
                         await Until(() => window.Status == "等待连接" && window.DesktopStatusNotice?.Contains(notice) == true);
                         if (!window.Host.Running) throw new IOException("Session loss stopped persistent listener");
                     }
+                    if (reason == SessionEndReason.WindowsLocked)
+                    {
+                        await window.StopSharing();
+                        await window.Host.Finished;
+                        port = Port();
+                        await window.StartSharing("127.0.0.1", port, backend);
+                        await Until(() => window.Status == "等待连接");
+                        if (window.DesktopStatusNotice is not null)
+                            throw new IOException("Restarted sharing retained the previous listener's lock notice");
+                    }
                     using (var fresh = new SessionClient())
                     {
                         var connecting = fresh.ConnectByApproval("127.0.0.1", port, timeout.Token);
