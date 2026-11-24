@@ -17,10 +17,11 @@ public sealed class DatagramVideoChannel : IVideoFrameChannel
 
     sealed class Assembly(int bytes, int fragments, long started, MediaFrame? frame)
     {
+        const int FragmentsPerBlock = 8;
         public readonly int Length = bytes;
         public MediaFrame? Frame { get; private set; } = frame;
-        // Until fragment zero supplies the payload layout, retain only bytes that arrived.
-        byte[]?[]? earlyFragments = frame is null ? new byte[fragments][] : null;
+        // Allocate a block only when one of its fragments arrives before the header.
+        byte[]?[]? earlyBlocks = frame is null ? new byte[(fragments + FragmentsPerBlock - 1) / FragmentsPerBlock][] : null;
         public readonly bool[] Received = new bool[fragments];
         public readonly long Started = started;
         public int Count;
@@ -28,17 +29,25 @@ public sealed class DatagramVideoChannel : IVideoFrameChannel
         public void SetHeader(MediaFrame header, int fragmentBytes)
         {
             Frame = header;
-            if (earlyFragments is not { } staged) return;
-            for (int index = 1; index < staged.Length; index++)
-                if (staged[index] is { } part) Copy(part, index, fragmentBytes);
-            earlyFragments = null;
+            if (earlyBlocks is not { } staged) return;
+            for (int index = 1; index < Received.Length; index++)
+            {
+                if (!Received[index]) continue;
+                var block = staged[index / FragmentsPerBlock]!;
+                int offset = (index % FragmentsPerBlock) * fragmentBytes;
+                Copy(block.AsSpan(offset, Math.Min(fragmentBytes, block.Length - offset)), index, fragmentBytes);
+            }
+            earlyBlocks = null;
         }
 
         public void Copy(ReadOnlySpan<byte> source, int index, int fragmentBytes)
         {
             if (Frame is not { } target)
             {
-                earlyFragments![index] = source.ToArray();
+                int blockIndex = index / FragmentsPerBlock;
+                int blockBytes = FragmentsPerBlock * fragmentBytes;
+                var block = earlyBlocks![blockIndex] ??= new byte[Math.Min(blockBytes, Length - blockIndex * blockBytes)];
+                source.CopyTo(block.AsSpan((index % FragmentsPerBlock) * fragmentBytes));
                 return;
             }
             int offset = index * fragmentBytes;
