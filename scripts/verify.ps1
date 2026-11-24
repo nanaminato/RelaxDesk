@@ -28,8 +28,10 @@ try {
     $env:DOTNET_CLI_HOME = Join-Path $root '.dotnet'
     if (!$SkipBuild) {
         & "$PSScriptRoot/build-native.ps1" -BuildDirectory $NativeBuildDirectory
-        if ($ArtifactsDirectory) { dotnet build RelaxDesk.sln -c Release --artifacts-path $ArtifactsDirectory "-p:RelaxDeskNativePath=$root/$NativeBuildDirectory/Release/RelaxDesk.Native.dll" }
-        else { dotnet build RelaxDesk.sln -c Release }
+        $nativeLibrary = Join-Path $root "$NativeBuildDirectory/Release/RelaxDesk.Native.dll"
+        $buildArguments = @('build', 'RelaxDesk.sln', '-c', 'Release', "-p:RelaxDeskNativePath=$nativeLibrary")
+        if ($ArtifactsDirectory) { $buildArguments += @('--artifacts-path', $ArtifactsDirectory) }
+        dotnet @buildArguments
         if ($LASTEXITCODE) { throw 'Managed build failed' }
     }
     $hostDll = Join-Path $root 'src/RelaxDesk.Host/bin/Release/net11.0-windows/RelaxDesk.Host.dll'

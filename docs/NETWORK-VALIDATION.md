@@ -26,4 +26,12 @@ Run `dotnet <Smoke.dll> <Host.dll> --quic-production` with the QUIC provider and
 
 Run `--file-transfer-udp <fixtures>` and `--file-transfer-auto <fixtures>` to cover a shared downstream budget with TLS files and video, including a download that spans a TCP-to-UDP transition and verifies SHA-256. [Transport design and recovery tradeoffs](SESSION-ACCESS.md#transport-milestones)
 
+For the Windows source regression with synthetic media and no foreground input, run:
+
+```powershell
+./scripts/verify.ps1 -Quic -Wpf -SkipInteractiveInput -SkipPhysicalGraphics
+```
+
+The script builds the native library and passes that build's path to MSBuild. Use `-SkipBuild` only with matching managed and native output. During validation of `6396f11`, the existing default native output produced `Host did not offer UDP media`. Rebuilding the managed outputs against the QUIC-capable native library used for the role-package validation resolved the failure. The rerun exited 0, observed three reordered UDP pairs with 8/20 ms delay pulses under the 512 KiB/s cap, and verified a file's SHA-256 after a TCP-to-UDP transition on the original TLS control connection. The CPU-rendered WPF recovery case received 101 TCP frames and 108 UDP frames with zero live native resources after cleanup.
+
 Dual-PC Home LAN, physical NIC disconnect/reconnect, long-duration mixed I/O, physical input-to-photon and matched MSTSC measurements remain separate acceptance items. [Physical acceptance](PHYSICAL-ACCEPTANCE.md)
