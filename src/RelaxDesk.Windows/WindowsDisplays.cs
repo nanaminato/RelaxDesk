@@ -37,12 +37,14 @@ public sealed class WindowsDisplaySelection
     public DisplayBounds VirtualDesktop {get;}
     public bool RequiresGdi {get;}
     readonly DisplayInfo[] snapshot;
+    readonly Dictionary<string, DisplayInfo> geometryById;
     public DisplayInfo[] Topology=>snapshot.ToArray();
     public WindowsDisplaySelection Select(string device)=>new(snapshot,device);
     public WindowsDisplaySelection(string? device):this(WindowsDisplays.Enumerate(),device){}
     public WindowsDisplaySelection(DisplayInfo[] displays,string? device)
     {
         snapshot=DisplayTopology.Validate(displays);Bounds=DisplayTopology.Select(snapshot,device);
+        geometryById = snapshot.ToDictionary(display => display.Id, WithoutHdr, StringComparer.OrdinalIgnoreCase);
         Device=device=="all"?"all":device is null?snapshot.Single(d=>d.Primary).Id:snapshot.Single(d=>d.Id.Equals(device,StringComparison.OrdinalIgnoreCase)).Id;
         VirtualDesktop=DisplayTopology.Union(snapshot);
         RequiresGdi=Device=="all"||snapshot.Single(d=>d.Id.Equals(Device,StringComparison.OrdinalIgnoreCase)).Rotation!=0;
@@ -55,9 +57,20 @@ public sealed class WindowsDisplaySelection
     internal void EnsureCurrent(DisplayInfo[] now)
     {
         DisplayTopology.Validate(now,true);
-        now=now.Select(d=>d with{Hdr=null}).ToArray();
-        if(!snapshot.Select(d=>d with{Hdr=null}).OrderBy(d=>d.Id,StringComparer.OrdinalIgnoreCase).SequenceEqual(now.OrderBy(d=>d.Id,StringComparer.OrdinalIgnoreCase)))throw new DisplayTopologyChangedException(now);
+        if (now.Length == geometryById.Count)
+        {
+            bool matches = true;
+            foreach (var display in now)
+            {
+                if (geometryById.TryGetValue(display.Id, out var expected) && expected == WithoutHdr(display)) continue;
+                matches = false;
+                break;
+            }
+            if (matches) return;
+        }
+        throw new DisplayTopologyChangedException(now.Select(WithoutHdr).ToArray());
     }
+    static DisplayInfo WithoutHdr(DisplayInfo display) => display.Hdr is null ? display : display with { Hdr = null };
 }
 public sealed class DisplayTopologyChangedException(DisplayInfo[] displays):IOException("Display topology changed; old capture/input geometry is paused")
 {public DisplayInfo[] Displays{get;}=DisplayTopology.Validate(displays,true);}

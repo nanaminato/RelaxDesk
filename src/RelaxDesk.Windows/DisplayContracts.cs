@@ -16,7 +16,7 @@ public static class DisplayContracts
         Check(!new WindowsDisplaySelection([primary,left],primary.Id).RequiresGdi);
         Check(new WindowsDisplaySelection([primary,left],"SCREEN-1").Device==primary.Id);
         selected.EnsureCurrent([left with{Hdr=null},primary with{Hdr=true}]);Check(true);
-        foreach(var changed in new[]{new[]{primary},new[]{primary,left with{Bounds=left.Bounds with{X=-1200}}},new[]{primary,left with{DpiX=192}},new[]{primary,left with{Rotation=270}}})
+        foreach(var changed in new[]{new[]{primary},new[]{primary,left with{Bounds=left.Bounds with{X=-1200}}},new[]{primary,left with{DpiX=192}},new[]{primary,left with{Rotation=270}},new[]{primary,left with{Identity=new string('a',64)}},new[]{primary,left with{Id="SCREEN-2"}}})
         {try{selected.EnsureCurrent(changed);throw new InvalidOperationException("Changed display accepted");}catch(IOException){Check(true);}}
         var geometry=selected.InputGeometry;
         var first=WindowsInputPlan.Build(new("move"),geometry)[0].Value.Mouse;
