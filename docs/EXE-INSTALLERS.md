@@ -37,4 +37,6 @@
 
 构建要求干净提交和新的工作区 build 目录；不会覆盖旧包。测试明确要求 `-RunUserIntegration`：它会短暂创建真实当前用户的卸载项和快捷方式，若已有同角色安装／同名快捷方式则拒绝，以免影响用户现有安装。只安装至仓库测试目录，不安装服务或改变系统策略。失败时保留现场与日志，不盲目强删。编译工具许可证／署名与 RelaxDesk 的软件许可决定分开处理。
 
+如果测试账户无法读取机器 Broker 部署，可显式加 `-SkipMachineServicePreview` 继续验证当前用户安装、启动、更新和卸载。报告会标记该预检为 `NOT_TESTED`，成功状态也会注明跳过预检。完整安装验收仍需使用默认参数验证已安装 Host 的只读服务预检。
+
 当前交付仍未代码签名，不能声称 Windows SmartScreen／组织策略或所有 Home 硬件已验收。当前用户权限范围依据 [Inno Setup `PrivilegesRequired=lowest`](https://jrsoftware.org/inno-setup/documentation/topic_setup_privilegesrequired.htm)，文件收据利用其[SHA-256 支持](https://jrsoftware.org/inno-setup/documentation/topic_isxfunc_getsha256offile.htm)；应用核心与系统服务权限仍由各自原有合同约束。

@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$InstallerDirectory,[Parameter(Mandatory)][string]$OutputDirectory,[switch]$RunUserIntegration)
+param([Parameter(Mandatory)][string]$InstallerDirectory,[Parameter(Mandatory)][string]$OutputDirectory,[switch]$RunUserIntegration,[switch]$SkipMachineServicePreview)
 $ErrorActionPreference='Stop'
 if(!$RunUserIntegration){throw 'Explicit -RunUserIntegration required: temporary current-user Apps entries and shortcuts will be exercised'}
 $repository=Split-Path $PSScriptRoot -Parent;$output=[IO.Path]::GetFullPath($OutputDirectory)
@@ -68,8 +68,12 @@ try {
         if($role.name -eq 'Host'){
             $children=@(Get-CimInstance Win32_Process -Filter ('ParentProcessId = '+$launched.Id) | Where-Object Name -EQ 'RelaxDesk.Host.exe')
             Check ($children.Count -eq 0) 'Installing/opening Host implicitly started desktop sharing'
-            $identity=[Security.Principal.WindowsIdentity]::GetCurrent();$owner=$identity.User.Value;$identity.Dispose()
-            Run 'installed-host-service-readonly-preview' (Join-Path $payload 'Service/RelaxDesk.Service.exe') @('--install-service','--package',$payload,'--owner-sid',$owner,'--what-if')
+            if ($SkipMachineServicePreview) {
+                $steps.Add([pscustomobject]@{name='installed-host-service-readonly-preview';status='NOT_TESTED';reason='Machine service preview explicitly skipped'})
+            } else {
+                $identity=[Security.Principal.WindowsIdentity]::GetCurrent();$owner=$identity.User.Value;$identity.Dispose()
+                Run 'installed-host-service-readonly-preview' (Join-Path $payload 'Service/RelaxDesk.Service.exe') @('--install-service','--package',$payload,'--owner-sid',$owner,'--what-if')
+            }
         }
         Install $role ($role.name+'-reject-running-update') $role.root $false
         Check (!$launched.HasExited) 'Installer terminated an active application'
@@ -101,7 +105,7 @@ try {
     Uninstall $viewerRole 'viewer-remove'
     Until {!(Test-Path $viewerRole.key) -and !(Test-Path $viewerRole.root)}
     Check (!(Test-Path $viewerRole.desktop) -and !(Test-Path $viewerRole.menu) -and !(Test-Path $viewerRole.registration)) 'Viewer left owned integration'
-    $state='PASS_ACTUAL_PER_USER_INSTALLER_LIFECYCLE'
+    $state=if($SkipMachineServicePreview){'PASS_ACTUAL_PER_USER_INSTALLER_LIFECYCLE_MACHINE_PREVIEW_SKIPPED'}else{'PASS_ACTUAL_PER_USER_INSTALLER_LIFECYCLE'}
 } finally {
     if($launched){try{if(!$launched.HasExited){$null=$launched.CloseMainWindow();$null=$launched.WaitForExit(10000)}}finally{$launched.Dispose()}}
     if($restorePath -and $restoreBytes){[IO.File]::WriteAllBytes($restorePath,$restoreBytes)}
