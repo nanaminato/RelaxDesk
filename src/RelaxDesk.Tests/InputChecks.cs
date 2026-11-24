@@ -61,6 +61,16 @@ static class InputChecks
         foreach (var expected in new[] { lastBeforeClick, buttonDown, lastBeforeRelease, buttonUp, keyDown, keyUp })
             Check(stalledWriter.TryRead(out var actual) && actual == expected);
         Check(stalledWriter.Depth == 0);
+        var acrossDisplays = new OutgoingControlQueue(4);
+        var oldDisplayMove = move with { DisplayGeneration = 1 };
+        var newDisplayMove = later with { DisplayGeneration = 2 };
+        var newDisplayClick = click with { Sequence = 5, DisplayGeneration = 2 };
+        Check(acrossDisplays.TryWrite(oldDisplayMove) && acrossDisplays.TryWrite(newDisplayMove));
+        Check(acrossDisplays.Depth == 2 && acrossDisplays.CoalescedMoves == 0);
+        Check(acrossDisplays.TryWrite(newDisplayClick) && acrossDisplays.TryWrite(keyUp with { Sequence = 6, DisplayGeneration = 2 }));
+        Check(!acrossDisplays.TryWrite(latest with { Sequence = 7, DisplayGeneration = 2 }));
+        foreach (var expected in new[] { oldDisplayMove, newDisplayMove, newDisplayClick, keyUp with { Sequence = 6, DisplayGeneration = 2 } })
+            Check(acrossDisplays.TryRead(out var actual) && actual == expected);
         long beforeQueue = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 1024; i++)
             if (!reused.TryWrite(click) || !reused.TryRead(out var next) || !ReferenceEquals(next, click))
