@@ -17,6 +17,9 @@ At the final unified delivery, run bundled `Collect-Logs.cmd` from the unlocked 
 | Test | Required evidence | Result |
 | --- | --- | --- |
 | Host start / approve / deny | No capture or input before explicit approval; fresh approvals each Host launch | Pending |
+| Guest / Work / Admin boundaries | In each mode, record approved input and optional capabilities. Verify Guest and Work cannot control an elevated window, including when an operator attempts to launch the Host elevated. | Pending |
+| Work device trust | Verify the displayed device identity, use a separately approved one-use Work connection, then revoke the device and verify fresh local approval is required. | Pending |
+| Admin activation and revocation | Test an elevated CMD, PowerShell, environment settings, Registry Editor and Computer Management. Record Host-side approval, worker startup, Viewer exit, Host revoke, worker loss and held-input release. | Pending |
 | Real desktop visibility | Distinguishable changing content visible on Viewer; record capture/decode/Present logs separately | Pending |
 | Ordinary keyboard | Notepad/IDE typing, F1-F24 where application supports, navigation/numpad/OEM, left/right modifiers, repeat/long hold | Pending |
 | Shortcuts | Ctrl+C/V/X/A/Z/Y/S/F/L, Alt+Tab/F4, Win+E/D/R, Ctrl+Shift+Esc via toolbar and ordinary app paths | Pending |
@@ -37,7 +40,11 @@ At the final unified delivery, run bundled `Collect-Logs.cmd` from the unlocked 
 | Concurrent office work | During large copy, edit/scroll remote app and measure heartbeats/latency/memory; compare actual LAN behavior with synthetic stream-shaping evidence | Pending |
 | Persistent Host / reconnect | Same Host listens again, one controller, separate fresh grants, revoke remains effective, user/Host disconnect stops retries, changed identity never silently trusted | Pending |
 | Displays / topology | Host-selected scope, single/all-screen selection, negative origins, rotation, fit/1:1/zoom/pan, same-size switches, unplug/reattach and rejection of newly unapproved monitor | Pending |
-| Session boundaries | Lock/unlock, UAC secure desktop, user switch and session loss release/stop correctly; unsupported control is explicit and any fresh session requires new consent | Pending |
+| UAC secure desktop | Exercise app denial, local UAC cancellation and local UAC approval separately. Record suspension of capture and input, TLS heartbeat continuity, and keyframe recovery on the original Default desktop. | Pending |
+| Lock and unlock | Lock during Work and Admin. Verify the grant ends, input is released, and unlock requires fresh consent. | Pending |
+| Windows sign-in | Observe broker started before user sign-in and absence of an approved interactive session. After local sign-in, start sharing and record fresh Host approval. | Pending |
+| Windows session switch | Switch between two signed-in users. Record original grant termination, elevated-worker cleanup and fresh approval on the new session. | Pending |
+| TCP / UDP / Auto | Verify each mode on the target LAN. Block and restore UDP during Auto, record the actual protocol, fallback reason, first decodable frame, unchanged control connection, and audio/file progress. Verify forced UDP reports refusal when UDP is unavailable. | Pending |
 | System audio | Separate request/grant/revoke, actual system output heard at Viewer, mute/gain, video synchronization/drift, default-device change, source/sink failure isolation and reconnect; no implicit microphone use | Pending |
 | Current-user install | Final bundle hash/runtime/version, install/upgrade/rollback/shortcuts/Apps entry/uninstall, preserve unknown/modified files and logs, no default firewall/startup change | Pending |
 | HostShell service setup UI | Explicit review/UAC success and cancel; original-user SID preserved with alternate admin credentials; main app stays ordinary privilege; startup choice, readonly status, native result dialog, update/removal/retained files/pending deletion; no automatic sharing or actual maintenance while a session runs | Pending |
@@ -46,5 +53,11 @@ At the final unified delivery, run bundled `Collect-Logs.cmd` from the unlocked 
 | Long-duration soak | Sustained office/media/file/audio activity, repeated disconnects and topology changes; record duration, resource trends, drops, recoveries and driver errors rather than a single peak | Pending |
 
 Implemented source includes image/HTML/confirmed file clipboard, scoped file queues/resume, persistent Host/pinned reconnect, multi-monitor/viewport/topology handling, session eligibility, optional installation/broker/startup coordination, independent system audio, history/statistics/settings and bounded diagnostics. Their automated evidence is in [the ledger](PRODUCT-READINESS.md); none of it substitutes for this physical table. Actual privileged SCM/boot/logon and final bundle deployment also remain pending.
+
+Before the interactive Admin tests, save the output of
+`RelaxDesk.Host --admin-input-diagnose` from an ordinary console. Record the
+deployment status and readiness separately from the consent and input
+results. During desktop transitions collect `RelaxDesk.Host --session-diagnose-watch 90`
+alongside the Viewer status. [Session acceptance details](SESSION-ACCESS.md#verification)
 
 Secure-desktop/logon control, reboot-persistent file resume and implicit access are unsupported. Optional microphone/printer/USB/camera/serial forwarding are unimplemented. Do not change RDP components, UAC or security policy to make a test pass. Synthetic capture/codec success, real capture success, decode success, Present API success and actual visible correctness must be recorded separately. A failure/skip is evidence to preserve, not a physical pass.
