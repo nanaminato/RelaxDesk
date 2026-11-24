@@ -92,6 +92,7 @@ try {
         $quicSession.Contains('PASS persistent QUIC loss caused Host TCP fallback') -and
         $quicSession.Contains('PASS Auto recovered UDP again after previously recovering and falling back') -and
         $quicSession.Contains('PASS recovered-path loss triggered Host TCP fallback') -and
+        $quicSession.Contains('PASS independently approved TLS audio continued through repeated TCP/UDP video switches') -and
         $quicSession.Contains('PASS healthy static UDP video stayed connected through the datagram silence interval') -and
         $quicSession.Contains('PASS requested static desktop refresh delivered a decodable key frame over the same UDP path')) 'Packaged Host QUIC, fallback, or static refresh evidence missing'
     $autoFiles = Invoke-App 'packaged-auto-files' $SmokeApplication @($hostExe, '--file-transfer-auto', (Join-Path $output 'auto-file-fixtures')) 150

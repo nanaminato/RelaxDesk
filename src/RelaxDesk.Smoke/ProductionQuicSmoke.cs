@@ -32,7 +32,8 @@ internal static class ProductionQuicSmoke
         int port = ((IPEndPoint)reservation.LocalEndpoint).Port;
         reservation.Stop();
         bool h264 = interrupt || simulateLoss || shapeUdp || persistentLoss || hideUdp && mode == NetworkMode.Auto;
-        using var process = Process.Start(ChildProcess.Create(host, "127.0.0.1", port.ToString(), oversized ? "test-oversized-udp" : silent ? "test-video-settings-static" : h264 ? "test-software" : "test-deflate"))
+        bool exerciseAudio = hideUdp && mode == NetworkMode.Auto;
+        using var process = Process.Start(ChildProcess.Create(host, "127.0.0.1", port.ToString(), exerciseAudio ? "test-audio" : oversized ? "test-oversized-udp" : silent ? "test-video-settings-static" : h264 ? "test-software" : "test-deflate"))
             ?? throw new IOException("Host launch failed");
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(hideUdp && mode == NetworkMode.Auto ? 70 : simulateLoss ? 30 : persistentLoss ? 25 : 18));
         InterruptibleDatagrams? liveDatagrams = null;
@@ -40,9 +41,21 @@ internal static class ProductionQuicSmoke
         long refusedUdpAt = 0;
         bool refusedRecovery = false;
         int recoveredPaths = 0;
+        long audioSequence = 0;
+        Task? drainingAudio = null;
+        using var stopAudio = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+        async Task CheckAudio(long previous)
+        {
+            while (Interlocked.Read(ref audioSequence) <= previous)
+            {
+                if (drainingAudio?.IsCompleted == true) await drainingAudio;
+                await Task.Delay(20, deadline.Token);
+            }
+        }
         using var viewer = new SessionClient
         {
             Network = mode,
+            RequestedFeatures = exerciseAudio ? [SessionCapabilities.SystemAudio] : [],
             RequestQuicRecovery = hideUdp || noLocalUdp,
             ConnectQuic = noLocalUdp ? null : hideUdp ? (endpoint, certificate) =>
                 {
@@ -82,7 +95,7 @@ internal static class ProductionQuicSmoke
             Task handshake = viewer.ConnectByApproval("127.0.0.1", port, ct);
             if (!(await process.StandardOutput.ReadLineAsync(ct) ?? "").Contains("APPROVE", StringComparison.Ordinal))
                 throw new IOException("Host approval prompt missing");
-            await process.StandardInput.WriteLineAsync("APPROVE");
+            await process.StandardInput.WriteLineAsync(exerciseAudio ? "APPROVE_AUDIO" : "APPROVE");
             await process.StandardInput.FlushAsync(ct);
             try { await handshake; }
             catch (IOException error) when (transport is null && error.Message == "UDP media attachment failed")
@@ -95,6 +108,21 @@ internal static class ProductionQuicSmoke
             if (transport is null) throw new IOException("Forced UDP silently fell back");
             if (viewer.SupportsQuicRecovery != (hideUdp && mode == NetworkMode.Auto))
                 throw new IOException("Unexpected QUIC recovery capability");
+            if (exerciseAudio)
+            {
+                var audio = viewer.AudioData ?? throw new IOException("Independently approved audio channel missing");
+                drainingAudio = Task.Run(async () =>
+                {
+                    while (!stopAudio.IsCancellationRequested)
+                    {
+                        var sample = await AudioProtocol.Read(audio, stopAudio.Token);
+                        if (sample.Sequence <= Interlocked.Read(ref audioSequence))
+                            throw new IOException("Synthetic audio sequence regressed");
+                        Interlocked.Exchange(ref audioSequence, sample.Sequence);
+                    }
+                });
+                await CheckAudio(0);
+            }
             if (viewer.Video.TransportName != transport || viewer.VideoFallback != fallback)
                 throw new IOException($"Wrong video path for {mode}: {viewer.Video.TransportName} / {viewer.VideoFallback}");
             if (hideUdp && mode == NetworkMode.Auto)
@@ -240,6 +268,8 @@ internal static class ProductionQuicSmoke
                     viewer.VideoFallback != "udp-recovered-persistent-loss" || viewer.ReadVideoNetworkStatistics() is not null)
                     throw new IOException("Recovered-path loss did not report the new fallback with UDP statistics cleared on TCP");
                 Console.WriteLine($"PASS recovered-path loss triggered Host TCP fallback: dropped={recoveredRelay.Dropped}");
+                await CheckAudio(Interlocked.Read(ref audioSequence));
+                Console.WriteLine("PASS independently approved TLS audio continued through repeated TCP/UDP video switches");
             }
             if (relay is not null && persistentLoss)
             {
@@ -356,6 +386,12 @@ internal static class ProductionQuicSmoke
                 string fault = incompleteFrames ? "incomplete UDP frames" : silent ? "silent UDP receive path" : "active UDP receive interruption";
                 Console.WriteLine($"PASS {fault} -> TCP key frame in {timer.Elapsed.TotalMilliseconds:F0} ms, same TLS control");
             }
+            stopAudio.Cancel();
+            if (drainingAudio is not null)
+            {
+                try { await drainingAudio; }
+                catch (OperationCanceledException) when (stopAudio.IsCancellationRequested) { }
+            }
             viewer.Dispose();
             await process.WaitForExitAsync(ct);
             if (process.ExitCode != 0) throw new IOException("Host shutdown failed");
@@ -369,6 +405,8 @@ internal static class ProductionQuicSmoke
         }
         finally
         {
+            stopAudio.Cancel();
+            if (drainingAudio is not null) try { await drainingAudio; } catch { }
             if (relay is not null) await relay.DisposeAsync();
             if (!process.HasExited) process.Kill(true);
         }
