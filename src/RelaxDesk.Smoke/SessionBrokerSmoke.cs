@@ -75,6 +75,10 @@ internal static class SessionBrokerSmoke
             var endRequest = await Wire.Read(peer, adminTimeout.Token);
             Check(endRequest == new Packet("admin-input-end", endRequest.Sequence, Origin: binding) && endRequest.Sequence >= 3);
             Check(!closing.IsCompleted);
+            bool lateInputRejected = false;
+            try { await connection.Send(new("move"), adminTimeout.Token); }
+            catch (OperationCanceledException) when (!adminTimeout.IsCancellationRequested) { lateInputRejected = true; }
+            Check(lateInputRejected && !closing.IsCompleted);
             await Wire.Write(peer, new("admin-input-ended", endRequest.Sequence, Origin: binding), adminTimeout.Token);
             await closing;
             byte[] end = new byte[1];

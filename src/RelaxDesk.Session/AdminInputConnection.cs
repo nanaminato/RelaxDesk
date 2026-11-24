@@ -77,19 +77,24 @@ public sealed class AdminInputConnection : IAsyncDisposable
 
     async Task Write(string kind, RemoteInput? input, CancellationToken cancellation)
     {
+        stoppingHeartbeat.Token.ThrowIfCancellationRequested();
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(closed.Token, cancellation);
         deadline.CancelAfter(TimeSpan.FromSeconds(1));
         await writer.WaitAsync(deadline.Token);
         try
         {
+            stoppingHeartbeat.Token.ThrowIfCancellationRequested();
             deadline.Token.ThrowIfCancellationRequested();
-            await Wire.Write(pipe, new(kind, checked(++sequence), Origin: binding, Input: input), deadline.Token);
-        }
-        catch
-        {
-            // A partial record cannot safely be followed by another record.
-            Close();
-            throw;
+            try
+            {
+                await Wire.Write(pipe, new(kind, checked(++sequence), Origin: binding, Input: input), deadline.Token);
+            }
+            catch
+            {
+                // A partial record cannot safely be followed by another record.
+                Close();
+                throw;
+            }
         }
         finally { writer.Release(); }
     }
