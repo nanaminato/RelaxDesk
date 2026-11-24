@@ -37,6 +37,8 @@ public sealed partial class ViewerWindow
                 var actual=window.statisticsSource??throw new IOException("Source missing");int snapshots=0;window.statisticsSource=()=>{Interlocked.Increment(ref snapshots);return actual();};
                 window.sessionToolbar.StatisticsAction.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));var panel=window.statisticsWindow??throw new IOException("Panel absent");
                 await Until(()=>panel.Updates>=2&&!panel.DisplayText.Contains("控制往返（含排队）：未采集"));
+                if (!panel.DisplayText.Contains("Viewer 控制队列") || !panel.DisplayText.Contains("已合并鼠标移动"))
+                    throw new IOException("Control queue depth and coalesced mouse moves were not displayed");
                 if(!panel.DisplayText.Contains("Present 调用不代表屏幕已显示")||!panel.DisplayText.Contains("不含 TLS")||!panel.DisplayText.Contains("P95 不相加")||!panel.DisplayText.Contains("控制往返"))throw new IOException("Statistics units/provenance missing");
                 var snapshot=actual();if(snapshot.Pipeline.Frames<=0||snapshot.Pipeline.ApplicationBytes<=0||snapshot.Pipeline.Stages.All(stage=>stage.Name!="capture"))throw new IOException("Live frame/timing samples absent");
                 if (snapshot.Transport != (udp ? "UDP" : "TCP/TLS") || (!legacyAuto &&

@@ -12,9 +12,11 @@ public sealed class OutgoingControlQueue(int capacity = 256, TimeProvider? clock
     readonly object sync = new();
     readonly SemaphoreSlim available = new(0);
     int head, count;
+    long coalescedMoves;
     public OutgoingControlQueue Writer => this;
     public OutgoingControlQueue Reader => this;
     public int Depth { get { lock (sync) return count; } }
+    public long CoalescedMoves => Interlocked.Read(ref coalescedMoves);
     static bool IsMove(Packet packet) => packet.Kind == "input" && packet.Code == 0||packet.Kind=="input-v2"&&packet.Input?.Kind=="move";
     public bool TryWrite(Packet packet)
     {
@@ -28,6 +30,7 @@ public sealed class OutgoingControlQueue(int capacity = 256, TimeProvider? clock
                 if (IsMove(previous) && previous.Kind == packet.Kind && previous.DisplayGeneration == packet.DisplayGeneration)
                 {
                     packets[previousIndex] = new(packet, time.GetTimestamp());
+                    Interlocked.Increment(ref coalescedMoves);
                     return true;
                 }
             }

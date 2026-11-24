@@ -32,7 +32,7 @@ static class InputChecks
         Check(InputProtocol.KeyMessage(65,(1L<<30)|5,true)[0] is{Up:true,Repeat:false,RepeatCount:1});
         try{InputProtocol.KeyMessage(65,1025,false);throw new IOException("Unbounded repeats");}catch(InvalidDataException){count++;}
         var pressed=new PressedRemoteInputs();foreach(var key in repeats)pressed.Update(key);Check(pressed.Count==1);pressed.Update(new("button",Button:5));Check(pressed.ReleaseButtons() is[{Button:5,Up:true}]);Check(pressed.Count==1);Check(pressed.ReleaseAll() is[{Up:true,RepeatCount:1}]);Check(pressed.Count==0);
-        var queue=new OutgoingControlQueue(5);Check(queue.TryWrite(new("input-v2",Input:samples[1])));Check(queue.TryWrite(new("input-v2",Input:new("move",X:9))));Check(queue.Depth==1);
+        var queue=new OutgoingControlQueue(5);Check(queue.TryWrite(new("input-v2",Input:samples[1])));Check(queue.TryWrite(new("input-v2",Input:new("move",X:9))));Check(queue.Depth==1 && queue.CoalescedMoves==1);
         var reused = new OutgoingControlQueue(3);
         var move = new Packet("input-v2", 1, Input: new("move", X: 1));
         var click = new Packet("input-v2", 2, Input: new("button", Button: 1));
