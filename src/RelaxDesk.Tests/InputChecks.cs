@@ -41,6 +41,26 @@ static class InputChecks
         Check(reused.TryWrite(move) && reused.TryWrite(click) && reused.TryRead(out var first) && first == move);
         Check(reused.TryWrite(later) && reused.TryWrite(latest) && reused.Depth == 2);
         Check(reused.TryRead(out var second) && second == click && reused.TryRead(out var last) && last == latest && reused.Depth == 0);
+        var stalledWriter = new OutgoingControlQueue(6);
+        long sequence = 0;
+        Packet Enqueue(RemoteInput input)
+        {
+            var packet = new Packet("input-v2", ++sequence, Input: input);
+            if (!stalledWriter.TryWrite(packet)) throw new IOException("Pointer burst crowded out reliable input");
+            return packet;
+        }
+        for (int i = 0; i < 999; i++) Enqueue(new("move", X: i));
+        var lastBeforeClick = Enqueue(new("move", X: 999));
+        var buttonDown = Enqueue(new("button", Button: 1));
+        for (int i = 0; i < 999; i++) Enqueue(new("move", X: i));
+        var lastBeforeRelease = Enqueue(new("move", X: 999));
+        var buttonUp = Enqueue(new("button", Button: 1, Up: true));
+        var keyDown = Enqueue(new("key", VirtualKey: 65));
+        var keyUp = Enqueue(new("key", VirtualKey: 65, Up: true));
+        Check(stalledWriter.Depth == 6 && stalledWriter.CoalescedMoves == 1998);
+        foreach (var expected in new[] { lastBeforeClick, buttonDown, lastBeforeRelease, buttonUp, keyDown, keyUp })
+            Check(stalledWriter.TryRead(out var actual) && actual == expected);
+        Check(stalledWriter.Depth == 0);
         long beforeQueue = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 1024; i++)
             if (!reused.TryWrite(click) || !reused.TryRead(out var next) || !ReferenceEquals(next, click))
