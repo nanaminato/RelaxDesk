@@ -60,8 +60,19 @@ public sealed partial class ViewerWindow
                 window.OpenTextInput();Check(window.textInput is not null);window.textInput!.Editor.Text="do not replay";
                 window.ResetInputState();Check(window.textInput is null&&!window.inputAuthorized);
                 window.inputAuthorized=true;window.inputVersion=2;
-                for(int i=0;i<257;i++)window.SendRich(new("key",VirtualKey:65));Check(lifetime.IsCancellationRequested);
-                Console.WriteLine($"PASS {count} WPF input adapter/committed-text contracts: authorization gate, raw metadata/repeats, balanced held release, mouse barriers, legacy fallback, staged composition/no preedit/no double send, teardown and overflow; owned windows/non-injecting queue only, no foreground/physical IME acceptance");
+                for (int i = 0; i < 256; i++) window.SendRich(new("key", VirtualKey:65));
+                Check(window.outgoing.Depth == 256 && !lifetime.IsCancellationRequested);
+                window.SendPointerMove(new("move", X:90, Y:91));
+                Check(window.outgoing.Depth == 256 && !lifetime.IsCancellationRequested);
+                Check(window.outgoing.TryRead(out key) && key!.Input is { Kind:"key", VirtualKey:65 });
+                window.SendRich(new("key", VirtualKey:65, Up:true));
+                Check(window.outgoing.Depth == 256 && !lifetime.IsCancellationRequested && window.richHeld.Count == 0);
+                window.Send(0, false, 17, 21);
+                Check(lifetime.IsCancellationRequested);
+                Check(window.outgoing.TryRead(out key));
+                window.Send(256, false);
+                Check(window.outgoing.Depth == 255 && window.richHeld.Count == 0);
+                Console.WriteLine($"PASS {count} WPF input adapter/committed-text contracts: authorization gate, raw metadata/repeats, balanced held release, mouse barriers, legacy fallback, staged composition/no preedit/no double send, teardown and overflow; standalone motion drops without cancelling and a rejected click position prevents button submission; owned windows/non-injecting queue only, no foreground/physical IME acceptance");
                 window.session=null;window.Close();app.Shutdown();
             }
             catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;dialog?.Close();window.session=null;window.Close();app.Shutdown(1);}
