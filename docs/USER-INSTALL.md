@@ -1,5 +1,7 @@
 # Current-user installation, upgrade and removal
 
+Current preferred distribution: [two native EXE installation wizards](EXE-INSTALLERS.md), independently installable per user without PowerShell policy changes, with real 46-check lifecycle evidence. The older combined PowerShell installation described below remains a separate compatible option; its tests and registry layout do not describe the new role installers.
+
 Implemented source: `scripts/Install-RelaxDesk.ps1`, `scripts/Uninstall-RelaxDesk.ps1`, shared `RelaxDesk.Setup.psm1`, and the future bundle's `Install-RelaxDesk.cmd`. Packaging scripts now include these files but have **not** been executed for this slice. Existing distributed archives are unchanged. Optional [machine service installation](MACHINE-SERVICE-INSTALL.md) is separately implemented in source; actual elevated deployment remains unaccepted.
 
 ## Install

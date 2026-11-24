@@ -1,0 +1,32 @@
+[
+  {
+    "role": "host",
+    "file": "E:\\RelaxDesk\\build\\RelaxDesk-exe-installers-win-x64-20261124-final\\RelaxDesk-Host-Setup-x64.exe",
+    "sha256": "17B940445621A84F19A7F502F717670EF4C13FBFF471668999DC6A084B9A9BFC",
+    "bytes": 107291166,
+    "package_version": "0.4.2-roles.20261124-202127.g7e51e95",
+    "application_revision": "7e51e9549819c9d088bae7cacbc4e7ed4fd4740b",
+    "release": "app-d57aeca6e09e64187bd4fa6407d06089",
+    "source_archive_sha256": "57864633CCEA6ECAE13385BFCBA5C0ABB8D34C5B68C66DEBE9DCA7C97F467B08",
+    "recipe_revision": "fff30fadc361ad8fb94c654022c3d022fdc2c1a2",
+    "compiler": "7.1.1",
+    "compiler_sha256": "E0F9F1DC32032650C6629F6DEE41EB6D20BA140E4E3C07C25D8A24F9BA781644",
+    "signature": "UNSIGNED_EXPERIMENTAL",
+    "compiler_pe_product_version": "0.0.0.0"
+  },
+  {
+    "role": "viewer",
+    "file": "E:\\RelaxDesk\\build\\RelaxDesk-exe-installers-win-x64-20261124-final\\RelaxDesk-Viewer-Setup-x64.exe",
+    "sha256": "A209EBD0860715108E45C29D732F7C14B4D99A5C6F86FFC661B8A72198204EB1",
+    "bytes": 50654619,
+    "package_version": "0.4.2-roles.20261124-202127.g7e51e95",
+    "application_revision": "7e51e9549819c9d088bae7cacbc4e7ed4fd4740b",
+    "release": "app-b0a94d1830fb0eadd65370de2ec4e986",
+    "source_archive_sha256": "AE8663EB58E6A13439969C73292FB10F4824E3FAC8F559DC45566CF1447D9597",
+    "recipe_revision": "fff30fadc361ad8fb94c654022c3d022fdc2c1a2",
+    "compiler": "7.1.1",
+    "compiler_sha256": "E0F9F1DC32032650C6629F6DEE41EB6D20BA140E4E3C07C25D8A24F9BA781644",
+    "signature": "UNSIGNED_EXPERIMENTAL",
+    "compiler_pe_product_version": "0.0.0.0"
+  }
+]

@@ -1,5 +1,7 @@
 # Unified office candidate delivery — 2026-11-24
 
+Newest requested delivery: [separate native EXE installers](EXE-INSTALLERS.md), built from the verified role payloads, with actual per-user install/uninstall and app-launch evidence. The older combined artifact below remains an immutable checkpoint.
+
 Latest distribution is now [the separately packaged Host and Viewer](ROLE-PACKAGES.md), including the one-click service UI. This page preserves the earlier combined archive's exact unchanged artifact and evidence; use the role-package report for the current requested split delivery.
 
 Later source-only enhancement: [service installation inside HostShell](SERVICE-SETUP-UI.md). This historical archive is unchanged and does not contain those new buttons; its administrator CLI still works. No repackaging is performed for the UI enhancement.

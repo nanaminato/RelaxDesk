@@ -61,6 +61,19 @@ try {
         $manifest=@(Get-Content -LiteralPath (Join-Path $payload 'SHA256SUMS.json') -Raw | ConvertFrom-Json)
         foreach($member in $manifest){if((Get-FileHash -LiteralPath (Join-Path $payload $member.path) -Algorithm SHA256).Hash -ine $member.sha256){throw 'Installed payload hash mismatch'}}
         Check (@(Get-ChildItem -LiteralPath $payload -File -Recurse).Count -eq $manifest.Count+1) 'Installed runtime closure has unexpected files'
+        $appInfo=[Diagnostics.ProcessStartInfo]::new($expected);$appInfo.UseShellExecute=$false;$appInfo.WindowStyle='Minimized';$appInfo.WorkingDirectory=$payload
+        $launched=[Diagnostics.Process]::Start($appInfo)
+        Until {$launched.Refresh();$launched.HasExited -or $launched.MainWindowHandle -ne 0}
+        Check (!$launched.HasExited -and $launched.MainWindowHandle -ne 0) 'Installed role did not open its normal WPF window'
+        if($role.name -eq 'Host'){
+            $children=@(Get-CimInstance Win32_Process -Filter ('ParentProcessId = '+$launched.Id) | Where-Object Name -EQ 'RelaxDesk.Host.exe')
+            Check ($children.Count -eq 0) 'Installing/opening Host implicitly started desktop sharing'
+            $identity=[Security.Principal.WindowsIdentity]::GetCurrent();$owner=$identity.User.Value;$identity.Dispose()
+            Run 'installed-host-service-readonly-preview' (Join-Path $payload 'Service/RelaxDesk.Service.exe') @('--install-service','--package',$payload,'--owner-sid',$owner,'--what-if')
+        }
+        Install $role ($role.name+'-reject-running-update') $role.root $false
+        Check (!$launched.HasExited) 'Installer terminated an active application'
+        $null=$launched.CloseMainWindow();if(!$launched.WaitForExit(15000)){throw 'Owned installed app did not close'};$launched.Dispose();$launched=$null
         Install $role ($role.name+'-repeat-install') $role.root
         Check ((Get-ItemProperty -LiteralPath $role.registration).Receipts.Split(';').Count -eq 1) 'Repeated install duplicated receipt/version state'
     }

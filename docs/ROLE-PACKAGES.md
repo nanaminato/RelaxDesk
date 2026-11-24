@@ -1,5 +1,7 @@
 # Separate Host and Viewer packages
 
+For double-click installation instead of portable extraction, use the [new independent EXE installers](EXE-INSTALLERS.md). This page preserves the portable ZIP layout and its exact unchanged payload evidence.
+
 Delivered version **`0.4.2-roles.20261124-202127.g7e51e95`**. [Exact ZIPs, hashes and observed verification](../benchmarks/2026-11-24-separated-packages-validation.md): 23 split-package assertions, actual packaged 54-check one-click UI and two 60-frame synthetic cross-role sessions PASS. Physical acceptance remains pending. Archives live under `build/RelaxDesk-separated-win-x64-20261124`.
 
 The owner requests independent controlled-side and connecting-side ZIPs. `scripts/package-roles.ps1` publishes the same committed version into two self-contained win-x64 closures:

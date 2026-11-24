@@ -14,6 +14,8 @@ try {
     if(!(Test-Path -LiteralPath $iscc) -or !(Test-Path -LiteralPath $license)){throw 'Verified stable Inno Setup compiler/license missing'}
     $signature=Get-AuthenticodeSignature -LiteralPath $iscc
     if($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Pyrsys B.V.'){throw 'Compiler publisher/signature invalid'}
+    $compilerVersion=(& $iscc --version | Out-String).Trim()
+    if($LASTEXITCODE -or $compilerVersion -ne '7.1.1'){throw 'Use the reviewed stable Inno Setup 7.1.1 compiler'}
     $results=@();$sharedVersion=$null
     foreach($role in @('Host','Viewer')){
         $archive=Join-Path ([IO.Path]::GetFullPath($RoleDirectory)) ('RelaxDesk-'+$role+'-win-x64.zip')
@@ -46,7 +48,7 @@ try {
         if($LASTEXITCODE){throw "Installer compile failed: $role"}
         $exe=Join-Path $output ("RelaxDesk-$role-Setup-x64.exe");$hash=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
         ($hash+' *'+[IO.Path]::GetFileName($exe)) | Set-Content -LiteralPath ($exe+'.sha256') -Encoding ascii
-        $results+= [pscustomobject]@{role=$role.ToLowerInvariant();file=$exe;sha256=$hash;bytes=(Get-Item -LiteralPath $exe).Length;package_version=$metadata.version;application_revision=$metadata.revision;release=$release;source_archive_sha256=$archiveHash;recipe_revision=$revision;compiler=(Get-Item -LiteralPath $iscc).VersionInfo.ProductVersion;compiler_sha256=(Get-FileHash -LiteralPath $iscc -Algorithm SHA256).Hash;signature='UNSIGNED_EXPERIMENTAL'}
+        $results+= [pscustomobject]@{role=$role.ToLowerInvariant();file=$exe;sha256=$hash;bytes=(Get-Item -LiteralPath $exe).Length;package_version=$metadata.version;application_revision=$metadata.revision;release=$release;source_archive_sha256=$archiveHash;recipe_revision=$revision;compiler=$compilerVersion;compiler_pe_product_version=(Get-Item -LiteralPath $iscc).VersionInfo.ProductVersion;compiler_sha256=(Get-FileHash -LiteralPath $iscc -Algorithm SHA256).Hash;signature='UNSIGNED_EXPERIMENTAL'}
         Write-Output ($role.ToUpperInvariant()+'_INSTALLER='+$exe)
     }
     $results | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $output 'installers.json') -Encoding utf8

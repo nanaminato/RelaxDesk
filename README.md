@@ -1,5 +1,7 @@
 # RelaxDesk
 
+Latest requested delivery now has [independent Host and Viewer EXE installers](docs/EXE-INSTALLERS.md), with current-user desktop/Start Menu shortcuts and separate Apps uninstall entries. Actual final installers pass 46 lifecycle checks including both installed WPF launches, payload hashes and independent removal; no manual unzip/CMD is needed. Portable ZIPs remain available. Real Home/service-UAC/hardware acceptance is still pending.
+
 Latest delivery is now [separate self-contained Host and Viewer ZIPs](docs/ROLE-PACKAGES.md), version `0.4.2-roles.20261124-202127.g7e51e95`. Host includes the one-click service UI; Viewer contains no Host/service payload. Actual split-archive hash/version/runtime/preflight/UI and synthetic cross-role checks pass. Historical source-only/no-package checkpoints below predate this explicit packaging request. Physical UAC/SCM/Home acceptance remains pending.
 
 Service UI is now [one-click enable](docs/SERVICE-SETUP-UI.md): automatic install/start/connection, original-user identity, no second ordinary-success dialog, existing-running-service fast path; advanced startup/repair/removal stays collapsed. Source-only change, no new package or real SCM/UAC acceptance.
