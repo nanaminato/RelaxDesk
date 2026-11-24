@@ -408,6 +408,19 @@ internal static class ProductionQuicSmoke
                     throw new IOException("Fallback replaced or interrupted the control channel");
                 string fault = incompleteFrames ? "incomplete UDP frames" : silent ? "silent UDP receive path" : "active UDP receive interruption";
                 Console.WriteLine($"PASS {fault} -> TCP key frame in {timer.Elapsed.TotalMilliseconds:F0} ms, same TLS control");
+                if (silent)
+                {
+                    var nextFrame = viewer.Video.Read(ct);
+                    if (await Task.WhenAny(nextFrame, Task.Delay(TimeSpan.FromSeconds(1), ct)) == nextFrame ||
+                        viewer.Video.TransportName != "TCP/TLS")
+                        throw new IOException("Static desktop did not stay idle after TCP fallback");
+                    await Wire.Write(viewer.Control, new("keyframe-v2", ++controlSequence), ct);
+                    var refresh = await nextFrame;
+                    using var decoder = new MediaDecoder(() => { }, preferHardware: false);
+                    if (viewer.Video.TransportName != "TCP/TLS" || refresh.Sequence <= recovered.Sequence || !refresh.KeyFrame || decoder.Decode(refresh) is null)
+                        throw new IOException("Static desktop refresh did not deliver a decodable TCP key frame after fallback");
+                    Console.WriteLine("PASS static TCP fallback stayed idle for one second and refreshed with a decodable key frame");
+                }
             }
             stopAudio.Cancel();
             if (drainingAudio is not null)
