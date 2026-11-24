@@ -123,6 +123,10 @@ public static class WindowsSessionContracts
         var timer=Stopwatch.StartNew();var actual=WindowsSessionAccess.Read();timer.Stop();
         Check(actual.SessionId is not null);Check(actual.ConnectionState is >=0 and <=9);
         Check(actual.ThreadDesktop is not null);Check(actual.VisibleWindowStation is not null);
+        const int probeReads = 64;
+        long allocationStart = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < probeReads; i++) _ = WindowsSessionAccess.Read();
+        Console.WriteLine($"session_probe_reads={probeReads} managed_allocation_bytes={GC.GetAllocatedBytesForCurrentThread() - allocationStart}");
         bool ordinary = false;
         try { WindowsInputPrivilege.EnsureOrdinaryProcess(); ordinary = true; }
         catch (IOException) { }

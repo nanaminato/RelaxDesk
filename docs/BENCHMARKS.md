@@ -130,6 +130,14 @@ and none had move rectangles. GPU utilization was unavailable. This run
 used TCP/TLS loopback without rendering or input, so it provides an active
 desktop baseline and leaves true static-idle and physical latency unmeasured.
 
+`Smoke --session-contracts` measures managed allocations from 64 real
+session-state reads on the calling thread. Replacing temporary Win32
+query arrays with bounded stack buffers reduced that sample from 82,072
+to 10,904 bytes. Capture still checks the desktop before and after acquiring
+a frame. A real headless repeat passed with 541 updates after the first
+frame and 96 control heartbeats in 25.26 s. The allocation result does not
+measure native API time or establish a frame-rate gain.
+
 A repeat at revision `a6d51e7` measured the synthetic single-frame workload
 and the active console separately. The 25.6 s WPF idle fixture received one
 frame, dropped none, and completed five control heartbeats. Mean Host and

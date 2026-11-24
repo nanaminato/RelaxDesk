@@ -31,7 +31,7 @@ public static class WindowsSessionAccess
     [DllImport("user32.dll", SetLastError=true)] static extern nint OpenInputDesktop(uint flags,bool inherit,uint access);
     [DllImport("user32.dll")] static extern bool CloseDesktop(nint desktop);
     [DllImport("user32.dll", EntryPoint="GetUserObjectInformationW", SetLastError=true)]
-    static extern bool GetName(nint handle,int index,[Out] byte[] buffer,uint length,out uint needed);
+    static extern unsafe bool GetName(nint handle,int index,void* buffer,uint length,out uint needed);
     [DllImport("wtsapi32.dll", EntryPoint="WTSQuerySessionInformationW", SetLastError=true)]
     static extern bool QuerySession(nint server,uint sessionId,int info,out nint buffer,out uint bytes);
     [DllImport("wtsapi32.dll")] static extern void WTSFreeMemory(nint buffer);
@@ -58,18 +58,20 @@ public static class WindowsSessionAccess
         finally { if (memory != 0) WTSFreeMemory(memory); }
     }
 
-    static string? Name(nint handle)
+    static unsafe string? Name(nint handle)
     {
-        byte[] bytes=new byte[512];
-        if(handle==0||!GetName(handle,2,bytes,(uint)bytes.Length,out uint length)||length<2||length>bytes.Length||length%2!=0)return null;
-        return Encoding.Unicode.GetString(bytes,0,(int)length-2);
+        const int capacity = 512;
+        byte* bytes = stackalloc byte[capacity];
+        if(handle==0||!GetName(handle,2,bytes,capacity,out uint length)||length<2||length>capacity||length%2!=0)return null;
+        return Encoding.Unicode.GetString(new ReadOnlySpan<byte>(bytes, (int)length - 2));
     }
-    public static WindowsSessionSnapshot Read()
+    public static unsafe WindowsSessionSnapshot Read()
     {
         uint? id=ProcessIdToSessionId((uint)Environment.ProcessId,out uint sessionId)?sessionId:null;
         (int? state, bool? locked) = id is { } value ? ReadSessionState(value) : (null, null);
-        byte[] flags=new byte[12]; nint station=GetProcessWindowStation();
-        bool? visible=station!=0&&GetName(station,1,flags,12,out uint size)&&size==12?(BitConverter.ToUInt32(flags,8)&1)!=0:null;
+        uint* flags = stackalloc uint[3];
+        nint station=GetProcessWindowStation();
+        bool? visible=station!=0&&GetName(station,1,flags,12,out uint size)&&size==12?(flags[2]&1)!=0:null;
         string? thread=Name(GetThreadDesktop(GetCurrentThreadId()));
         nint input=OpenInputDesktop(0,false,1);
         int? inputOpenError = input == 0 ? Marshal.GetLastPInvokeError() : null;
