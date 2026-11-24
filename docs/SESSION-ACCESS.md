@@ -118,8 +118,26 @@ keyframe on discontinuity. Keep reliable input and optional feature traffic on T
 Exercise initial refusal and mid-session media recovery under delay, loss,
 reordering, jitter and a shaped link with concurrent files. Auto uses a
 15-second minimum cooldown between recovery attempts. Use the same workloads to compare static
-traffic, queue age, text fidelity and interaction latency. Defer FEC and
-selective retransmission until those measurements show when each helps.
+traffic, queue age, text fidelity and interaction latency.
+
+QUIC DATAGRAM traffic uses QUIC congestion control and carries no automatic
+retransmission. A selective retry would need the feedback delay, sender queue
+delay, and return trip to fit within the frame's remaining 150 ms reassembly
+window. FEC could repair limited loss without waiting for feedback, at the
+cost of parity traffic and decoding work. Neither repairs a completely
+unavailable UDP path. The current application recovers through a fresh
+keyframe, adjusts the encoder target under measured loss, and uses a new
+TCP keyframe when Auto falls back. [RFC 9221](https://www.rfc-editor.org/rfc/rfc9221.html#section-5)
+
+Loopback shaping exercised a 512 KiB/s budget, 8/20 ms delay pulses and
+packet reordering while video advanced. A separate loss case reduced the
+encoder target from 8 to 6 Mbit/s and recovered it to 6.8 Mbit/s. An
+incomplete-frame case delivered a TCP keyframe after 3.06 s with the
+original TLS control connection. These cases verify adaptation and recovery.
+They do not establish whether parity or a selective retry would improve a
+matched dual-PC workload. Keep both disabled pending a comparison of total
+traffic, discarded assemblies, time to first decodable frame, and physical
+input-to-photon latency across the same isolated and burst-loss traces.
 
 ## Verification
 
