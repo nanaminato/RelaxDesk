@@ -59,7 +59,15 @@ public sealed partial class ViewerWindow
             e.Handled=true;
         };
         image.LostMouseCapture+=(_,_)=>ReleaseMouseButtons();
-        image.MouseWheel+=(_,e)=>{if(IsActive&&e.Delta!=0){if(inputVersion==2)SendRich(new("wheel",WheelY:e.Delta));else Send(e.Delta>0?258:259,false);}e.Handled=true;};
+        image.MouseWheel+=(_,e)=>
+        {
+            if (IsActive && e.Delta != 0 && BitmapPosition(e.GetPosition(videoPanel), dragging:false))
+            {
+                if (inputVersion == InputProtocol.Version) SendRich(new("wheel", WheelY:e.Delta));
+                else Send(e.Delta > 0 ? 258 : 259, false);
+            }
+            e.Handled = true;
+        };
     }
     void SendPointerButton(MouseButton button,bool up)
     {
