@@ -150,6 +150,8 @@ try {
     }
     $adminLifecycle = Invoke-App 'packaged-admin-lifecycle' $viewerExe @('--admin-lifecycle-contracts',$hostExe)
     Confirm ($adminLifecycle.Contains('PASS WPF Viewer twice entered Admin and routed input to protected non-injecting pipe workers')) 'Packaged Admin lifecycle evidence missing'
+    $adminWorkerLoss = Invoke-App 'packaged-admin-worker-loss' $viewerExe @('--admin-worker-loss-contracts', $hostExe)
+    Confirm ($adminWorkerLoss.Contains('PASS WPF administrator worker pipe loss: original grant ended, Viewer required fresh approval and restored Work on a new TLS connection')) 'Packaged Host/Viewer administrator worker loss or fresh Work approval evidence missing'
     $workTrust = Invoke-App 'packaged-work-trust' $shellExe @('--work-trust-contracts',$hostExe,(Join-Path $output 'work-trust-fixtures'))
     Confirm ($workTrust.Contains('PASS WPF Work device trust') -and $workTrust.Contains('PASS WPF one-use Work preapproval')) 'Packaged Work device trust and one-use approval evidence missing'
     $details=[pscustomobject]@{version=$hostPackage.metadata.version;revision=$hostPackage.metadata.revision;native_sha256=$native[0];quic_tls_provider=$provider;quic_runtime_version=$hostPackage.metadata.quic_runtime_version;packages=@($packages | ForEach-Object {[pscustomobject]@{role=$_.metadata.role;archive=$_.archive;sha256=$_.sha256;bytes=$_.bytes;manifest_files=$_.manifest_files}})}
