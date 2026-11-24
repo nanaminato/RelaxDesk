@@ -85,6 +85,25 @@ internal static class SessionBrokerSmoke
             Check(await peer.ReadAsync(end, adminTimeout.Token) == 0);
         }
         Guid launchGrant = Guid.NewGuid();
+        Guid silentGrant = Guid.NewGuid();
+        using (var silentServer = LocalAgentPipe.CreateAdminServer(silentGrant, own))
+        using (var testDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(8)))
+        {
+            var accepting = AdminInputConnection.Accept(silentServer, silentGrant, Environment.ProcessId, testDeadline.Token);
+            using var peer = await LocalAgentPipe.ConnectAdmin(silentGrant, testDeadline.Token);
+            string binding = silentGrant.ToString("N");
+            await Wire.Write(peer, new("admin-input-ready", Origin: binding), testDeadline.Token);
+            await using var connection = await accepting;
+            var revoking = connection.End(testDeadline.Token);
+            Check(await Wire.Read(peer, testDeadline.Token) == new Packet("admin-input-end", 1, Origin: binding));
+            bool timedOut = false;
+            try { await revoking; }
+            catch (IOException error) when (error.InnerException is OperationCanceledException && !testDeadline.IsCancellationRequested)
+            { timedOut = true; }
+            Check(timedOut && await peer.ReadAsync(new byte[1], testDeadline.Token) == 0);
+        }
+        using (var replacement = LocalAgentPipe.CreateAdminServer(silentGrant, own))
+            Check(!replacement.IsConnected);
         Guid lostWorkerGrant = Guid.NewGuid();
         using (var lostServer = LocalAgentPipe.CreateAdminServer(lostWorkerGrant, own))
         using (var lostDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(5)))

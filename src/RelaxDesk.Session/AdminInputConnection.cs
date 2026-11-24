@@ -72,6 +72,10 @@ public sealed class AdminInputConnection : IAsyncDisposable
             }
             finally { writer.Release(); }
         }
+        catch (OperationCanceledException error) when (!closed.IsCancellationRequested && !cancellation.IsCancellationRequested)
+        {
+            throw new IOException("Administrator worker release acknowledgement timed out", error);
+        }
         finally { Close(); }
     }
 
