@@ -71,6 +71,15 @@ The [live Viewer statistics window](LIVE-STATISTICS.md) exposes existing source/
 
 ### Real desktop loopback on RTX 5060 Ti
 
+To sample per-process Windows GPU engine counters during the timed UDP
+desktop run, use `scripts/benchmark-renderers.ps1 -ArtifactsDirectory
+build/<artifacts> -OutputDirectory build/<new-output> -Modes desktop-gpu-udp`
+with the matching QUIC runtime. At `6150476`, the Host VideoEncode engine
+averaged 6.09% across 11 available samples and peaked at 7%. The Viewer
+VideoDecode engine averaged 0.92% across 12 samples and peaked at 1%. Two
+polls timed out. Percentages describe individual Windows engine instances
+on an active desktop and cannot be summed into total GPU utilization.
+
 At `81cf0b2`, `desktop-gpu-auto-recovery` deliberately failed the first UDP
 attachment and delivered 318 TCP frames followed by five UDP frames on the
 same session. D3D11 submitted 323 frames with zero full-frame readbacks. The

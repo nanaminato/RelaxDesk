@@ -1,5 +1,5 @@
 param([int]$Frames = 120, [string]$OutputDirectory = 'benchmarks/latest-renderers', [string]$PackageRoot = '', [string]$ArtifactsDirectory = '',
-      [ValidateSet('deflate','software','hardware-cpu','gpu')][string[]]$Modes = @('deflate','software','hardware-cpu','gpu'))
+      [ValidateSet('deflate','software','hardware-cpu','gpu','desktop-gpu-udp')][string[]]$Modes = @('deflate','software','hardware-cpu','gpu'))
 $ErrorActionPreference = 'Stop'
 Import-Module "$PSScriptRoot/RelaxDesk.Benchmark.psm1" -Force
 if ($ArtifactsDirectory -and $PackageRoot) { throw 'Choose an artifacts directory or a package root' }
@@ -28,7 +28,9 @@ Write-BenchmarkManifest -Output $output -Frames $Frames -Modes $Modes -Applicati
 foreach ($mode in $Modes) {
     $directory = Join-Path $output $mode
     [IO.Directory]::CreateDirectory($directory) | Out-Null
-    $arguments = @($smokeDll,$hostDll,'--wpf-budget',$viewerDll,$mode,"$Frames")
+    $desktopSample = $mode -eq 'desktop-gpu-udp'
+    $arguments = if ($desktopSample) { @($smokeDll,$hostDll,'--wpf',$viewerDll,$mode) }
+        else { @($smokeDll,$hostDll,'--wpf-budget',$viewerDll,$mode,"$Frames") }
     $executable = 'dotnet'
     if ($PackageRoot) { $executable = $smokeDll; $arguments = $arguments[1..($arguments.Count-1)] }
     $quoted = @($arguments | ForEach-Object { ConvertTo-BenchmarkArgument $_ })
@@ -43,7 +45,8 @@ foreach ($mode in $Modes) {
         if (!$driver.WaitForExit(5000)) { throw 'Benchmark did not exit within its bounded sample window' }
         if ($null -eq $driver.ExitCode -or $driver.ExitCode -ne 0) { throw "Renderer benchmark failed or exit code unavailable: $mode; inspect $directory" }
         $completed = $true
-        Write-Output "PASS renderer benchmark mode=$mode received_media_budget=$Frames"
+        if ($desktopSample) { Write-Output "PASS renderer benchmark mode=$mode timed_desktop_sample=true" }
+        else { Write-Output "PASS renderer benchmark mode=$mode received_media_budget=$Frames" }
     }
     finally {
         [pscustomobject]@{Status=$(if($completed){'PASS'}else{'FAIL'});ExitCode=$(if($driver.HasExited){$driver.ExitCode}else{$null})} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $directory 'result.json') -Encoding utf8
