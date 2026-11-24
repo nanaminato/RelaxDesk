@@ -312,7 +312,8 @@ public sealed partial class ViewerWindow : Window
             StartRichClipboard(connection,permissionGate,cancellation.Token);
             StartAudio(connection,permissionGate,cancellation.Token);
             long initialCoalescedMoves = outgoing.CoalescedMoves;
-            BeginStatistics(()=>new(metrics.Snapshot(decoded.Dropped+Interlocked.Read(ref skipped),decoded.Depth),Volatile.Read(ref receivedFrames),Interlocked.Read(ref gpuFrames),Interlocked.Read(ref cpuFrames),Interlocked.Read(ref readbackBytes),Volatile.Read(ref rendererGenerations),connection.Video.TransportName,connection.VideoFallback,connection.ReadVideoNetworkStatistics(),connection.HostVideoQueue,outgoing.Depth,outgoing.CoalescedMoves-initialCoalescedMoves,connection.VideoTransportRevision));
+            long initialDroppedPointerMoves = Interlocked.Read(ref droppedPointerMoves);
+            BeginStatistics(()=>new(metrics.Snapshot(decoded.Dropped+Interlocked.Read(ref skipped),decoded.Depth),Volatile.Read(ref receivedFrames),Interlocked.Read(ref gpuFrames),Interlocked.Read(ref cpuFrames),Interlocked.Read(ref readbackBytes),Volatile.Read(ref rendererGenerations),connection.Video.TransportName,connection.VideoFallback,connection.ReadVideoNetworkStatistics(),connection.HostVideoQueue,outgoing.Depth,outgoing.CoalescedMoves-initialCoalescedMoves,connection.VideoTransportRevision,Interlocked.Read(ref droppedPointerMoves)-initialDroppedPointerMoves));
             if (connection.ClipboardData is null&&permissionGate.Allows(SessionCapabilities.ClipboardText))
                 clipboard = new ClipboardSynchronizer(() => new WindowsTextClipboard(), permissionGate, QueueClipboardUpdate, cancellation.Token,
                     message => Dispatcher.BeginInvoke(() => { if (!ReferenceEquals(sessionPermissions, permissionGate) || cancellation.IsCancellationRequested) return; status.Text = message; if (!permissionGate.Allows(SessionCapabilities.ClipboardText)) DisableClipboard(); }));

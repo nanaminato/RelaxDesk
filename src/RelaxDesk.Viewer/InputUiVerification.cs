@@ -63,12 +63,12 @@ public sealed partial class ViewerWindow
                 for (int i = 0; i < 256; i++) window.SendRich(new("key", VirtualKey:65));
                 Check(window.outgoing.Depth == 256 && !lifetime.IsCancellationRequested);
                 window.SendPointerMove(new("move", X:90, Y:91));
-                Check(window.outgoing.Depth == 256 && !lifetime.IsCancellationRequested);
+                Check(window.outgoing.Depth == 256 && !lifetime.IsCancellationRequested && window.droppedPointerMoves == 1);
                 Check(window.outgoing.TryRead(out key) && key!.Input is { Kind:"key", VirtualKey:65 });
                 window.SendRich(new("key", VirtualKey:65, Up:true));
                 Check(window.outgoing.Depth == 256 && !lifetime.IsCancellationRequested && window.richHeld.Count == 0);
                 window.Send(0, false, 17, 21);
-                Check(lifetime.IsCancellationRequested);
+                Check(lifetime.IsCancellationRequested && window.droppedPointerMoves == 1);
                 Check(window.outgoing.TryRead(out key));
                 window.Send(256, false);
                 Check(window.outgoing.Depth == 255 && window.richHeld.Count == 0);

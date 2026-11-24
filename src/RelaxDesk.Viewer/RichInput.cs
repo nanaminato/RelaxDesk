@@ -9,6 +9,7 @@ public sealed partial class ViewerWindow
 {
     int inputVersion;
     bool inputAuthorized;
+    long droppedPointerMoves;
     readonly PressedRemoteInputs richHeld=new();
     void SendRich(RemoteInput input) => SendRich(input, discardOnBacklog: false);
     void SendPointerMove(RemoteInput input) => SendRich(input, discardOnBacklog: true);
@@ -21,7 +22,8 @@ public sealed partial class ViewerWindow
         if(!InputProtocol.Valid(input)){session.Cancel();return;}
         if(!outgoing.TryWrite(InputProtocol.Encode(input,++sequence,displaySession?.Generation??0)))
         {
-            if (!discardOnBacklog) session.Cancel();
+            if (discardOnBacklog) Interlocked.Increment(ref droppedPointerMoves);
+            else session.Cancel();
             return;
         }
         richHeld.Update(input);
