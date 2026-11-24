@@ -9,6 +9,7 @@ public sealed class NativeVideoHost : HwndHost
 {
     public Action<int, bool, int, int>? Input;
     public Action<RemoteInput>? RichInput;
+    public Action<RemoteInput>? PointerMove;
     public Action? InputBacklogExceeded;
     public Action? InputFocusLost;
     public Action? InputCaptureLost;
@@ -65,12 +66,14 @@ public sealed class NativeVideoHost : HwndHost
     readonly HashSet<int> pointerButtons=[];
     [StructLayout(LayoutKind.Sequential)] struct Point { public int X,Y; }
     [DllImport("user32.dll")] static extern bool ScreenToClient(nint hwnd,ref Point point);
-    bool SendRichPosition(nint hwnd,nint packed,bool dragging,bool screen=false)
+    bool SendRichPosition(nint hwnd,nint packed,bool dragging,bool screen=false,bool standaloneMove=false)
     {
         var point=new Point{X=(short)((long)packed&65535),Y=(short)((long)packed>>16)};
         if(screen&&!ScreenToClient(hwnd,ref point))return false;
         if(!GetClientRect(hwnd,out var rect)||!TryPosition(point.X,point.Y,rect.Right,rect.Bottom,dragging,out int x,out int y))return false;
-        RichInput?.Invoke(new("move",X:x,Y:y));return true;
+        var send = standaloneMove ? PointerMove ?? RichInput : RichInput;
+        send?.Invoke(new("move",X:x,Y:y));
+        return true;
     }
     internal bool TryPosition(double x,double y,int width,int height,bool dragging,out int nx,out int ny)
     {
@@ -89,7 +92,7 @@ public sealed class NativeVideoHost : HwndHost
     {
         if(message is <0x200 or >0x20E)return false;
         if(GetForegroundWindow()!=GetAncestor(hwnd,2))return true;
-        if(message==0x200){SendRichPosition(hwnd,lParam,GetCapture()==hwnd&&pointerButtons.Count>0);return true;}
+        if(message==0x200){SendRichPosition(hwnd,lParam,GetCapture()==hwnd&&pointerButtons.Count>0,standaloneMove:true);return true;}
         if(message is 0x20A or 0x20E)
         {
             if(GetFocus()!=hwnd||!SendRichPosition(hwnd,lParam,false,true))return true;

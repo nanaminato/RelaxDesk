@@ -10,13 +10,20 @@ public sealed partial class ViewerWindow
     int inputVersion;
     bool inputAuthorized;
     readonly PressedRemoteInputs richHeld=new();
-    void SendRich(RemoteInput input)
+    void SendRich(RemoteInput input) => SendRich(input, discardOnBacklog: false);
+    void SendPointerMove(RemoteInput input) => SendRich(input, discardOnBacklog: true);
+
+    void SendRich(RemoteInput input, bool discardOnBacklog)
     {
         if(smoke is not null||!inputAuthorized||inputVersion!=InputProtocol.Version||session is null||session.IsCancellationRequested)return;
         if(displaySession is not null&&!displaySession.Ready)return;
         if(!viewportInputReady)return;
         if(!InputProtocol.Valid(input)){session.Cancel();return;}
-        if(!outgoing.TryWrite(InputProtocol.Encode(input,++sequence,displaySession?.Generation??0))){session.Cancel();return;}
+        if(!outgoing.TryWrite(InputProtocol.Encode(input,++sequence,displaySession?.Generation??0)))
+        {
+            if (!discardOnBacklog) session.Cancel();
+            return;
+        }
         richHeld.Update(input);
     }
     void SendRawKey(int key,nint flags,bool up)
@@ -25,15 +32,19 @@ public sealed partial class ViewerWindow
         try{foreach(var input in InputProtocol.KeyMessage(key,(long)flags,up))SendRich(input);}
         catch(System.IO.InvalidDataException){session?.Cancel();}
     }
-    bool BitmapPosition(Point point,bool dragging)
+    bool BitmapPosition(Point point,bool dragging,bool standaloneMove=false)
     {
         var dpi=System.Windows.Media.VisualTreeHelper.GetDpi(videoPanel);
         if(!TryViewportLayout(out var layout)||!layout.TryNormalize(point.X*dpi.DpiScaleX,point.Y*dpi.DpiScaleY,dragging,out int x,out int y))return false;
-        Send(0,false,x,y);return true;
+        if (standaloneMove && inputVersion == InputProtocol.Version)
+            SendPointerMove(new("move", X:x, Y:y));
+        else
+            Send(0,false,x,y);
+        return true;
     }
     void ConfigurePointerInput()
     {
-        image.MouseMove+=(_,e)=>{if(IsActive)BitmapPosition(e.GetPosition(videoPanel),Mouse.Captured==image);};
+        image.MouseMove+=(_,e)=>{if(IsActive)BitmapPosition(e.GetPosition(videoPanel),Mouse.Captured==image,standaloneMove:true);};
         image.MouseDown+=(_,e)=>
         {
             if(!IsActive||!BitmapPosition(e.GetPosition(videoPanel),false))return;
