@@ -528,6 +528,7 @@ public sealed partial class ViewerWindow : Window
                 }
                 try
                 {
+                    var nativePointer = new CaptureMetadataCodec.NativePointerDecoder();
                     while (!cancellation.IsCancellationRequested)
                     {
                         if (pendingRead is null)
@@ -563,7 +564,7 @@ public sealed partial class ViewerWindow : Window
                         if (smoke?.SimulateGap == true && !simulatedGap && receivedFrames == 15) { simulatedGap = true; continue; }
                         if (gpu)
                         {
-                            frame = frame with { Metadata = CaptureMetadataCodec.ForNativeRenderer(frame.Metadata) };
+                            frame = frame with { Metadata = nativePointer.Decode(frame.Metadata) };
                             try
                             {
                                 if (smoke?.SimulateDeviceLoss == true && simulatedLosses < 3 && gpuFrames >= 10 * (simulatedLosses + 1)) { simulatedLosses++; throw new System.Runtime.InteropServices.ExternalException("Simulated device removal for recovery test", unchecked((int)0x887A0005)); }

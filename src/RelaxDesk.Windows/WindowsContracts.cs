@@ -35,10 +35,16 @@ public static class WindowsContracts
         byte[] compact = pointerEncoder.Encode(largerPointer);
         Check(compact[0] == 2 && compact.Length < 256 && CaptureMetadataCodec.Decode(compact).PointerShape.SequenceEqual(largerPointer.PointerShape));
         Check(CaptureMetadataCodec.Encode(largerPointer)[0] == 1);
-        Check(CaptureMetadataCodec.ForNativeRenderer(compact).SequenceEqual(CaptureMetadataCodec.Encode(largerPointer)));
-        Check(CaptureMetadataCodec.Decode(pointerEncoder.Encode(largerPointer with { PointerX = 23 })).PointerX == 23);
+        var nativePointer = new CaptureMetadataCodec.NativePointerDecoder();
+        Check(nativePointer.Decode(compact).SequenceEqual(CaptureMetadataCodec.Encode(largerPointer)));
+        var movedPointer = largerPointer with { PointerX = 23, DirtyRectangles = [] };
+        Check(nativePointer.Decode(pointerEncoder.Encode(movedPointer)).SequenceEqual(CaptureMetadataCodec.Encode(movedPointer)));
+        var changedPointer = movedPointer with { PointerShape = Enumerable.Repeat((byte)42, 4096).ToArray() };
+        Check(nativePointer.Decode(pointerEncoder.Encode(changedPointer)).SequenceEqual(CaptureMetadataCodec.Encode(changedPointer)));
         compact[64 + 16 + 24 + 3] = 127;
         try { CaptureMetadataCodec.Decode(compact); throw new Exception("Oversized pointer was accepted"); }
+        catch (InvalidDataException) { count++; }
+        try { nativePointer.Decode(compact); throw new Exception("Oversized pointer reached the native renderer"); }
         catch (InvalidDataException) { count++; }
         byte[] pixel = [100, 100, 100, 255]; PointerCompositor.Apply(pixel, 1, 1, metadata); Check(pixel.SequenceEqual(new byte[] { 10, 20, 30, 255 }));
         pixel = [100, 100, 100, 255]; PointerCompositor.Apply(pixel, 1, 1, metadata with { PointerType = 4, PointerShape = [255, 0, 255, 255] }); Check(pixel.SequenceEqual(new byte[] { 155, 100, 155, 255 }));

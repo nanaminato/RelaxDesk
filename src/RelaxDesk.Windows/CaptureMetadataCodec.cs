@@ -38,20 +38,33 @@ public static class CaptureMetadataCodec
 
     public static byte[] Encode(CaptureMetadata m) => Encode(m, null);
 
-    public static byte[] ForNativeRenderer(byte[] metadata)
+    public sealed class NativePointerDecoder
     {
-        if (metadata.Length < Header || BinaryPrimitives.ReadInt32LittleEndian(metadata) != 2) return metadata;
-        Span<int> fields = stackalloc int[14];
-        ReadFields(metadata, fields);
-        int pointerOffset = Header + fields[1] + fields[2];
-        var pointer = metadata.AsSpan(pointerOffset);
-        int size = PointerLength(pointer, pointerOffset);
-        byte[] expanded = new byte[pointerOffset + size];
-        metadata.AsSpan(0, pointerOffset).CopyTo(expanded);
-        BinaryPrimitives.WriteInt32LittleEndian(expanded, 1);
-        BinaryPrimitives.WriteInt32LittleEndian(expanded.AsSpan(12), size);
-        ExpandPointer(pointer, expanded.AsSpan(pointerOffset));
-        return expanded;
+        byte[] previousCompressed = [];
+        ReadOnlyMemory<byte> previousShape;
+
+        public byte[] Decode(byte[] metadata)
+        {
+            if (metadata.Length < Header || BinaryPrimitives.ReadInt32LittleEndian(metadata) != 2) return metadata;
+            Span<int> fields = stackalloc int[14];
+            ReadFields(metadata, fields);
+            int pointerOffset = Header + fields[1] + fields[2];
+            var pointer = metadata.AsSpan(pointerOffset);
+            int size = PointerLength(pointer, pointerOffset);
+            byte[] expanded = new byte[pointerOffset + size];
+            metadata.AsSpan(0, pointerOffset).CopyTo(expanded);
+            BinaryPrimitives.WriteInt32LittleEndian(expanded, 1);
+            BinaryPrimitives.WriteInt32LittleEndian(expanded.AsSpan(12), size);
+            var destination = expanded.AsSpan(pointerOffset);
+            if (pointer.SequenceEqual(previousCompressed)) previousShape.Span.CopyTo(destination);
+            else
+            {
+                ExpandPointer(pointer, destination);
+                previousCompressed = pointer.ToArray();
+                previousShape = expanded.AsMemory(pointerOffset);
+            }
+            return expanded;
+        }
     }
 
     static byte[] Encode(CaptureMetadata m, byte[]? compressed)
