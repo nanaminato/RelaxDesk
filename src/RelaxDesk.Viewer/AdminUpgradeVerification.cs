@@ -32,11 +32,13 @@ public sealed partial class ViewerWindow
         var ct = timeout.Token;
         int released = 0;
 
-        async Task<JsonElement> Event(string kind, string? unexpected = null)
+        async Task<JsonElement> Event(string kind, string? unexpected = null, string? unexpectedLog = null)
         {
             while (await process.StandardOutput.ReadLineAsync(ct) is { } line)
             {
                 if (line.StartsWith("test_admin_input_released", StringComparison.Ordinal)) released++;
+                if (unexpectedLog is not null && line.StartsWith(unexpectedLog, StringComparison.Ordinal))
+                    throw new IOException($"Host emitted unexpected input callback {unexpectedLog}");
                 if (!line.StartsWith("RD_EVENT ", StringComparison.Ordinal)) continue;
                 using var data = JsonDocument.Parse(line[9..]);
                 string? observed = data.RootElement.GetProperty("type").GetString();
@@ -112,6 +114,10 @@ public sealed partial class ViewerWindow
                                 throw new IOException("Worker loss did not require a fresh Work approval");
                             await Send($"APPROVE {newId}");
                             await Until(() => viewer.activeMode == SessionMode.Work && viewer.inputAuthorized && viewer.displaySession?.Ready == true);
+                            var testKey = new RemoteInput("key", VirtualKey: 65);
+                            if (!viewer.outgoing.TryWrite(InputProtocol.Encode(testKey, ++viewer.sequence, viewer.displaySession!.Generation)))
+                                throw new IOException("Initial Work input was not queued");
+                            await WaitForLog("test_display_input");
                             var freshMenu = viewer.sessionToolbar?.AdminModeAction ?? throw new IOException("Fresh Work administrator action missing");
                             freshMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
                             var pending = await Event("admin-approval-request");
@@ -145,6 +151,8 @@ public sealed partial class ViewerWindow
                             await Until(() => viewer.smokeFrames > framesAfterWorkRevoke);
                             if (viewer.activeMode != SessionMode.Work || connection.IsCompleted || freshMenu.Visibility == Visibility.Visible)
                                 throw new IOException("Work input revocation did not preserve view-only sharing");
+                            if (!viewer.outgoing.TryWrite(InputProtocol.Encode(testKey with { Up = true }, ++viewer.sequence, viewer.displaySession!.Generation)))
+                                throw new IOException("Late Work input was not queued");
                             viewer.adminUpgradeAvailable = true;
                             viewer.RequestAdminUpgrade();
                             await Until(() => Volatile.Read(ref viewer.adminUpgradePending) == 0);
@@ -167,6 +175,7 @@ public sealed partial class ViewerWindow
                     await Until(() => viewer.smokeFrames > frames);
                     viewer.StopConnection();
                     await connection.WaitAsync(ct);
+                    if (workerLoss) await Event("session-ended", unexpectedLog: "test_display_input");
                     await Send("STOP");
                     await process.WaitForExitAsync(ct);
                     if (process.ExitCode != 0) throw new IOException("Host did not exit cleanly");
