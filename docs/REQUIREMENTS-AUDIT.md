@@ -1,5 +1,24 @@
 # Original remote-office requirements audit
 
+## Separate Host and Viewer stage, 2026-11-25
+
+The table below distinguishes current evidence from the historical unified
+delivery audit that follows. The latest complete source and candidate ZIP
+checks use commit `ed21ca0` on `codex/dxgi-media-pipeline`.
+
+| Area | Verified evidence | Open items |
+| --- | --- | --- |
+| Session access | Production TLS and WPF cover Guest defaults and independent grants, Work input and trust revocation, stale approval rejection, and Admin activation, downgrade and test-worker loss. | Ordinary and elevated application input on the physical desktop. |
+| Windows privilege | Ordinary tokens reject elevated-worker startup. Isolated tests cover protected deployment ACLs, identity, lifetime and rollback. Simulated desktop transitions distinguish lock, session switch and unreadable desktop. | The existing machine Broker directory is unreadable to the ordinary owner session. Actual repair, UAC consent and cancellation, lock/unlock and user switching are pending. Secure-desktop remote input, remote sign-in and unattended Admin authorization are unimplemented. |
+| Transport | Production QUIC loopback covers bounded shaping, injected drops and reordering, adaptive bitrate, TCP fallback and UDP recovery with continuous TLS. Historical TCP peers interoperate in both directions. | Dual-PC Home LAN, adapter changes and long-duration mixed workloads. Selective retransmission and FEC are evaluated without deployment. |
+| Media and office resources | Independent EXEs exercised real DXGI, hardware H.264, QUIC and D3D11 on Windows 11 Home. Single-machine Auto recovery took 4.70 s between first TCP and first UDP frames. File resume verified both directions above 1 GiB and synthetic audio tests verified revocation and failure isolation. | True static desktop, physical input-to-photon, visible/audio acceptance, matched MSTSC comparison and Windows 10 Home validation. |
+| Delivery | `build/office-ed21ca0/result.json` passes 92 source cases. `build/roles-ed21ca0-verify/result.json` passes 54 candidate ZIP assertions with machine preflight skipped. `build/installer-check-ed21ca0/compile-check.json` covers both Inno Setup templates in check-only mode. | Final independent EXE installers and current-user install, update and uninstall on a clean test account. The current account already has a Host installation. |
+
+Use the [physical acceptance checklist](PHYSICAL-ACCEPTANCE.md) for results
+that depend on a second device, foreground input or local authorization.
+
+## Historical unified delivery audit
+
 2026-11-24, `codex/dxgi-media-pipeline`. This maps the owner's numbered next-stage request to current source and evidence. **Implemented** means source exists, not that a Windows Home exit gate has passed. No intermediate package is generated; the owner will test one final unified delivery.
 
 Baseline for this audit: `d7d2e29`. The current remote head `e1b03140733c5e67b07983088ef98404c9be07bc` was queried and verified as an ancestor of that local baseline. No remote update was omitted and no push/merge was performed. Installed stable SDK is .NET 11.0.100; no prerelease fallback. [Readiness ledger](PRODUCT-READINESS.md) carries dated increments rather than treating historical counts as current results.
