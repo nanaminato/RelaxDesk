@@ -123,8 +123,13 @@ requires real Windows 10 coverage before redistribution. The isolated
 `--quic-datagram-pkcs12-probe` now exchanges encrypted fragmented media with
 OpenSSL 2.5.13 and rejects an incorrect certificate. It clears the temporary
 PKCS#12 buffer after synchronous credential loading. The normal Schannel
-probe passes against the same RelaxDesk native build. Production Host startup
-continues to use the Windows certificate context.
+probe passes against the same RelaxDesk native build. Production Host now
+checks the loaded MsQuic provider and uses the same process certificate
+for control TLS and all media listeners. For OpenSSL it retains the encrypted
+PKCS#12 in memory until Host shutdown, then clears the buffer. Schannel uses
+the Windows certificate context. The test runtime was substituted only in
+isolated self-contained Host and Viewer directories. Their strict UDP and
+Auto TCP-to-UDP recovery tests passed on Windows 11.
 [Microsoft OpenSSL package](https://www.nuget.org/packages/Microsoft.Native.Quic.MsQuic.OpenSSL/2.5.13)
 [MsQuic certificate API](https://github.com/microsoft/msquic/blob/v2.5.13/docs/api/QUIC_CREDENTIAL_CONFIG.md)
 

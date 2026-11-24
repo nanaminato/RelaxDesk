@@ -124,13 +124,17 @@ QUIC_STATUS QUIC_API onListener(HQUIC, void* context, QUIC_LISTENER_EVENT* event
     return status;
 }
 
-HRESULT configure(Endpoint& self, const wchar_t* dll, PCCERT_CONTEXT certificate, QUIC_BUFFER& alpn,
-    QUIC_CERTIFICATE_PKCS12* serverPfx) {
+HRESULT loadApi(Endpoint& self, const wchar_t* dll) {
     self.module = LoadLibraryExW(dll, nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!self.module) return HRESULT_FROM_WIN32(GetLastError());
     auto open = reinterpret_cast<decltype(&MsQuicOpenVersion)>(GetProcAddress(self.module, "MsQuicOpenVersion"));
     if (!open || !GetProcAddress(self.module, "MsQuicClose")) return HRESULT_FROM_WIN32(ERROR_PROC_NOT_FOUND);
-    HRESULT result = open(QUIC_API_VERSION_2, reinterpret_cast<const void**>(&self.api));
+    return open(QUIC_API_VERSION_2, reinterpret_cast<const void**>(&self.api));
+}
+
+HRESULT configure(Endpoint& self, const wchar_t* dll, PCCERT_CONTEXT certificate, QUIC_BUFFER& alpn,
+    QUIC_CERTIFICATE_PKCS12* serverPfx) {
+    HRESULT result = loadApi(self, dll);
     if (FAILED(result)) return result;
     result = self.api->RegistrationOpen(nullptr, &self.registration);
     if (FAILED(result)) return result;
@@ -159,6 +163,20 @@ HRESULT configure(Endpoint& self, const wchar_t* dll, PCCERT_CONTEXT certificate
     }
     return self.api->ConfigurationLoadCredential(self.configuration, &credentials);
 }
+}
+
+extern "C" __declspec(dllexport) HRESULT rd_quic_tls_provider(const wchar_t* runtimeDll, uint32_t* output) {
+    if (!runtimeDll || !output) return E_INVALIDARG;
+    Endpoint probe;
+    HRESULT result = loadApi(probe, runtimeDll);
+    if (FAILED(result)) return result;
+    QUIC_TLS_PROVIDER provider{};
+    uint32_t size = sizeof(provider);
+    result = probe.api->GetParam(nullptr, QUIC_PARAM_GLOBAL_TLS_PROVIDER, &size, &provider);
+    if (FAILED(result)) return result;
+    if (size != sizeof(provider)) return E_UNEXPECTED;
+    *output = static_cast<uint32_t>(provider);
+    return S_OK;
 }
 
 static HRESULT openEndpoint(const wchar_t* runtimeDll, PCCERT_CONTEXT certificate,

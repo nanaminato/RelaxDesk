@@ -12,9 +12,10 @@ namespace RelaxDesk.Host;
 
 internal static class HostConnection
 {
-    public static async Task Run(TcpListener listener, TcpClient client, X509Certificate2 cert, string token,
+    public static async Task Run(TcpListener listener, TcpClient client, HostMediaIdentity identity, string token,
         string backend, string? selectedFileRoot, ShellBridge.Session? shell, CancellationToken stop,FileTransferResumeStore? fileResumes=null,string? selectedDisplay=null,bool guestOnly=false,bool adminDisabled=false,bool workOnly=false)
     {
+        var cert = identity.Certificate;
         Packet hello;
         using var tls = new SslStream(client.GetStream(), false);
         using (var auth = CancellationTokenSource.CreateLinkedTokenSource(stop))
@@ -91,7 +92,7 @@ internal static class HostConnection
         if (shell is not null) ShellBridge.Emit("approved", sessionId: shell.Id);
         if (hello.Kind is "hello-v2" or "request-v2")
         {
-            await VideoHostSession.Run(listener, client, tls, cert, hello, backend, stop,
+            await VideoHostSession.Run(listener, client, tls, identity, hello, backend, stop,
                 SessionCapabilities.Grant(requestedFeatures, AudioConsent.Base(approval) is "APPROVE_CLIPBOARD" or "APPROVE_ALL", selectedFileRoot is not null && AudioConsent.Base(approval) is "APPROVE_FILES" or "APPROVE_ALL",AudioConsent.AllowsAudio(approval)), shell?.ClipboardRevoked ?? default, selectedFileRoot, shell?.FilesRevoked ?? default,fileResumes,selectedDisplay,shell?.AudioRevoked??default,access,shell?.InputRevoked??default,elevated,shell?.AdminInputRevoked??default,shell?.Id,adminDisabled ? null : shell);
             return;
         }

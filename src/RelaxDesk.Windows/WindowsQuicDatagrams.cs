@@ -11,6 +11,16 @@ public sealed class WindowsQuicDatagrams : IQuicDatagrams, IQuicPathStatistics
     const string Library = "RelaxDesk.Native.dll";
     const int Retry = unchecked((int)0x800704D5);
     const int Timeout = unchecked((int)0x800705B4);
+    static string RuntimeDll => Path.Combine(RuntimeEnvironment.GetRuntimeDirectory(), "msquic.dll");
+
+    [DllImport(Library, EntryPoint = "rd_quic_tls_provider", CallingConvention = CallingConvention.Cdecl)]
+    static extern int QueryTlsProvider([MarshalAs(UnmanagedType.LPWStr)] string runtime, out uint provider);
+
+    public static bool UsesOpenSsl()
+    {
+        try { return QueryTlsProvider(RuntimeDll, out uint provider) == 0 && provider == 1; }
+        catch (Exception error) when (QuicDatagramAttachment.Recoverable(error)) { return false; }
+    }
 
     sealed class Handle : SafeHandleZeroOrMinusOneIsInvalid
     {
@@ -69,7 +79,7 @@ public sealed class WindowsQuicDatagrams : IQuicDatagrams, IQuicPathStatistics
         byte[]? pfx = null, string? password = null)
     {
         ushort assigned = checked((ushort)port);
-        string dll = Path.Combine(RuntimeEnvironment.GetRuntimeDirectory(), "msquic.dll");
+        string dll = RuntimeDll;
         int status = pfx is null
             ? Open(dll, certificate.Handle, address.ToString(), ref assigned, server ? 1 : 0, out handle)
             : OpenPfx(dll, certificate.Handle, address.ToString(), ref assigned, pfx, (uint)pfx.Length, password!, out handle);

@@ -146,7 +146,8 @@ if (args.Length is < 2 or > 3 || !IPAddress.TryParse(args[0], out var address) |
 string backend = args.Length == 3 ? args[2] : "auto";
 if (backend is not ("auto" or "dxgi" or "gdi" or "test-software" or "test-hardware" or "test-deflate" or "test-oversized-udp" or "test-udp-unavailable" or "test-resolution" or "test-idle" or "test-producer-failure" or "test-runtime-fallback" or "test-capture-recovery" or "test-capture-exhausted" or "test-clipboard" or "test-clipboard-failure" or "test-clipboard-rich" or "test-clipboard-rich-failure" or "test-clipboard-files" or "test-displays" or "test-topology" or "test-topology-init-race" or "test-session-unavailable" or "test-session-locked" or "test-session-switched" or "test-session-desktop" or "test-desktop-pause" or "test-admin-lifecycle" or "test-admin-worker-loss" or "test-audio" or "test-audio-failure" or "test-video-settings-static")) throw new ArgumentException("Unknown capture backend");
 if (backend.StartsWith("test-", StringComparison.Ordinal) && !IPAddress.IsLoopback(address)) throw new ArgumentException("Synthetic test is loopback-only");
-using var cert = SessionCertificate.Create();
+using var mediaIdentity = new HostMediaIdentity();
+var cert = mediaIdentity.Certificate;
 bool persistent = shellMode || listenMode || interactiveLaunch;
 var listener = new TcpListener(address, port);
 using var stop = new CancellationTokenSource();
@@ -167,7 +168,7 @@ try
             using var client = await listener.AcceptTcpClientAsync(stop.Token); client.NoDelay = true;
             using var diagnosticScope=DiagnosticCorrelation.Begin();
             using var scope = shell?.Begin();
-            try { await HostConnection.Run(listener, client, cert, token, backend, selectedFileRoot, scope, scope?.Token ?? stop.Token,fileResumes,selectedDisplay,guestOnly,adminDisabled || workOnly,workOnly); }
+            try { await HostConnection.Run(listener, client, mediaIdentity, token, backend, selectedFileRoot, scope, scope?.Token ?? stop.Token,fileResumes,selectedDisplay,guestOnly,adminDisabled || workOnly,workOnly); }
             finally { if (shellMode) ShellBridge.Emit("session-ended", sessionId: scope!.Id); }
         }
         catch (Exception e) when (e is IOException or AuthenticationException or OperationCanceledException or SocketException or InvalidDataException or System.Runtime.InteropServices.ExternalException or System.Threading.Channels.ChannelClosedException)

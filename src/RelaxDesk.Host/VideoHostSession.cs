@@ -25,9 +25,10 @@ internal static class VideoHostSession
     {
         public TaskCompletionSource<Packet> Result { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
-    public static async Task Run(TcpListener listener, TcpClient controlSocket, SslStream control, X509Certificate2 certificate,
+    public static async Task Run(TcpListener listener, TcpClient controlSocket, SslStream control, HostMediaIdentity identity,
         Packet hello, string backend, CancellationToken stop, string[]? grantedFeatures = null, CancellationToken clipboardRevoked = default, string? selectedFileRoot = null, CancellationToken filesRevoked = default,FileTransferResumeStore? fileResumes=null,string? selectedDisplay=null,CancellationToken audioRevoked=default,SessionAccess? access=null,CancellationToken inputRevoked=default,AdminInputConnection? elevated=null,CancellationToken adminRevoked=default,string? shellSessionId=null, ShellBridge.Session? shell=null)
     {
+        var certificate = identity.Certificate;
         access ??= SessionAccess.Approve(hello.Mode, false);
         string[] capabilities = (hello.Capabilities ?? []).Intersect(["h264", "deflate"]).ToArray();
         if (capabilities.Length == 0) throw new InvalidDataException("No common media codec");
@@ -55,7 +56,7 @@ internal static class VideoHostSession
         WindowsQuicDatagrams? OpenDatagrams()
         {
             if (backend == "test-udp-unavailable" || hello.Network is not (NetworkMode.Auto or NetworkMode.Udp)) return null;
-            try { return WindowsQuicDatagrams.Listen(((IPEndPoint)controlSocket.Client.LocalEndPoint!).Address, certificate); }
+            try { return identity.Listen(((IPEndPoint)controlSocket.Client.LocalEndPoint!).Address); }
             catch (Exception error) when (QuicDatagramAttachment.Recoverable(error))
             {
                 HostSessionLog.Write($"udp_unavailable type={error.GetType().Name}");
