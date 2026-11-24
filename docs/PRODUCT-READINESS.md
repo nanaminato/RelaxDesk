@@ -1,5 +1,9 @@
 # Product readiness ledger
 
+Final corrected clean-source `5ebe35d` win-x64 archive is delivered: **76/76 packaged office checks**, exit 0, 2,070 Core/TLS and 81 deep-path service transaction assertions. [Exact version/hash and evidence](FINAL-DELIVERY.md). Physical Home/real input/clipboard/audio/SCM/office performance remains pending for the owner's deferred final tests. No further per-slice package.
+
+Latest unified artifact disposition and post-build evidence: [final delivery report](FINAL-DELIVERY.md). Earlier checkpoint paragraphs below retain their original packaging/test scope; they do not supersede the current report. Physical acceptance remains separate.
+
 Final unified candidate `1cf9997` was **rejected, 75/76** due to native service file creation beyond MAX_PATH. [Failure and enforced deep-path repair](../benchmarks/2026-11-24-service-long-path-validation.md): full solution warning/error-free, 81 isolated service transaction assertions pass; real SCM remains pending. Replacement packaged verification is required before delivery.
 
 Current requirement-by-requirement [source/delivery audit](REQUIREMENTS-AUDIT.md) keeps physical and packaging exits open. The accepted-frame media path is now persistently available in the auto-hide toolbar; [focused WPF evidence](../benchmarks/2026-11-24-media-path-validation.md). The final guide is reconciled and the package recipe includes tracked offline contracts/evidence. No intermediate package.

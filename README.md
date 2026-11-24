@@ -1,5 +1,13 @@
 # RelaxDesk
 
+## Final unified candidate — 2026-11-24
+
+The final self-contained office bundle includes the source features described below. See [exact artifact, automated result and open physical gates](docs/FINAL-DELIVERY.md) and the [original requirement audit](docs/REQUIREMENTS-AUDIT.md). The first unified candidate was rejected and replaced after a deep-path service regression; its failure remains documented. Home dual-PC, actual clipboard/input/audio, hardware/office performance and real administrator deployment are not certified.
+
+The following source-checkpoint paragraphs predate this unified delivery; their statements about deferred packaging or historical ZIP contents describe those earlier checkpoints. Current artifact status comes from the delivery report.
+
+## Earlier source checkpoints
+
 Source now includes [independently authorized system audio](docs/AUDIO.md): separate pinned TLS, WASAPI output mix/playback, volume/mute/revoke, bounded device recovery and video-correlated scheduling. Production WPF/TLS tests use synthetic endpoints; real Home sound quality/A-V sync remain pending. The existing distributed ZIP predates this feature; final unified packaging remains deferred.
 
 Viewer source also includes [IP/port-only recent connections](docs/CONNECTION-HISTORY.md) and an explicitly opened [live statistics panel](docs/LIVE-STATISTICS.md). Statistics distinguish application bytes, control RTT and processing/API timings from physical end-to-end measurements. These additions are not in the historical distributed ZIP.

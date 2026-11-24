@@ -30,3 +30,5 @@ Baseline for this audit: `d7d2e29`. The current remote head `e1b03140733c5e67b07
 4. Deliver paths/hash, modules, protocol changes, exact automated results and the operator checklist. Owner performs the deferred Home dual-PC/installation/hardware/office tests. Do not mark them passed or the overall physical exit complete from software fixtures.
 
 The current Windows Server/RDP runner cannot certify the physical gates above. This does not block source fixes, reproducible scripts, documentation or final package validation. It does prevent a truthful claim that the complete physical-office milestone is accepted.
+
+Final delivery update: the first unified candidate exposed a native MAX_PATH defect and was rejected. The committed fix enforces deep-path regression; the corrected clean `5ebe35d` package passes all 76 executable cases, exit 0. [Exact artifact and physical exclusions](FINAL-DELIVERY.md). Source/delivery automation gates above are met; the operator's deferred physical/privileged/performance checks remain open.
