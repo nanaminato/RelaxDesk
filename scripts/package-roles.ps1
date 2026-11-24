@@ -1,4 +1,5 @@
-param([string]$OutputDirectory='', [string]$NativeBuildDirectory='build/native-roles', [switch]$SkipNativeBuild)
+param([string]$OutputDirectory='', [string]$NativeBuildDirectory='build/native-roles', [switch]$SkipNativeBuild,
+    [string]$MsQuicOpenSslPackage='')
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 Push-Location $root
@@ -16,6 +17,27 @@ try {
     if(!$output.StartsWith((Join-Path $root 'build')+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'Role output must be a fresh directory inside repository/build'}
     if(Test-Path -LiteralPath $output){throw 'Output exists; packages and evidence are never overwritten'}
     [void][IO.Directory]::CreateDirectory($output)
+    $quicProvider='schannel'
+    $opensslAssets=$null
+    if($MsQuicOpenSslPackage){
+        $opensslPackage=(Resolve-Path -LiteralPath $MsQuicOpenSslPackage).Path
+        if((Get-FileHash -LiteralPath $opensslPackage -Algorithm SHA256).Hash -cne '2DCCC0030B7B85408612F1E7B1442B494B8CAAADE445C2DC6478A6D62CE4579E'){
+            throw 'Use the reviewed Microsoft.Native.Quic.MsQuic.OpenSSL 2.5.13 package'
+        }
+        dotnet nuget verify --all $opensslPackage
+        if($LASTEXITCODE){throw 'MsQuic OpenSSL package signature verification failed'}
+        $opensslAssets=Join-Path $output 'msquic-openssl-input'
+        [void][IO.Directory]::CreateDirectory($opensslAssets)
+        $quicArchive=[IO.Compression.ZipFile]::OpenRead($opensslPackage)
+        try {
+            foreach($asset in @('build/native/bin/x64/msquic.dll','LICENSE','THIRD-PARTY-NOTICES')){
+                $entry=$quicArchive.GetEntry($asset)
+                if(!$entry){throw "Missing MsQuic OpenSSL package entry: $asset"}
+                [IO.Compression.ZipFileExtensions]::ExtractToFile($entry,(Join-Path $opensslAssets ([IO.Path]::GetFileName($asset))),$false)
+            }
+        } finally {$quicArchive.Dispose()}
+        $quicProvider='openssl'
+    }
     if(!$SkipNativeBuild){& "$PSScriptRoot/build-native.ps1" -BuildDirectory $NativeBuildDirectory}
     $native=Join-Path $root "$NativeBuildDirectory/Release/RelaxDesk.Native.dll"
     if(!(Test-Path -LiteralPath $native -PathType Leaf)){throw 'Native DLL missing'}
@@ -33,6 +55,8 @@ try {
             if ($project -in @('RelaxDesk.Host', 'RelaxDesk.Viewer')) {
                 $runtime = Join-Path (Join-Path $package $definition.Projects[$project]) 'msquic.dll'
                 if (!(Test-Path -LiteralPath $runtime -PathType Leaf)) { throw "Bundled MsQuic runtime missing: $project" }
+                if($opensslAssets){Copy-Item -LiteralPath (Join-Path $opensslAssets 'msquic.dll') -Destination $runtime -Force}
+                $quicVersion=(Get-Item -LiteralPath $runtime).VersionInfo.FileVersion
             }
             $assets=Get-Content -LiteralPath "$artifacts/obj/$project/project.assets.json" -Raw | ConvertFrom-Json
             $packs=@($assets.project.frameworks.PSObject.Properties.Value.downloadDependencies | Where-Object {$_.name -match '^Microsoft\.(NETCore|WindowsDesktop)\.App\.Runtime\.win-x64$'})
@@ -56,9 +80,16 @@ try {
         $msquicNotices = Join-Path $package 'ThirdParty/MsQuic-2.5.12'
         [void][IO.Directory]::CreateDirectory($msquicNotices)
         Copy-Item -LiteralPath (Join-Path $root 'src/RelaxDesk.Native/third_party/msquic/LICENSE') -Destination $msquicNotices
+        if($opensslAssets){
+            $opensslNotices=Join-Path $package 'ThirdParty/MsQuic-OpenSSL-2.5.13'
+            [void][IO.Directory]::CreateDirectory($opensslNotices)
+            foreach($notice in @('LICENSE','THIRD-PARTY-NOTICES')){
+                Copy-Item -LiteralPath (Join-Path $opensslAssets $notice) -Destination $opensslNotices
+            }
+        }
         Copy-Item -LiteralPath (Join-Path $root ('packaging/'+$definition.Launcher)) -Destination (Join-Path $package $definition.Entry)
         Copy-Item -LiteralPath (Join-Path $root ('packaging/roles/'+$definition.Guide)) -Destination (Join-Path $package '使用说明.txt')
-        [pscustomobject]@{format=1;role=$role.ToLowerInvariant();version=$version;file_version=$fileVersion;revision=$revision;working_tree_dirty=$false;built_at=(Get-Date -Format o);rid='win-x64';self_contained=$true;trimmed=$false;native_abi=2;entry=$definition.Entry;components=@($definition.Projects.Keys);home_physical_console='NOT_TESTED';signature='UNSIGNED_EXPERIMENTAL'} | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $package 'package.json') -Encoding utf8
+        [pscustomobject]@{format=1;role=$role.ToLowerInvariant();version=$version;file_version=$fileVersion;revision=$revision;working_tree_dirty=$false;built_at=(Get-Date -Format o);rid='win-x64';self_contained=$true;trimmed=$false;native_abi=2;quic_tls_provider=$quicProvider;quic_runtime_version=$quicVersion;entry=$definition.Entry;components=@($definition.Projects.Keys);home_physical_console='NOT_TESTED';signature='UNSIGNED_EXPERIMENTAL'} | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $package 'package.json') -Encoding utf8
         $hashes=@(Get-ChildItem -LiteralPath $package -Recurse -File | Sort-Object FullName | ForEach-Object {
             [pscustomobject]@{path=$_.FullName.Substring($package.Length+1).Replace('\','/');sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash;bytes=$_.Length}
         })

@@ -69,6 +69,20 @@ try {
     $viewerQuic = Join-Path $viewerPackage.root 'Viewer/msquic.dll'
     Confirm ((Test-Path -LiteralPath $hostQuic -PathType Leaf) -and (Test-Path -LiteralPath $viewerQuic -PathType Leaf)) 'Bundled MsQuic runtime missing'
     Confirm ((Get-FileHash -LiteralPath $hostQuic -Algorithm SHA256).Hash -ceq (Get-FileHash -LiteralPath $viewerQuic -Algorithm SHA256).Hash) 'Bundled MsQuic runtime mismatch'
+    $provider=$hostPackage.metadata.quic_tls_provider
+    if($provider -or $viewerPackage.metadata.quic_tls_provider){
+        Confirm ($provider -cin @('schannel','openssl') -and $provider -ceq $viewerPackage.metadata.quic_tls_provider) 'MsQuic provider mismatch'
+        $hostQuicVersion=(Get-Item -LiteralPath $hostQuic).VersionInfo.FileVersion
+        Confirm ($hostQuicVersion -ceq $hostPackage.metadata.quic_runtime_version -and $hostQuicVersion -ceq $viewerPackage.metadata.quic_runtime_version) 'MsQuic version metadata mismatch'
+        if($provider -ceq 'openssl'){
+            Confirm ((Get-FileHash -LiteralPath $hostQuic -Algorithm SHA256).Hash -ceq '3FEA76E87287FEE7C5069D90BD4816BA8DB1F0712AB97215D4297749AEE31BE3') 'Unreviewed OpenSSL MsQuic binary'
+            foreach($package in $packages){
+                foreach($notice in @('LICENSE','THIRD-PARTY-NOTICES')){
+                    Confirm (Test-Path -LiteralPath (Join-Path $package.root "ThirdParty/MsQuic-OpenSSL-2.5.13/$notice") -PathType Leaf) 'OpenSSL redistribution notice missing'
+                }
+            }
+        }
+    }
     $servicePayloadVersion = Invoke-App 'host-service-payload' $SmokeApplication @('--service-package-contract', $hostPackage.root)
     Confirm ($servicePayloadVersion.Trim() -ceq $hostPackage.metadata.version) 'Package-only service validation failed'
     $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
@@ -117,7 +131,7 @@ try {
     Confirm ($adminLifecycle.Contains('PASS WPF Viewer twice entered Admin and routed input to protected non-injecting pipe workers')) 'Packaged Admin lifecycle evidence missing'
     $workTrust = Invoke-App 'packaged-work-trust' $shellExe @('--work-trust-contracts',$hostExe,(Join-Path $output 'work-trust-fixtures'))
     Confirm ($workTrust.Contains('PASS WPF Work device trust') -and $workTrust.Contains('PASS WPF one-use Work preapproval')) 'Packaged Work device trust and one-use approval evidence missing'
-    $details=[pscustomobject]@{version=$hostPackage.metadata.version;revision=$hostPackage.metadata.revision;native_sha256=$native[0];packages=@($packages | ForEach-Object {[pscustomobject]@{role=$_.metadata.role;archive=$_.archive;sha256=$_.sha256;bytes=$_.bytes;manifest_files=$_.manifest_files}})}
+    $details=[pscustomobject]@{version=$hostPackage.metadata.version;revision=$hostPackage.metadata.revision;native_sha256=$native[0];quic_tls_provider=$provider;quic_runtime_version=$hostPackage.metadata.quic_runtime_version;packages=@($packages | ForEach-Object {[pscustomobject]@{role=$_.metadata.role;archive=$_.archive;sha256=$_.sha256;bytes=$_.bytes;manifest_files=$_.manifest_files}})}
     $status=if($SkipMachineServicePreview){'PASS_SEPARATE_PACKAGES_SYNTHETIC_ONLY_MACHINE_PREVIEW_SKIPPED'}else{'PASS_SEPARATE_PACKAGES_SYNTHETIC_ONLY'}
 } finally {
     [pscustomobject]@{status=$status;assertions=$checks;details=$details;steps=$steps.ToArray();home_dual_pc='NOT_TESTED';uac_and_scm_mutation='NOT_TESTED';physical_capture_input_audio='NOT_TESTED'} | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $output 'result.json') -Encoding utf8
