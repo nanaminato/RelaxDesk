@@ -6,6 +6,8 @@ using RelaxDesk.Core;
 
 namespace RelaxDesk.Windows;
 
+public enum QuicTlsProvider { Schannel, OpenSsl }
+
 public sealed class WindowsQuicDatagrams : IQuicDatagrams, IQuicPathStatistics
 {
     const string Library = "RelaxDesk.Native.dll";
@@ -16,10 +18,14 @@ public sealed class WindowsQuicDatagrams : IQuicDatagrams, IQuicPathStatistics
     [DllImport(Library, EntryPoint = "rd_quic_tls_provider", CallingConvention = CallingConvention.Cdecl)]
     static extern int QueryTlsProvider([MarshalAs(UnmanagedType.LPWStr)] string runtime, out uint provider);
 
-    public static bool UsesOpenSsl()
+    public static QuicTlsProvider? ReadTlsProvider()
     {
-        try { return QueryTlsProvider(RuntimeDll, out uint provider) == 0 && provider == 1; }
-        catch (Exception error) when (QuicDatagramAttachment.Recoverable(error)) { return false; }
+        try
+        {
+            if (QueryTlsProvider(RuntimeDll, out uint provider) != 0) return null;
+            return provider switch { 0 => QuicTlsProvider.Schannel, 1 => QuicTlsProvider.OpenSsl, _ => null };
+        }
+        catch (Exception error) when (QuicDatagramAttachment.Recoverable(error)) { return null; }
     }
 
     sealed class Handle : SafeHandleZeroOrMinusOneIsInvalid

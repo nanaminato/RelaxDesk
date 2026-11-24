@@ -136,6 +136,8 @@ For a Windows 10 validation candidate, pass
 NuGet signatures, copies the x64 DLL and its redistribution notices, and
 records the provider and runtime version in each role. The regular build
 uses the runtime's Schannel implementation.
+The Host's read-only `--deployment-info` reports the provider obtained from
+the loaded library. The role verifier compares that value with the manifest.
 [Microsoft OpenSSL package](https://www.nuget.org/packages/Microsoft.Native.Quic.MsQuic.OpenSSL/2.5.13)
 [MsQuic certificate API](https://github.com/microsoft/msquic/blob/v2.5.13/docs/api/QUIC_CREDENTIAL_CONFIG.md)
 

@@ -13,7 +13,7 @@ internal sealed class HostMediaIdentity : IDisposable
 
     public HostMediaIdentity()
     {
-        Certificate = WindowsQuicDatagrams.UsesOpenSsl()
+        Certificate = WindowsQuicDatagrams.ReadTlsProvider() == QuicTlsProvider.OpenSsl
             ? SessionCertificate.CreateWithPkcs12(out pkcs12, out password)
             : SessionCertificate.Create();
     }

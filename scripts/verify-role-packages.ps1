@@ -72,6 +72,7 @@ try {
     $provider=$hostPackage.metadata.quic_tls_provider
     if($provider -or $viewerPackage.metadata.quic_tls_provider){
         Confirm ($provider -cin @('schannel','openssl') -and $provider -ceq $viewerPackage.metadata.quic_tls_provider) 'MsQuic provider mismatch'
+        Confirm ($deployment.quicTlsProvider -ceq $provider) 'Host loaded a different QUIC TLS provider than its manifest'
         $hostQuicVersion=(Get-Item -LiteralPath $hostQuic).VersionInfo.FileVersion
         Confirm ($hostQuicVersion -ceq $hostPackage.metadata.quic_runtime_version -and $hostQuicVersion -ceq $viewerPackage.metadata.quic_runtime_version) 'MsQuic version metadata mismatch'
         if($provider -ceq 'openssl'){

@@ -42,6 +42,7 @@ if (args is ["--deployment-info"])
         runtime = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory(),
         framework = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
         version = BuildIdentity.Version,
+        quicTlsProvider = WindowsQuicDatagrams.ReadTlsProvider()?.ToString().ToLowerInvariant(),
         x64 = Environment.Is64BitProcess
     }));
     return;
