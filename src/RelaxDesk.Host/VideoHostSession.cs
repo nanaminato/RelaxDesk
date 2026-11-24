@@ -442,7 +442,7 @@ internal static class VideoHostSession
                     deploymentUnavailable = error is AdminInputDeploymentException;
                     HostSessionLog.Write($"admin_start_failed type={error.GetType().Name}");
                 }
-                try { desktopPause.Resume(ReadDesktop()); }
+                try { await desktopPause.ResumeWhenAvailable(ReadDesktop, session.Token); }
                 catch { if (worker is not null) await worker.DisposeAsync(); throw; }
                 if (worker is not null)
                 {

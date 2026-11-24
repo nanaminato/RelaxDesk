@@ -56,6 +56,22 @@ public sealed class DesktopElevationPause(TimeProvider? clock = null)
         }
     }
 
+    public async Task ResumeWhenAvailable(Func<WindowsSessionSnapshot> read, CancellationToken cancellation)
+    {
+        while (true)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            var current = read();
+            Check(current);
+            if (current.Denial is null)
+            {
+                Resume(current);
+                return;
+            }
+            await Task.Delay(TimeSpan.FromMilliseconds(100), time, cancellation);
+        }
+    }
+
     void RequireSameSession(WindowsSessionSnapshot snapshot)
     {
         if (snapshot.SessionId is null)

@@ -45,6 +45,15 @@ public static class WindowsSessionContracts
         catch (WindowsSessionUnavailableException) { Check(pause.IsPaused); }
         pause.Resume(active);
         Check(!pause.IsPaused);
+        var returning = new DesktopElevationPause();
+        _ = returning.Begin(active);
+        returning.CaptureParked();
+        int desktopReads = 0;
+        using (var returnDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(2)))
+        {
+            await returning.ResumeWhenAvailable(() => ++desktopReads == 1 ? active with { InputDesktop = null } : active, returnDeadline.Token);
+        }
+        Check(desktopReads == 2 && !returning.IsPaused);
         active = active with { ConsoleSessionId = 1 };
         _ = pause.Begin(active);
         try { pause.Check(active with { ConsoleSessionId = uint.MaxValue }); throw new Exception("Pause allowed a detached console"); }
