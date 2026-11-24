@@ -40,6 +40,21 @@ public sealed partial class ViewerWindow
                 panel.Children.OfType<TextBox>().Single().Text="137";panel.Children.OfType<Button>().Single().RaiseEvent(new RoutedEventArgs(Button.ClickEvent));await Ready();Check(window.CurrentViewport.Zoom==137);
                 Zoom(400);await Ready();Zoom(0);await Ready();Check(!window.horizontalPan.IsVisible&&!window.verticalPan.IsVisible);Check(window.TryViewportLayout(out view)&&view.SourceWidth==1200&&view.SourceHeight==800);
                 if(view.DestinationY>2)Pixel(0,0,0,0,0);else if(view.DestinationX>2)Pixel(0,0,0,0,0);
+                using (var inputLifetime = new CancellationTokenSource())
+                {
+                    window.session = inputLifetime;
+                    window.inputAuthorized = true;
+                    window.inputVersion = InputProtocol.Version;
+                    var center = new Point(window.videoPanel.ActualWidth / 2, window.videoPanel.ActualHeight / 2);
+                    window.SendBitmapWheel(new Point(-1, -1), 120);
+                    window.SendBitmapWheel(center, 0);
+                    Check(window.outgoing.Depth == 0);
+                    window.SendBitmapWheel(center, -30);
+                    Check(window.outgoing.TryRead(out var move) && move?.Input is { Kind:"move", X:>32000 and <33500, Y:>32000 and <33500 });
+                    Check(window.outgoing.TryRead(out var wheel) && wheel?.Input is { Kind:"wheel", WheelY:-30 } && wheel.Sequence > move!.Sequence);
+                    window.ResetInputState();
+                    window.session = null;
+                }
                 window.Width=700;window.Height=500;await Task.Delay(100);await Ready();Check(window.TryViewportLayout(out view)&&view.SourceWidth==1200);
                 Zoom(100);await Ready();window.ToggleFullScreen();await Task.Delay(100);await Ready();window.ToggleFullScreen();await Task.Delay(100);await Ready();Check(window.CurrentViewport.Zoom==100);
                 // Real child HWND layout/input-adapter geometry, without foreground

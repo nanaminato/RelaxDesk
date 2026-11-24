@@ -61,13 +61,15 @@ public sealed partial class ViewerWindow
         image.LostMouseCapture+=(_,_)=>ReleaseMouseButtons();
         image.MouseWheel+=(_,e)=>
         {
-            if (IsActive && e.Delta != 0 && BitmapPosition(e.GetPosition(videoPanel), dragging:false))
-            {
-                if (inputVersion == InputProtocol.Version) SendRich(new("wheel", WheelY:e.Delta));
-                else Send(e.Delta > 0 ? 258 : 259, false);
-            }
+            if (IsActive) SendBitmapWheel(e.GetPosition(videoPanel), e.Delta);
             e.Handled = true;
         };
+    }
+    void SendBitmapWheel(Point point, int delta)
+    {
+        if (delta == 0 || !BitmapPosition(point, dragging:false)) return;
+        if (inputVersion == InputProtocol.Version) SendRich(new("wheel", WheelY:delta));
+        else Send(delta > 0 ? 258 : 259, false);
     }
     void SendPointerButton(MouseButton button,bool up)
     {
