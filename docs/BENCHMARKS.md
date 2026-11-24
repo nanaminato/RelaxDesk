@@ -136,6 +136,14 @@ frame, dropped none, and completed five control heartbeats. Mean Host and
 Viewer CPU were 0.07% and 0.29% of total processor capacity. The sample
 includes the initial frame and renderer startup.
 
+The `benchmark-renderers.ps1 -Modes cpu-idle-long` timed fixture repeats
+the one-frame synthetic workload with per-process resource sampling. At
+`c020abb`, the Viewer received one frame and five heartbeats in 25.65 s.
+Across 17 polls per process, the mean interval CPU readings were 0.08% for
+Host and 0.19% for Viewer. No sampled GPU engine reading was above zero.
+Activity between polls, including initial encode or decode, may go unobserved.
+This is a synthetic idle baseline with a CPU-presented Viewer frame.
+
 The 25.25 s headless DXGI sample received 541 updates after the first frame
 and completed 96 control heartbeats. Media averaged 3.651 Mbit/s, with Host
 CPU at 0.54%, capture P95 at 2.56 ms and encode P95 at 5.73 ms. On the encode
