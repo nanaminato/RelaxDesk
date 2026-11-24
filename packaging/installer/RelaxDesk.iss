@@ -12,6 +12,7 @@ ArchitecturesInstallIn64BitMode=x64os
 SetupArchitecture=x64
 MinVersion=10.0
 WizardStyle=modern
+ShowLanguageDialog=no
 DisableWelcomePage=no
 Compression=lzma2/normal
 SolidCompression=yes
@@ -53,8 +54,10 @@ const Registration = 'Software\RelaxDesk\Installations\{#Role}';
 var ReceiptIndex: String;
     TreeEntries: Integer;
 
-function Attributes(Path: String): LongWord;
+function NativeAttributes(Path: String): LongWord;
   external 'GetFileAttributesW@kernel32.dll stdcall';
+function NativeLastError: LongWord;
+  external 'GetLastError@kernel32.dll stdcall';
 
 function Canonical(Path: String): String;
 begin
@@ -67,11 +70,16 @@ begin
 end;
 
 function NoReparse(Path: String): Boolean;
-var Parent: String; A: LongWord;
+var Parent: String; A, Error: LongWord;
 begin
   Result := False;
+  if Copy(Path, 2, 1) <> ':' then exit;
   while Length(Path) > 2 do begin
-    A := Attributes(Path);
+    A := NativeAttributes('\\?\' + Path);
+    if A = $FFFFFFFF then begin
+      Error := NativeLastError;
+      if (Error <> 2) and (Error <> 3) then exit;
+    end;
     if (A <> $FFFFFFFF) and ((A and $400) <> 0) then exit;
     Parent := ExtractFileDir(Path);
     if Parent = Path then break;
@@ -96,7 +104,7 @@ begin
         end;
       until not FindNext(F);
     finally FindClose(F); end;
-  end;
+  end else if DirExists(Root) then exit;
   Result := True;
 end;
 
@@ -109,7 +117,7 @@ begin
       if (F.Name <> '.') and (F.Name <> '..') then begin Result := True; exit; end;
     until not FindNext(F);
     finally FindClose(F); end;
-  end;
+  end else if DirExists(Root) then Result := True;
 end;
 
 function Token(var Text: String; Separator: String): String;

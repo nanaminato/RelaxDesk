@@ -1,0 +1,98 @@
+param([Parameter(Mandatory)][string]$InstallerDirectory,[Parameter(Mandatory)][string]$OutputDirectory,[switch]$RunUserIntegration)
+$ErrorActionPreference='Stop'
+if(!$RunUserIntegration){throw 'Explicit -RunUserIntegration required: temporary current-user Apps entries and shortcuts will be exercised'}
+$repository=Split-Path $PSScriptRoot -Parent;$output=[IO.Path]::GetFullPath($OutputDirectory)
+if(!$output.StartsWith((Join-Path $repository 'build')+'\',[StringComparison]::OrdinalIgnoreCase) -or (Test-Path -LiteralPath $output)){throw 'Use a fresh workspace/build fixture'}
+[void][IO.Directory]::CreateDirectory($output)
+$installers=@(Get-Content -LiteralPath (Join-Path $InstallerDirectory 'installers.json') -Raw | ConvertFrom-Json)
+$checks=0;$steps=[Collections.Generic.List[object]]::new();$state='FAIL';$roles=@();$launched=$null;$restorePath=$null;$restoreBytes=$null
+function Check([bool]$Value,[string]$Message){if(!$Value){throw $Message};$script:checks++}
+function Run([string]$Name,[string]$Exe,[string[]]$Arguments,[bool]$Success=$true){
+    $info=[Diagnostics.ProcessStartInfo]::new($Exe);$info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.WindowStyle='Hidden'
+    foreach($argument in $Arguments){$info.ArgumentList.Add($argument)}
+    $process=[Diagnostics.Process]::new();$process.StartInfo=$info
+    try {
+        if(!$process.Start()){throw 'Installer did not start'}
+        # Never terminate a running installer transaction on observation timeout.
+        if(!$process.WaitForExit(180000)){throw "Installer still running: $Name; retain process and fixture for inspection"}
+        $steps.Add([pscustomobject]@{name=$Name;exit_code=$process.ExitCode})
+        Check (($process.ExitCode -eq 0) -eq $Success) "$Name returned unexpected exit $($process.ExitCode)"
+        Write-Host "$Name : PASS ($($process.ExitCode))"
+    } finally {$process.Dispose()}
+}
+function Install($Role,[string]$Name,[string]$Directory,[bool]$Success=$true){
+    Run $Name $Role.installer @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=desktopicon',('/DIR='+$Directory),('/LOG='+ (Join-Path $output ($Name+'.log')))) $Success
+}
+function Uninstall($Role,[string]$Name,[bool]$Success=$true){
+    Run $Name (Join-Path $Role.root 'unins000.exe') @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/LOG='+(Join-Path $output ($Name+'.log')))) $Success
+}
+function Until([scriptblock]$Predicate){$watch=[Diagnostics.Stopwatch]::StartNew();while(!(& $Predicate)){if($watch.Elapsed.TotalSeconds -gt 30){throw 'Fixture state did not settle'};Start-Sleep -Milliseconds 100}}
+try {
+    Check ($installers.Count -eq 2) 'Expected two independent EXE installers'
+    foreach($item in $installers){
+        $role=if($item.role -eq 'host'){'Host'}elseif($item.role -eq 'viewer'){'Viewer'}else{throw 'Unknown installer role'}
+        $title=if($role -eq 'Host'){'RelaxDesk 被控端'}else{'RelaxDesk 连接端'}
+        $entry=if($role -eq 'Host'){'HostUi\RelaxDesk.HostShell.exe'}else{'Viewer\RelaxDesk.Viewer.exe'}
+        $key='HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\RelaxDesk.'+$role+'_is1'
+        $registration='HKCU:\Software\RelaxDesk\Installations\'+$role
+        $desktop=Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) ($title+'.lnk')
+        $menu=Join-Path ([Environment]::GetFolderPath('Programs')) ('RelaxDesk\'+$title+'.lnk')
+        Check (!(Test-Path -LiteralPath $key) -and !(Test-Path -LiteralPath $registration) -and !(Test-Path -LiteralPath $desktop) -and !(Test-Path -LiteralPath $menu)) 'Existing user installation/shortcut found; integration refused without changing it'
+        Check ((Get-FileHash -LiteralPath $item.file -Algorithm SHA256).Hash -ceq $item.sha256) 'Installer hash mismatch'
+        $roles+= [pscustomobject]@{name=$role;installer=$item.file;root=(Join-Path $output ($role+' 中文 & (Apps)'));key=$key;registration=$registration;desktop=$desktop;menu=$menu;release=$item.release;entry=$entry}
+    }
+    $hostRole=$roles | Where-Object name -EQ Host;$viewerRole=$roles | Where-Object name -EQ Viewer
+    $foreign=Join-Path $output 'foreign-directory';[void][IO.Directory]::CreateDirectory($foreign)
+    [IO.File]::WriteAllText((Join-Path $foreign 'keep.txt'),'not installer-owned')
+    Install $viewerRole 'reject-foreign-directory' $foreign $false
+    Check ((Get-Content -LiteralPath (Join-Path $foreign 'keep.txt') -Raw) -eq 'not installer-owned' -and !(Test-Path $viewerRole.key)) 'Foreign directory was modified/adopted'
+    $junction=Join-Path $output 'junction-target';$null=New-Item -ItemType Junction -Path $junction -Target $foreign
+    Install $hostRole 'reject-junction' $junction $false
+    Check (!(Test-Path $hostRole.key) -and (Get-Content -LiteralPath (Join-Path $foreign 'keep.txt') -Raw) -eq 'not installer-owned') 'Junction escape was not rejected'
+    foreach($role in $roles){
+        Install $role ($role.name+'-install') $role.root
+        Check ((Test-Path $role.key) -and (Test-Path $role.registration) -and (Test-Path $role.desktop) -and (Test-Path $role.menu)) 'Missing Apps registration or shortcuts'
+        $registered=Get-ItemProperty -LiteralPath $role.key
+        Check ($registered.DisplayVersion -eq $installers[0].package_version -and [IO.Path]::GetFullPath($registered.InstallLocation).TrimEnd('\') -ieq $role.root) 'Wrong uninstall identity/location/version'
+        $expected=Join-Path (Join-Path $role.root $role.release) $role.entry
+        $shell=New-Object -ComObject WScript.Shell
+        try{foreach($path in @($role.desktop,$role.menu)){$link=$shell.CreateShortcut($path);try{Check ($link.TargetPath -ieq $expected -and $link.Arguments -eq '') 'Shortcut does not launch the role EXE directly'}finally{[void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($link)}}}finally{[void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)}
+        $payload=Join-Path $role.root $role.release
+        $manifest=@(Get-Content -LiteralPath (Join-Path $payload 'SHA256SUMS.json') -Raw | ConvertFrom-Json)
+        foreach($member in $manifest){if((Get-FileHash -LiteralPath (Join-Path $payload $member.path) -Algorithm SHA256).Hash -ine $member.sha256){throw 'Installed payload hash mismatch'}}
+        Check (@(Get-ChildItem -LiteralPath $payload -File -Recurse).Count -eq $manifest.Count+1) 'Installed runtime closure has unexpected files'
+        Install $role ($role.name+'-repeat-install') $role.root
+        Check ((Get-ItemProperty -LiteralPath $role.registration).Receipts.Split(';').Count -eq 1) 'Repeated install duplicated receipt/version state'
+    }
+    Install $hostRole 'reject-second-install-root' (Join-Path $output 'second-host-root') $false
+    Check ((Get-ItemProperty $hostRole.registration).Root -ieq $hostRole.root) 'Existing Host installation was taken over'
+    $restorePath=Join-Path (Join-Path $viewerRole.root $viewerRole.release) '使用说明.txt';$restoreBytes=[IO.File]::ReadAllBytes($restorePath)
+    [IO.File]::WriteAllText($restorePath,'operator changed this file')
+    Install $viewerRole 'reject-modified-update' $viewerRole.root $false
+    Uninstall $viewerRole 'reject-modified-uninstall' $false
+    Check ((Get-Content -LiteralPath $restorePath -Raw) -eq 'operator changed this file' -and (Test-Path $viewerRole.key)) 'Modified file was overwritten/deleted'
+    [IO.File]::WriteAllBytes($restorePath,$restoreBytes);$restorePath=$null;$restoreBytes=$null
+    $unknown=Join-Path $hostRole.root 'operator-notes.txt';[IO.File]::WriteAllText($unknown,'retain unknown content')
+    $viewerExe=Join-Path (Join-Path $viewerRole.root $viewerRole.release) $viewerRole.entry
+    $info=[Diagnostics.ProcessStartInfo]::new($viewerExe);$info.UseShellExecute=$false;$info.WindowStyle='Minimized';$info.WorkingDirectory=Split-Path $viewerExe -Parent
+    $launched=[Diagnostics.Process]::Start($info)
+    Until {$launched.Refresh();$launched.HasExited -or $launched.MainWindowHandle -ne 0}
+    Check (!$launched.HasExited -and $launched.MainWindowHandle -ne 0) 'Installed Viewer did not open its WPF window'
+    Uninstall $viewerRole 'reject-running-viewer' $false
+    Check ((Test-Path $viewerRole.key) -and !$launched.HasExited) 'Uninstaller terminated active Viewer'
+    Uninstall $hostRole 'host-remove-while-viewer-running'
+    Until {!(Test-Path $hostRole.key) -and !(Test-Path (Join-Path $hostRole.root $hostRole.release))}
+    Check ((Test-Path $viewerRole.key) -and (Test-Path $viewerRole.menu) -and !$launched.HasExited) 'Host uninstall affected Viewer'
+    Check (!(Test-Path $hostRole.desktop) -and !(Test-Path $hostRole.menu) -and !(Test-Path $hostRole.registration) -and (Get-Content -LiteralPath $unknown -Raw) -eq 'retain unknown content') 'Host removal lost retained data or left owned integration'
+    $null=$launched.CloseMainWindow();if(!$launched.WaitForExit(15000)){throw 'Owned test Viewer did not close'};$launched.Dispose();$launched=$null
+    Uninstall $viewerRole 'viewer-remove'
+    Until {!(Test-Path $viewerRole.key) -and !(Test-Path $viewerRole.root)}
+    Check (!(Test-Path $viewerRole.desktop) -and !(Test-Path $viewerRole.menu) -and !(Test-Path $viewerRole.registration)) 'Viewer left owned integration'
+    $state='PASS_ACTUAL_PER_USER_INSTALLER_LIFECYCLE'
+} finally {
+    if($launched){try{if(!$launched.HasExited){$null=$launched.CloseMainWindow();$null=$launched.WaitForExit(10000)}}finally{$launched.Dispose()}}
+    if($restorePath -and $restoreBytes){[IO.File]::WriteAllBytes($restorePath,$restoreBytes)}
+    # On failure, leave receipts/logs for inspection instead of forcing deletion.
+    [pscustomobject]@{status=$state;assertions=$checks;steps=$steps.ToArray();fixture=$output;real_scm_or_uac='NOT_TESTED';home_dual_pc='NOT_TESTED'} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $output 'result.json') -Encoding utf8
+}
+Write-Host "PASS actual EXE installer lifecycle: $checks checks; $output/result.json"
