@@ -144,11 +144,18 @@ public sealed partial class ViewerWindow : Window
             Loaded += async (_, _) => { ApplyInvitation(); await ConnectVideo(); if(smoke.ReconnectTest)return; if (!smoke.FixedMediaBudget && smokeFrames < smoke.Frames) { Console.Error.WriteLine("WPF render smoke incomplete: " + status.Text); Environment.ExitCode = 1; } Close(); };
         }
     }
-    void Send(int code, bool up, int x = 0, int y = 0)
+    void Send(int code, bool up, int x = 0, int y = 0) => Send(code, up, x, y, discardOnBacklog: false);
+
+    void Send(int code, bool up, int x, int y, bool discardOnBacklog)
     {
         if (smoke is not null || !inputAuthorized || !viewportInputReady || session is null || session.IsCancellationRequested) return;
-        if(inputVersion==2){SendRich(code switch{0=>new("move",X:x,Y:y),256=>new("button",Button:1,Up:up),257=>new("button",Button:2,Up:up),258=>new("wheel",WheelY:120),259=>new("wheel",WheelY:-120),_=>new("key",VirtualKey:code,Up:up)});return;}
-        if (!outgoing.Writer.TryWrite(new Packet("input", ++sequence, X: x, Y: y, Code: code, Up: up))) { session.Cancel(); return; }
+        if(inputVersion==2){SendRich(code switch{0=>new("move",X:x,Y:y),256=>new("button",Button:1,Up:up),257=>new("button",Button:2,Up:up),258=>new("wheel",WheelY:120),259=>new("wheel",WheelY:-120),_=>new("key",VirtualKey:code,Up:up)}, discardOnBacklog);return;}
+        if (!outgoing.Writer.TryWrite(new Packet("input", ++sequence, X: x, Y: y, Code: code, Up: up)))
+        {
+            if (discardOnBacklog) Interlocked.Increment(ref droppedPointerMoves);
+            else session.Cancel();
+            return;
+        }
         heldInputs.Update(code, up);
     }
     void ReleaseMouseButtons() { foreach(var input in richHeld.ReleaseButtons())SendRich(input); foreach (int code in heldInputs.ReleaseButtons()) Send(code, true); }

@@ -9,7 +9,7 @@ public sealed class NativeVideoHost : HwndHost
 {
     public Action<int, bool, int, int>? Input;
     public Action<RemoteInput>? RichInput;
-    public Action<RemoteInput>? PointerMove;
+    public Action<int, int>? PointerMove;
     public Action? InputBacklogExceeded;
     public Action? InputFocusLost;
     public Action? InputCaptureLost;
@@ -71,8 +71,8 @@ public sealed class NativeVideoHost : HwndHost
         var point=new Point{X=(short)((long)packed&65535),Y=(short)((long)packed>>16)};
         if(screen&&!ScreenToClient(hwnd,ref point))return false;
         if(!GetClientRect(hwnd,out var rect)||!TryPosition(point.X,point.Y,rect.Right,rect.Bottom,dragging,out int x,out int y))return false;
-        var send = standaloneMove ? PointerMove ?? RichInput : RichInput;
-        send?.Invoke(new("move",X:x,Y:y));
+        if (standaloneMove && PointerMove is { } move) move(x, y);
+        else RichInput?.Invoke(new("move",X:x,Y:y));
         return true;
     }
     internal bool TryPosition(double x,double y,int width,int height,bool dragging,out int nx,out int ny)
@@ -81,12 +81,14 @@ public sealed class NativeVideoHost : HwndHost
         if(width<=0||height<=0||width>8192||height>8192||vw<=0||vh<=0)return false;
         return VideoViewport.Calculate(width,height,vw,vh,Volatile.Read(ref viewport)).TryNormalize(x,y,dragging,out nx,out ny);
     }
-    bool SendLegacyPosition(nint hwnd,nint packed,bool dragging,bool screen=false)
+    bool SendLegacyPosition(nint hwnd,nint packed,bool dragging,bool screen=false,bool standaloneMove=false)
     {
         var point=new Point{X=(short)((long)packed&65535),Y=(short)((long)packed>>16)};
         if(screen&&!ScreenToClient(hwnd,ref point))return false;
         if(!GetClientRect(hwnd,out var client)||!TryPosition(point.X,point.Y,client.Right,client.Bottom,dragging,out int nx,out int ny))return false;
-        Input?.Invoke(0,false,nx,ny);return true;
+        if (standaloneMove && PointerMove is { } move) move(nx, ny);
+        else Input?.Invoke(0,false,nx,ny);
+        return true;
     }
     bool RouteRichPointer(nint hwnd,int message,nint wParam,nint lParam)
     {
@@ -162,7 +164,7 @@ public sealed class NativeVideoHost : HwndHost
         if(RichInput is not null&&RouteRichPointer(hwnd,message,wParam,lParam)){handled=true;return message is 0x20B or 0x20C or 0x20D?1:0;}
         if (message == MouseMove)
         {
-            SendLegacyPosition(hwnd,lParam,GetCapture()==hwnd);
+            SendLegacyPosition(hwnd,lParam,GetCapture()==hwnd,standaloneMove:true);
             handled = true;
         }
         else if (message is LeftDown or RightDown) { if(SendLegacyPosition(hwnd,lParam,false)){FocusRemoteKeyboard();SetCapture(hwnd);pointerButtons.Add(message==LeftDown?1:2);Input?.Invoke(message == LeftDown ? 256 : 257, false, 0, 0);}handled = true; }

@@ -12,7 +12,7 @@ public sealed partial class ViewerWindow
     long droppedPointerMoves;
     readonly PressedRemoteInputs richHeld=new();
     void SendRich(RemoteInput input) => SendRich(input, discardOnBacklog: false);
-    void SendPointerMove(RemoteInput input) => SendRich(input, discardOnBacklog: true);
+    void SendPointerMove(int x, int y) => Send(0, false, x, y, discardOnBacklog: true);
 
     void SendRich(RemoteInput input, bool discardOnBacklog)
     {
@@ -38,8 +38,8 @@ public sealed partial class ViewerWindow
     {
         var dpi=System.Windows.Media.VisualTreeHelper.GetDpi(videoPanel);
         if(!TryViewportLayout(out var layout)||!layout.TryNormalize(point.X*dpi.DpiScaleX,point.Y*dpi.DpiScaleY,dragging,out int x,out int y))return false;
-        if (standaloneMove && inputVersion == InputProtocol.Version)
-            SendPointerMove(new("move", X:x, Y:y));
+        if (standaloneMove)
+            SendPointerMove(x, y);
         else
             Send(0,false,x,y);
         return true;
