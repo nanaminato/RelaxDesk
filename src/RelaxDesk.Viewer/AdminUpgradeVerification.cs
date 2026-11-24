@@ -32,14 +32,16 @@ public sealed partial class ViewerWindow
         var ct = timeout.Token;
         int released = 0;
 
-        async Task<JsonElement> Event(string kind)
+        async Task<JsonElement> Event(string kind, string? unexpected = null)
         {
             while (await process.StandardOutput.ReadLineAsync(ct) is { } line)
             {
                 if (line.StartsWith("test_admin_input_released", StringComparison.Ordinal)) released++;
                 if (!line.StartsWith("RD_EVENT ", StringComparison.Ordinal)) continue;
                 using var data = JsonDocument.Parse(line[9..]);
-                if (data.RootElement.GetProperty("type").GetString() == kind) return data.RootElement.Clone();
+                string? observed = data.RootElement.GetProperty("type").GetString();
+                if (observed == kind) return data.RootElement.Clone();
+                if (unexpected is not null && observed == unexpected) throw new IOException($"Host emitted unexpected {observed}");
             }
             throw new IOException($"Host did not emit {kind}");
         }
@@ -128,6 +130,15 @@ public sealed partial class ViewerWindow
                             if (freshMenu.Visibility == Visibility.Visible || connection.IsCompleted)
                                 throw new IOException("Revocation did not preserve Work and disable administrator requests");
                             Console.WriteLine("PASS late local administrator approval ignored after revocation; Work continued on the same TLS connection");
+
+                            // Simulate a request queued before the Viewer receives the revocation.
+                            viewer.adminUpgradeAvailable = true;
+                            viewer.RequestAdminUpgrade();
+                            await Event("admin-denied", unexpected: "admin-approval-closed");
+                            await Until(() => viewer.activeMode == SessionMode.Work && viewer.inputAuthorized);
+                            if (freshMenu.Visibility == Visibility.Visible || connection.IsCompleted)
+                                throw new IOException("A request after revocation did not stay in Work");
+                            Console.WriteLine("PASS request after administrator revocation denied without creating a local approval");
                             break;
                         }
                         if (attempt == 0) menu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));

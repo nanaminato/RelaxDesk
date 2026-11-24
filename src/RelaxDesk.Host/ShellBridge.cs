@@ -105,7 +105,8 @@ internal sealed class ShellBridge : IDisposable
             CancellationTokenSource deadline;
             lock (owner.sync)
             {
-                if (disposed || Mode != SessionMode.Work || pendingAdmin is not null ||
+                if (disposed || cancellation.IsCancellationRequested || Lifetime.IsCancellationRequested ||
+                    Mode != SessionMode.Work || pendingAdmin is not null ||
                     !Consent.Decision.IsCompletedSuccessfully || Consent.Decision.Result == ConsentDecision.Deny)
                     return false;
                 deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation, Lifetime.Token);
