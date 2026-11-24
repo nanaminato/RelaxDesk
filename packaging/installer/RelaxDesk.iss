@@ -1,0 +1,264 @@
+; RelaxDesk-owned installer recipe. Inno Setup is an external build tool.
+[Setup]
+AppId=RelaxDesk.{#Role}
+AppName={#Title}
+AppVersion={#AppVersion}
+AppPublisher=RelaxDesk
+DefaultDirName={localappdata}\Programs\RelaxDesk\{#Role}
+DisableProgramGroupPage=yes
+PrivilegesRequired=lowest
+ArchitecturesAllowed=x64os
+ArchitecturesInstallIn64BitMode=x64os
+SetupArchitecture=x64
+MinVersion=10.0
+WizardStyle=modern
+DisableWelcomePage=no
+Compression=lzma2/normal
+SolidCompression=yes
+OutputDir={#OutputDirectory}
+OutputBaseFilename=RelaxDesk-{#Role}-Setup-x64
+VersionInfoVersion={#FileVersion}
+UninstallDisplayName={#Title}
+UninstallDisplayIcon={app}\{#Release}\{#Entry}
+CloseApplications=no
+RestartApplications=no
+RestartIfNeededByRun=no
+SetupMutex=Local\RelaxDesk.Setup.{#Role}
+
+[Languages]
+Name: chinesesimplified; MessagesFile: compiler:Languages\ChineseSimplified.isl
+Name: english; MessagesFile: compiler:Default.isl
+
+[Tasks]
+Name: desktopicon; Description: "创建桌面快捷方式"; Flags: checkedonce
+
+[Files]
+Source: "{#Payload}\*"; DestDir: "{app}\{#Release}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#Receipt}"; DestDir: "{app}\receipts"; DestName: "{#Release}.hashes"; Flags: ignoreversion
+Source: "{#CompilerLicense}"; DestDir: "{app}\receipts\{#Release}"; DestName: "InnoSetup-LICENSE.txt"; Flags: ignoreversion
+
+[Registry]
+Root: HKCU; Subkey: "Software\RelaxDesk\Installations\{#Role}"; ValueType: string; ValueName: "Root"; ValueData: "{app}"; Flags: uninsdeletevalue uninsdeletekeyifempty
+Root: HKCU; Subkey: "Software\RelaxDesk\Installations\{#Role}"; ValueType: string; ValueName: "Receipts"; ValueData: "{code:GetReceiptIndex}"; Flags: uninsdeletevalue uninsdeletekeyifempty
+
+[Icons]
+Name: "{userprograms}\RelaxDesk\{#Title}"; Filename: "{app}\{#Release}\{#Entry}"; WorkingDir: "{app}\{#Release}"
+Name: "{userdesktop}\{#Title}"; Filename: "{app}\{#Release}\{#Entry}"; WorkingDir: "{app}\{#Release}"; Tasks: desktopicon
+
+[Run]
+Filename: "{app}\{#Release}\{#Entry}"; Description: "打开 {#Title}"; WorkingDir: "{app}\{#Release}"; Flags: nowait postinstall skipifsilent runasoriginaluser
+
+[Code]
+const Registration = 'Software\RelaxDesk\Installations\{#Role}';
+var ReceiptIndex: String;
+    TreeEntries: Integer;
+
+function Attributes(Path: String): LongWord;
+  external 'GetFileAttributesW@kernel32.dll stdcall';
+
+function Canonical(Path: String): String;
+begin
+  Result := RemoveBackslashUnlessRoot(ExpandFileName(Path));
+end;
+
+function Child(Path, Root: String): Boolean;
+begin
+  Result := Pos(Uppercase(AddBackslash(Root)), Uppercase(Path)) = 1;
+end;
+
+function NoReparse(Path: String): Boolean;
+var Parent: String; A: LongWord;
+begin
+  Result := False;
+  while Length(Path) > 2 do begin
+    A := Attributes(Path);
+    if (A <> $FFFFFFFF) and ((A and $400) <> 0) then exit;
+    Parent := ExtractFileDir(Path);
+    if Parent = Path then break;
+    Path := Parent;
+  end;
+  Result := True;
+end;
+
+function CheckTree(Root: String): Boolean;
+var F: TFindRec; Path: String;
+begin
+  Result := False;
+  if not NoReparse(Root) then exit;
+  if FindFirst(AddBackslash(Root) + '*', F) then begin
+    try
+      repeat
+        if (F.Name <> '.') and (F.Name <> '..') then begin
+          TreeEntries := TreeEntries + 1;
+          if (TreeEntries > 20000) or ((F.Attributes and $400) <> 0) then exit;
+          Path := AddBackslash(Root) + F.Name;
+          if ((F.Attributes and $10) <> 0) and not CheckTree(Path) then exit;
+        end;
+      until not FindNext(F);
+    finally FindClose(F); end;
+  end;
+  Result := True;
+end;
+
+function NonEmpty(Root: String): Boolean;
+var F: TFindRec;
+begin
+  Result := False;
+  if FindFirst(AddBackslash(Root) + '*', F) then begin
+    try repeat
+      if (F.Name <> '.') and (F.Name <> '..') then begin Result := True; exit; end;
+    until not FindNext(F);
+    finally FindClose(F); end;
+  end;
+end;
+
+function Token(var Text: String; Separator: String): String;
+var P: Integer;
+begin
+  P := Pos(Separator, Text);
+  if P = 0 then begin Result := Text; Text := ''; end
+  else begin Result := Copy(Text, 1, P - 1); Delete(Text, 1, P); end;
+end;
+
+function Hex(Text: String; Size: Integer): Boolean;
+var I: Integer;
+begin
+  Result := False;
+  if Length(Text) <> Size then exit;
+  for I := 1 to Length(Text) do
+    if Pos(Lowercase(Copy(Text, I, 1)), '0123456789abcdef') = 0 then exit;
+  Result := True;
+end;
+
+function SafeRelative(Path: String): Boolean;
+var Part: String;
+begin
+  Result := False;
+  if (Length(Path) < 1) or (Length(Path) > 512) or (Path[1] = '\') or
+     (Pos(':', Path) > 0) or (Pos('/', Path) > 0) then exit;
+  while Path <> '' do begin
+    Part := Token(Path, '\');
+    if (Part = '') or (Part = '.') or (Part = '..') or (Trim(Part) <> Part) or
+       (Copy(Part, Length(Part), 1) = '.') then exit;
+  end;
+  Result := True;
+end;
+
+function VerifyReceipts(Root, Index: String): Boolean;
+var Item, Release, Digest, ReceiptPath, Line, Expected, Relative, Path: String;
+    Lines: TArrayOfString; I, Count: Integer;
+begin
+  Result := False; Count := 0;
+  if Index = '' then exit;
+  while Index <> '' do begin
+    Count := Count + 1; if Count > 8 then exit;
+    Item := Token(Index, ';'); Release := Token(Item, '='); Digest := Item;
+    if (Copy(Release, 1, 4) <> 'app-') or not Hex(Copy(Release, 5, 32), 32) or
+       (Length(Release) <> 36) or not Hex(Digest, 64) then exit;
+    ReceiptPath := AddBackslash(Root) + 'receipts\' + Release + '.hashes';
+    if not NoReparse(ReceiptPath) or not FileExists(ReceiptPath) then exit;
+    if Lowercase(GetSHA256OfFile(ReceiptPath)) <> Lowercase(Digest) then exit;
+    if not LoadStringsFromFile(ReceiptPath, Lines) then exit;
+    if (GetArrayLength(Lines) < 1) or (GetArrayLength(Lines) > 10000) then exit;
+    for I := 0 to GetArrayLength(Lines) - 1 do begin
+      Line := Lines[I]; Expected := Token(Line, #9); Relative := Line;
+      if not Hex(Expected, 64) or not SafeRelative(Relative) then exit;
+      if (Pos(Release + '\', Relative) <> 1) and
+         (Relative <> 'receipts\' + Release + '\InnoSetup-LICENSE.txt') then exit;
+      Path := Canonical(AddBackslash(Root) + Relative);
+      if not Child(Path, Root) or not NoReparse(Path) then exit;
+      if DirExists(Path) then exit;
+      if FileExists(Path) and (Lowercase(GetSHA256OfFile(Path)) <> Lowercase(Expected)) then exit;
+    end;
+  end;
+  Result := True;
+end;
+
+function Running(Root: String): Boolean;
+var Locator, Services, Processes, P: Variant; I: Integer; Path: String;
+begin
+  Result := True;
+  try
+    Locator := CreateOleObject('WbemScripting.SWbemLocator');
+    Services := Locator.ConnectServer('', 'root\CIMV2');
+    Processes := Services.ExecQuery('{#ProcessQuery}');
+    for I := 0 to Processes.Count - 1 do begin
+      P := Processes.ItemIndex(I);
+      if VarIsNull(P.ExecutablePath) or VarIsEmpty(P.ExecutablePath) then exit;
+      Path := P.ExecutablePath;
+      if (Path = '') or Child(Canonical(Path), Root) then exit;
+    end;
+    Result := False;
+  except Log('Cannot establish application process ownership.'); end;
+end;
+
+function OwnedShortcuts(Root, Index: String): Boolean;
+var Shell, Link: Variant; Shortcut, Item, Release, Remaining: String; I: Integer; Owned: Boolean;
+begin
+  Result := False;
+  Shell := CreateOleObject('WScript.Shell');
+  for I := 0 to 1 do begin
+    if I = 0 then Shortcut := ExpandConstant('{userprograms}\RelaxDesk\{#Title}.lnk')
+    else Shortcut := ExpandConstant('{userdesktop}\{#Title}.lnk');
+    if not NoReparse(Shortcut) then exit;
+    if FileExists(Shortcut) then begin
+      Link := Shell.CreateShortcut(Shortcut); Remaining := Index; Owned := False;
+      while Remaining <> '' do begin
+        Item := Token(Remaining, ';'); Release := Token(Item, '=');
+        if (CompareText(Link.TargetPath, AddBackslash(Root) + Release + '\{#Entry}') = 0) and
+           (Link.Arguments = '') then Owned := True;
+      end;
+      if not Owned then exit;
+    end;
+  end;
+  Result := True;
+end;
+
+function GetReceiptIndex(Param: String): String;
+begin Result := ReceiptIndex; end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var Root, Previous, Existing, Remaining, Part: String; Count: Integer;
+begin
+  Result := ''; Root := Canonical(ExpandConstant('{app}'));
+  if (Length(Root) < 4) or (Copy(Root, 2, 1) <> ':') then begin Result := '请选择本机非根目录。'; exit; end;
+  TreeEntries := 0;
+  if not CheckTree(Root) then begin Result := '安装目录含链接或异常路径，请选择普通本机目录。'; exit; end;
+  if RegQueryStringValue(HKCU, Registration, 'Root', Previous) then begin
+    if CompareText(Canonical(Previous), Root) <> 0 then begin Result := '已安装在其他目录，请先使用应用列表中的卸载入口。'; exit; end;
+    if not RegQueryStringValue(HKCU, Registration, 'Receipts', Existing) or not VerifyReceipts(Root, Existing) then begin Result := '已有程序文件或安装记录被修改。请先备份并恢复，安装器不会覆盖这些内容。'; exit; end;
+  end else if NonEmpty(Root) then begin Result := '此目录包含非本安装器管理的文件，请选择空目录。'; exit; end;
+  if Running(Root) then begin Result := '请先关闭此安装目录中的 {#Title}，再继续。安装器不会结束共享会话。'; exit; end;
+  if not OwnedShortcuts(Root, Existing) then begin Result := '同名快捷方式已存在且不属于此安装，请先检查。'; exit; end;
+  ReceiptIndex := Existing;
+  if Pos('{#Release}=', ReceiptIndex) = 0 then begin
+    if ReceiptIndex <> '' then ReceiptIndex := ReceiptIndex + ';';
+    ReceiptIndex := ReceiptIndex + '{#Release}={#ReceiptHash}';
+  end;
+  Remaining := ReceiptIndex; Count := 0;
+  while Remaining <> '' do begin Part := Token(Remaining, ';'); Count := Count + 1; end;
+  if Count > 8 then Result := '保留版本过多，请备份后先卸载，再安装新版本。';
+end;
+
+procedure CurStepChanged(Step: TSetupStep);
+begin
+  if Step = ssPostInstall then
+    if not VerifyReceipts(Canonical(ExpandConstant('{app}')), ReceiptIndex) then
+      RaiseException('安装后校验失败；请保留安装日志，不要启动应用。');
+end;
+
+function InitializeUninstall: Boolean;
+var Root, Registered, Index: String;
+begin
+  Result := False; Root := Canonical(ExpandConstant('{app}')); TreeEntries := 0;
+  try
+    if not CheckTree(Root) or not RegQueryStringValue(HKCU, Registration, 'Root', Registered) or
+       (CompareText(Canonical(Registered), Root) <> 0) or
+       not RegQueryStringValue(HKCU, Registration, 'Receipts', Index) or
+       not VerifyReceipts(Root, Index) or not OwnedShortcuts(Root, Index) then begin
+      SuppressibleMsgBox('文件、快捷方式或安装记录已修改，已停止卸载以保留内容。请备份并恢复后重试。', mbError, MB_OK, IDOK); exit;
+    end;
+    if Running(Root) then begin SuppressibleMsgBox('请先关闭此安装目录中的 {#Title}。', mbError, MB_OK, IDOK); exit; end;
+    Result := True;
+  except SuppressibleMsgBox('无法安全确认卸载范围，未删除文件。请保留日志并检查。', mbError, MB_OK, IDOK); end;
+end;
