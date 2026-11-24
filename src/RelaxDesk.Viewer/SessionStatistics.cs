@@ -35,13 +35,16 @@ internal sealed class SessionStatisticsWindow:Window
     }
     async Task Refresh()
     {
-        PipelineSnapshot? previous=null;
+        ViewerStatistics? previous=null;
         try
         {
             while(!lifetime.IsCancellationRequested)
             {
                 var sample=await Task.Run(source,lifetime.Token);lifetime.Token.ThrowIfCancellationRequested();var pipeline=sample.Pipeline;
-                var rate=previous is null?null:PipelineRate.Between(previous,pipeline);previous=pipeline;
+                // A sampling interval spanning a path switch includes traffic
+                // from both paths and cannot be attributed to the displayed one.
+                var rate = previous?.Transport == sample.Transport ? PipelineRate.Between(previous.Pipeline, pipeline) : null;
+                previous = sample;
                 string Format(string name)
                 {
                     var stage=pipeline.Stages.FirstOrDefault(value=>value.Name==name);

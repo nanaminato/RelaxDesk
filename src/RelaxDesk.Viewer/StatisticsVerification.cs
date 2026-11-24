@@ -45,7 +45,13 @@ public sealed partial class ViewerWindow
                 }
                 running=window.ConnectVideo();await Until(()=>window.smokeFrames>0);
                 if(window.sessionToolbar?.StatisticsAction.IsEnabled!=true||window.statisticsWindow is not null)throw new IOException("Statistics auto-opened or missing action");
-                var actual=window.statisticsSource??throw new IOException("Source missing");int snapshots=0;window.statisticsSource=()=>{Interlocked.Increment(ref snapshots);return actual();};
+                var actual=window.statisticsSource??throw new IOException("Source missing");int snapshots=0;int switchPath=0;
+                window.statisticsSource=()=>
+                {
+                    Interlocked.Increment(ref snapshots);
+                    var sample=actual();
+                    return Volatile.Read(ref switchPath)==0 ? sample : sample with { Transport = udp ? "TCP/TLS" : "UDP", Network = null };
+                };
                 window.sessionToolbar.StatisticsAction.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));var panel=window.statisticsWindow??throw new IOException("Panel absent");
                 await Until(()=>panel.Updates>=2&&!panel.DisplayText.Contains("控制往返（含排队）：未采集"));
                 if (!panel.DisplayText.Contains("Viewer 控制队列") || !panel.DisplayText.Contains("已合并鼠标移动"))
@@ -82,6 +88,12 @@ public sealed partial class ViewerWindow
                     Console.WriteLine("PASS WPF Auto selected TCP and reported the missing local UDP runtime");
                 }
                 panel.UpdateLayout();await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Render);var content=(FrameworkElement)panel.Content;var bitmap=new RenderTargetBitmap((int)content.ActualWidth,(int)content.ActualHeight,96,96,System.Windows.Media.PixelFormats.Pbgra32);bitmap.Render(content);byte[] pixels=new byte[bitmap.PixelWidth*bitmap.PixelHeight*4];bitmap.CopyPixels(pixels,bitmap.PixelWidth*4,0);if(!pixels.Where((_,index)=>index%4==3).Any(value=>value>0)||!pixels.Where((_,index)=>index%4==0).Any(value=>value>0&&value<250))throw new IOException("Statistics rendered no readable content");var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));using(var output=File.Create(Path.Combine(root,"statistics.png")))png.Save(output);
+                string nextTransport = udp ? "TCP/TLS" : "UDP";
+                Volatile.Write(ref switchPath,1);
+                await Until(()=>panel.DisplayText.Contains($"媒体传输：{nextTransport}"));
+                if (!panel.DisplayText.Contains("媒体应用数据：等待下一次采样"))
+                    throw new IOException("Statistics attributed a mixed-path interval to the new transport");
+                await Until(()=>!panel.DisplayText.Contains("媒体应用数据：等待下一次采样"));
                 panel.Close();await panel.Completion;int stopped=snapshots;await Task.Delay(1100,timeout.Token);if(snapshots!=stopped||window.statisticsWindow is not null)throw new IOException("Closed panel continued sampling");
                 window.statisticsSource=()=>throw new IOException("private statistics diagnostic fixture");window.OpenStatistics();var failed=window.statisticsWindow!;await Until(()=>failed.DisplayText.Contains("统计暂不可用"));int frames=window.smokeFrames;await Until(()=>window.smokeFrames>frames);failed.Close();await failed.Completion;
                 window.statisticsSource=actual;window.OpenStatistics();var last=window.statisticsWindow!;await Until(()=>last.Updates>0);window.StopConnection();await running;await last.Completion;
