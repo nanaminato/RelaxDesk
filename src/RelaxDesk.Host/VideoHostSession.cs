@@ -811,7 +811,17 @@ internal static class VideoHostSession
         // suspend a resumable transfer instead of looking like a file denial.
         fileSession.Cancel();
         gate.Revoke();
-        if (elevated is not null) await elevated.DisposeAsync();
+        // Stop pending local approval or worker startup before taking ownership
+        // of the installed worker. Keep control open for the terminal notice.
+        downgrade.Cancel();
+        AdminInputConnection? endingWorker;
+        lock (routeLock)
+        {
+            Volatile.Write(ref adminRoute, 1);
+            activationChallenge = null;
+            endingWorker = elevated;
+        }
+        if (endingWorker is not null) await endingWorker.DisposeAsync();
         if (stop.IsCancellationRequested || failure?.Error is WindowsSessionUnavailableException)
         {
             // Bounded terminal notice distinguishes local stop from network loss.

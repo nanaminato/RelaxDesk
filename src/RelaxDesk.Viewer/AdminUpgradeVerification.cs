@@ -150,8 +150,12 @@ public sealed partial class ViewerWindow
                 await Until(() => viewer.inputAuthorized && viewer.activeMode == SessionMode.Work);
                 int before = viewer.smokeFrames;
                 await Until(() => viewer.smokeFrames > before);
+                menu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                await Event("admin-approval-request");
                 viewer.StopConnection();
                 await connection.WaitAsync(ct);
+                await Event("session-ended");
+                Console.WriteLine("PASS disconnect with local administrator approval pending ended the Host session");
                 await Send("STOP");
                 await process.WaitForExitAsync(ct);
                 if (process.ExitCode != 0) throw new IOException("Host did not exit cleanly");
