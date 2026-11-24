@@ -47,6 +47,7 @@ if (args is [var clipboardHost, var clipboardMode] && clipboardMode is "--clipbo
 if (args is [var quicHost, "--quic-production"]) { await ProductionQuicSmoke.Run(quicHost); return; }
 if (args is [var hostWithoutUdp, "--quic-host-unavailable"]) { await ProductionQuicSmoke.VerifyUnavailableHost(hostWithoutUdp); return; }
 if (args is ["--quic-datagram-probe", var quicNative]) { await QuicDatagramSmoke.Run(quicNative); return; }
+if (args is ["--quic-datagram-pkcs12-probe", var pkcs12QuicNative]) { await QuicDatagramSmoke.Run(pkcs12QuicNative, pkcs12: true); return; }
 if (args is [var accessHost, "--session-access"]) { await SessionAccessSmoke.Run(accessHost); return; }
 if (args is [var approvalHost, "--deny-approval"]) { await ApprovalSmoke.Denied(approvalHost); return; }
 if (args is ["--collect-package", var packageRoot, .. var collectorArguments]) { Environment.ExitCode = await PackageCollector.Run(packageRoot, collectorArguments); return; }

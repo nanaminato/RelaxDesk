@@ -124,7 +124,8 @@ QUIC_STATUS QUIC_API onListener(HQUIC, void* context, QUIC_LISTENER_EVENT* event
     return status;
 }
 
-HRESULT configure(Endpoint& self, const wchar_t* dll, PCCERT_CONTEXT certificate, QUIC_BUFFER& alpn) {
+HRESULT configure(Endpoint& self, const wchar_t* dll, PCCERT_CONTEXT certificate, QUIC_BUFFER& alpn,
+    QUIC_CERTIFICATE_PKCS12* serverPfx) {
     self.module = LoadLibraryExW(dll, nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!self.module) return HRESULT_FROM_WIN32(GetLastError());
     auto open = reinterpret_cast<decltype(&MsQuicOpenVersion)>(GetProcAddress(self.module, "MsQuicOpenVersion"));
@@ -143,7 +144,10 @@ HRESULT configure(Endpoint& self, const wchar_t* dll, PCCERT_CONTEXT certificate
     result = self.api->ConfigurationOpen(self.registration, &alpn, 1, &settings, sizeof(settings), nullptr, &self.configuration);
     if (FAILED(result)) return result;
     QUIC_CREDENTIAL_CONFIG credentials{};
-    if (self.server) {
+    if (self.server && serverPfx) {
+        credentials.Type = QUIC_CREDENTIAL_TYPE_CERTIFICATE_PKCS12;
+        credentials.CertificatePkcs12 = serverPfx;
+    } else if (self.server) {
         credentials.Type = QUIC_CREDENTIAL_TYPE_CERTIFICATE_CONTEXT;
         credentials.CertificateContext = const_cast<CERT_CONTEXT*>(certificate);
     } else {
@@ -157,8 +161,8 @@ HRESULT configure(Endpoint& self, const wchar_t* dll, PCCERT_CONTEXT certificate
 }
 }
 
-extern "C" __declspec(dllexport) HRESULT rd_quic_open(const wchar_t* runtimeDll, PCCERT_CONTEXT certificate,
-    const char* address, uint16_t* port, int server, Endpoint** output) {
+static HRESULT openEndpoint(const wchar_t* runtimeDll, PCCERT_CONTEXT certificate,
+    const char* address, uint16_t* port, int server, Endpoint** output, QUIC_CERTIFICATE_PKCS12* serverPfx) {
     if (!runtimeDll || !certificate || !address || !port || !output || (!server && !*port)) return E_INVALIDARG;
     *output = nullptr;
     QUIC_ADDR local{};
@@ -173,7 +177,7 @@ extern "C" __declspec(dllexport) HRESULT rd_quic_open(const wchar_t* runtimeDll,
     if (!self) return E_OUTOFMEMORY;
     self->server = server != 0;
     QUIC_BUFFER alpn{ sizeof(Protocol) - 1, reinterpret_cast<uint8_t*>(const_cast<char*>(Protocol)) };
-    HRESULT result = configure(*self, runtimeDll, certificate, alpn);
+    HRESULT result = configure(*self, runtimeDll, certificate, alpn, serverPfx);
     if (FAILED(result)) return result;
     if (self->server) {
         result = self->api->ListenerOpen(self->registration, onListener, self.get(), &self->listener);
@@ -194,6 +198,19 @@ extern "C" __declspec(dllexport) HRESULT rd_quic_open(const wchar_t* runtimeDll,
     }
     *output = self.release();
     return S_OK;
+}
+
+extern "C" __declspec(dllexport) HRESULT rd_quic_open(const wchar_t* runtimeDll, PCCERT_CONTEXT certificate,
+    const char* address, uint16_t* port, int server, Endpoint** output) {
+    return openEndpoint(runtimeDll, certificate, address, port, server, output, nullptr);
+}
+
+extern "C" __declspec(dllexport) HRESULT rd_quic_open_pfx(const wchar_t* runtimeDll, PCCERT_CONTEXT certificate,
+    const char* address, uint16_t* port, const uint8_t* pfx, uint32_t length, const char* password, Endpoint** output) {
+    if (output) *output = nullptr;
+    if (!pfx || !length || length > 65536 || !password) return E_INVALIDARG;
+    QUIC_CERTIFICATE_PKCS12 credentials{pfx, length, password};
+    return openEndpoint(runtimeDll, certificate, address, port, 1, output, &credentials);
 }
 
 extern "C" __declspec(dllexport) HRESULT rd_quic_ready(Endpoint* self, uint16_t* budget) {

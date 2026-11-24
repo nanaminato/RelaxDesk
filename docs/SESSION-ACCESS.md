@@ -119,8 +119,12 @@ package. Its x64 DLL returned `0x80070057` while opening the Host listener
 with the current certificate path. The explicit UDP Viewer also reported
 that the Host did not offer UDP. The result rules out a DLL-only replacement.
 In-memory PKCS#12 is a documented OpenSSL credential option. Qualification
-requires a successful pinned handshake, wrong-certificate rejection, and
-real Windows 10 coverage before redistribution.
+requires real Windows 10 coverage before redistribution. The isolated
+`--quic-datagram-pkcs12-probe` now exchanges encrypted fragmented media with
+OpenSSL 2.5.13 and rejects an incorrect certificate. It clears the temporary
+PKCS#12 buffer after synchronous credential loading. The normal Schannel
+probe passes against the same RelaxDesk native build. Production Host startup
+continues to use the Windows certificate context.
 [Microsoft OpenSSL package](https://www.nuget.org/packages/Microsoft.Native.Quic.MsQuic.OpenSSL/2.5.13)
 [MsQuic certificate API](https://github.com/microsoft/msquic/blob/v2.5.13/docs/api/QUIC_CREDENTIAL_CONFIG.md)
 

@@ -22,6 +22,11 @@ public sealed class WindowsQuicDatagrams : IQuicDatagrams, IQuicPathStatistics
     static extern int Open([MarshalAs(UnmanagedType.LPWStr)] string runtime,
         nint certificate, [MarshalAs(UnmanagedType.LPStr)] string address, ref ushort port, int server, out Handle endpoint);
 
+    [DllImport(Library, EntryPoint = "rd_quic_open_pfx", CallingConvention = CallingConvention.Cdecl)]
+    static extern int OpenPfx([MarshalAs(UnmanagedType.LPWStr)] string runtime, nint certificate,
+        [MarshalAs(UnmanagedType.LPStr)] string address, ref ushort port, byte[] pfx, uint length,
+        [MarshalAs(UnmanagedType.LPStr)] string password, out Handle endpoint);
+
     [DllImport(Library, EntryPoint = "rd_quic_ready", CallingConvention = CallingConvention.Cdecl)]
     static extern int Ready(Handle endpoint, out ushort budget);
 
@@ -60,11 +65,14 @@ public sealed class WindowsQuicDatagrams : IQuicDatagrams, IQuicPathStatistics
     readonly byte[] input = new byte[QuicMediaAttachment.MaxDatagramBytes];
     public int Port { get; }
 
-    WindowsQuicDatagrams(IPAddress address, int port, X509Certificate2 certificate, bool server)
+    WindowsQuicDatagrams(IPAddress address, int port, X509Certificate2 certificate, bool server,
+        byte[]? pfx = null, string? password = null)
     {
         ushort assigned = checked((ushort)port);
         string dll = Path.Combine(RuntimeEnvironment.GetRuntimeDirectory(), "msquic.dll");
-        int status = Open(dll, certificate.Handle, address.ToString(), ref assigned, server ? 1 : 0, out handle);
+        int status = pfx is null
+            ? Open(dll, certificate.Handle, address.ToString(), ref assigned, server ? 1 : 0, out handle)
+            : OpenPfx(dll, certificate.Handle, address.ToString(), ref assigned, pfx, (uint)pfx.Length, password!, out handle);
         GC.KeepAlive(certificate);
         if (status < 0) { handle.Dispose(); RequireSuccess(status, "open"); }
         Port = assigned;
@@ -72,6 +80,9 @@ public sealed class WindowsQuicDatagrams : IQuicDatagrams, IQuicPathStatistics
 
     public static WindowsQuicDatagrams Listen(IPAddress address, X509Certificate2 certificate) =>
         new(address, 0, certificate, true);
+
+    public static WindowsQuicDatagrams ListenWithPkcs12(IPAddress address, X509Certificate2 certificate, byte[] pfx, string password) =>
+        new(address, 0, certificate, true, pfx, password);
 
     public static WindowsQuicDatagrams Connect(IPEndPoint remote, X509Certificate2 pinnedCertificate) =>
         new(remote.Address, remote.Port, pinnedCertificate, false);
