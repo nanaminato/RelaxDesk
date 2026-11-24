@@ -3,8 +3,8 @@
 ## Separate Host and Viewer stage, 2026-11-25
 
 The table below distinguishes current evidence from the historical unified
-delivery audit that follows. The latest complete source and candidate ZIP
-checks use commit `ed21ca0` on `codex/dxgi-media-pipeline`.
+delivery audit that follows. The latest complete source run uses commit
+`2d7d9f3` on `codex/dxgi-media-pipeline`. The candidate ZIP check uses `ed21ca0`.
 
 | Area | Verified evidence | Open items |
 | --- | --- | --- |
@@ -12,7 +12,7 @@ checks use commit `ed21ca0` on `codex/dxgi-media-pipeline`.
 | Windows privilege | Ordinary tokens reject elevated-worker startup. Isolated tests cover protected deployment ACLs, identity, lifetime and rollback. Simulated desktop transitions distinguish lock, session switch and unreadable desktop. | The existing machine Broker directory is unreadable to the ordinary owner session. Actual repair, UAC consent and cancellation, lock/unlock and user switching are pending. Secure-desktop remote input, remote sign-in and unattended Admin authorization are unimplemented. |
 | Transport | Production QUIC loopback covers bounded shaping, injected drops and reordering, adaptive bitrate, TCP fallback and UDP recovery with continuous TLS. Historical TCP peers interoperate in both directions. | Dual-PC Home LAN, adapter changes and long-duration mixed workloads. Selective retransmission and FEC are evaluated without deployment. |
 | Media and office resources | Independent EXEs exercised real DXGI, hardware H.264, QUIC and D3D11 on Windows 11 Home. Single-machine Auto recovery took 4.70 s between first TCP and first UDP frames. File resume verified both directions above 1 GiB and synthetic audio tests verified revocation and failure isolation. | True static desktop, physical input-to-photon, visible/audio acceptance, matched MSTSC comparison and Windows 10 Home validation. |
-| Delivery | `build/office-ed21ca0/result.json` passes 92 source cases. `build/roles-ed21ca0-verify/result.json` passes 54 candidate ZIP assertions with machine preflight skipped. `build/installer-check-ed21ca0/compile-check.json` covers both Inno Setup templates in check-only mode. | Final independent EXE installers and current-user install, update and uninstall on a clean test account. The current account already has a Host installation. |
+| Delivery | `build/current-office-result/result.json` passes 92 source cases, including the updated Viewer input, viewport and statistics checks. `build/roles-ed21ca0-verify/result.json` passes 54 candidate ZIP assertions with machine preflight skipped. `build/installer-check-ed21ca0/compile-check.json` covers both Inno Setup templates in check-only mode. | Final independent EXE installers and current-user install, update and uninstall on a clean test account. The current account already has a Host installation. |
 
 At `8c0cfe9`, `scripts/test-user-setup.ps1` passed 82 checks using real files, an isolated HKCU key and fixture shortcut directories. Its payload EXEs are placeholder files. The 46 actual Inno Setup lifecycle checks documented in [EXE installers](EXE-INSTALLERS.md#历史交付及证据) apply to the earlier `7e51e95` installer release.
 
