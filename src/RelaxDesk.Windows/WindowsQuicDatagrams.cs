@@ -41,7 +41,7 @@ public sealed class WindowsQuicDatagrams : IQuicDatagrams, IQuicPathStatistics
     [DllImport(Library, EntryPoint = "rd_quic_open_pfx", CallingConvention = CallingConvention.Cdecl)]
     static extern int OpenPfx([MarshalAs(UnmanagedType.LPWStr)] string runtime, nint certificate,
         [MarshalAs(UnmanagedType.LPStr)] string address, ref ushort port, byte[] pfx, uint length,
-        [MarshalAs(UnmanagedType.LPStr)] string password, out Handle endpoint);
+        byte[] password, out Handle endpoint);
 
     [DllImport(Library, EntryPoint = "rd_quic_ready", CallingConvention = CallingConvention.Cdecl)]
     static extern int Ready(Handle endpoint, out ushort budget);
@@ -82,7 +82,7 @@ public sealed class WindowsQuicDatagrams : IQuicDatagrams, IQuicPathStatistics
     public int Port { get; }
 
     WindowsQuicDatagrams(IPAddress address, int port, X509Certificate2 certificate, bool server,
-        byte[]? pfx = null, string? password = null)
+        byte[]? pfx = null, byte[]? password = null)
     {
         ushort assigned = checked((ushort)port);
         string dll = RuntimeDll;
@@ -97,8 +97,12 @@ public sealed class WindowsQuicDatagrams : IQuicDatagrams, IQuicPathStatistics
     public static WindowsQuicDatagrams Listen(IPAddress address, X509Certificate2 certificate) =>
         new(address, 0, certificate, true);
 
-    public static WindowsQuicDatagrams ListenWithPkcs12(IPAddress address, X509Certificate2 certificate, byte[] pfx, string password) =>
-        new(address, 0, certificate, true, pfx, password);
+    public static WindowsQuicDatagrams ListenWithPkcs12(IPAddress address, X509Certificate2 certificate, byte[] pfx, byte[] password)
+    {
+        if (password.Length is < 2 or > 128 || password[^1] != 0 || password.AsSpan(0, password.Length - 1).Contains((byte)0))
+            throw new ArgumentException("Expected a terminated PKCS#12 password", nameof(password));
+        return new(address, 0, certificate, true, pfx, password);
+    }
 
     public static WindowsQuicDatagrams Connect(IPEndPoint remote, X509Certificate2 pinnedCertificate) =>
         new(remote.Address, remote.Port, pinnedCertificate, false);

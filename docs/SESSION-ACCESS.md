@@ -122,11 +122,12 @@ In-memory PKCS#12 is a documented OpenSSL credential option. Qualification
 requires real Windows 10 coverage before redistribution. The isolated
 `--quic-datagram-pkcs12-probe` now exchanges encrypted fragmented media with
 OpenSSL 2.5.13 and rejects an incorrect certificate. It clears the temporary
-PKCS#12 buffer after synchronous credential loading. The normal Schannel
+PKCS#12 and password buffers after the probe completes. The normal Schannel
 probe passes against the same RelaxDesk native build. Production Host now
 checks the loaded MsQuic provider and uses the same process certificate
 for control TLS and all media listeners. For OpenSSL it retains the encrypted
-PKCS#12 in memory until Host shutdown, then clears the buffer. Schannel uses
+PKCS#12 and the password buffer in memory until Host shutdown, then clears
+both buffers. Schannel uses
 the Windows certificate context. The test runtime was substituted only in
 isolated self-contained Host and Viewer directories. Their strict UDP and
 Auto TCP-to-UDP recovery tests passed on Windows 11.

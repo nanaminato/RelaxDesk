@@ -9,7 +9,7 @@ namespace RelaxDesk.Host;
 internal sealed class HostMediaIdentity : IDisposable
 {
     readonly byte[]? pkcs12;
-    readonly string? password;
+    readonly byte[]? password;
 
     public HostMediaIdentity()
     {
@@ -27,6 +27,7 @@ internal sealed class HostMediaIdentity : IDisposable
     public void Dispose()
     {
         if (pkcs12 is not null) CryptographicOperations.ZeroMemory(pkcs12);
+        if (password is not null) CryptographicOperations.ZeroMemory(password);
         Certificate.Dispose();
     }
 }
