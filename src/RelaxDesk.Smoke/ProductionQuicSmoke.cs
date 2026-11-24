@@ -362,11 +362,19 @@ internal static class ProductionQuicSmoke
                 Task<MediaFrame>? waiting = null;
                 if (silent)
                 {
+                    var datagrams = liveDatagrams ?? throw new IOException("Static UDP fixture did not attach");
+                    int startingHeartbeats = datagrams.Heartbeats;
+                    int startingVideoFragments = datagrams.VideoFragments;
                     waiting = viewer.Video.Read(ct);
                     if (await Task.WhenAny(waiting, Task.Delay(TimeSpan.FromSeconds(4), ct)) == waiting ||
                         viewer.Video.TransportName != "UDP")
                         throw new IOException("Healthy static desktop unexpectedly delivered another frame or fell back");
+                    int heartbeats = datagrams.Heartbeats - startingHeartbeats;
+                    int videoFragments = datagrams.VideoFragments - startingVideoFragments;
+                    if (heartbeats == 0 || videoFragments != 0)
+                        throw new IOException($"Unexpected idle UDP application traffic: heartbeats={heartbeats}, video_fragments={videoFragments}");
                     Console.WriteLine("PASS healthy static UDP video stayed connected through the datagram silence interval");
+                    Console.WriteLine($"PASS static UDP four-second window: video_fragments={videoFragments}, heartbeats={heartbeats}, heartbeat_payload_bytes={heartbeats * 4}");
                     await Wire.Write(viewer.Control, new("keyframe-v2", ++controlSequence), ct);
                     var refresh = await waiting;
                     if (viewer.Video.TransportName != "UDP" || refresh.Sequence <= frame.Sequence || !refresh.KeyFrame)
@@ -428,6 +436,9 @@ internal static class ProductionQuicSmoke
     }
     sealed class InterruptibleDatagrams(WindowsQuicDatagrams inner) : IQuicDatagrams, IQuicPathStatistics
     {
+        int heartbeats, videoFragments;
+        public int Heartbeats => Volatile.Read(ref heartbeats);
+        public int VideoFragments => Volatile.Read(ref videoFragments);
         public bool Interrupted { get; set; }
         public volatile bool Blackhole;
         public volatile bool IncompleteFrames;
@@ -440,6 +451,8 @@ internal static class ProductionQuicSmoke
             while (true)
             {
                 var received = await inner.ReceiveAsync(cancellation);
+                if (received.Span.SequenceEqual("RDH1"u8)) Interlocked.Increment(ref heartbeats);
+                else if (received.Span.StartsWith("RDF1"u8)) Interlocked.Increment(ref videoFragments);
                 if (Blackhole) await Task.Delay(Timeout.Infinite, cancellation);
                 if (!IncompleteFrames) return received;
                 const int fragmentHeader = 20;

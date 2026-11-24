@@ -232,6 +232,12 @@ This measures codec distortion on a synthetic static source. RelaxDesk
 normally skips unchanged desktop frames, so these bytes do not predict
 static desktop traffic. A matched two-device MSTSC comparison is still open.
 
+The production QUIC loopback test with a synthetic static source measured zero
+video fragments and five heartbeat datagrams (20 bytes of application payload)
+over four seconds after the initial frame. A manual refresh request in the test
+then delivered a decodable key frame on the same UDP path. The payload count
+excludes QUIC framing, acknowledgments, IP overhead and the TLS control stream.
+
 ### Console regression after Auto recovery changes
 
 On 2026-11-25 the ordinary Windows console process successfully attached
