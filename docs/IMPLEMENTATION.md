@@ -1,5 +1,7 @@
 # RelaxDesk implementation and evidence
 
+Final unified candidate `1cf9997` was **rejected, 75/76** due to native service file creation beyond MAX_PATH. [Failure and enforced deep-path repair](../benchmarks/2026-11-24-service-long-path-validation.md): full solution warning/error-free, 81 isolated service transaction assertions pass; real SCM remains pending. Replacement packaged verification is required before delivery.
+
 Current requirement-by-requirement [source/delivery audit](REQUIREMENTS-AUDIT.md) keeps physical and packaging exits open. The accepted-frame media path is now persistently available in the auto-hide toolbar; [focused WPF evidence](../benchmarks/2026-11-24-media-path-validation.md). The final guide is reconciled and the package recipe includes tracked offline contracts/evidence. No intermediate package.
 
 ## Current office continuation checkpoint — 2026-11-24

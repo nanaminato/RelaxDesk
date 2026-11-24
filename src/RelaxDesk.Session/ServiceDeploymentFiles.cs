@@ -117,7 +117,10 @@ internal sealed class ServiceFilePolicy
         try
         {
             var attributes=new SecurityAttributes{Length=Marshal.SizeOf<SecurityAttributes>(),Descriptor=pinned.AddrOfPinnedObject()};
-            var handle=CreateFile(path,0x40000000,0,ref attributes,1,128,0);
+            // Managed directory/ACL APIs already support long paths. This raw
+            // Win32 call must use the extended local path form as well. Convert
+            // only after the ordinary-path reparse and parent ACL checks above.
+            var handle=CreateFile(@"\\?\"+Path.GetFullPath(path),0x40000000,0,ref attributes,1,128,0);
             if(handle.IsInvalid){int error=Marshal.GetLastWin32Error();handle.Dispose();throw new Win32Exception(error);}
             try{return new FileStream(handle,FileAccess.Write);}catch{handle.Dispose();throw;}
         }

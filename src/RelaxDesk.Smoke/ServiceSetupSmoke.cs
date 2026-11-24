@@ -15,12 +15,13 @@ internal static class ServiceSetupSmoke
     [DllImport("kernel32.dll",SetLastError=true)] static extern bool DeviceIoControl(SafeFileHandle file,uint code,byte[] input,uint length,nint output,uint bytes,out uint returned,nint overlapped);
     internal static void Junction(string path,string target)
     {
-        Directory.CreateDirectory(path);using var handle=OpenDirectory(path,0x40000000,0,0,3,0x02200000,0);
+        Directory.CreateDirectory(path);using var handle=OpenDirectory(@"\\?\"+Path.GetFullPath(path),0x40000000,0,0,3,0x02200000,0);
+        if(handle.IsInvalid)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(),"Fixture junction directory unavailable");
         byte[] substitute=Encoding.Unicode.GetBytes(@"\??\"+Path.GetFullPath(target)),printable=Encoding.Unicode.GetBytes(Path.GetFullPath(target));
         byte[] buffer=new byte[16+substitute.Length+2+printable.Length+2];BinaryPrimitives.WriteUInt32LittleEndian(buffer,0xA0000003);BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(4),checked((ushort)(buffer.Length-8)));
         BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(10),checked((ushort)substitute.Length));BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(12),checked((ushort)(substitute.Length+2)));BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(14),checked((ushort)printable.Length));
         substitute.CopyTo(buffer,16);printable.CopyTo(buffer,16+substitute.Length+2);
-        if(handle.IsInvalid||!DeviceIoControl(handle,0x900A4,buffer,(uint)buffer.Length,0,0,out _,0))throw new IOException("Fixture junction unavailable: "+Marshal.GetLastWin32Error());
+        if(!DeviceIoControl(handle,0x900A4,buffer,(uint)buffer.Length,0,0,out _,0))throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(),"Fixture junction unavailable");
     }
     sealed class FakeServices:IServiceRegistrationStore
     {
@@ -39,7 +40,9 @@ internal static class ServiceSetupSmoke
     internal static async Task Run(string application,string output)
     {
         string parent=ServiceFilePolicy.FullPath(output);if(!parent.Contains("\\build\\",StringComparison.OrdinalIgnoreCase))throw new ArgumentException("Setup fixture must be in workspace build directory");
-        string fixture=Path.Combine(parent,"machine-setup-"+Guid.NewGuid().ToString("N"));
+        // Exercise native file creation beyond MAX_PATH even in short source
+        // build folders, not only when a user extracts a deeply nested bundle.
+        string fixture=Path.Combine(parent,"long-path-"+new string('p',120),"machine-setup-"+Guid.NewGuid().ToString("N"));
         using var identity=WindowsIdentity.GetCurrent();string own=identity.User!.Value;
         var acl=new DirectorySecurity();acl.SetOwner(identity.User);acl.SetAccessRuleProtection(true,false);
         foreach(string sid in new[]{own,ServiceFilePolicy.SystemSid,ServiceFilePolicy.AdminsSid})acl.AddAccessRule(new(new SecurityIdentifier(sid),FileSystemRights.FullControl,InheritanceFlags.ContainerInherit|InheritanceFlags.ObjectInherit,PropagationFlags.None,AccessControlType.Allow));
@@ -89,6 +92,7 @@ internal static class ServiceSetupSmoke
         fault="";var installed=await setup.Install(first,own,true,true,false,CancellationToken.None);
         Check(installed.Changed&&installed.Startup==2&&installed.Running&&services.Current?.State==4&&services.Current.Startup==2);
         var initial=files.ReadState()!;files.ValidateRelease(initial.Releases.Single(),true);Check(true);
+        Check(files.ReleasePath(initial.Current).Length>260);
         ServiceDeploymentTrust.RequireRuntime(files,files.ReleasePath(initial.Current),own);Check(true);
         RejectPolicy(()=>ServiceDeploymentTrust.RequireRuntime(files,files.ReleasePath(initial.Current),"S-1-5-21-1-2-3-99999"));
         files.WriteState(initial with{Ready=false});RejectPolicy(()=>ServiceDeploymentTrust.RequireRuntime(files,files.ReleasePath(initial.Current),own));files.WriteState(initial);
