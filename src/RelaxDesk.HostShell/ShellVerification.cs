@@ -215,7 +215,7 @@ internal static class ShellVerification
                 foreach (bool allowClipboard in new[] { false, true })
                 {
                     port=Port();await window.StartSharing("127.0.0.1",port,"test-clipboard");await Until(()=>window.Status=="等待连接");
-                    using var viewer=new SessionClient{RequestedFeatures=[SessionCapabilities.ClipboardText]};
+                    using var viewer=new SessionClient{RequestedMode = SessionMode.Work, RequestWorkInputRevoke = true, RequestedFeatures=[SessionCapabilities.ClipboardText]};
                     var connecting=viewer.ConnectByApproval("127.0.0.1",port,timeout.Token);await Until(()=>window.RequestVisible);
                     if(!window.ClipboardChoiceVisible||window.ClipboardAllowed)throw new IOException("Clipboard choice missing or pre-approved");
                     Snapshot("host-clipboard-request.png");window.ClipboardAllowed=allowClipboard;await window.Decide(true);await connecting;
@@ -223,11 +223,19 @@ internal static class ShellVerification
                     _=await MediaProtocol.Read(viewer.Media,timeout.Token);
                     if(allowClipboard)
                     {
-                        _=ClipboardTextProtocol.Decode(await Wire.Read(viewer.Control,timeout.Token));
+                        var initialClipboard = ClipboardTextProtocol.Decode(await Wire.Read(viewer.Control,timeout.Token));
+                        await window.StopSessionInput();
+                        if (await Wire.Read(viewer.Control, timeout.Token) != new Packet("work-input-revoked-v2"))
+                            throw new IOException("Work input revocation did not reach the clipboard-enabled session");
+                        await Wire.Write(viewer.Control, ClipboardTextProtocol.Encode(new(Guid.NewGuid().ToString("N"), initialClipboard.Revision + 1, "Work clipboard after input revoke"), 1), timeout.Token);
+                        await Wire.Write(viewer.Control,new("ping-v2",2),timeout.Token);
+                        if((await Wire.Read(viewer.Control,timeout.Token)).Kind!="pong-v2")throw new IOException("Work input revocation stopped control");
+                        await Until(() => window.Host.Snapshot().Any(line => line.Contains("test_clipboard_remote_applied=True")));
                         await window.StopClipboard();var revoked=await Wire.Read(viewer.Control,timeout.Token);
                         if(revoked.Kind!="capability-revoked-v2")throw new IOException("Host clipboard revoke not delivered");
-                        await Wire.Write(viewer.Control,new("ping-v2",1),timeout.Token);
+                        await Wire.Write(viewer.Control,new("ping-v2",3),timeout.Token);
                         if((await Wire.Read(viewer.Control,timeout.Token)).Kind!="pong-v2")throw new IOException("Host clipboard revoke stopped control");
+                        Console.WriteLine("PASS Work input revoked while independently granted clipboard and TLS control remained usable");
                     }
                     await window.StopSharing();await window.Host.Finished.WaitAsync(TimeSpan.FromSeconds(10));
                     if(!allowClipboard&&window.Host.Snapshot().Any(line=>line.StartsWith("test_clipboard_")))throw new IOException("Denied clipboard permission constructed provider");
