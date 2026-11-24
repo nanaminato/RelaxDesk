@@ -16,6 +16,27 @@ public static class DisplayContracts
         Check(!new WindowsDisplaySelection([primary,left],primary.Id).RequiresGdi);
         Check(new WindowsDisplaySelection([primary,left],"SCREEN-1").Device==primary.Id);
         selected.EnsureCurrent([left with{Hdr=null},primary with{Hdr=true}]);Check(true);
+        DisplayInfo[] approved = [primary, left];
+        DisplayInfo[] current = [left with { Hdr = null }, primary with { Hdr = null }];
+        void PreviousGeometryCheck()
+        {
+            DisplayTopology.Validate(current, true);
+            var normalized = current.Select(display => display with { Hdr = null }).ToArray();
+            if (!approved.Select(display => display with { Hdr = null }).OrderBy(display => display.Id, StringComparer.OrdinalIgnoreCase)
+                .SequenceEqual(normalized.OrderBy(display => display.Id, StringComparer.OrdinalIgnoreCase)))
+                throw new IOException("Synthetic geometry fixture does not match");
+        }
+        static long MeasureGeometryAllocations(Action check)
+        {
+            for (int i = 0; i < 32; i++) check();
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 1024; i++) check();
+            return GC.GetAllocatedBytesForCurrentThread() - before;
+        }
+        long previousBytes = MeasureGeometryAllocations(PreviousGeometryCheck);
+        long currentBytes = MeasureGeometryAllocations(() => selected.EnsureCurrent(current));
+        Check(currentBytes < previousBytes);
+        Console.WriteLine($"PASS 1024 synthetic two-display geometry checks: previous_allocated_bytes={previousBytes}, current_allocated_bytes={currentBytes}");
         foreach(var changed in new[]{new[]{primary},new[]{primary,left with{Bounds=left.Bounds with{X=-1200}}},new[]{primary,left with{DpiX=192}},new[]{primary,left with{Rotation=270}},new[]{primary,left with{Identity=new string('a',64)}},new[]{primary,left with{Id="SCREEN-2"}}})
         {try{selected.EnsureCurrent(changed);throw new InvalidOperationException("Changed display accepted");}catch(IOException){Check(true);}}
         var geometry=selected.InputGeometry;

@@ -240,6 +240,11 @@ excludes QUIC framing, acknowledgments, IP overhead and the TLS control stream.
 
 ### Console regression after Auto recovery changes
 
+In 1,024 geometry checks on an already enumerated two-display fixture, the
+cached display lookup reduced managed allocations from 1,409,024 to 401,408
+bytes. The comparison includes topology validation on both paths and excludes
+Windows display enumeration, capture and input delivery.
+
 On 2026-11-25 the ordinary Windows console process successfully attached
 DXGI duplication to the RTX 5060 Ti at 2560 × 1440. The fixed-budget WPF
 `desktop-gpu-udp` loopback received 540 frames and submitted 539 through
