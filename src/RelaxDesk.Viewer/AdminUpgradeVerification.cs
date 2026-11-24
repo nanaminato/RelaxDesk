@@ -110,6 +110,24 @@ public sealed partial class ViewerWindow
                                 throw new IOException("Worker loss did not require a fresh Work approval");
                             await Send($"APPROVE {newId}");
                             await Until(() => viewer.activeMode == SessionMode.Work && viewer.inputAuthorized && viewer.displaySession?.Ready == true);
+                            var freshMenu = viewer.sessionToolbar?.AdminModeAction ?? throw new IOException("Fresh Work administrator action missing");
+                            freshMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                            var pending = await Event("admin-approval-request");
+                            string? pendingId = pending.GetProperty("requestId").GetString();
+                            if (pendingId is null || pending.GetProperty("sessionId").GetString() != newId)
+                                throw new IOException("Pending administrator approval does not belong to the fresh Work session");
+                            await Send($"REVOKE_ADMIN_INPUT {newId}");
+                            var closed = await Event("admin-approval-closed");
+                            if (closed.GetProperty("requestId").GetString() != pendingId)
+                                throw new IOException("Host closed the wrong administrator approval");
+                            await Send($"ALLOW_ADMIN_INPUT {newId} {pendingId}");
+                            await Event("admin-denied");
+                            await Until(() => viewer.activeMode == SessionMode.Work && viewer.inputAuthorized);
+                            int framesAfterRevocation = viewer.smokeFrames;
+                            await Until(() => viewer.smokeFrames > framesAfterRevocation);
+                            if (freshMenu.Visibility == Visibility.Visible || connection.IsCompleted)
+                                throw new IOException("Revocation did not preserve Work and disable administrator requests");
+                            Console.WriteLine("PASS late local administrator approval ignored after revocation; Work continued on the same TLS connection");
                             break;
                         }
                         if (attempt == 0) menu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
