@@ -13,8 +13,10 @@ internal sealed class AutoFallbackVideoChannel(
     CancellationTokenSource? recoveryDeadline;
     long lastTcpSequence;
     long lastUdpSequence;
+    int transportRevision;
 
     public string TransportName => Volatile.Read(ref udp)?.TransportName ?? tcp.TransportName;
+    public int TransportRevision => Volatile.Read(ref transportRevision);
 
     public bool StageRecovery(IVideoFrameChannel candidate) => allowRecovery && Volatile.Read(ref offered).TrySetResult(candidate);
 
@@ -65,6 +67,7 @@ internal sealed class AutoFallbackVideoChannel(
             standbyFrame = null;
             lastTcpSequence = recovered.Sequence;
             Volatile.Write(ref udp, null);
+            Interlocked.Increment(ref transportRevision);
             return recovered;
         }
         finally
@@ -107,6 +110,7 @@ internal sealed class AutoFallbackVideoChannel(
             ResetRecovery();
             lastUdpSequence = recovered.Sequence;
             Volatile.Write(ref udp, candidate);
+            Interlocked.Increment(ref transportRevision);
             reportFallback(null);
             return recovered;
         }

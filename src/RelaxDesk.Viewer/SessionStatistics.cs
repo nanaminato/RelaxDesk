@@ -4,7 +4,7 @@ using System.Windows.Controls;
 using RelaxDesk.Core;
 namespace RelaxDesk.Viewer;
 
-internal sealed record ViewerStatistics(PipelineSnapshot Pipeline,long Received,long GpuFrames,long CpuFrames,long ReadbackBytes,int RendererGenerations,string Transport = "TCP/TLS", string? Fallback = null, VideoNetworkStatistics? Network = null, VideoQueueStatistics? HostQueue = null, int ControlDepth = 0, long CoalescedMoves = 0);
+internal sealed record ViewerStatistics(PipelineSnapshot Pipeline,long Received,long GpuFrames,long CpuFrames,long ReadbackBytes,int RendererGenerations,string Transport = "TCP/TLS", string? Fallback = null, VideoNetworkStatistics? Network = null, VideoQueueStatistics? HostQueue = null, int ControlDepth = 0, long CoalescedMoves = 0, int TransportRevision = 0);
 
 internal sealed class SessionStatisticsWindow:Window
 {
@@ -43,7 +43,8 @@ internal sealed class SessionStatisticsWindow:Window
                 var sample=await Task.Run(source,lifetime.Token);lifetime.Token.ThrowIfCancellationRequested();var pipeline=sample.Pipeline;
                 // A sampling interval spanning a path switch includes traffic
                 // from both paths and cannot be attributed to the displayed one.
-                var rate = previous?.Transport == sample.Transport ? PipelineRate.Between(previous.Pipeline, pipeline) : null;
+                var rate = previous?.Transport == sample.Transport && previous.TransportRevision == sample.TransportRevision
+                    ? PipelineRate.Between(previous.Pipeline, pipeline) : null;
                 previous = sample;
                 string Format(string name)
                 {

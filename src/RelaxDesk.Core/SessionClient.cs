@@ -18,6 +18,7 @@ public sealed class SessionClient : IDisposable
     public string? AudioFailure{get;private set;}
     public SslStream Control { get; private set; } = null!;
     public IVideoFrameChannel Video { get; private set; } = null!;
+    public int VideoTransportRevision => Video is AutoFallbackVideoChannel automatic ? automatic.TransportRevision : 0;
     public SslStream Media { get; private set; } = null!;
     IQuicDatagrams? quic;
     DatagramVideoChannel? datagramVideo;
