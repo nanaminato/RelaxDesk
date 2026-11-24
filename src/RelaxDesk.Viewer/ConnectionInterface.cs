@@ -13,6 +13,7 @@ public sealed partial class ViewerWindow
     readonly ComboBox fileRateLimit = new() { ItemsSource = new[] { "20 MiB/s（默认）", "4 MiB/s", "1 MiB/s", "256 KiB/s" }, SelectedIndex = 0 };
     readonly ComboBox requestedMode = new() { ItemsSource = new[] { "Work（工作）", "Guest（访客）", "Admin（管理员）" }, SelectedIndex = 0 };
     SessionMode activeMode = SessionMode.Work;
+    string SessionEndpoint => inputAuthorized ? $"{activeMode} · {host.Text}" : $"{activeMode} · 仅查看 · {host.Text}";
 
     void BuildInterface()
     {
@@ -120,7 +121,7 @@ public sealed partial class ViewerWindow
         {
             sessionToolbar ??= new SessionToolbar(this, ToggleFullScreen, () => disconnect.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)),
                 session is null ? null : SendShortcut,ReleaseHeldInputs);
-            sessionToolbar.SetSession($"{activeMode} · {host.Text}", fullScreen);
+            sessionToolbar.SetSession(SessionEndpoint, fullScreen);
             sessionToolbar.SetClipboard(sessionPermissions is{} clipboardGate&&ClipboardFormats.Granted(clipboardGate).Any, DisableClipboard);
             sessionToolbar.SetAdminDowngrade(activeMode == SessionMode.Admin ? RequestAdminDowngrade :
                 adminUpgradeAvailable ? RequestAdminUpgrade : null, upgrade: adminUpgradeAvailable);

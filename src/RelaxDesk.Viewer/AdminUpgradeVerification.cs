@@ -158,6 +158,7 @@ public sealed partial class ViewerWindow
                             await Until(() => Volatile.Read(ref viewer.adminUpgradePending) == 0);
                             if (viewer.inputAuthorized || connection.IsCompleted || freshMenu.Visibility == Visibility.Visible)
                                 throw new IOException("An in-flight administrator request re-enabled revoked Work input");
+                            await Until(() => viewer.Toolbar?.EndpointText.StartsWith("Work · 仅查看 · ", StringComparison.Ordinal) == true);
                             Console.WriteLine("PASS Work input revoked in place with continued video and no Admin request action");
                             break;
                         }

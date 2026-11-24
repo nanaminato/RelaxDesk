@@ -416,7 +416,7 @@ public sealed partial class ViewerWindow : Window
                             if (granted && !outgoing.TryWrite(new("admin-input-activate-v2", ++sequence, Text: packet.Text))) { cancellation.Cancel(); return; }
                             activeMode = granted ? SessionMode.Admin : SessionMode.Work;
                             inputAuthorized = !inputRevoked;
-                            sessionToolbar?.SetEndpoint($"{activeMode} · {host.Text}");
+                            sessionToolbar?.SetEndpoint(SessionEndpoint);
                             adminUpgradeAvailable = !inputRevoked && !granted && packet.Text != "retry-disabled";
                             sessionToolbar?.SetAdminDowngrade(granted ? RequestAdminDowngrade : adminUpgradeAvailable ? RequestAdminUpgrade : null, upgrade: adminUpgradeAvailable);
                             sessionToolbar?.SetRemoteShortcuts(inputAuthorized);
@@ -436,7 +436,7 @@ public sealed partial class ViewerWindow : Window
                             if (!outgoing.TryWrite(new("work-input-ready-v2", ++sequence))) { cancellation.Cancel(); return; }
                             activeMode = SessionMode.Work;
                             inputAuthorized = !inputRevoked;
-                            sessionToolbar?.SetEndpoint($"{activeMode} · {host.Text}");
+                            sessionToolbar?.SetEndpoint(SessionEndpoint);
                             adminUpgradeAvailable = !inputRevoked && packet.Text == "retry-available";
                             sessionToolbar?.SetAdminDowngrade(adminUpgradeAvailable ? RequestAdminUpgrade : null, upgrade: adminUpgradeAvailable);
                             sessionToolbar?.SetRemoteShortcuts(inputAuthorized);
@@ -453,6 +453,7 @@ public sealed partial class ViewerWindow : Window
                             if (!ReferenceEquals(session, cancellation) || cancellation.IsCancellationRequested) return;
                             inputAuthorized = false;
                             adminUpgradeAvailable = false;
+                            sessionToolbar?.SetEndpoint(SessionEndpoint);
                             sessionToolbar?.SetAdminDowngrade(null);
                             richHeld.ReleaseAll();
                             heldInputs.ReleaseAll();
