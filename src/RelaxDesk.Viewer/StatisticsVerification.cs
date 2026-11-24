@@ -9,7 +9,7 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
-    public static void VerifyStatistics(Application app,string hostApplication,string fixtures,bool udp=false,bool oversized=false,bool legacyAuto=false)
+    public static void VerifyStatistics(Application app,string hostApplication,string fixtures,bool udp=false,bool oversized=false,bool legacyAuto=false,bool hostWithoutUdp=false)
     {
         if (SessionStatisticsWindow.FallbackDescription(null) != "" ||
             SessionStatisticsWindow.FallbackDescription("udp-attach-failed") == SessionStatisticsWindow.FallbackDescription("future-reason"))
@@ -17,7 +17,7 @@ public sealed partial class ViewerWindow
         string root=Path.Combine(Path.GetFullPath(fixtures),"statistics-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);
         var listener=new TcpListener(IPAddress.Loopback,0);listener.Start();int number=((IPEndPoint)listener.LocalEndpoint).Port;listener.Stop();
         string path=Path.GetFullPath(hostApplication);var info=new ProcessStartInfo(path.EndsWith(".exe",StringComparison.OrdinalIgnoreCase)?path:"dotnet"){UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true};
-        if(!path.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))info.ArgumentList.Add(path);foreach(string value in new[]{"127.0.0.1",number.ToString(),oversized ? "test-oversized-udp" : "test-hardware"})info.ArgumentList.Add(value);
+        if(!path.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))info.ArgumentList.Add(path);foreach(string value in new[]{"127.0.0.1",number.ToString(),oversized ? "test-oversized-udp" : hostWithoutUdp ? "test-udp-unavailable" : "test-hardware"})info.ArgumentList.Add(value);
         using var host=Process.Start(info)??throw new IOException("Statistics Host launch failed");using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(35));
         string Read()=>host.StandardOutput.ReadLineAsync(timeout.Token).AsTask().GetAwaiter().GetResult()??throw new IOException("Host closed");string pin=Read().Split(": ")[1],token=Read().Split(": ")[1];_=Read();
         var logs=Task.Run(async()=>
@@ -26,7 +26,7 @@ public sealed partial class ViewerWindow
             return await host.StandardOutput.ReadToEndAsync(timeout.Token);
         });
         var window=new ViewerWindow{ShowActivated=false};window.host.Text="127.0.0.1";window.port.Text=number.ToString();window.fingerprint.Text=pin;window.token.Password=token;window.pinnedConnection.IsChecked=true;window.gpuRendering.IsChecked=false;Task? running=null;
-        window.networkMode.SelectedIndex = oversized || legacyAuto ? 0 : udp ? 2 : 1;
+        window.networkMode.SelectedIndex = oversized || legacyAuto || hostWithoutUdp ? 0 : udp ? 2 : 1;
         async Task Until(Func<bool> condition){while(!condition())await Task.Delay(20,timeout.Token);}
         window.Loaded+=async(_,_)=>
         {
@@ -56,11 +56,13 @@ public sealed partial class ViewerWindow
                     if (actual().Fallback != "udp-frame-too-large") throw new IOException("Host fallback reason missing from WPF statistics");
                     Console.WriteLine("PASS WPF shows the authenticated oversized UDP frame fallback reason");
                 }
-                if (legacyAuto)
+                if (legacyAuto || hostWithoutUdp)
                 {
                     if (snapshot.Fallback != "udp-not-offered" || !panel.DisplayText.Contains("Host 未提供 UDP"))
-                        throw new IOException("The Auto Viewer did not diagnose the old Host's TCP media path");
-                    Console.WriteLine("PASS current WPF Auto Viewer uses TCP and reports that the legacy Host did not offer UDP");
+                        throw new IOException("The Auto Viewer did not diagnose the Host's TCP media path");
+                    Console.WriteLine(legacyAuto
+                        ? "PASS current WPF Auto Viewer uses TCP and reports that the legacy Host did not offer UDP"
+                        : "PASS WPF Auto Viewer shows that the Host did not offer UDP while TCP video continues");
                 }
                 panel.UpdateLayout();await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Render);var content=(FrameworkElement)panel.Content;var bitmap=new RenderTargetBitmap((int)content.ActualWidth,(int)content.ActualHeight,96,96,System.Windows.Media.PixelFormats.Pbgra32);bitmap.Render(content);byte[] pixels=new byte[bitmap.PixelWidth*bitmap.PixelHeight*4];bitmap.CopyPixels(pixels,bitmap.PixelWidth*4,0);if(!pixels.Where((_,index)=>index%4==3).Any(value=>value>0)||!pixels.Where((_,index)=>index%4==0).Any(value=>value>0&&value<250))throw new IOException("Statistics rendered no readable content");var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));using(var output=File.Create(Path.Combine(root,"statistics.png")))png.Save(output);
                 panel.Close();await panel.Completion;int stopped=snapshots;await Task.Delay(1100,timeout.Token);if(snapshots!=stopped||window.statisticsWindow is not null)throw new IOException("Closed panel continued sampling");

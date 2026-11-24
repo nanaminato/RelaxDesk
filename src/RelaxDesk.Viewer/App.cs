@@ -49,6 +49,7 @@ public sealed class App : Application
             else if(args is ["--statistics-contracts",var udpStatisticsHost,var udpStatisticsFixtures,"udp"])ViewerWindow.VerifyStatistics(app,udpStatisticsHost,udpStatisticsFixtures,udp:true);
             else if(args is ["--statistics-contracts",var fallbackStatisticsHost,var fallbackStatisticsFixtures,"oversized"])ViewerWindow.VerifyStatistics(app,fallbackStatisticsHost,fallbackStatisticsFixtures,oversized:true);
             else if(args is ["--statistics-contracts",var legacyStatisticsHost,var legacyStatisticsFixtures,"legacy-auto"])ViewerWindow.VerifyStatistics(app,legacyStatisticsHost,legacyStatisticsFixtures,legacyAuto:true);
+            else if(args is ["--statistics-contracts",var tcpOnlyStatisticsHost,var tcpOnlyStatisticsFixtures,"host-without-udp"])ViewerWindow.VerifyStatistics(app,tcpOnlyStatisticsHost,tcpOnlyStatisticsFixtures,hostWithoutUdp:true);
             else if (args is ["--admin-upgrade-contracts", var adminHost]) ViewerWindow.VerifyAdminUpgrade(app, adminHost);
             else if (args is ["--admin-lifecycle-contracts", var lifecycleHost]) ViewerWindow.VerifyAdminUpgrade(app, lifecycleHost, activate: true);
             else if (args is ["--admin-worker-loss-contracts", var workerLossHost]) ViewerWindow.VerifyAdminUpgrade(app, workerLossHost, activate: true, workerLoss: true);

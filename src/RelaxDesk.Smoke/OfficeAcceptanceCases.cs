@@ -51,6 +51,7 @@ internal static class OfficeAcceptanceCases
             Add("office-viewer-" + mode, a.Viewer, "--" + mode + "-contracts", a.Host, Folder(mode));
         Add("office-viewer-udp-statistics", a.Viewer, "--statistics-contracts", a.Host, Folder("statistics-udp"), "udp");
         Add("office-viewer-fallback-statistics", a.Viewer, "--statistics-contracts", a.Host, Folder("statistics-fallback"), "oversized");
+        Add("office-viewer-host-without-udp", a.Viewer, "--statistics-contracts", a.Host, Folder("statistics-host-without-udp"), "host-without-udp");
         Add("office-viewer-text-quality", a.Viewer, "--office-text-quality", "software");
         Add("office-viewer-admin-upgrade", a.Viewer, "--admin-upgrade-contracts", a.Host);
         Add("office-viewer-admin-lifecycle", a.Viewer, "--admin-lifecycle-contracts", a.Host);
