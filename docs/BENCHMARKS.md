@@ -78,6 +78,12 @@ Viewer measured control RTT P95 of 3.79 ms from three heartbeats. This
 exercises network-path recovery with a real DXGI source and hardware H.264
 on loopback. Capture-device loss and physical input were outside this run.
 
+The fixture also reports the Viewer-monotonic interval from the first TCP
+media frame to the first recovered UDP media frame. In a repeat, the interval
+was 14.70 s, including the time spent receiving 317 TCP frames while waiting
+for the recovery probe. This is a recovery interval, with continuous TCP
+media during the wait. It does not quantify a frame outage or input latency.
+
 The `desktop-gpu-udp` fixture captured the 2560 × 1440 console with DXGI and
 used hardware H.264, QUIC UDP, and D3D11 Viewer submission. In 25.7 seconds it
 received and submitted 540 frames, with zero full-frame readback and no

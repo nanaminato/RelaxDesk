@@ -190,6 +190,8 @@ public sealed partial class ViewerWindow : Window
         ++connectionGeneration; Exception? attemptError=null; bool established=false,restoreFullScreen=target.FullScreen; string[] retryFeatures=target.Features;long connectedAt=0;bool fileTransportInterrupted=false;
         while (outgoing.Reader.TryRead(out _)) { }
         int quicAttempts = 0, recoveryTcpFrames = 0, recoveryUdpFrames = 0;
+        long firstRecoveryTcpFrame = 0;
+        double? recoveryFrameIntervalMs = null;
         bool autoRecoveryTest = smoke?.AutoRecoveryTest == true;
         bool canOfferUdp = target.Network != NetworkMode.Tcp &&
             (smoke is null || smoke.RequireUdp || autoRecoveryTest) &&
@@ -248,8 +250,15 @@ public sealed partial class ViewerWindow : Window
                 VideoSettingsPresented(frame);
                 if (autoRecoveryTest)
                 {
-                    if (connection.Video.TransportName == "TCP/TLS") recoveryTcpFrames++;
-                    else if (connection.Video.TransportName == "UDP") recoveryUdpFrames++;
+                    if (connection.Video.TransportName == "TCP/TLS")
+                    {
+                        if (recoveryTcpFrames++ == 0) firstRecoveryTcpFrame = Stopwatch.GetTimestamp();
+                    }
+                    else if (connection.Video.TransportName == "UDP")
+                    {
+                        if (recoveryUdpFrames++ == 0 && recoveryTcpFrames > 0)
+                            recoveryFrameIntervalMs = Stopwatch.GetElapsedTime(firstRecoveryTcpFrame).TotalMilliseconds;
+                    }
                     if (recoveryTcpFrames >= 5 && recoveryUdpFrames >= 5) cancellation.Cancel();
                 }
                 else if (smoke is not null && !smoke.FileTransfer && !smoke.RichClipboardTest && !smoke.ReconnectTest && !smoke.IdleSessionTest && !smoke.IdleRepaintTest && !smoke.FixedMediaBudget && count >= smoke.Frames && !smoke.CloseWhileStreaming) cancellation.Cancel();
@@ -634,7 +643,9 @@ public sealed partial class ViewerWindow : Window
                 var resources = GraphicsDiagnostics.Resources();
                 bool visibilityVerified = !smoke.FixedMediaBudget || !smoke.RequireGpu || (gpuFrames >= smoke.Frames * .9 && hiddenPresents == 0 && occludedPresents == 0);
                 bool faultsVerified = (!smoke.RichClipboardTest||richClipboardTestVerified) && (!smoke.FileTransfer||fileSessionVerified) && (!smoke.IdleSessionTest || (heartbeatReplies >= 4 && pacing.Elapsed.TotalSeconds >= 25 && (receivedFrames == 1 || smoke.DesktopSample))) && (!smoke.IdleRepaintTest || (idleRepaints >= 2 && resizeCount >= 2 && receivedFrames == 1)) && (!smoke.SimulateDeviceLoss || (simulatedLosses == 3 && gpuFrames >= 30 && cpuFrames > 0)) && (!smoke.SimulateGap || (keyframeRequests > 0 && rendererGenerations >= 2));
-                bool recoveryVerified = !autoRecoveryTest || recoveryTcpFrames >= 5 && recoveryUdpFrames >= 5 && heartbeatReplies >= 2;
+                bool recoveryVerified = !autoRecoveryTest || recoveryTcpFrames >= 5 && recoveryUdpFrames >= 5 && heartbeatReplies >= 2 && recoveryFrameIntervalMs is > 0;
+                if (recoveryFrameIntervalMs is double recoveryMs)
+                    Console.WriteLine(FormattableString.Invariant($"auto_recovery_first_tcp_to_first_udp_frame_ms={recoveryMs:F2}"));
                 if ((smoke.FixedMediaBudget ? receivedFrames == smoke.Frames && smokeFrames > 0 : smokeFrames >= smoke.Frames) && (!smoke.RequireGpu || (gpuFrames > 0 && readbackBytes == 0 && cpuFrames == 0)) && resources.Empty && faultsVerified && visibilityVerified && recoveryVerified && (smoke.RequireUdp != true || connection.Video?.TransportName == "UDP")) Console.WriteLine("PASS WPF " + report + $" heartbeat_replies={heartbeatReplies} recovery_tcp_frames={recoveryTcpFrames} recovery_udp_frames={recoveryUdpFrames} native_live_resources=0");
                 else { Environment.ExitCode = 1; Console.Error.WriteLine("FAIL WPF " + report + $" resources_empty={resources.Empty}"); }
             }
