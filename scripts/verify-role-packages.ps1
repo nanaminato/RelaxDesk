@@ -130,8 +130,14 @@ try {
         $quicSession.Contains('PASS independently approved TLS audio continued through repeated TCP/UDP video switches') -and
         $quicSession.Contains('PASS healthy static UDP video stayed connected through the datagram silence interval') -and
         $quicSession.Contains('PASS requested static desktop refresh delivered a decodable key frame over the same UDP path')) 'Packaged Host QUIC, fallback, or static refresh evidence missing'
+    Confirm ($quicSession -match '(?m)^PASS shaped UDP 524288 B/s cap, 8/20 ms delay pulses, shaped_packets=[1-9][0-9]*, reordered_pairs=[1-9][0-9]*, QUIC_reordered=[1-9][0-9]*, advancing H\.264 and jitter statistics') 'Packaged Host shaped UDP delay, reordering or jitter evidence missing'
+    Confirm ($quicSession -match '(?m)^PASS datagram loss relay dropped=[1-9][0-9]*, host_estimated_lost=[1-9][0-9]*, sent=[1-9][0-9]*' -and
+        $quicSession.Contains('PASS loss relay drove the running H.264 encoder from 8 to 6 Mbit/s target')) 'Packaged Host measured UDP loss or bitrate adaptation evidence missing'
     $autoFiles = Invoke-App 'packaged-auto-files' $SmokeApplication @($hostExe, '--file-transfer-auto', (Join-Path $output 'auto-file-fixtures')) 150
     Confirm ($autoFiles.Contains('PASS Auto switched from TCP to UDP during the same download, file SHA-256 verified and TLS control kept alive')) 'Packaged Host file integrity during Auto recovery evidence missing'
+    $udpFiles = Invoke-App 'packaged-udp-files' $SmokeApplication @($hostExe, '--file-transfer-udp', (Join-Path $output 'udp-file-fixtures')) 150
+    Confirm ($udpFiles -match '(?m)^PASS shared downstream cap=[1-9][0-9]* B/s: active download video_transport=UDP, video_forwarded_bytes=[1-9][0-9]*, file_tls_bytes=[1-9][0-9]*' -and
+        $udpFiles.Contains('PASS concurrent video and files with UDP media capped')) 'Packaged Host shared UDP video and TLS file bandwidth evidence missing'
     $resumeFiles = Invoke-App 'packaged-file-resume' $viewerExe @('--file-resume-session-contracts', $hostExe, (Join-Path $output 'file-resume-fixtures')) 150
     Confirm ($resumeFiles.Contains('PASS production Host/Viewer/TLS directory upload recovery') -and
         $resumeFiles.Contains('PASS production TLS directory download recovery') -and
