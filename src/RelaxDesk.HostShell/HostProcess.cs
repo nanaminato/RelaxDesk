@@ -26,7 +26,7 @@ internal sealed class HostProcess
     public readonly List<string> Lines = [];
     public string[] Snapshot(){lock(Lines)return Lines.ToArray();}
     public Task Finished => completion ?? Task.CompletedTask;
-    public async Task Start(string application,string ip,int port,string backend="dxgi",string? fileRoot=null,string? display=null, bool guestOnly=false, bool adminDisabled=false)
+    public async Task Start(string application,string ip,int port,string backend="dxgi",string? fileRoot=null,string? display=null, bool guestOnly=false, bool adminDisabled=false, bool workOnly=false)
     {
         if(Running) throw new InvalidOperationException("共享已在运行");
         if(!IPAddress.TryParse(ip,out var address)||address.Equals(IPAddress.Any)||address.Equals(IPAddress.IPv6Any)||port is <1 or >65535)throw new ArgumentException("请选择有效的本机 IP 和端口");
@@ -36,6 +36,7 @@ internal sealed class HostProcess
         start.ArgumentList.Add("--shell");
         if (guestOnly) start.ArgumentList.Add("--guest-only");
         if (adminDisabled) start.ArgumentList.Add("--no-admin");
+        if (workOnly) start.ArgumentList.Add("--work-only");
         fileRootConfigured=!string.IsNullOrWhiteSpace(fileRoot);
         if(fileRootConfigured){start.ArgumentList.Add("--file-root");start.ArgumentList.Add(Path.GetFullPath(fileRoot!));}
         if(display is not null){start.ArgumentList.Add("--display");start.ArgumentList.Add(display);}

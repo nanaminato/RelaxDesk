@@ -8,10 +8,12 @@
 | Work | Fresh local consent | Ordinary-desktop input | Existing independent grants and shared display scope |
 | Admin | Initial HostShell approval, independent confirmation, local UAC and worker readiness | High-integrity input on the approved Default desktop | Existing independent grants |
 
-HostShell can permit all modes, Guest and Work, or Guest only. The CLI
+HostShell can permit all modes, Guest and Work, Guest only, or Work only. The CLI
 `--no-admin` rejects initial Admin requests and omits upgrade negotiation in
 Work sessions. The Guest-only CLI option is
 `RelaxDesk.Host --listen --guest-only <specific LAN IP> <port> dxgi`.
+Use `--work-only` in the same position to accept Work and legacy Work
+connections and disable Admin upgrades.
 The CLI approves a Guest with ordinary input via `APPROVE_INPUT`; optional
 grants retain their existing commands, with `_INPUT` appended for Guest input.
 Work uses fresh consent on reconnect. The Viewer can opt in to a persistent

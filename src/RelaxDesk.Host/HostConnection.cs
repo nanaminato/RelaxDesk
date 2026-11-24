@@ -13,7 +13,7 @@ namespace RelaxDesk.Host;
 internal static class HostConnection
 {
     public static async Task Run(TcpListener listener, TcpClient client, X509Certificate2 cert, string token,
-        string backend, string? selectedFileRoot, ShellBridge.Session? shell, CancellationToken stop,FileTransferResumeStore? fileResumes=null,string? selectedDisplay=null,bool guestOnly=false,bool adminDisabled=false)
+        string backend, string? selectedFileRoot, ShellBridge.Session? shell, CancellationToken stop,FileTransferResumeStore? fileResumes=null,string? selectedDisplay=null,bool guestOnly=false,bool adminDisabled=false,bool workOnly=false)
     {
         Packet hello;
         using var tls = new SslStream(client.GetStream(), false);
@@ -62,7 +62,8 @@ internal static class HostConnection
             throw new AuthenticationException("Device identity is restricted to Work sessions");
         string? deviceFingerprint = hello.DeviceKey is not null && !guestOnly
             ? await VerifyWorkDevice(tls, cert, hello.DeviceKey, stop) : null;
-        string? approval = (SessionAccess.Available(hello.Mode) || adminEligible) && (!guestOnly || hello.Mode == SessionMode.Guest)
+        string? approval = (SessionAccess.Available(hello.Mode) || adminEligible) && (!guestOnly || hello.Mode == SessionMode.Guest) &&
+            (!workOnly || hello.Mode is null or SessionMode.Work)
             ? await RequestConsent(client, shell, requestedFeatures, hello.Mode, deviceFingerprint, stop)
             : null;
         bool guestInput = approval?.EndsWith("_INPUT", StringComparison.Ordinal) == true && hello.Mode == SessionMode.Guest;

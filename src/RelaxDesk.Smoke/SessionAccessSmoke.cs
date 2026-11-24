@@ -21,18 +21,23 @@ internal static class SessionAccessSmoke
         await Verify(hostPath, SessionMode.Work, grantInput: true, guestOnly: false, denied: false, requestUpgrade: true, approveUpgrade: true, activationTimeout: true);
         await Verify(hostPath, SessionMode.Work, grantInput: true, guestOnly: false, denied: false, requestUpgrade: true, adminDisabled: true);
         await Verify(hostPath, SessionMode.Admin, grantInput: false, guestOnly: false, denied: true, adminDisabled: true);
+        await Verify(hostPath, SessionMode.Guest, grantInput: false, guestOnly: false, denied: true, workOnly: true);
+        await Verify(hostPath, SessionMode.Admin, grantInput: false, guestOnly: false, denied: true, workOnly: true);
+        await Verify(hostPath, SessionMode.Work, grantInput: true, guestOnly: false, denied: false, requestUpgrade: true, workOnly: true);
+        await Verify(hostPath, null, grantInput: true, guestOnly: false, denied: false, workOnly: true);
+        Console.WriteLine("PASS Work-only Host rejects Guest and Admin, omits Admin upgrade, and accepts explicit and legacy Work with local consent");
         Console.WriteLine("PASS verified Work device proof over production TLS; local approval still required");
         Console.WriteLine("PASS production TLS and shell approval: Guest view/input/revoke, legacy Work policy, Guest-only and Admin denial without independent consent");
     }
 
-    static async Task Verify(string hostPath, SessionMode? mode, bool grantInput, bool guestOnly, bool denied, bool testAdminConsent = false, bool proveDevice = false, bool requestUpgrade = false, bool adminDisabled = false, bool approveUpgrade = false, bool activationTimeout = false)
+    static async Task Verify(string hostPath, SessionMode? mode, bool grantInput, bool guestOnly, bool denied, bool testAdminConsent = false, bool proveDevice = false, bool requestUpgrade = false, bool adminDisabled = false, bool approveUpgrade = false, bool activationTimeout = false, bool workOnly = false)
     {
         var reservation = new TcpListener(IPAddress.Loopback, 0);
         reservation.Start();
         int port = ((IPEndPoint)reservation.LocalEndpoint).Port;
         reservation.Stop();
-        string[] options = guestOnly ? ["--shell", "--guest-only"] : adminDisabled ? ["--shell", "--no-admin"] : ["--shell"];
-        string backend = testAdminConsent || adminDisabled && mode == SessionMode.Admin ? "dxgi" : activationTimeout ? "test-admin-lifecycle" : "test-displays";
+        string[] options = guestOnly ? ["--shell", "--guest-only"] : workOnly ? ["--shell", "--work-only"] : adminDisabled ? ["--shell", "--no-admin"] : ["--shell"];
+        string backend = testAdminConsent || (adminDisabled || workOnly) && mode == SessionMode.Admin ? "dxgi" : activationTimeout ? "test-admin-lifecycle" : "test-displays";
         using var host = Process.Start(ChildProcess.Create(hostPath, [..options, "127.0.0.1", port.ToString(), backend]))
             ?? throw new IOException("Host launch failed");
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(18));
@@ -77,7 +82,7 @@ internal static class SessionAccessSmoke
             await host.StandardInput.FlushAsync();
             await connect;
             if (viewer.InputAllowed != grantInput) throw new IOException("Incorrect granted input");
-            if (viewer.AdminUpgrade != (requestUpgrade && !adminDisabled)) throw new IOException("Incorrect administrator request negotiation");
+            if (viewer.AdminUpgrade != (requestUpgrade && !adminDisabled && !workOnly)) throw new IOException("Incorrect administrator request negotiation");
             var frame = await viewer.Video.Read(timeout.Token);
             if (frame.Data.Length == 0) throw new IOException("No media delivered");
 
