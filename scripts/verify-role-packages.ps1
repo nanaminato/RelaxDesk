@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$HostArchive,[Parameter(Mandatory)][string]$ViewerArchive,[Parameter(Mandatory)][string]$SmokeApplication,[Parameter(Mandatory)][string]$OutputDirectory)
+param([Parameter(Mandatory)][string]$HostArchive,[Parameter(Mandatory)][string]$ViewerArchive,[Parameter(Mandatory)][string]$SmokeApplication,[Parameter(Mandatory)][string]$OutputDirectory,[switch]$SkipMachineServicePreview)
 $ErrorActionPreference='Stop'
 $repository=Split-Path $PSScriptRoot -Parent
 $output=[IO.Path]::GetFullPath($OutputDirectory)
@@ -69,9 +69,15 @@ try {
     $viewerQuic = Join-Path $viewerPackage.root 'Viewer/msquic.dll'
     Confirm ((Test-Path -LiteralPath $hostQuic -PathType Leaf) -and (Test-Path -LiteralPath $viewerQuic -PathType Leaf)) 'Bundled MsQuic runtime missing'
     Confirm ((Get-FileHash -LiteralPath $hostQuic -Algorithm SHA256).Hash -ceq (Get-FileHash -LiteralPath $viewerQuic -Algorithm SHA256).Hash) 'Bundled MsQuic runtime mismatch'
-    $identity=[Security.Principal.WindowsIdentity]::GetCurrent();$owner=$identity.User.Value;$identity.Dispose()
-    $preview=Invoke-App 'host-service-readonly-preflight' $serviceExe @('--install-service','--package',$hostPackage.root,'--owner-sid',$owner,'--what-if') | ConvertFrom-Json
-    Confirm (!$preview.Changed -and $preview.Version -ceq $hostPackage.metadata.version) 'Service package readonly preview failed'
+    $servicePayloadVersion = Invoke-App 'host-service-payload' $SmokeApplication @('--service-package-contract', $hostPackage.root)
+    Confirm ($servicePayloadVersion.Trim() -ceq $hostPackage.metadata.version) 'Package-only service validation failed'
+    if($SkipMachineServicePreview){
+        $steps.Add([pscustomobject]@{name='host-service-readonly-preflight';status='NOT_TESTED';reason='Machine service preview explicitly skipped'})
+    } else {
+        $identity=[Security.Principal.WindowsIdentity]::GetCurrent();$owner=$identity.User.Value;$identity.Dispose()
+        $preview=Invoke-App 'host-service-readonly-preflight' $serviceExe @('--install-service','--package',$hostPackage.root,'--owner-sid',$owner,'--what-if') | ConvertFrom-Json
+        Confirm (!$preview.Changed -and $preview.Version -ceq $hostPackage.metadata.version) 'Service package readonly preview failed'
+    }
     $ui=Invoke-App 'host-one-click-ui' $shellExe @('--service-setup-ui-contracts',$hostExe,(Join-Path $output 'ui-fixtures'))
     Confirm ($ui.Contains('PASS 54 actual WPF')) 'One-click UI acceptance marker missing'
     foreach($mode in @('deflate','approval-fallback-cpu','udp-cpu','auto-recovery-cpu')){
@@ -101,7 +107,7 @@ try {
     $workTrust = Invoke-App 'packaged-work-trust' $shellExe @('--work-trust-contracts',$hostExe,(Join-Path $output 'work-trust-fixtures'))
     Confirm ($workTrust.Contains('PASS WPF Work device trust') -and $workTrust.Contains('PASS WPF one-use Work preapproval')) 'Packaged Work device trust and one-use approval evidence missing'
     $details=[pscustomobject]@{version=$hostPackage.metadata.version;revision=$hostPackage.metadata.revision;native_sha256=$native[0];packages=@($packages | ForEach-Object {[pscustomobject]@{role=$_.metadata.role;archive=$_.archive;sha256=$_.sha256;bytes=$_.bytes;manifest_files=$_.manifest_files}})}
-    $status='PASS_SEPARATE_PACKAGES_SYNTHETIC_ONLY'
+    $status=if($SkipMachineServicePreview){'PASS_SEPARATE_PACKAGES_SYNTHETIC_ONLY_MACHINE_PREVIEW_SKIPPED'}else{'PASS_SEPARATE_PACKAGES_SYNTHETIC_ONLY'}
 } finally {
     [pscustomobject]@{status=$status;assertions=$checks;details=$details;steps=$steps.ToArray();home_dual_pc='NOT_TESTED';uac_and_scm_mutation='NOT_TESTED';physical_capture_input_audio='NOT_TESTED'} | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $output 'result.json') -Encoding utf8
 }
