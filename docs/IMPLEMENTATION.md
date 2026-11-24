@@ -1,5 +1,7 @@
 # RelaxDesk implementation and evidence
 
+Latest delivery is now [separate self-contained Host and Viewer ZIPs](ROLE-PACKAGES.md), version `0.4.2-roles.20261124-202127.g7e51e95`. Host includes the one-click service UI; Viewer contains no Host/service payload. Actual split-archive hash/version/runtime/preflight/UI and synthetic cross-role checks pass. Historical source-only/no-package checkpoints below predate this explicit packaging request. Physical UAC/SCM/Home acceptance remains pending.
+
 Service UI is now [one-click enable](SERVICE-SETUP-UI.md): automatic install/start/connection, original-user identity, no second ordinary-success dialog, existing-running-service fast path; advanced startup/repair/removal stays collapsed. Source-only change, no new package or real SCM/UAC acceptance.
 
 Current source adds [service installation/update/start/removal inside HostShell](SERVICE-SETUP-UI.md), with explicit UAC for a separate maintenance helper and the original user's SID. No per-change package: the delivered g5ebe35d ZIP is unchanged and still uses the documented administrator CLI. Actual UAC/SCM deployment remains pending.

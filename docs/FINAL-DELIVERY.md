@@ -1,5 +1,7 @@
 # Unified office candidate delivery — 2026-11-24
 
+Latest distribution is now [the separately packaged Host and Viewer](ROLE-PACKAGES.md), including the one-click service UI. This page preserves the earlier combined archive's exact unchanged artifact and evidence; use the role-package report for the current requested split delivery.
+
 Later source-only enhancement: [service installation inside HostShell](SERVICE-SETUP-UI.md). This historical archive is unchanged and does not contain those new buttons; its administrator CLI still works. No repackaging is performed for the UI enhancement.
 
 This is a post-build report, not a claim of physical acceptance. The owner's request to avoid per-slice packaging was honored. One final unified delivery is prepared after the source audit; its first candidate failed a deep-path deployment test and was rejected, repaired and replaced. This is final-delivery failure correction, not per-feature packaging. [Unmodified failure and regression evidence](../benchmarks/2026-11-24-service-long-path-validation.md).

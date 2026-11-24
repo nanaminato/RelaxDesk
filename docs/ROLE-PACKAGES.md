@@ -1,5 +1,7 @@
 # Separate Host and Viewer packages
 
+Delivered version **`0.4.2-roles.20261124-202127.g7e51e95`**. [Exact ZIPs, hashes and observed verification](../benchmarks/2026-11-24-separated-packages-validation.md): 23 split-package assertions, actual packaged 54-check one-click UI and two 60-frame synthetic cross-role sessions PASS. Physical acceptance remains pending. Archives live under `build/RelaxDesk-separated-win-x64-20261124`.
+
 The owner requests independent controlled-side and connecting-side ZIPs. `scripts/package-roles.ps1` publishes the same committed version into two self-contained win-x64 closures:
 
 | Role | Product components | Root entry |
@@ -18,5 +20,11 @@ Build from a clean committed tree, for example:
 ```
 
 Omit `-SkipNativeBuild` to rebuild the native DLL. Output must be a fresh directory under workspace `build`; packages/evidence are never overwritten. Stable SDK 11.0.100, ordinary version/notice checks and unchanged native ABI 2 apply. Runtime hash manifests are produced per role after its final contents; no role performs installation, listening or startup mutation during packaging.
+
+Reproduce the actual split-archive verification with developer tools outside the distribution:
+
+```powershell
+./scripts/verify-role-packages.ps1 -HostArchive E:/RelaxDesk/build/RelaxDesk-separated-win-x64-20261124/RelaxDesk-Host-win-x64.zip -ViewerArchive E:/RelaxDesk/build/RelaxDesk-separated-win-x64-20261124/RelaxDesk-Viewer-win-x64.zip -SmokeApplication E:/RelaxDesk/build/service-one-click-authorized-artifacts/bin/RelaxDesk.Smoke/release/RelaxDesk.Smoke.dll -OutputDirectory E:/RelaxDesk/build/separated-packages-verification-fresh
+```
 
 Final delivery validation must extract both actual ZIPs into a separate directory, verify each manifest and role isolation, check actual EXE versions/Host bundled runtime and native hashes, perform Host service-payload readonly preflight, run the Host's one-click UI contracts with a fake privileged launcher and a synthetic authenticated Host-to-Viewer session across the two extracted packages. Do not count that as a real service install or Home dual-PC acceptance. Exact results and archive hashes are recorded after the observed run; physical UAC/SCM/input/audio/GPU/long-duration validation remains pending.

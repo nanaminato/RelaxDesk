@@ -1,0 +1,80 @@
+{
+  "status": "PASS_SEPARATE_PACKAGES_SYNTHETIC_ONLY",
+  "assertions": 23,
+  "details": {
+    "version": "0.4.2-roles.20261124-202127.g7e51e95",
+    "revision": "7e51e9549819c9d088bae7cacbc4e7ed4fd4740b",
+    "native_sha256": "718F8C5D4433145BA586AE1EC985764E4FB0AB5982BA227611572F768EFDA0D4",
+    "packages": [
+      {
+        "role": "host",
+        "archive": "E:\\RelaxDesk\\build\\RelaxDesk-separated-win-x64-20261124\\RelaxDesk-Host-win-x64.zip",
+        "sha256": "57864633CCEA6ECAE13385BFCBA5C0ABB8D34C5B68C66DEBE9DCA7C97F467B08",
+        "bytes": 148930864,
+        "manifest_files": 831
+      },
+      {
+        "role": "viewer",
+        "archive": "E:\\RelaxDesk\\build\\RelaxDesk-separated-win-x64-20261124\\RelaxDesk-Viewer-win-x64.zip",
+        "sha256": "AE8663EB58E6A13439969C73292FB10F4824E3FAC8F559DC45566CF1447D9597",
+        "bytes": 68558639,
+        "manifest_files": 420
+      }
+    ]
+  },
+  "steps": [
+    {
+      "name": "host-manifest",
+      "exit_code": 0,
+      "seconds": 0.7072009
+    },
+    {
+      "name": "viewer-manifest",
+      "exit_code": 0,
+      "seconds": 0.2362171
+    },
+    {
+      "name": "host-runtime",
+      "exit_code": 0,
+      "seconds": 0.3166686
+    },
+    {
+      "name": "host-ui-version",
+      "exit_code": 0,
+      "seconds": 2.4039146
+    },
+    {
+      "name": "viewer-version",
+      "exit_code": 0,
+      "seconds": 0.3529892
+    },
+    {
+      "name": "service-version",
+      "exit_code": 0,
+      "seconds": 0.3594131
+    },
+    {
+      "name": "host-service-readonly-preflight",
+      "exit_code": 0,
+      "seconds": 0.7591559
+    },
+    {
+      "name": "host-one-click-ui",
+      "exit_code": 0,
+      "seconds": 3.4572369
+    },
+    {
+      "name": "cross-role-deflate",
+      "exit_code": 0,
+      "seconds": 5.5345223
+    },
+    {
+      "name": "cross-role-approval-fallback-cpu",
+      "exit_code": 0,
+      "seconds": 4.1061441
+    }
+  ],
+  "home_dual_pc": "NOT_TESTED",
+  "uac_and_scm_mutation": "NOT_TESTED",
+  "physical_capture_input_audio": "NOT_TESTED"
+}
