@@ -11,8 +11,8 @@ internal sealed class ShellBridge : IDisposable
     Session? current;
     public ShellBridge(CancellationTokenSource stop)
     { this.stop = stop; _ = Task.Run(ReadCommands); }
-    public static void Emit(string type, string? address = null, int port = 0, string[]? features = null, string? sessionId = null, SessionMode? mode = null, string? deviceFingerprint = null, string? requestId = null)
-        => Console.WriteLine("RD_EVENT " + JsonSerializer.Serialize(new { type, address, port, features, sessionId, mode = mode?.ToString(), deviceFingerprint, requestId, version = BuildIdentity.Version }));
+    public static void Emit(string type, string? address = null, int port = 0, string[]? features = null, string? sessionId = null, SessionMode? mode = null, string? deviceFingerprint = null, string? requestId = null, string? desktopReason = null)
+        => Console.WriteLine("RD_EVENT " + JsonSerializer.Serialize(new { type, address, port, features, sessionId, mode = mode?.ToString(), deviceFingerprint, requestId, desktopReason, version = BuildIdentity.Version }));
     public Session Begin()
     {
         lock (sync)

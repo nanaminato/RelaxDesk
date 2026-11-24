@@ -173,7 +173,7 @@ try
             finally { if (shellMode) ShellBridge.Emit("session-ended", sessionId: scope!.Id); }
         }
         catch (Exception e) when (e is IOException or AuthenticationException or OperationCanceledException or SocketException or InvalidDataException or System.Runtime.InteropServices.ExternalException or System.Threading.Channels.ChannelClosedException)
-        { if(shellMode&&e is WindowsSessionUnavailableException)ShellBridge.Emit("desktop-unavailable"); Console.WriteLine($"Session ended: {e.Message}"); }
+        { if(shellMode&&e is WindowsSessionUnavailableException desktop)ShellBridge.Emit("desktop-unavailable", desktopReason: desktop.Reason); Console.WriteLine($"Session ended: {e.Message}"); }
         finally { listener.Stop(); }
         // Do not spin on repeated failed handshakes; STOP remains immediately cancellable.
         if (persistent && !stop.IsCancellationRequested) await Task.Delay(250, stop.Token);

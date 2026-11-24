@@ -33,7 +33,8 @@ internal sealed partial class HostWindow:Window
     readonly Button revokeClipboard=new(){Content="停止剪贴板同步",Visibility=Visibility.Collapsed};
     readonly TextBox logs=new(){IsReadOnly=true,TextWrapping=TextWrapping.Wrap,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,MaxHeight=180,FontFamily=new("Consolas"),FontSize=11};
     readonly string application;
-    bool closing,desktopUnavailable;
+    bool closing;
+    string? desktopNotice;
     bool adminDeploymentUnavailable;
     const string AdminDeploymentNotice = "管理员输入代理不可用。访客和工作模式仍可使用。要修复代理，请结束共享，在「系统服务」的「更多设置」中选择「更新／修复并应用设置（管理员）」。";
     const string DesktopUnavailableNotice="不支持当前会话或安全桌面控制。请回到原用户的普通桌面后重新连接并授权；Host 继续等待连接。";
@@ -102,7 +103,7 @@ internal sealed partial class HostWindow:Window
     }
 
     internal string Status=>state.Text;
-    internal bool DesktopUnavailableVisible=>desktopUnavailable&&detail.Text==DesktopUnavailableNotice;
+    internal string? DesktopStatusNotice => detail.Text == desktopNotice ? desktopNotice : null;
     internal async Task StartSharing(string? address=null,int? number=null,string backend="dxgi",bool recovering=false)
     {
         if(ServiceSetupBusy)return;
@@ -152,9 +153,18 @@ internal sealed partial class HostWindow:Window
             case "admin-approval-closed" when change.SessionId == displayedSessionId && change.RequestId == displayedAdminRequestId:
                 CloseAdminRequest();
                 break;
-            case "listening":revokeAdminInput.Visibility=revokeGuestInput.Visibility=revokeAudio.Visibility=Visibility.Collapsed;request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=revokeFiles.Visibility=disconnectSession.Visibility=Visibility.Collapsed;displayedSessionId=null;state.Text="等待连接";detail.Text=desktopUnavailable?DesktopUnavailableNotice:adminDeploymentUnavailable?AdminDeploymentNotice:$"Viewer 可连接 {ip.Text}:{port.Text}，收到请求后由你确认。";break;
-            case "desktop-unavailable":desktopUnavailable=true;detail.Text=DesktopUnavailableNotice;break;
-            case "approval-request":desktopUnavailable=false;displayedSessionId=change.SessionId;disconnectSession.Visibility=Visibility.Visible;activeMode = change.Mode ?? "Work"; activeInput = false;
+            case "listening":revokeAdminInput.Visibility=revokeGuestInput.Visibility=revokeAudio.Visibility=Visibility.Collapsed;request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=revokeFiles.Visibility=disconnectSession.Visibility=Visibility.Collapsed;displayedSessionId=null;state.Text="等待连接";detail.Text=desktopNotice??(adminDeploymentUnavailable?AdminDeploymentNotice:$"Viewer 可连接 {ip.Text}:{port.Text}，收到请求后由你确认。");break;
+            case "desktop-unavailable":
+                detail.Text = desktopNotice = change.DesktopReason switch
+                {
+                    "session-locked" => "Windows 已锁屏。请在本机解锁后重新连接并授权。",
+                    "physical-console-session-changed" => "Windows 已切换用户会话。请回到原用户桌面后重新连接并授权。",
+                    "input-desktop-unavailable" => "Host 无法读取当前输入桌面。请回到普通桌面后重新连接并授权。",
+                    "input-desktop-unsupported" or "thread-desktop-unsupported" => "Host 无法控制当前非默认桌面。请回到普通桌面后重新连接并授权。",
+                    _ => DesktopUnavailableNotice
+                };
+                break;
+            case "approval-request":desktopNotice=null;displayedSessionId=change.SessionId;disconnectSession.Visibility=Visibility.Visible;activeMode = change.Mode ?? "Work"; activeInput = false;
                 peer.Text = $"请求来源  {value} · {activeMode}";
                 peer.TextWrapping = TextWrapping.Wrap;
                 if (change.DeviceFingerprint is { Length: 64 } device && device.All(char.IsAsciiHexDigit))
