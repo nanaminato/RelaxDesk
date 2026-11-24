@@ -14,6 +14,13 @@ Status: **Physical Verification Pending**. Copy/fill on the actual target machin
 
 At the final unified delivery, run bundled `Collect-Logs.cmd` from the unlocked Home console. `Test-Office.cmd > office-result.txt 2>&1` runs the shared synthetic office capability checks and saves individual results under `logs/office-*`; it does not certify Home eligibility or visible output. These updated entry points are source-prepared and are not in the historical 0.4.2 ZIP. See [collector scope](OFFICE-ACCEPTANCE.md). Keep credentials, screen contents, filenames/content and typed/clipboard text out of returned diagnostics.
 
+Before the physical administrator-input tests, run `Host/RelaxDesk.Host.exe
+--admin-readiness` from an ordinary console on the intended desktop. It reads
+the ordinary-token check, desktop status and protected worker deployment.
+Exit 0 means ready for local approval. Exit 2 reports which prerequisite was
+unavailable. The command neither starts sharing nor requests elevation. It
+does not exercise the UAC prompt, worker launch, or elevated input.
+
 | Test | Required evidence | Result |
 | --- | --- | --- |
 | Host start / approve / deny | No capture or input before explicit approval; fresh approvals each Host launch | Pending |

@@ -61,6 +61,27 @@ if (args is ["--input-token-diagnose"])
     }
     return;
 }
+if (args is ["--admin-readiness"])
+{
+    bool ordinaryInputToken;
+    try { WindowsInputPrivilege.EnsureOrdinaryProcess(); ordinaryInputToken = true; }
+    catch (IOException) { ordinaryInputToken = false; }
+    var desktop = WindowsSessionAccess.Read();
+    using var identity = WindowsIdentity.GetCurrent();
+    var deployment = identity.User is { } owner
+        ? ServiceDeploymentTrust.InspectElevatedInput(owner.Value) : AdminWorkerDeployment.RepairRequired;
+    bool readyForLocalApproval = ordinaryInputToken && desktop.Denial is null && deployment == AdminWorkerDeployment.Verified;
+    Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
+    {
+        version = BuildIdentity.Version,
+        ordinaryInputToken,
+        desktopDenial = desktop.Denial,
+        workerDeployment = deployment.ToString(),
+        readyForLocalApproval
+    }));
+    Environment.ExitCode = readyForLocalApproval ? 0 : 2;
+    return;
+}
 if (args is ["--session-diagnose"])
 {
     var snapshot=WindowsSessionAccess.Read();
