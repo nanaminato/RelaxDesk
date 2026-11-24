@@ -22,17 +22,64 @@ internal static class ServiceSetupVerification
         internal TaskCompletionSource<int>? Pending;
         internal Func<Task<MachineServiceStatus>>? Query;
         internal ServiceSetupPlan? Last;
+        internal MachineServiceStatus Current=new(false,0,0,false);
+        internal Func<CancellationToken,Task<SessionAgentClient>>? Connector;
+        internal int Connections;
         public Task<ServiceSetupPlan> Prepare(string host,bool uninstall,bool? automatic)
         {
             Prepared++;if(PreparationError is {} error)throw error;
             return Task.FromResult(new ServiceSetupPlan(@"C:\fixture 中文 & (UI)\bundle",owner,"fixture-version",uninstall,automatic));
         }
         public async Task<int> Run(ServiceSetupPlan plan)
-        {Runs++;Last=plan;if(RunError is {} error)throw error;return Pending is {} pending?await pending.Task:Code;}
-        public Task<MachineServiceStatus> Inspect()=>Query?.Invoke()??Task.FromResult(new MachineServiceStatus(Runs>0,4,3,false));
+        {Runs++;Last=plan;if(RunError is {} error)throw error;int result=Pending is {} pending?await pending.Task:Code;if(result==0)Current=new(!plan.Uninstall,4,plan.Automatic==true?2u:3u,false);return result;}
+        public Task<MachineServiceStatus> Inspect()=>Query?.Invoke()??Task.FromResult(Current);
+        public Task<SessionAgentClient> Connect(CancellationToken ct){Connections++;return Connector?.Invoke(ct)??Task.FromException<SessionAgentClient>(new IOException("Fixture connection unavailable"));}
     }
     static IEnumerable<T> Children<T>(DependencyObject parent)where T:DependencyObject
     {for(int i=0;i<VisualTreeHelper.GetChildrenCount(parent);i++){var child=VisualTreeHelper.GetChild(parent,i);if(child is T item)yield return item;foreach(var nested in Children<T>(child))yield return nested;}}
+    static async Task OneClick(HostWindow window,string owner,string output,Action<bool> check,Func<Func<bool>,Task> until)
+    {
+        int released=0;string name="RelaxDesk.Test."+Guid.NewGuid().ToString("N");
+        var ready=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var stop=new CancellationTokenSource();
+        var server=new SessionBrokerServer(owner,name,line=>{if(line.StartsWith("agent_released "))Interlocked.Increment(ref released);});
+        var serving=Task.Run(()=>server.Run(stop.Token,()=>ready.SetResult()));
+        var backend=new Backend(owner){Pending=new(TaskCreationOptions.RunContinuationsAsynchronously),Connector=ct=>SessionAgentClient.ConnectTest(name,Environment.ProcessId,ct)};
+        window.SetupBackend=backend;window.SetupConfirmation=_=>throw new IOException("Simple enable must not ask a second confirmation");
+        try
+        {
+            await ready.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            check(!Children<Expander>(window).Single(item=>item.Header?.ToString()=="更多设置").IsExpanded);
+            window.EnableServiceButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));await until(()=>backend.Runs==1);
+            check(window.ServiceSetupBusy&&!window.EnableServiceButton.IsEnabled&&backend.Connections==0);
+            await window.EnableSystemService();check(backend.Runs==1);
+            backend.Pending.SetResult(0);await until(()=>!window.ServiceSetupBusy&&window.ServiceReady);backend.Pending=null;
+            check(window.ServiceRequired&&!window.Host.Running&&window.SetupNotice.Contains("已启用")&&!window.EnableServiceButton.IsEnabled);
+            var plan=backend.Last!;check(plan.OnlyIssues&&plan.Automatic is null&&plan.StartInfo().ArgumentList.Contains("--show-issues")&&!plan.StartInfo().ArgumentList.Contains("--show-result"));
+            await window.EnableSystemService();check(backend.Runs==1&&backend.Connections==1);
+            await window.DisconnectService();window.ServiceRequired=false;await until(()=>Volatile.Read(ref released)>=1);
+            await window.EnableSystemService();check(window.ServiceReady&&backend.Runs==1&&backend.Prepared==1&&backend.Connections==2);
+            await window.DisconnectService();window.ServiceRequired=false;await until(()=>Volatile.Read(ref released)>=2);
+            backend.Current=new(false,0,0,false);backend.RunError=new Win32Exception(1223);
+            await window.EnableSystemService();check(!window.ServiceRequired&&!window.Host.Running&&window.SetupNotice.Contains("已取消 Windows")&&backend.Connections==2);backend.RunError=null;
+            backend.Code=1;await window.EnableSystemService();check(!window.ServiceReady&&backend.Connections==2&&window.SetupNotice.Contains("退出码 1"));backend.Code=0;
+            backend.Current=new(true,0,0,true);int runs=backend.Runs;await window.EnableSystemService();check(backend.Runs==runs&&backend.Connections==2&&window.SetupNotice.Contains("等待删除"));
+            backend.Current=new(true,2,3,false);await window.EnableSystemService();check(backend.Runs==runs&&window.SetupNotice.Contains("正在启动或停止"));
+            backend.Current=new(true,4,3,false);backend.Connector=_=>Task.FromException<SessionAgentClient>(new IOException("Injected connection failure"));
+            await window.EnableSystemService();check(!window.ServiceReady&&window.ServiceRequired&&!window.Host.Running&&window.SetupNotice.Contains("连接失败")&&backend.Runs==runs);
+            backend.Connector=ct=>SessionAgentClient.ConnectTest(name,Environment.ProcessId,ct);await window.EnableSystemService();
+            check(window.ServiceReady&&backend.Runs==runs&&!window.Host.Running);
+            Directory.CreateDirectory(output);
+            foreach(var size in new[]{(1040d,780d),(840d,650d)})
+            {
+                window.Width=size.Item1;window.Height=size.Item2;window.UpdateLayout();Children<TextBlock>(window).Single(item=>item.Text==window.SetupNotice).BringIntoView();await Task.Delay(100);
+                var bitmap=new RenderTargetBitmap((int)window.ActualWidth,(int)window.ActualHeight,96,96,PixelFormats.Pbgra32);bitmap.Render(window);
+                var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));using var file=File.Create(Path.Combine(output,$"one-click-{size.Item1:0}x{size.Item2:0}.png"));png.Save(file);
+                check(!Children<Expander>(window).Single(item=>item.Header?.ToString()=="更多设置").IsExpanded);
+            }
+        }
+        finally{backend.Pending?.TrySetResult(1);await window.DisconnectService();window.ServiceRequired=false;server.RequestStop();await serving;}
+    }
     public static void Run(Application app,string host,string output)
     {
         using var identity=WindowsIdentity.GetCurrent();var backend=new Backend(identity.User!.Value);
@@ -66,7 +113,7 @@ internal static class ServiceSetupVerification
                     Check(info.ArgumentList.Contains("--start")&&info.ArgumentList.Contains("--show-result")&&info.ArgumentList.Contains(identity.User!.Value));
                     Check(index==0?!info.ArgumentList.Contains("--automatic")&&!info.ArgumentList.Contains("--manual"):info.ArgumentList.Contains(index==2?"--automatic":"--manual"));
                     Check(info.ArgumentList.Contains(plan.Package)&&plan.Owner==identity.User!.Value);
-                    Check(!window.Host.Running&&!window.ServiceReady&&!window.ServiceRequired&&window.SetupNotice.Contains("手动开始共享"));
+                    Check(!window.Host.Running&&!window.ServiceReady&&!window.ServiceRequired&&window.SetupNotice.Contains("开始共享"));
                 }
                 await window.RunServiceSetup(true);var remove=backend.Last!.StartInfo();
                 Check(remove.ArgumentList[0]=="--uninstall-service"&&!remove.ArgumentList.Contains("--package")&&!remove.ArgumentList.Contains("--start")&&!remove.ArgumentList.Contains("--automatic"));
@@ -76,7 +123,7 @@ internal static class ServiceSetupVerification
                 await window.RunServiceSetup(true);await window.RunServiceSetup(false);Check(backend.Runs==previous+1);
                 await window.StartSharing("127.0.0.1",48200,"test-hardware");Check(!window.Host.Running);
                 bool tick=false;_ = window.Dispatcher.BeginInvoke(()=>tick=true);await Until(()=>tick);Check(tick);
-                window.Close();Check(window.IsVisible&&window.ServiceSetupBusy&&window.SetupNotice.Contains("完成／取消后再关闭"));
+                window.Close();Check(window.IsVisible&&window.ServiceSetupBusy&&window.SetupNotice.Contains("等待完成后再关闭"));
                 backend.Pending.SetResult(0);await Until(()=>!window.ServiceSetupBusy);backend.Pending=null;
                 Check(window.InstallServiceButton.IsEnabled&&window.UninstallServiceButton.IsEnabled&&!window.Host.Running);
                 // An earlier read-only query must not overwrite post-transaction state.
@@ -90,8 +137,9 @@ internal static class ServiceSetupVerification
                 Check(!window.InstallServiceButton.IsEnabled&&!window.UninstallServiceButton.IsEnabled);
                 await window.RunServiceSetup(false);Check(backend.Prepared==previous&&window.Host.Running);
                 await window.StopSharing();await window.Host.Finished;await Until(()=>window.InstallServiceButton.IsEnabled);
+                await OneClick(window,identity.User!.Value,output,Check,Until);
                 Directory.CreateDirectory(output);
-                Children<Expander>(window).Single(item=>item.Header?.ToString()?.Contains("系统服务安装")==true).IsExpanded=true;
+                Children<Expander>(window).Single(item=>item.Header?.ToString()=="更多设置").IsExpanded=true;
                 foreach(var size in new[]{(1040d,780d),(840d,650d)})
                 {
                     window.Width=size.Item1;window.Height=size.Item2;window.UpdateLayout();Children<TextBlock>(window).Single(item=>item.Text==window.SetupNotice).BringIntoView();await Task.Delay(100);
@@ -99,7 +147,7 @@ internal static class ServiceSetupVerification
                     var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));using var file=File.Create(Path.Combine(output,$"service-setup-{size.Item1:0}x{size.Item2:0}.png"));png.Save(file);
                     Check(window.InstallServiceButton.ActualWidth>150&&window.UninstallServiceButton.ActualWidth>100);
                 }
-                Console.WriteLine($"PASS {checks} actual WPF service setup UI contracts: explicit review/UAC plan, original-user SID, separate helper and structured arguments, startup policy, cancel/preflight failure/exit/pending deletion, single flight, responsive UI, guarded close and active-sharing denial, stale query protection and layouts. Fake privileged launcher only; no UAC prompt, native result dialog, installation or SCM mutation.");
+                Console.WriteLine($"PASS {checks} actual WPF service setup UI contracts: one-click enable and real test-pipe automatic connection, running-service fast path, issues-only helper results, original-user SID, advanced startup/removal, cancel/failure/pending/single flight, responsive UI and guarded close/sharing, stale queries and layouts. Fake privileged launcher and same-process test broker; no UAC prompt, native result dialog, installation or SCM mutation.");
             }
             catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}
             finally{backend.Pending?.TrySetResult(1);await window.StopSharing();await window.DisconnectService();window.Close();}

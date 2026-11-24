@@ -157,6 +157,7 @@ internal static class ServiceSetupSmoke
         if(!Directory.Exists(ServiceFilePolicy.MachineRoot)&&new WindowsServiceRegistrationStore().Read() is null)
         {
             var preview=await Cli("--install-service","--package",first,"--owner-sid",own,"--what-if");Check(preview.Code==0&&preview.Text.Contains("\"Changed\":false")&&preview.Text.Contains("\"Startup\":3"));Check(!Directory.Exists(ServiceFilePolicy.MachineRoot));
+            var quietPreview=await Cli("--install-service","--package",first,"--owner-sid",own,"--what-if","--show-issues");Check(quietPreview.Code==0&&quietPreview.Text.Contains("\"Changed\":false")&&!Directory.Exists(ServiceFilePolicy.MachineRoot));
         }
         else Console.WriteLine("SKIP public machine preview: an existing machine installation requires its own owner context");
         if(!WindowsServiceRegistrationStore.Administrator)

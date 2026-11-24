@@ -7,7 +7,7 @@ internal static class SetupCommands
 {
     internal static async Task Run(string[] args)
     {
-        bool install=args[0]=="--install-service";string? package=null,owner=null;bool? automatic=null;bool start=false,whatIf=false,showResult=false;
+        bool install=args[0]=="--install-service";string? package=null,owner=null;bool? automatic=null;bool start=false,whatIf=false,showResult=false,showIssues=false;
         var seen=new HashSet<string>(StringComparer.Ordinal);
         for(int i=1;i<args.Length;i++)
         {
@@ -20,13 +20,15 @@ internal static class SetupCommands
                 case "--start":if(!install)throw new ArgumentException("Start is an installation option");start=true;break;
                 case "--what-if":whatIf=true;break;
                 case "--show-result":showResult=true;break;
+                case "--show-issues":showIssues=true;break;
                 default:throw new ArgumentException("Unknown service setup argument");
             }
         }
         if(owner is null||install&&package is null)throw new ArgumentException("Explicit --owner-sid and installation --package are required");
+        if(showResult&&showIssues)throw new ArgumentException("Choose one result display mode");
         using var stop=new CancellationTokenSource();Console.CancelKeyPress+=(_,eventArgs)=>{eventArgs.Cancel=true;stop.Cancel();};
         var result=install?await MachineServiceSetup.Install(package!,owner,automatic,start,whatIf,stop.Token):await MachineServiceSetup.Uninstall(owner,whatIf,stop.Token);
         Console.WriteLine(JsonSerializer.Serialize(result));if(result.PendingDelete)Environment.ExitCode=2;
-        if(showResult)SetupResultDialog.Show(result,whatIf);
+        if(showResult||showIssues&&(result.PendingDelete||result.RetainedFiles))SetupResultDialog.Show(result,whatIf);
     }
 }

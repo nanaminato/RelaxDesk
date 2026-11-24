@@ -10,7 +10,7 @@ internal sealed partial class HostWindow
 {
     readonly CheckBox useService=new(){Content="使用已安装的系统服务协调（可选，不增加桌面权限）",Margin=new(0,12,0,4)};
     readonly Button connectService=new(){Content="连接系统服务",IsEnabled=false};
-    readonly TextBlock serviceStatus=new(){Text="普通用户模式：不需要安装系统服务。",TextWrapping=TextWrapping.Wrap};
+    readonly TextBlock serviceStatus=new(){Text="未启用系统服务，普通共享仍可使用。",TextWrapping=TextWrapping.Wrap};
     SessionAgentClient? serviceAgent;
     CancellationTokenSource? serviceAttempt,serviceWatch;
     Task? serviceConnectingOperation,serviceObserver;
@@ -21,12 +21,12 @@ internal sealed partial class HostWindow
     internal string ServiceStatus=>serviceStatus.Text;
     void AddServiceSettings(Panel settings)
     {
-        var panel=new StackPanel();panel.Children.Add(useService);panel.Children.Add(serviceStatus);panel.Children.Add(connectService);
+        var panel=new StackPanel();panel.Children.Add(serviceStatus);
         AddServiceSetup(panel);
-        settings.Children.Add(new Expander{Header="系统服务安装与协调（可选）",Content=panel,Margin=new(0,8,0,0)});
+        settings.Children.Add(new Expander{Header="系统服务（可选）",Content=panel,IsExpanded=true,Margin=new(0,8,0,0)});
         connectService.Click+=async(_,_)=>await ConnectService();
         useService.Checked+=(_,_)=>{if(!ServiceReady)serviceStatus.Text="服务模式尚未连接；不会开始共享。";UpdateServiceControls();};
-        useService.Unchecked+=async(_,_)=>{if(Host.Running){useService.IsChecked=true;return;}await DisconnectService();serviceStatus.Text="普通用户模式：不需要安装系统服务。";UpdateServiceControls();};
+        useService.Unchecked+=async(_,_)=>{if(Host.Running){useService.IsChecked=true;return;}await DisconnectService();serviceStatus.Text="普通用户模式：不需要安装系统服务。";if(!ServiceSetupBusy)serviceSetupNotice.Text="已切换为普通共享；需要时点击“启用系统服务”。";UpdateServiceControls();};
     }
     void UpdateServiceControls()
     {
@@ -41,9 +41,9 @@ internal sealed partial class HostWindow
         if(serviceConnectingOperation is {IsCompleted:false})return serviceConnectingOperation;
         return serviceConnectingOperation=ConnectServiceCore(connect??SessionAgentClient.Connect);
     }
-    async Task ConnectServiceCore(Func<CancellationToken,Task<SessionAgentClient>> connect)
+    async Task ConnectServiceCore(Func<CancellationToken,Task<SessionAgentClient>> connect,bool setupCompletion=false)
     {
-        if(!ServiceRequired||Host.Running||serviceCleaning||ServiceReady||closing||ServiceSetupBusy)return;
+        if(!ServiceRequired||Host.Running||serviceCleaning||ServiceReady||closing||ServiceSetupBusy&&!setupCompletion)return;
         int generation=++serviceGeneration;serviceConnecting=true;serviceAttempt=new();UpdateServiceControls();
         serviceStatus.Text="正在验证本机已安装的系统服务…";
         SessionAgentClient? candidate=null;
@@ -78,7 +78,7 @@ internal sealed partial class HostWindow
             logs.AppendText($"service_lease_ended error_type={error.GetType().Name}\n");
             try{await StopSharing();await agent.DisposeAsync();}
             finally
-            {serviceCleaning=false;serviceStatus.Text="系统服务协调已中断，共享已停止。请重新连接服务并重新授权 Viewer，或选择普通用户模式。";UpdateServiceControls();}
+            {serviceCleaning=false;serviceStatus.Text="系统服务连接已中断，共享已停止。";if(!ServiceSetupBusy)serviceSetupNotice.Text="点击“启用系统服务”重试；随后重新开始共享和授权。";UpdateServiceControls();}
         }
     }
     internal async Task DisconnectService()

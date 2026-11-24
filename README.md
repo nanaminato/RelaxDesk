@@ -1,5 +1,7 @@
 # RelaxDesk
 
+Service UI is now [one-click enable](docs/SERVICE-SETUP-UI.md): automatic install/start/connection, original-user identity, no second ordinary-success dialog, existing-running-service fast path; advanced startup/repair/removal stays collapsed. Source-only change, no new package or real SCM/UAC acceptance.
+
 Current source adds [service installation/update/start/removal inside HostShell](docs/SERVICE-SETUP-UI.md), with explicit UAC for a separate maintenance helper and the original user's SID. No per-change package: the delivered g5ebe35d ZIP is unchanged and still uses the documented administrator CLI. Actual UAC/SCM deployment remains pending.
 
 ## Final unified candidate — 2026-11-24

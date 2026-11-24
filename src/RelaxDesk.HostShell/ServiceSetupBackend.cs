@@ -5,7 +5,7 @@ using RelaxDesk.Session;
 
 namespace RelaxDesk.HostShell;
 
-internal sealed record ServiceSetupPlan(string Package,string Owner,string Version,bool Uninstall,bool? Automatic)
+internal sealed record ServiceSetupPlan(string Package,string Owner,string Version,bool Uninstall,bool? Automatic,bool OnlyIssues=false)
 {
     internal string Helper=>Path.Combine(Package,"Service","RelaxDesk.Service.exe");
     internal ProcessStartInfo StartInfo()
@@ -13,7 +13,7 @@ internal sealed record ServiceSetupPlan(string Package,string Owner,string Versi
         var info=new ProcessStartInfo(Helper){UseShellExecute=true,Verb="runas",WorkingDirectory=Package,WindowStyle=ProcessWindowStyle.Hidden};
         info.ArgumentList.Add(Uninstall?"--uninstall-service":"--install-service");
         if(!Uninstall){info.ArgumentList.Add("--package");info.ArgumentList.Add(Package);info.ArgumentList.Add("--start");if(Automatic is {} automatic)info.ArgumentList.Add(automatic?"--automatic":"--manual");}
-        info.ArgumentList.Add("--owner-sid");info.ArgumentList.Add(Owner);info.ArgumentList.Add("--show-result");
+        info.ArgumentList.Add("--owner-sid");info.ArgumentList.Add(Owner);info.ArgumentList.Add(OnlyIssues?"--show-issues":"--show-result");
         return info;
     }
 }
@@ -23,6 +23,7 @@ internal interface IServiceSetupBackend
     Task<ServiceSetupPlan> Prepare(string host,bool uninstall,bool? automatic);
     Task<int> Run(ServiceSetupPlan plan);
     Task<MachineServiceStatus> Inspect();
+    Task<SessionAgentClient> Connect(CancellationToken ct);
 }
 
 internal sealed class ServiceSetupBackend : IServiceSetupBackend
@@ -51,4 +52,5 @@ internal sealed class ServiceSetupBackend : IServiceSetupBackend
         thread.SetApartmentState(ApartmentState.STA);thread.Start();return completion.Task;
     }
     public Task<MachineServiceStatus> Inspect()=>Task.Run(()=>MachineServiceSetup.Inspect(owner));
+    public Task<SessionAgentClient> Connect(CancellationToken ct)=>SessionAgentClient.Connect(ct);
 }

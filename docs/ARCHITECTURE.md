@@ -21,7 +21,7 @@ Host lifetime: HostShell/interactive Host supports sequential single-controller 
 - **Native graphics library:** C++20 ABI boundary for DXGI Desktop Duplication, D3D11 processing, Media Foundation-supported codecs as validated, decode/present. Avoid GPU readback round trips.
 - **Platform-neutral core:** protocol models, state machine, rate control, diagnostics, compatibility negotiation. No WPF, Win32, COM, DXGI or Windows Service dependency here.
 
-HostShell now exposes [explicit service maintenance](SERVICE-SETUP-UI.md): it validates a complete bundle, captures the ordinary user SID, reviews the action, then launches only the fixed service-maintenance helper via UAC on a separate STA thread. Host/HostShell sharing processes stay at their original privilege. Only opted-in install/uninstall commands can show native result dialogs; the SCM broker entry remains noninteractive and has no WPF/media stack. No install/start occurs on app launch. Actual UAC/SCM acceptance remains pending.
+HostShell now exposes [explicit service maintenance](SERVICE-SETUP-UI.md): it validates a complete bundle, captures the ordinary user SID, uses the explicit enable action (or advanced maintenance review), then launches only the fixed service-maintenance helper via UAC on a separate STA thread. Host/HostShell sharing processes stay at their original privilege. Only opted-in install/uninstall commands can show native result dialogs; the SCM broker entry remains noninteractive and has no WPF/media stack. No install/start occurs on app launch. Actual UAC/SCM acceptance remains pending.
 
 ### Suggested repository layout (planning only)
 

@@ -7,7 +7,7 @@ if(args is ["--version"]){Console.WriteLine(BuildIdentity.Display);return;}
 if(args.Length>0&&args[0] is "--install-service" or "--uninstall-service")
 {
     try{await SetupCommands.Run(args);}
-    catch(Exception error){Console.Error.WriteLine($"service_setup_failed error_type={error.GetType().Name} reason={error.Message}");Environment.ExitCode=1;if(args.Contains("--show-result",StringComparer.Ordinal))SetupResultDialog.Failure(error);}
+    catch(Exception error){Console.Error.WriteLine($"service_setup_failed error_type={error.GetType().Name} reason={error.Message}");Environment.ExitCode=1;if(args.Contains("--show-result",StringComparer.Ordinal)||args.Contains("--show-issues",StringComparer.Ordinal))SetupResultDialog.Failure(error);}
     return;
 }
 if(args is ["--service","--owner-sid",var user])

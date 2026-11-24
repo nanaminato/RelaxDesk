@@ -1,5 +1,7 @@
 # Product readiness ledger
 
+Service UI is now [one-click enable](SERVICE-SETUP-UI.md): automatic install/start/connection, original-user identity, no second ordinary-success dialog, existing-running-service fast path; advanced startup/repair/removal stays collapsed. Source-only change, no new package or real SCM/UAC acceptance.
+
 Current source adds [service installation/update/start/removal inside HostShell](SERVICE-SETUP-UI.md), with explicit UAC for a separate maintenance helper and the original user's SID. No per-change package: the delivered g5ebe35d ZIP is unchanged and still uses the documented administrator CLI. Actual UAC/SCM deployment remains pending.
 
 Final corrected clean-source `5ebe35d` win-x64 archive is delivered: **76/76 packaged office checks**, exit 0, 2,070 Core/TLS and 81 deep-path service transaction assertions. [Exact version/hash and evidence](FINAL-DELIVERY.md). Physical Home/real input/clipboard/audio/SCM/office performance remains pending for the owner's deferred final tests. No further per-slice package.
