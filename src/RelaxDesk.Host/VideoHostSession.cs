@@ -944,7 +944,7 @@ internal static class VideoHostSession
                         injectedCaptureLoss = true;
                         throw new ExternalException($"Injected capture access loss attempt {recovery.Attempts + 1}", unchecked((int)0x887A0026));
                     }
-                    var timer = Stopwatch.StartNew();
+                    long captureStarted = Stopwatch.GetTimestamp();
                     int testWidth = backend == "test-resolution" && sequence >= 30 ? 1920 : 1280; int testHeight = backend == "test-resolution" && sequence >= 30 ? 1080 : 720;
                     bool oversizedTest = backend == "test-oversized-udp" && sequence == 0;
                     if (oversizedTest) { testWidth = 2560; testHeight = 1440; }
@@ -953,8 +953,13 @@ internal static class VideoHostSession
                     var frame = synthetic ? backend is ("test-video-settings-static" or "test-desktop-pause")&&sequence>0?(refresh?staticFrame:null):new CapturedFrame(testWidth, testHeight, CodecVerification.Pattern(testWidth, testHeight, (int)(sequence % 200)), new(Stopwatch.GetTimestamp(), 1, [], [], 0, 0, false, 0, 0, 0, 0, 0, 0, [])) : CaptureFrameRefresh.Read(capture!,refresh);
                     if (oversizedTest && frame?.Bgra is { } pixels) new Random(1).NextBytes(pixels);
                     if(backend is ("test-video-settings-static" or "test-desktop-pause")&&frame is not null)staticFrame=frame;
-                    double captureMs = timer.Elapsed.TotalMilliseconds;
-                    if (frame is null) continue;
+                    double captureMs = Stopwatch.GetElapsedTime(captureStarted).TotalMilliseconds;
+                    if (frame is null)
+                    {
+                        // The static synthetic source has no blocking capture call.
+                        if (synthetic) ct.WaitHandle.WaitOne(10);
+                        continue;
+                    }
                     if (capture is DxgiCaptureBackend)
                     {
                         var metadata = frame.Metadata;
@@ -992,7 +997,7 @@ internal static class VideoHostSession
                     }
                     long timestamp = commonClock?(long)(Stopwatch.GetTimestamp()*(10_000_000d/Stopwatch.Frequency)):(long)(clock.Elapsed.TotalSeconds * 10_000_000);
                     bool force = forceRequested || queue.Dropped != previousDrops || sequence == 0 || forceNextKeyFrame;
-                    previousDrops = queue.Dropped; timer.Restart();
+                    previousDrops = queue.Dropped; long encodeStarted = Stopwatch.GetTimestamp();
                     if (encoder is not null && (encoderWidth != frame.Width || encoderHeight != frame.Height)) { encoder.Dispose(); encoder = null; force = true; }
                     stage = "encoder-init";
                     int desiredBitrate = bitrateTarget?.Invoke(activeVideo.Bitrate) ?? activeVideo.Bitrate;
@@ -1031,7 +1036,7 @@ internal static class VideoHostSession
                         encoded = new(output.ToArray(), true, timestamp);
                     }
                     if (encoded is null) continue;
-                    double encodeMs=timer.Elapsed.TotalMilliseconds; // Exclude settings ACK IO/diagnostics from source encode timing.
+                    double encodeMs=Stopwatch.GetElapsedTime(encodeStarted).TotalMilliseconds; // Exclude settings ACK IO/diagnostics from source encode timing.
                     if(video?.Pending==activeVideo)
                     {
                         if(!encoded.KeyFrame){forceNextKeyFrame=true;continue;}
