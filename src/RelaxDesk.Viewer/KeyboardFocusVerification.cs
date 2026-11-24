@@ -21,6 +21,7 @@ internal static class KeyboardFocusVerification
         nint previousForeground = GetForegroundWindow(); int checks = 0;
         var packets = new List<Packet>(); var held = new PressedInputs(); long sequence = 0;
         var viewport = new NativeVideoHost(); var local = new TextBox { Text = "local unchanged", Height = 36 };
+        viewport.SetVideoSize(640, 360);
         void Send(int key, bool up, int x, int y) { if (key >= 256) return; packets.Add(new("input", ++sequence, Code:key, Up:up)); held.Update(key,up); }
         viewport.Input = Send;
         viewport.InputFocusLost = () => { foreach (int key in held.ReleaseAll()) Send(key,true,0,0); };
@@ -35,7 +36,8 @@ internal static class KeyboardFocusVerification
                 window.Activate(); SetForegroundWindow(new WindowInteropHelper(window).Handle);
                 await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
                 Check(GetForegroundWindow() == new WindowInteropHelper(window).Handle, "Owned test window must be foreground; otherwise keyboard routing must reject input");
-                SendMessage(viewport.Handle,0x201,1,0); SendMessage(viewport.Handle,0x202,0,0);
+                nint click = (100 << 16) | 100;
+                SendMessage(viewport.Handle,0x201,1,click); SendMessage(viewport.Handle,0x202,0,click);
                 Check(GetFocus()==viewport.Handle,"Click must focus native remote surface");
                 nint ime=ImmGetContext(viewport.Handle); if(ime!=0)ImmReleaseContext(viewport.Handle,ime);
                 Check(ime==0,"Local IME must be detached only from remote child");

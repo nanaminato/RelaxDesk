@@ -68,3 +68,91 @@ The [live Viewer statistics window](LIVE-STATISTICS.md) exposes existing source/
 [Live FPS/target bitrate validation](../benchmarks/2026-11-24-video-settings-validation.md) covers bounded negotiation, keyframe generations and same-size decoder reset with synthetic media. Targets are encoder configuration, not measured delivery guarantees; physical quality, latency and matched office benchmarks remain open.
 
 [Controlled network impairment evidence](../benchmarks/2026-11-24-network-impairment-validation.md) records a stream-delay/backpressure/interruption fixture with exact synthetic pixels and concurrent heartbeat/cleanup assertions. Its encrypted relay bytes differ from sender-buffered application bytes; the observed local timings are not physical latency or matched office-performance measurements.
+
+### Real desktop loopback on RTX 5060 Ti
+
+The `desktop-gpu-udp` fixture captured the 2560 × 1440 console with DXGI and
+used hardware H.264, QUIC UDP, and D3D11 Viewer submission. In 25.7 seconds it
+received and submitted 540 frames, with zero full-frame readback and no
+Viewer queue drops. Capture, encode, and decode P95 were 1.81, 5.42, and 0.55 ms.
+Host pointer-shape data was 2,215,936 bytes before compression and 198,547 bytes
+after compression on the sampled frames. GPU utilization was unavailable.
+
+The no-window `--video-desktop-idle` fixture avoids the Viewer refreshing its
+own capture. This console still delivered 672 DXGI updates in a 25-second
+run, all with dirty rectangles and only one full-screen rectangle. The sample
+is a desktop activity observation, with static-idle performance, physical
+input-to-photon timing and matched two-device MSTSC comparison still open.
+
+### UDP frame parsing allocations
+
+A Release microbenchmark parsed the same reassembled 4 MiB H.264 payload
+32 times per path after warm-up. The in-memory stream path allocated
+4,194,856 bytes per frame, and the span parser averaged 4,194,579 bytes per
+frame. Both measurements include the decoder-facing payload copy and exclude
+fragment assembly, native I/O, and decoding. This comparison measures managed
+allocation only.
+
+The receive reassembly fixture now writes in-order fragments directly into
+the decoder-facing buffers when the frame header arrives first. A managed
+4 MiB fixture allocated 4,625,056 bytes in first-fragment-first order and
+8,819,464 bytes in reverse order. The reverse-order staging path still
+accepts reordering when later fragments arrive before the header. These are
+per-frame allocation measurements with a synchronous memory transport.
+Using indexed access in the four-slot reassembly window removed the
+per-fragment enumerator allocation. The same fixture then allocated
+4,198,280 bytes when the header arrived first and 8,392,688 bytes in reverse
+order, reducing both by 426,776 bytes per 4 MiB frame.
+
+### Office text codec comparison
+
+`RelaxDesk.Viewer --office-text-quality software` and `hardware` render the
+same 1280 × 720 synthetic editor with 11, 13 and 15 px Latin and CJK text.
+Each encoder receives 24 identical frames at 30 FPS. The final decoded
+image is compared to the source for absolute luma gradient error at
+110,648 horizontal pixel pairs with a source gradient of at least 20, and
+RGB channel error at 52,072 colored pixels. Lower values are better.
+
+| Encoder | Target | Encoded bytes | Edge error | Color error |
+| --- | ---: | ---: | ---: | ---: |
+| Microsoft software H.264 MFT | 2 Mbit/s | 226,633 | 5.51 | 18.68 |
+| Microsoft software H.264 MFT | 8 Mbit/s | 361,974 | 2.25 | 16.62 |
+| NVIDIA H.264 MFT (RTX 5060 Ti) | 2 Mbit/s | 150,455 | 11.19 | 21.07 |
+| NVIDIA H.264 MFT (RTX 5060 Ti) | 8 Mbit/s | 349,877 | 2.25 | 16.02 |
+
+This measures codec distortion on a synthetic static source. RelaxDesk
+normally skips unchanged desktop frames, so these bytes do not predict
+static desktop traffic. A matched two-device MSTSC comparison is still open.
+
+### Console regression after Auto recovery changes
+
+On 2026-11-25 the ordinary Windows console process successfully attached
+DXGI duplication to the RTX 5060 Ti at 2560 × 1440. The fixed-budget WPF
+`desktop-gpu-udp` loopback received 540 frames and submitted 539 through
+D3D11 in 25.70 seconds (20.98 FPS). Full-frame readback was zero, and one
+submission was skipped. Capture, encode and decode P95 were 1.89, 5.39 and
+0.63 ms. Viewer application media traffic was 4.153 Mbit/s. Both processes
+released all tracked native resources. This run used forced UDP on one
+machine. Physical input-to-photon timing and two-device LAN results remain
+unmeasured.
+
+SDR BGRA capture can copy small dirty rectangles and move destinations from
+the current DXGI surface into the retained GPU texture. The WARP contract
+copied two pixels of a 4×4 surface and matched the full reference. It also
+verified that invalid bounds select a full copy. The real 2560×1440 Auto
+loopback still ran with hardware H.264, D3D11 submission and zero full-frame
+readback. That loopback did not record per-copy pixels or exercise a move
+rectangle, so it does not quantify GPU bandwidth or prove the live move case.
+
+A separate instrumented SDR BGRA run reported 219 regional copies and
+104 full copies. The submitted copy regions covered 539,057,151 pixels
+versus 1,190,707,200 pixels for full copies throughout, about 54.7% less
+copy area. These counters describe submitted D3D11 copy areas. They do
+not measure physical memory bandwidth, GPU utilization, or latency gains.
+
+The `desktop-gpu-auto-recovery` fixture on the same console intentionally
+rejected the initial UDP attachment. Viewer submitted 318 TCP-phase frames
+and five UDP-phase frames through D3D11 in the original session, with three
+control heartbeat replies and zero full-frame readback. The run received
+324 frames and skipped one submission. Capture, encode and decode P95 were
+1.96, 5.67 and 0.72 ms, and the final native resource count was zero.

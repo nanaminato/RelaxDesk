@@ -9,16 +9,20 @@ internal static class VideoSmoke
 {
     public static async Task Run(string hostPath, string mode, int targetFrames = 60)
     {
+        bool desktopIdle = mode == "--video-desktop-idle";
         if (mode == "--video-desktop") targetFrames = 1;
         if (targetFrames is < 1 or > 1800) throw new ArgumentOutOfRangeException(nameof(targetFrames));
-        string backend = mode == "--video-producer-failure" ? "test-producer-failure" : mode == "--video-runtime-fallback" ? "test-runtime-fallback" : mode == "--video-idle-control" ? "test-idle" : mode == "--video-software" ? "test-software" : mode is "--video-hardware" or "--video-recovery" or "--video-stalled" ? "test-hardware" : "dxgi";
+        string backend = mode == "--video-producer-failure" ? "test-producer-failure" : mode == "--video-runtime-fallback" ? "test-runtime-fallback" : mode == "--video-idle-control" ? "test-idle" : mode == "--video-software" ? "test-software" : mode is "--video-hardware" or "--video-recovery" ? "test-hardware" : "dxgi";
         if (mode is "--video-capture-recovery" or "--video-capture-exhausted") backend = mode[8..].Insert(0, "test-");
         if (mode == "--video-control-timeout") backend = "test-idle";
+        // The low-entropy H.264 fixture can fit in socket buffers for the
+        // entire deadline. Deflate forces actual backpressure on the sender.
+        if (mode == "--video-stalled") backend = "test-deflate";
         var reservation = new TcpListener(IPAddress.Loopback, 0); reservation.Start(); int port = ((IPEndPoint)reservation.LocalEndpoint).Port; reservation.Stop();
         var start = ChildProcess.Create(hostPath, "127.0.0.1", port.ToString(), backend);
         using var process = Process.Start(start) ?? throw new IOException("Host launch failed");
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(mode == "--video-idle-control" ? 40 : Math.Max(30, targetFrames / 15 + 10)));
-        using var client = new SessionClient();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(mode == "--video-idle-control" || desktopIdle ? 40 : Math.Max(30, targetFrames / 15 + 10)));
+        using var client = new SessionClient { RequestPointerCompression = desktopIdle };
         try
         {
             ChildProcess.Report(process, "host");
@@ -58,21 +62,36 @@ internal static class VideoSmoke
                 if (process.ExitCode != 0 || frames != 4 || !text.Contains("session_end worker=capture-encode stage=encode-submit completed_frames=4") || !text.Contains("error_type=InvalidDataException") || !text.Contains("Session ended: Injected producer failure after four frames")) throw new IOException("Producer failure was lost/misattributed");
                 Console.WriteLine("PASS four-frame producer fault preserves original stage/type/message instead of ChannelClosedException; joined and cleanly disconnected"); return;
             }
-            if (mode == "--video-idle-control")
+            if (mode == "--video-idle-control" || desktopIdle)
             {
-                _ = await MediaProtocol.Read(client.Media, timeout.Token); // exactly one synthetic frame, then idle
-                var idle = Stopwatch.StartNew(); long sequence = 0;
-                while (idle.Elapsed.TotalSeconds < 25)
+                _ = await client.Video.Read(timeout.Token);
+                using var sampling = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+                int received = 0;
+                async Task DrainDesktop()
                 {
-                    await Wire.Write(client.Control, new Packet("ping-v2", ++sequence), timeout.Token);
-                    var pong = await Wire.Read(client.Control, timeout.Token);
-                    if (pong.Kind != "pong-v2" || pong.Sequence != sequence || process.HasExited) throw new IOException("Idle authenticated session ended unexpectedly");
-                    await Task.Delay(250, timeout.Token);
+                    try { while (true) { _ = await client.Video.Read(sampling.Token); received++; } }
+                    catch (OperationCanceledException) when (sampling.IsCancellationRequested) { }
                 }
+                var drain = desktopIdle ? DrainDesktop() : Task.CompletedTask;
+                var idle = Stopwatch.StartNew(); long sequence = 0;
+                try
+                {
+                    while (idle.Elapsed.TotalSeconds < 25)
+                    {
+                        await Wire.Write(client.Control, new Packet("ping-v2", ++sequence), timeout.Token);
+                        var pong = await Wire.Read(client.Control, timeout.Token);
+                        if (pong.Kind != "pong-v2" || pong.Sequence != sequence || process.HasExited) throw new IOException("Idle authenticated session ended unexpectedly");
+                        await Task.Delay(250, timeout.Token);
+                    }
+                }
+                finally { sampling.Cancel(); await drain; }
                 client.Dispose(); await process.WaitForExitAsync(timeout.Token);
                 Console.WriteLine(await process.StandardOutput.ReadToEndAsync(timeout.Token));
                 if (process.ExitCode != 0) throw new IOException("Idle peer cleanup failed");
-                Console.WriteLine($"PASS idle media + authenticated control remains alive {idle.Elapsed.TotalSeconds:F2}s beyond 15s binding deadline; pings={sequence}; no input, no physical desktop/GPU Present claim"); return;
+                Console.WriteLine(desktopIdle
+                    ? $"PASS headless real desktop sample {idle.Elapsed.TotalSeconds:F2}s, post_first_frames={received}, pings={sequence}; no rendering or input"
+                    : $"PASS idle media + authenticated control remains alive {idle.Elapsed.TotalSeconds:F2}s beyond 15s binding deadline; pings={sequence}; no input, no physical desktop/GPU Present claim");
+                return;
             }
             if (mode == "--video-stalled")
             {
@@ -80,7 +99,7 @@ internal static class VideoSmoke
                 try { while (stall.Elapsed.TotalSeconds < 12) { var timer = Stopwatch.StartNew(); await Wire.Write(client.Control, new Packet("ping-v2", ++pings), timeout.Token); var pong = await Wire.Read(client.Control, timeout.Token); if (pong.Kind != "pong-v2") throw new IOException("Wrong control response"); rtt.Add(timer.Elapsed.TotalMilliseconds); await Task.Delay(20, timeout.Token); } }
                 catch (IOException) { }
                 client.Dispose(); await process.WaitForExitAsync(timeout.Token); string text = await process.StandardOutput.ReadToEndAsync(timeout.Token); Console.WriteLine(text);
-                if (process.ExitCode != 0 || pings < 10 || stall.Elapsed.TotalSeconds >= 12 || !text.Contains("media ")) throw new IOException("Stalled media did not disconnect within bounded time");
+                if (process.ExitCode != 0 || pings < 10 || stall.Elapsed.TotalSeconds >= 12 || !text.Contains("worker=media-send") || !text.Contains("session_cleanup native_live_resources=0")) throw new IOException("Stalled media did not disconnect within bounded time");
                 rtt.Sort(); Console.WriteLine($"PASS unread media -> bounded host disconnect {stall.Elapsed.TotalSeconds:F2}s; concurrent control samples={rtt.Count} p95_ms={rtt[(int)Math.Ceiling(rtt.Count * .95) - 1]:F2}; no remote input injected"); return;
             }
             using var running = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);

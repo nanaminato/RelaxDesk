@@ -95,6 +95,25 @@ public sealed partial class ViewerWindow
         await connectionEnded.Task.WaitAsync(ct);
         if (connectionGeneration != connectedGeneration + ConnectionRecovery.MaximumRetries || connectionPhase != ConnectionPhase.Failed || !GraphicsDiagnostics.Resources().Empty) throw new IOException("Recovery retry limit not enforced");
         Console.WriteLine("PASS WPF unavailable Host exhausts exactly five real backoff retries and releases resources");
+
+        foreach (var (backend, expected) in new[]
+        {
+            ("test-session-locked", "Host 已锁屏"),
+            ("test-session-switched", "Host 已切换 Windows 会话"),
+            ("test-session-desktop", "Host 的输入桌面已不可用")
+        })
+        {
+            await using var transition = new RecoveryHost(hostPath, driver.Port, root, backend);
+            driver = transition;
+            await ManualStart();
+            before = connectionGeneration;
+            await connectionEnded.Task.WaitAsync(ct);
+            await Task.Delay(1500, ct);
+            if (connectionGeneration != before || transition.Requests != 1 || connectionPhase != ConnectionPhase.Disconnected ||
+                !status.Text.StartsWith(expected, StringComparison.Ordinal) || !GraphicsDiagnostics.Resources().Empty)
+                throw new IOException($"WPF did not display the terminal Windows reason for {backend}: {status.Text}");
+            Console.WriteLine($"PASS WPF {backend}: authenticated TLS reason shown, reconnect suppressed, resources released");
+        }
     }
 }
 
@@ -109,12 +128,12 @@ internal sealed class RecoveryHost : IAsyncDisposable
     int requests;
     public int Port { get; }
     public int Requests => Volatile.Read(ref requests);
-    public RecoveryHost(string host, int port, string root)
+    public RecoveryHost(string host, int port, string root, string backend = "test-hardware")
     {
         Port = port;
         var start = new ProcessStartInfo(host.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? host : "dotnet") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
         if (!host.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) start.ArgumentList.Add(host);
-        foreach (string argument in new[] { "--shell", "--file-root", root, "127.0.0.1", port.ToString(), "test-hardware" }) start.ArgumentList.Add(argument);
+        foreach (string argument in new[] { "--shell", "--file-root", root, "127.0.0.1", port.ToString(), backend }) start.ArgumentList.Add(argument);
         child = Process.Start(start) ?? throw new IOException("Recovery Host launch failed");
         output = Pump(); errors = child.StandardError.ReadToEndAsync();
     }

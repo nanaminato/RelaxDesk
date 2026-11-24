@@ -7,11 +7,25 @@ using System.Net.Sockets;
 internal sealed class NetworkImpairmentRelay : IAsyncDisposable
 {
     internal sealed record Profile(int DelayMilliseconds = 0, int BytesPerSecond = 0);
+    internal sealed class SharedBudget(int bytesPerSecond) : IDisposable
+    {
+        readonly SemaphoreSlim turn = new(1);
+        public async Task Pace(int bytes, CancellationToken cancellation)
+        {
+            await turn.WaitAsync(cancellation);
+            try { await Task.Delay(TimeSpan.FromMilliseconds(Math.Ceiling(bytes * 1000d / bytesPerSecond)), cancellation); }
+            finally { turn.Release(); }
+        }
+        public void Dispose() => turn.Dispose();
+    }
+
     internal sealed class Link(TcpClient peer, TcpClient upstream)
     {
         Profile profile = new();
+        SharedBudget? sharedDownstream;
         long stallUntil, bytes;
         public long DownstreamBytes => Interlocked.Read(ref bytes);
+        public void ShareDownstream(SharedBudget budget) => Volatile.Write(ref sharedDownstream, budget);
         public void Configure(Profile value)
         {
             if (value.DelayMilliseconds is < 0 or > 250 || value.BytesPerSecond is < 0 or > 16 * 1024 * 1024)
@@ -38,6 +52,7 @@ internal sealed class NetworkImpairmentRelay : IAsyncDisposable
                     double remaining = (Interlocked.Read(ref stallUntil) - Stopwatch.GetTimestamp()) / (double)Stopwatch.Frequency;
                     if (remaining > 0) await Task.Delay(TimeSpan.FromSeconds(remaining), ct);
                     if (current.BytesPerSecond > 0) await Task.Delay(TimeSpan.FromSeconds(count / (double)current.BytesPerSecond), ct);
+                    if (Volatile.Read(ref sharedDownstream) is { } shared) await shared.Pace(count, ct);
                 }
                 await destination.WriteAsync(buffer.AsMemory(0, count), ct);
                 if (downstream) Interlocked.Add(ref bytes, count);
@@ -47,23 +62,24 @@ internal sealed class NetworkImpairmentRelay : IAsyncDisposable
 
     readonly TcpListener listener = new(IPAddress.Loopback, 0);
     readonly CancellationTokenSource stop = new();
-    readonly TaskCompletionSource<Link>[] links = [NewLink(), NewLink()];
+    readonly TaskCompletionSource<Link>[] links;
     readonly List<Task> workers = [];
     readonly Task accepting;
     readonly int destination;
     static TaskCompletionSource<Link> NewLink() => new(TaskCreationOptions.RunContinuationsAsynchronously);
     public int Port => ((IPEndPoint)listener.LocalEndpoint).Port;
     public Task<Link> Connected(int index, CancellationToken ct) => links[index].Task.WaitAsync(ct);
-    public NetworkImpairmentRelay(int destination)
+    public NetworkImpairmentRelay(int destination, int connections = 2)
     {
+        if (connections is not (2 or 3)) throw new ArgumentOutOfRangeException(nameof(connections));
+        links = Enumerable.Range(0, connections).Select(_ => NewLink()).ToArray();
         this.destination = destination; listener.Start(); accepting = Accept();
     }
     async Task Accept()
     {
         try
         {
-            // The tested session requests only control and media; do not accept
-            // arbitrary clients or grow an unbounded collection of workers.
+            // Accept only the fixed control/media/file fixture attachments.
             for (int index = 0; index < links.Length; index++)
             {
                 var peer = await listener.AcceptTcpClientAsync(stop.Token);

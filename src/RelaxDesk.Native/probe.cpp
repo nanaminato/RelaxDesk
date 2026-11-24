@@ -38,8 +38,15 @@ static int render_test(){
             rd_decode_timing timing{};require(rd_decoder_timing(decoder,&timing),"decode timing");readback+=timing.readback_bytes;
             if(!renderer)require(rd_renderer_create(frame,child,&renderer),"create renderer");
             hr=rd_renderer_draw(renderer,frame,metadata.data(),static_cast<uint32_t>(metadata.size()));require(hr,"draw");
-            if(hr==S_OK){if(i>0&&i<5){uint32_t probe=0;require(rd_renderer_probe_pixel(renderer,10,10,&probe),"GPU pointer operation pixel");int expected_b=i==1||i==2?205:i==3?10:125;int expected_g=i==1||i==2?175:i==3?20:40;int expected_r=i==1||i==2?95:i==3?30:130;
-                if(abs(static_cast<int>(probe&255)-expected_b)>15||abs(static_cast<int>((probe>>8)&255)-expected_g)>15||abs(static_cast<int>((probe>>16)&255)-expected_r)>15)throw std::runtime_error("GPU monochrome/masked/alpha pointer mismatch");}
+            if(hr==S_OK){if(i>0&&i<5){uint32_t probe=0,background=0;require(rd_renderer_probe_pixel(renderer,10,10,&probe),"GPU pointer operation pixel");require(rd_renderer_probe_pixel(renderer,100,100,&background),"GPU pointer background");
+                int b=background&255,g=(background>>8)&255,r=(background>>16)&255;
+                int neutral=255-((54*r+183*g+19*b+128)>>8);
+                int expected_b=i<=2?neutral:i==3?10:(200*128+b*127+127)/255;
+                int expected_g=i<=2?neutral:i==3?20:(g*127+127)/255;
+                int expected_r=i<=2?neutral:i==3?30:(100*128+r*127+127)/255;
+                if(abs(static_cast<int>(probe&255)-expected_b)>15||abs(static_cast<int>((probe>>8)&255)-expected_g)>15||abs(static_cast<int>((probe>>16)&255)-expected_r)>15){
+                    printf("pointer_case=%d expected_bgr=%d,%d,%d actual_bgr=%u,%u,%u\n",i,expected_b,expected_g,expected_r,probe&255,(probe>>8)&255,(probe>>16)&255);
+                    throw std::runtime_error("GPU monochrome/masked/alpha pointer mismatch");}}
                 if(i==0){uint32_t color=0;require(rd_renderer_probe_pixel(renderer,10,10,&color),"GPU cursor pixel");if((color&0xffffff)!=0x140afa)throw std::runtime_error("GPU cursor color mismatch");uint32_t background=0;require(rd_renderer_probe_pixel(renderer,100,100,&background),"GPU video pixel");int r=(background>>16)&255,g=(background>>8)&255,b=background&255;if(abs(r-160)>15||abs(g-80)>15||abs(b-50)>15)throw std::runtime_error("GPU video color mismatch");}
                 hr=rd_renderer_present(renderer,&stats);require(hr,"present");if(hr==S_OK)++successful;}
             rd_gpu_frame_destroy(frame);frame=nullptr;Sleep(10);

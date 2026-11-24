@@ -12,6 +12,13 @@ internal static class OfficeAcceptanceCases
         void Add(string name, string application, params string[] args) => cases.Add(new(name, application, args));
         string Folder(string name) => Path.Combine(fixtures, name);
         Add("office-core-tls", a.Tests);
+        Add("office-session-access", a.Smoke, a.Host, "--session-access");
+        Add("office-desktop-pause", a.Smoke, a.Host, "--desktop-pause");
+        Add("office-windows-session-end", a.Smoke, a.Host, "--session-unavailable");
+        Add("office-quic-production", a.Smoke, a.Host, "--quic-production");
+        Add("office-quic-files", a.Smoke, a.Host, "--file-transfer-udp", Folder("quic-files"));
+        Add("office-auto-files", a.Smoke, a.Host, "--file-transfer-auto", Folder("auto-files"));
+        Add("office-auto-recovery", a.Smoke, a.Host, "--wpf", a.Viewer, "auto-recovery-cpu");
         Add("office-collector", a.Smoke, "--collector-contracts", Folder("collector"));
         Add("office-broker", a.Smoke, a.Service, "--broker-contracts");
         Add("office-service-setup", a.Smoke, a.Service, "--service-setup-contracts", Folder("service"));
@@ -42,12 +49,19 @@ internal static class OfficeAcceptanceCases
         }
         foreach (string mode in new[] { "history", "statistics", "file-ui", "file-session", "file-resume-session", "reconnect" })
             Add("office-viewer-" + mode, a.Viewer, "--" + mode + "-contracts", a.Host, Folder(mode));
+        Add("office-viewer-udp-statistics", a.Viewer, "--statistics-contracts", a.Host, Folder("statistics-udp"), "udp");
+        Add("office-viewer-fallback-statistics", a.Viewer, "--statistics-contracts", a.Host, Folder("statistics-fallback"), "oversized");
+        Add("office-viewer-text-quality", a.Viewer, "--office-text-quality", "software");
+        Add("office-viewer-admin-upgrade", a.Viewer, "--admin-upgrade-contracts", a.Host);
+        Add("office-viewer-admin-lifecycle", a.Viewer, "--admin-lifecycle-contracts", a.Host);
+        Add("office-viewer-admin-worker-loss", a.Viewer, "--admin-worker-loss-contracts", a.Host);
         foreach (string mode in new[] { "granted", "deny-clipboard", "deny-files" })
             Add("office-viewer-file-clipboard-" + mode, a.Viewer, "--file-clipboard-contracts", a.Host, Folder("file-clipboard-ui"), mode);
         foreach (string mode in new[] { "granted", "denied" })
             Add("office-viewer-rich-clipboard-" + mode, a.Viewer, "--rich-clipboard-session-contracts", a.Host, mode);
         foreach (string mode in new[] { "h264", "deflate", "audio", "static" })
             Add("office-viewer-video-settings-" + mode, a.Viewer, "--video-settings-contracts", a.Host, mode);
+        Add("office-work-trust", a.Shell, "--work-trust-contracts", a.Host, Folder("work-trust"));
         Add("office-host-ui", a.Shell, "--shell-contracts", a.Host, Folder("host-ui"));
         Add("office-host-service-setup-ui",a.Shell,"--service-setup-ui-contracts",a.Host,Folder("service-setup-ui"));
         Add("office-host-service", a.Shell, "--service-contracts", a.Host, a.Service);

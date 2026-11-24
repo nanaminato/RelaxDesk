@@ -10,6 +10,7 @@ internal sealed class ServicePayload
     internal string Version{get;}
     internal ServiceFileEntry[] Entries{get;}
     ServicePayload(string source,string version,ServiceFileEntry[] entries){Source=source;Version=version;Entries=entries;}
+    internal static bool IsWorkerFile(string path) => path.StartsWith("ElevatedInput/", StringComparison.Ordinal);
     internal static ServicePayload Read(string packageRoot)
     {
         string root=ServiceFilePolicy.FullPath(packageRoot);
@@ -22,15 +23,25 @@ internal sealed class ServicePayload
             var entry=new ServiceFileEntry(path,item.GetProperty("sha256").GetString()??"",item.GetProperty("bytes").GetInt64());
             _=ServiceFilePolicy.Member(root,path);ServiceFilePolicy.ValidateEntry(entry);
             if(!names.Add(path)||(bytes+=entry.Bytes)>8L*1024*1024*1024||path.Equals("SHA256SUMS.json",StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Duplicate/oversized service manifest");
-            if(path.StartsWith("Service/",StringComparison.Ordinal)||path.StartsWith("ThirdParty/",StringComparison.Ordinal)||path=="package.json")selected.Add(entry);
+            if(path.StartsWith("Service/",StringComparison.Ordinal)||IsWorkerFile(path)||path.StartsWith("ThirdParty/",StringComparison.Ordinal)||path=="package.json")selected.Add(entry);
         }
         foreach(string required in new[]{"package.json","Service/RelaxDesk.Service.exe","Service/RelaxDesk.Service.dll","Service/RelaxDesk.Service.deps.json","Service/RelaxDesk.Service.runtimeconfig.json","Service/RelaxDesk.Core.dll","Service/RelaxDesk.Session.dll","Service/coreclr.dll","Service/hostfxr.dll","Service/hostpolicy.dll","Service/System.Private.CoreLib.dll"})
             if(!selected.Any(entry=>entry.Path==required))throw new InvalidDataException("Required service package entry missing");
         if(selected.Select(entry=>entry.Path.StartsWith("Service/",StringComparison.Ordinal)?entry.Path[8..]:entry.Path).Distinct(StringComparer.OrdinalIgnoreCase).Count()!=selected.Count)throw new InvalidDataException("Service deployment paths collide");
         if(!selected.Any(entry=>entry.Path.StartsWith("ThirdParty/",StringComparison.Ordinal)))throw new InvalidDataException("Runtime redistribution notices missing");
+        var worker = selected.Where(entry => IsWorkerFile(entry.Path)).ToArray();
+        if (worker.Length != 0)
+        {
+            string[] required = ["RelaxDesk.ElevatedInput.exe", "RelaxDesk.ElevatedInput.dll",
+                "RelaxDesk.ElevatedInput.runtimeconfig.json", "RelaxDesk.ElevatedInput.deps.json",
+                "RelaxDesk.Core.dll", "RelaxDesk.Session.dll", "RelaxDesk.Windows.dll",
+                "coreclr.dll", "hostfxr.dll", "hostpolicy.dll", "System.Private.CoreLib.dll"];
+            if (required.Any(name => !worker.Any(entry => entry.Path == "ElevatedInput/" + name)))
+                throw new InvalidDataException("Incomplete administrator input worker payload");
+        }
         foreach(var entry in selected)
         {
-            if(Path.GetFileName(entry.Path) is "RelaxDesk.Native.dll" or "RelaxDesk.Windows.dll" or "PresentationFramework.dll" or "PresentationCore.dll")throw new InvalidDataException("Graphics/UI payload is not a broker service");
+            if(!IsWorkerFile(entry.Path) && Path.GetFileName(entry.Path) is ("RelaxDesk.Native.dll" or "RelaxDesk.Windows.dll" or "PresentationFramework.dll" or "PresentationCore.dll"))throw new InvalidDataException("Graphics/UI payload is not a broker service");
             if(!ServiceFilePolicy.Matches(ServiceFilePolicy.Member(root,entry.Path),entry))throw new InvalidDataException("Service package integrity failed");
         }
         using var package=JsonDocument.Parse(ServiceFilePolicy.ReadMetadata(Path.Combine(root,"package.json")),new(){MaxDepth=8});var metadata=package.RootElement;
@@ -44,7 +55,7 @@ internal sealed class ServicePayload
         return new(root,version,selected.ToArray());
     }
     internal ServiceRelease CreateRelease()=>new("app-"+Guid.NewGuid().ToString("N"),Version,Entries.Select(entry=>entry with{Path=entry.Path.StartsWith("Service/",StringComparison.Ordinal)?entry.Path[8..]:entry.Path}).ToArray());
-    internal void CopyTo(ServiceFilePolicy files,ServiceRelease release,Action<string> checkpoint)
+    internal void CopyTo(ServiceFilePolicy files,ServiceRelease release,string owner,Action<string> checkpoint)
     {
         string directory=files.ReleasePath(release.Id);files.CreateDirectory(directory);int count=0;
         foreach(var original in Entries)
@@ -58,6 +69,13 @@ internal sealed class ServicePayload
             using(var output=files.CreatePrivateFile(target)){input.CopyTo(output);output.Flush(true);}
             files.Check(target);if(!ServiceFilePolicy.Matches(target,original))throw new InvalidDataException("Source changed while staging service");
             files.AllowServiceRead(target);
+            if (IsWorkerFile(relative))
+            {
+                files.AllowOwnerRead(target, owner);
+                for (string? folder = parent; folder is not null && ServiceFilePolicy.Child(folder, files.Root);
+                     folder = Path.GetDirectoryName(folder))
+                    files.AllowOwnerRead(folder, owner);
+            }
             if(++count==3)checkpoint("mid-copy");
         }
         files.ValidateRelease(release,true);checkpoint("after-copy");

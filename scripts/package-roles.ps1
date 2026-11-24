@@ -21,7 +21,7 @@ try {
     if(!(Test-Path -LiteralPath $native -PathType Leaf)){throw 'Native DLL missing'}
     $artifacts=Join-Path $root ('build/package-roles-artifacts-'+$stamp)
     $roles=[ordered]@{
-        Host=[ordered]@{Name='RelaxDesk-Host-win-x64';Projects=[ordered]@{'RelaxDesk.Host'='Host';'RelaxDesk.HostShell'='HostUi';'RelaxDesk.Service'='Service'};Launcher='Start-Host.cmd';Entry='启动被控端.cmd';Guide='HOST.zh-CN.md'}
+        Host=[ordered]@{Name='RelaxDesk-Host-win-x64';Projects=[ordered]@{'RelaxDesk.Host'='Host';'RelaxDesk.HostShell'='HostUi';'RelaxDesk.Service'='Service';'RelaxDesk.ElevatedInput'='ElevatedInput'};Launcher='Start-Host.cmd';Entry='启动被控端.cmd';Guide='HOST.zh-CN.md'}
         Viewer=[ordered]@{Name='RelaxDesk-Viewer-win-x64';Projects=[ordered]@{'RelaxDesk.Viewer'='Viewer'};Launcher='Start-Viewer.cmd';Entry='启动连接端.cmd';Guide='VIEWER.zh-CN.md'}
     }
     foreach($role in $roles.Keys){
@@ -30,6 +30,10 @@ try {
         foreach($project in $definition.Projects.Keys){
             dotnet publish "src/$project/$project.csproj" --artifacts-path $artifacts -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false "-p:InformationalVersion=$version" "-p:FileVersion=$fileVersion" -p:IncludeSourceRevisionInInformationalVersion=false "-p:RelaxDeskNativePath=$native" -o (Join-Path $package $definition.Projects[$project])
             if($LASTEXITCODE){throw "Publish failed: $project"}
+            if ($project -in @('RelaxDesk.Host', 'RelaxDesk.Viewer')) {
+                $runtime = Join-Path (Join-Path $package $definition.Projects[$project]) 'msquic.dll'
+                if (!(Test-Path -LiteralPath $runtime -PathType Leaf)) { throw "Bundled MsQuic runtime missing: $project" }
+            }
             $assets=Get-Content -LiteralPath "$artifacts/obj/$project/project.assets.json" -Raw | ConvertFrom-Json
             $packs=@($assets.project.frameworks.PSObject.Properties.Value.downloadDependencies | Where-Object {$_.name -match '^Microsoft\.(NETCore|WindowsDesktop)\.App\.Runtime\.win-x64$'})
             if(!$packs.Count){throw "Runtime redistribution inventory missing: $project"}
@@ -49,6 +53,9 @@ try {
                 if(!$found){throw "Runtime notices missing: $($library.name)"}
             }
         }
+        $msquicNotices = Join-Path $package 'ThirdParty/MsQuic-2.5.12'
+        [void][IO.Directory]::CreateDirectory($msquicNotices)
+        Copy-Item -LiteralPath (Join-Path $root 'src/RelaxDesk.Native/third_party/msquic/LICENSE') -Destination $msquicNotices
         Copy-Item -LiteralPath (Join-Path $root ('packaging/'+$definition.Launcher)) -Destination (Join-Path $package $definition.Entry)
         Copy-Item -LiteralPath (Join-Path $root ('packaging/roles/'+$definition.Guide)) -Destination (Join-Path $package '使用说明.txt')
         [pscustomobject]@{format=1;role=$role.ToLowerInvariant();version=$version;file_version=$fileVersion;revision=$revision;working_tree_dirty=$false;built_at=(Get-Date -Format o);rid='win-x64';self_contained=$true;trimmed=$false;native_abi=2;entry=$definition.Entry;components=@($definition.Projects.Keys);home_physical_console='NOT_TESTED';signature='UNSIGNED_EXPERIMENTAL'} | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $package 'package.json') -Encoding utf8

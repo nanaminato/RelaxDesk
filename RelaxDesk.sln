@@ -23,6 +23,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RelaxDesk.Session", "src\Re
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RelaxDesk.Service", "src\RelaxDesk.Service\RelaxDesk.Service.csproj", "{834ABAB3-8F99-46AD-9962-4154AC492F09}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RelaxDesk.ElevatedInput", "src\RelaxDesk.ElevatedInput\RelaxDesk.ElevatedInput.csproj", "{A6358B6E-00E7-481F-92E3-F946D655021B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -33,6 +35,18 @@ Global
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A6358B6E-00E7-481F-92E3-F946D655021B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A6358B6E-00E7-481F-92E3-F946D655021B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A6358B6E-00E7-481F-92E3-F946D655021B}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A6358B6E-00E7-481F-92E3-F946D655021B}.Debug|x64.Build.0 = Debug|Any CPU
+		{A6358B6E-00E7-481F-92E3-F946D655021B}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{A6358B6E-00E7-481F-92E3-F946D655021B}.Debug|x86.Build.0 = Debug|Any CPU
+		{A6358B6E-00E7-481F-92E3-F946D655021B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A6358B6E-00E7-481F-92E3-F946D655021B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A6358B6E-00E7-481F-92E3-F946D655021B}.Release|x64.ActiveCfg = Release|Any CPU
+		{A6358B6E-00E7-481F-92E3-F946D655021B}.Release|x64.Build.0 = Release|Any CPU
+		{A6358B6E-00E7-481F-92E3-F946D655021B}.Release|x86.ActiveCfg = Release|Any CPU
+		{A6358B6E-00E7-481F-92E3-F946D655021B}.Release|x86.Build.0 = Release|Any CPU
 		{4A86A99F-509C-4175-BD3A-AF03EC73B115}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{4A86A99F-509C-4175-BD3A-AF03EC73B115}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4A86A99F-509C-4175-BD3A-AF03EC73B115}.Debug|x64.ActiveCfg = Debug|Any CPU

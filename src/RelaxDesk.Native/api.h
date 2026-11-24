@@ -36,8 +36,10 @@ RD int32_t rd_display_list(rd_display* displays,uint32_t capacity,uint32_t* coun
 RD int32_t rd_capture_create_display(const wchar_t* name,void** context);
 RD int32_t rd_capture_next(void* context, uint32_t timeout_ms, rd_frame* frame);
 RD int32_t rd_capture_blob(void* context, uint32_t kind, const void** data, uint32_t* bytes);
+RD int32_t rd_capture_copy_pixels(void* context, uint64_t* pixels);
 RD int32_t rd_capture_pixels(void* context, uint8_t* data, uint32_t bytes);
 RD void rd_capture_destroy(void* context);
+RD int32_t rd_encoder_set_bitrate(void* encoder, uint32_t bitrate);
 RD int32_t rd_encoder_create(void* capture, uint32_t width, uint32_t height, uint32_t fps, uint32_t bitrate, int hardware, void** encoder);
 RD int32_t rd_encoder_frame(void* encoder, int64_t time_100ns, int force_keyframe, const uint8_t** data, uint32_t* bytes, int* keyframe, int64_t* output_time);
 RD int32_t rd_encoder_bgra(void* encoder, const uint8_t* data, uint32_t bytes, int64_t time_100ns, int force_keyframe, const uint8_t** output, uint32_t* length, int* keyframe, int64_t* output_time);

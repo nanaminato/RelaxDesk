@@ -10,7 +10,7 @@ public sealed partial class ViewerWindow
     CancellationTokenSource? connectionRun;
     ConnectionPhase connectionPhase;
     int connectionGeneration;
-    sealed record ConnectionTarget(string Host, int Port, bool Strict, string Pin, string Token, string[] Features, bool FullScreen = false,int DisplayVersion=DisplayProtocol.TopologyVersion)
+    sealed record ConnectionTarget(string Host, int Port, bool Strict, string Pin, string Token, string[] Features, bool FullScreen = false,int DisplayVersion=DisplayProtocol.TopologyVersion,SessionMode? Mode=null,NetworkMode Network=NetworkMode.Auto,bool IdentifyWorkDevice=false)
     { public override string ToString() => "ConnectionTarget [credentials redacted]"; }
     sealed record AttemptResult(Exception? Error, bool Established, string Pin, string[] Features, bool FullScreen, bool Stable);
     void StopConnection() { connectionRun?.Cancel(); session?.Cancel(); }
@@ -35,7 +35,8 @@ public sealed partial class ViewerWindow
         ClearConnectionError();
         if (!IPAddress.TryParse(host.Text.Trim(), out var address) || address.Equals(IPAddress.Any) || address.Equals(IPAddress.IPv6Any) || !int.TryParse(port.Text, out int number) || number is < 1 or > 65535)
         { status.Text = "请输入有效的远程 IP 和端口。"; ShowConnectionError(new FormatException("Invalid endpoint"), "configuration"); return; }
-        var target = new ConnectionTarget(address.ToString(), number, pinnedConnection.IsChecked == true, fingerprint.Text, token.Password, RequestedFeatures(), fullScreen,requestTopology.IsChecked==true?DisplayProtocol.TopologyVersion:DisplayProtocol.Version);
+        var target = new ConnectionTarget(address.ToString(), number, pinnedConnection.IsChecked == true, fingerprint.Text, token.Password, RequestedFeatures(), fullScreen,requestTopology.IsChecked==true?DisplayProtocol.TopologyVersion:DisplayProtocol.Version,requestedMode.SelectedIndex switch { 1 => SessionMode.Guest, 2 => SessionMode.Admin, _ => SessionMode.Work }, networkMode.SelectedIndex switch { 1 => NetworkMode.Tcp, 2 => NetworkMode.Udp, _ => NetworkMode.Auto }, requestedMode.SelectedIndex == 0 && identifyWorkDevice.IsChecked == true);
+        if (smoke?.RequireUdp == true) target = target with { Network = NetworkMode.Udp };
         using var lifetime = new CancellationTokenSource(); connectionRun = lifetime;
         connectionEnded = new(TaskCreationOptions.RunContinuationsAsynchronously);
         connect.IsEnabled = connectionCard.IsEnabled = false; disconnect.IsEnabled = true;
@@ -50,7 +51,7 @@ public sealed partial class ViewerWindow
                 if (result.Established)
                 {
                     approvedPin = result.Pin;
-                    target = target with { Token = "", Pin = approvedPin, Features = result.Features, FullScreen = result.FullScreen };
+                    target = target with { Token = "", Pin = approvedPin, Features = result.Features, FullScreen = result.FullScreen, Mode = target.Mode == SessionMode.Admin ? SessionMode.Work : target.Mode };
                     // Briefly successful handshakes must not permit endless reconnect loops.
                     if (result.Stable) { retry = 0; outage = null; }
                 }
@@ -64,11 +65,17 @@ public sealed partial class ViewerWindow
                     status.Text = result.Error switch
                     {
                         HostConsentRejectedException => "Host 已拒绝本次连接，已停止自动重连。",
+                        RemoteSessionEndedException { Reason: SessionEndReason.WindowsLocked } => "Host 已锁屏，本次授权已结束。请在 Host 解锁后重新连接。",
+                        RemoteSessionEndedException { Reason: SessionEndReason.WindowsSessionChanged } => "Host 已切换 Windows 会话。重新连接需要本机再次授权。",
+                        RemoteSessionEndedException { Reason: SessionEndReason.WindowsDesktopUnavailable } => "Host 的输入桌面已不可用。请回到原用户的普通桌面后重新连接。",
+                        RemoteSessionEndedException { Reason: SessionEndReason.WindowsSessionUnavailable } => "Host 的 Windows 会话已不可用，本次授权已结束。",
                         RemoteSessionEndedException => "Host 已结束本次连接。",
                         System.Security.Authentication.AuthenticationException => "无法验证 Host 身份，已停止连接；请重新核对指纹。",
                         InvalidDataException => "会话协议数据无效，已停止自动重连。",
                         _ => "连接已结束：" + result.Error.Message
-                    }; if(PipelineFailureText is{} pipelineText)status.Text=pipelineText; break;
+                    };
+                    if (result.Error is not RemoteSessionEndedException && PipelineFailureText is { } pipelineText) status.Text = pipelineText;
+                    break;
                 }
                 if (outage is null) outage = Stopwatch.StartNew();
                 var delay = ConnectionRecovery.Delay(++retry, outage.Elapsed, Random.Shared.NextDouble());

@@ -51,6 +51,11 @@ internal sealed class ServiceSetupBackend : IServiceSetupBackend
         var thread=new Thread(()=>{try{completion.SetResult(action());}catch(Exception error){completion.SetException(error);}}){IsBackground=true,Name="RelaxDesk service setup UAC"};
         thread.SetApartmentState(ApartmentState.STA);thread.Start();return completion.Task;
     }
-    public Task<MachineServiceStatus> Inspect()=>Task.Run(()=>MachineServiceSetup.Inspect(owner));
+    public Task<MachineServiceStatus> Inspect() => Task.Run(() =>
+    {
+        var status = MachineServiceSetup.Inspect(owner);
+        if (!status.Installed || status.PendingDelete) return status;
+        return status with { WorkerDeployment = ServiceDeploymentTrust.InspectElevatedInput(owner) };
+    });
     public Task<SessionAgentClient> Connect(CancellationToken ct)=>SessionAgentClient.Connect(ct);
 }

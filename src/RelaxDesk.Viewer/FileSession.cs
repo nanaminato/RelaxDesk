@@ -31,12 +31,17 @@ public sealed partial class ViewerWindow
         if (smoke is not null&&!smoke.RichClipboardTest) return smoke.FileTransfer ? [SessionCapabilities.FileTransfer] : [];
         var features = new List<string>(); if (requestClipboard.IsChecked == true) features.Add(SessionCapabilities.ClipboardText); if(requestClipboardImage.IsChecked==true)features.Add(SessionCapabilities.ClipboardImage);if(requestClipboardHtml.IsChecked==true)features.Add(SessionCapabilities.ClipboardHtml); if (requestFiles.IsChecked == true) features.Add(SessionCapabilities.FileTransfer); if(requestFileClipboard.IsChecked==true&&requestFiles.IsChecked==true)features.Add(SessionCapabilities.ClipboardFiles); if(requestAudio.IsChecked==true)features.Add(SessionCapabilities.SystemAudio);return features.ToArray();
     }
+    internal void SelectFileRateForVerification(int index) => fileRateLimit.SelectedIndex = index;
+
     async Task StartFileSession(SessionClient connection, CancellationToken ct)
     {
         if(pendingFileRecovery is not null&&(!connection.SupportsFileResume||connection.FileScope!=recoveryFileScope||connection.VerifiedFingerprint!=recoveryPeerPin||!connection.Features.Contains(SessionCapabilities.FileTransfer)))await DiscardFileRecovery();
         if (connection.Data is null || !connection.Features.Contains(SessionCapabilities.FileTransfer)) return;
         activeFileScope=connection.FileScope;filePermissionStoppedByUser=false;
-        fileClient = new(connection.Data, ct,supportsResume:connection.SupportsFileResume,supportsClipboardFiles:connection.Features.Contains(SessionCapabilities.ClipboardFiles)); fileQueue = new(fileClient, ct);
+        int rateKiB = fileRateLimit.SelectedIndex switch { 1 => 4096, 2 => 1024, 3 => 256, _ => 20 * 1024 };
+        fileClient = new(connection.Data, ct, maximumBytesPerSecond: rateKiB * 1024,
+            supportsResume: connection.SupportsFileResume, supportsClipboardFiles: connection.Features.Contains(SessionCapabilities.ClipboardFiles));
+        fileQueue = new(fileClient, ct);
         var activeQueue = fileQueue; int notified = 0;
         activeQueue.Changed += () =>
         {

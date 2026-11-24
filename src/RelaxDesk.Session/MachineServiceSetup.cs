@@ -5,7 +5,8 @@ using System.Text;
 namespace RelaxDesk.Session;
 
 public sealed record ServiceSetupResult(string Operation,bool Changed,string Root,string Owner,string? Version,uint Startup,bool Running,bool PendingDelete,bool RetainedFiles);
-public sealed record MachineServiceStatus(bool Installed,uint State,uint Startup,bool PendingDelete);
+public sealed record MachineServiceStatus(bool Installed,uint State,uint Startup,bool PendingDelete,
+    AdminWorkerDeployment? WorkerDeployment = null);
 
 public static class MachineServiceSetup
 {
@@ -82,7 +83,9 @@ internal sealed class ServiceSetupTransaction(ServiceFilePolicy files,IServiceRe
             bool touched=false,stoppedExisting=false;bool wasRunning=before?.State==4;
             try
             {
-                payload.CopyTo(files,release,Point);
+                payload.CopyTo(files,release,owner,Point);
+                if (release.Files.Any(entry => ServicePayload.IsWorkerFile(entry.Path)))
+                    files.AllowOwnerRead(files.Root, owner);
                 files.WriteState(staged);Point("after-state");
                 if(before is not null&&before.State!=1){stoppedExisting=true;services.Stop(before,ct).GetAwaiter().GetResult();before=services.Read()??throw new IOException("Service disappeared while updating");ValidateRegistration(before,staged);}
                 Point("after-stop");

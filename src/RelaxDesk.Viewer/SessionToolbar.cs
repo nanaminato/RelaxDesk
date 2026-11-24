@@ -95,6 +95,7 @@ internal sealed class SessionToolbar : IDisposable
         videoSettings.Items.Add(new Separator());videoSettings.Items.Add(new MenuItem{Header="实际提交帧率与媒体流量见连接统计",IsEnabled=false});videoSettings.Items.Add(new MenuItem{Header="码率是目标参数；更高目标通常增加带宽",IsEnabled=false});
     }
     internal MenuItem StatisticsAction=>statistics;
+    internal MenuItem AdminModeAction => downgradeAdmin;
     Action? openStatistics;
     public void SetStatistics(Action? open){openStatistics=open;statistics.IsEnabled=open is not null;}
     internal MenuItem AudioAction=>audio;
@@ -130,6 +131,8 @@ internal sealed class SessionToolbar : IDisposable
         FilesButton=new Button{Content="文件",Focusable=false,Padding=new(12,6,12,6),Margin=new(3),IsEnabled=false,ToolTip="上传、下载与任务队列（需Host授权）"};FilesButton.Click+=(_,_)=>openFiles?.Invoke();
         ShortcutsButton = new Button { Content = "快捷键", Focusable = false, Padding = new(12, 6, 12, 6), Margin = new(3), IsEnabled = shortcut is not null, ToolTip = "发送到远程电脑；仅对已授权会话生效" };
         ShortcutMenu = new ContextMenu();
+        ShortcutMenu.Items.Add(downgradeAdmin);
+        downgradeAdmin.Click += (_, _) => { ShortcutMenu.IsOpen = false; requestDowngrade?.Invoke(); };
         textInput.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;openTextInput?.Invoke();};
         foreach (var (label, action) in new[] {
             ("复制  Ctrl+C", RemoteShortcut.Copy), ("粘贴  Ctrl+V", RemoteShortcut.Paste),
@@ -165,10 +168,35 @@ internal sealed class SessionToolbar : IDisposable
         owner.LocationChanged += OwnerChanged; owner.SizeChanged += OwnerChanged; owner.StateChanged += OwnerChanged; owner.Closed += OwnerClosed;
         timer.Tick += Tick;
     }
+    public void SetRemoteShortcuts(bool enabled)
+    {
+        foreach (var item in ShortcutMenu.Items.OfType<MenuItem>())
+            if (item.Tag is RemoteShortcut) item.IsEnabled = enabled;
+    }
+    readonly MenuItem downgradeAdmin = new() { Header = "退出管理员模式", Visibility = Visibility.Collapsed };
+
+    Action? requestDowngrade;
+
+    public void SetAdminDowngrade(Action? downgrade, bool upgrade = false)
+    {
+        requestDowngrade = downgrade;
+        downgradeAdmin.Header = upgrade ? "申请管理员模式" : "退出管理员模式";
+        downgradeAdmin.Visibility = downgrade is null ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    public void SetEndpoint(string address)
+    {
+        endpoint.Text = address;
+        endpoint.ToolTip = address;
+    }
+
+    internal string EndpointText => endpoint.Text;
+    internal object EndpointToolTip => endpoint.ToolTip;
+
     public void SetSession(string address, bool fullScreen)
     {
         lastMediaPath = null; mediaPath.Text = "等待首帧"; mediaPath.ToolTip = null;
-        endpoint.Text = "RelaxDesk · " + address; SetFullScreen(fullScreen);
+        SetEndpoint(address); SetFullScreen(fullScreen);
         if (!window.IsVisible) window.Show();
         Reveal(); timer.Start();
     }

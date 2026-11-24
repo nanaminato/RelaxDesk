@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using RelaxDesk.Session;
 
 namespace RelaxDesk.HostShell;
 
@@ -68,6 +69,13 @@ internal sealed partial class HostWindow
             var status=await SetupBackend.Inspect();if(serviceSetupClosed)return;
             if(generation!=serviceSetupGeneration){serviceInspectAgain=true;return;}
             serviceInstallation.Text=!status.Installed?"系统服务未安装（普通用户模式仍可使用）。":status.PendingDelete?"服务正在等待删除；关闭服务管理窗口后再次卸载，保留现有文件。":$"服务已安装 · {(status.State==4?"运行中":status.State==1?"已停止":"状态转换中")} · {(status.Startup==2?"开机自动启动":"手动启动")}";
+            serviceInstallation.Text += status.WorkerDeployment switch
+            {
+                AdminWorkerDeployment.Verified => "\n管理员输入代理部署已验证。每次会话仍需本机授权。",
+                AdminWorkerDeployment.AccessDenied => "\n当前用户无法读取管理员输入代理部署。请通过下方按钮更新或修复。",
+                AdminWorkerDeployment.RepairRequired => "\n管理员输入代理部署需要修复。请通过下方按钮更新或修复。",
+                _ => ""
+            };
         }
         catch(Exception error){if(!serviceSetupClosed&&generation==serviceSetupGeneration)serviceInstallation.Text="无法验证当前用户的服务状态；请检查账户授权。错误类型："+error.GetType().Name;}
         finally{serviceInspecting=false;if(!serviceSetupClosed){UpdateServiceSetupControls();if(serviceInspectAgain&&!ServiceSetupBusy){serviceInspectAgain=false;await InspectServiceInstallation();}}}

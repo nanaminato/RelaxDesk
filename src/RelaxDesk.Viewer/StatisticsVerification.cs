@@ -9,12 +9,15 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
-    public static void VerifyStatistics(Application app,string hostApplication,string fixtures)
+    public static void VerifyStatistics(Application app,string hostApplication,string fixtures,bool udp=false,bool oversized=false,bool legacyAuto=false)
     {
+        if (SessionStatisticsWindow.FallbackDescription(null) != "" ||
+            SessionStatisticsWindow.FallbackDescription("udp-attach-failed") == SessionStatisticsWindow.FallbackDescription("future-reason"))
+            throw new IOException("Unknown fallback cause was presented as a UDP attachment failure");
         string root=Path.Combine(Path.GetFullPath(fixtures),"statistics-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);
         var listener=new TcpListener(IPAddress.Loopback,0);listener.Start();int number=((IPEndPoint)listener.LocalEndpoint).Port;listener.Stop();
         string path=Path.GetFullPath(hostApplication);var info=new ProcessStartInfo(path.EndsWith(".exe",StringComparison.OrdinalIgnoreCase)?path:"dotnet"){UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true};
-        if(!path.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))info.ArgumentList.Add(path);foreach(string value in new[]{"127.0.0.1",number.ToString(),"test-hardware"})info.ArgumentList.Add(value);
+        if(!path.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))info.ArgumentList.Add(path);foreach(string value in new[]{"127.0.0.1",number.ToString(),oversized ? "test-oversized-udp" : "test-hardware"})info.ArgumentList.Add(value);
         using var host=Process.Start(info)??throw new IOException("Statistics Host launch failed");using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(35));
         string Read()=>host.StandardOutput.ReadLineAsync(timeout.Token).AsTask().GetAwaiter().GetResult()??throw new IOException("Host closed");string pin=Read().Split(": ")[1],token=Read().Split(": ")[1];_=Read();
         var logs=Task.Run(async()=>
@@ -23,6 +26,7 @@ public sealed partial class ViewerWindow
             return await host.StandardOutput.ReadToEndAsync(timeout.Token);
         });
         var window=new ViewerWindow{ShowActivated=false};window.host.Text="127.0.0.1";window.port.Text=number.ToString();window.fingerprint.Text=pin;window.token.Password=token;window.pinnedConnection.IsChecked=true;window.gpuRendering.IsChecked=false;Task? running=null;
+        window.networkMode.SelectedIndex = oversized || legacyAuto ? 0 : udp ? 2 : 1;
         async Task Until(Func<bool> condition){while(!condition())await Task.Delay(20,timeout.Token);}
         window.Loaded+=async(_,_)=>
         {
@@ -35,6 +39,27 @@ public sealed partial class ViewerWindow
                 await Until(()=>panel.Updates>=2&&!panel.DisplayText.Contains("控制往返（含排队）：未采集"));
                 if(!panel.DisplayText.Contains("Present 调用不代表屏幕已显示")||!panel.DisplayText.Contains("不含 TLS")||!panel.DisplayText.Contains("P95 不相加")||!panel.DisplayText.Contains("控制往返"))throw new IOException("Statistics units/provenance missing");
                 var snapshot=actual();if(snapshot.Pipeline.Frames<=0||snapshot.Pipeline.ApplicationBytes<=0||snapshot.Pipeline.Stages.All(stage=>stage.Name!="capture"))throw new IOException("Live frame/timing samples absent");
+                if (snapshot.Transport != (udp ? "UDP" : "TCP/TLS") || (!legacyAuto &&
+                    (snapshot.HostQueue is not { IsValid: true } || !panel.DisplayText.Contains("Host 已编码队列") || !panel.DisplayText.Contains("队列丢弃"))))
+                    throw new IOException("Host queue statistics missing or wrong negotiated transport");
+                if (udp && (snapshot.Network is not { Quic: not null, Frames.FrameArrivalJitterMs: not null } ||
+                    !panel.DisplayText.Contains("QUIC RTT") || !panel.DisplayText.Contains("含发送端跳帧") ||
+                    !panel.DisplayText.Contains("视频帧到达抖动") || !panel.DisplayText.Contains("UDP 接收队列丢弃")))
+                    throw new IOException("UDP statistics or measurement scope missing");
+                if (!udp && (snapshot.Network is not null || panel.DisplayText.Contains("QUIC RTT")))
+                    throw new IOException("TCP session displayed UDP-only measurements");
+                if (oversized)
+                {
+                    await Until(() => panel.DisplayText.Contains("视频帧超出 UDP 上限后回退"));
+                    if (actual().Fallback != "udp-frame-too-large") throw new IOException("Host fallback reason missing from WPF statistics");
+                    Console.WriteLine("PASS WPF shows the authenticated oversized UDP frame fallback reason");
+                }
+                if (legacyAuto)
+                {
+                    if (snapshot.Fallback != "udp-not-offered" || !panel.DisplayText.Contains("Host 未提供 UDP"))
+                        throw new IOException("The Auto Viewer did not diagnose the old Host's TCP media path");
+                    Console.WriteLine("PASS current WPF Auto Viewer uses TCP and reports that the legacy Host did not offer UDP");
+                }
                 panel.UpdateLayout();await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Render);var content=(FrameworkElement)panel.Content;var bitmap=new RenderTargetBitmap((int)content.ActualWidth,(int)content.ActualHeight,96,96,System.Windows.Media.PixelFormats.Pbgra32);bitmap.Render(content);byte[] pixels=new byte[bitmap.PixelWidth*bitmap.PixelHeight*4];bitmap.CopyPixels(pixels,bitmap.PixelWidth*4,0);if(!pixels.Where((_,index)=>index%4==3).Any(value=>value>0)||!pixels.Where((_,index)=>index%4==0).Any(value=>value>0&&value<250))throw new IOException("Statistics rendered no readable content");var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));using(var output=File.Create(Path.Combine(root,"statistics.png")))png.Save(output);
                 panel.Close();await panel.Completion;int stopped=snapshots;await Task.Delay(1100,timeout.Token);if(snapshots!=stopped||window.statisticsWindow is not null)throw new IOException("Closed panel continued sampling");
                 window.statisticsSource=()=>throw new IOException("private statistics diagnostic fixture");window.OpenStatistics();var failed=window.statisticsWindow!;await Until(()=>failed.DisplayText.Contains("统计暂不可用"));int frames=window.smokeFrames;await Until(()=>window.smokeFrames>frames);failed.Close();await failed.Completion;

@@ -6,13 +6,19 @@ using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Security.Principal;
 using RelaxDesk.Core;
+using RelaxDesk.Session;
 using RelaxDesk.Windows;
 using RelaxDesk.Host;
 bool shellMode = args.Length > 0 && args[0] == "--shell";
 if (shellMode) args = args[1..];
 bool listenMode = args.Length > 0 && args[0] == "--listen";
 if (listenMode) args = args[1..];
+bool guestOnly = args.Length > 0 && args[0] == "--guest-only";
+if (guestOnly) args = args[1..];
+bool adminDisabled = args.Length > 0 && args[0] == "--no-admin";
+if (adminDisabled) args = args[1..];
 string? selectedFileRoot = null,selectedDisplay=null;
 while(args is [var option,var value,.. var remaining]&&option is "--file-root" or "--display")
 {if(option=="--file-root")selectedFileRoot=Path.GetFullPath(value);else selectedDisplay=value;args=remaining;}
@@ -37,11 +43,72 @@ if (args is ["--deployment-info"])
     }));
     return;
 }
+if (args is ["--input-token-diagnose"])
+{
+    try
+    {
+        WindowsInputPrivilege.EnsureOrdinaryProcess();
+        Console.WriteLine("ordinary_input_token=allowed");
+    }
+    catch (IOException error)
+    {
+        Console.WriteLine($"ordinary_input_token=denied reason={error.Message}");
+        Environment.ExitCode = 2;
+    }
+    return;
+}
 if (args is ["--session-diagnose"])
 {
     var snapshot=WindowsSessionAccess.Read();
     Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(snapshot));
     Environment.ExitCode=snapshot.Denial is null?0:2;return;
+}
+if (args is ["--session-diagnose-watch", var seconds])
+{
+    if (!int.TryParse(seconds, out int duration) || duration is < 1 or > 300)
+        throw new ArgumentException("Session observation duration must be 1–300 seconds");
+    var clock = Stopwatch.StartNew();
+    using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(250));
+    WindowsSessionSnapshot? previous = null;
+    do
+    {
+        var snapshot = WindowsSessionAccess.Read();
+        if (snapshot != previous)
+        {
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
+            {
+                utc = DateTimeOffset.UtcNow, elapsedMs = clock.ElapsedMilliseconds, snapshot
+            }));
+            previous = snapshot;
+        }
+    } while (clock.Elapsed.TotalSeconds < duration && await timer.WaitForNextTickAsync());
+    return;
+}
+if (args is ["--admin-input-diagnose"])
+{
+    var interactive = WindowsSessionAccess.Read();
+    bool ordinaryCoordinator = false;
+    WindowsInputToken? inputToken = null;
+    try { inputToken = WindowsInputPrivilege.ReadProcessToken(); WindowsInputPrivilege.EnsureOrdinaryProcess(); ordinaryCoordinator = true; }
+    catch (IOException) { }
+    using var owner = WindowsIdentity.GetCurrent();
+    var deployment = owner.User is { } sid ? ServiceDeploymentTrust.InspectElevatedInput(sid.Value) : (AdminWorkerDeployment?)null;
+    bool protectedWorker = deployment == AdminWorkerDeployment.Verified;
+    string deploymentStatus = deployment switch
+    {
+        AdminWorkerDeployment.Verified => "verified",
+        AdminWorkerDeployment.AccessDenied => "access-denied",
+        AdminWorkerDeployment.RepairRequired => "repair-required",
+        _ => "unavailable"
+    };
+    bool readyForLocalApproval = ordinaryCoordinator && protectedWorker && interactive.Denial is null;
+    Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
+    {
+        ordinaryCoordinator, inputToken, protectedWorker, deploymentStatus, interactive, readyForLocalApproval,
+        uac = "NOT_TESTED", elevatedWindowInput = "NOT_TESTED"
+    }));
+    Environment.ExitCode = readyForLocalApproval ? 0 : 2;
+    return;
 }
 if (args is ["--capture-diagnose"])
 {
@@ -72,9 +139,9 @@ if (args is ["--capture-test"])
     catch (IOException e) { Console.Error.WriteLine($"Capture test failed: {e.Message}"); Environment.ExitCode = 1; return; }
 }
 if (args.Length is < 2 or > 3 || !IPAddress.TryParse(args[0], out var address) || !int.TryParse(args[1], out int port) || port is < 1 or > 65535 || IPAddress.Any.Equals(address) || IPAddress.IPv6Any.Equals(address))
-{ Console.WriteLine("Usage: RelaxDesk.Host [--listen] [--file-root <local directory>] [--display <device name|all>] <specific LAN IP> <port> [backend]"); return; }
+{ Console.WriteLine("Usage: RelaxDesk.Host [--listen] [--guest-only] [--no-admin] [--file-root <local directory>] [--display <device name|all>] <specific LAN IP> <port> [backend]"); return; }
 string backend = args.Length == 3 ? args[2] : "auto";
-if (backend is not ("auto" or "dxgi" or "gdi" or "test-software" or "test-hardware" or "test-deflate" or "test-resolution" or "test-idle" or "test-producer-failure" or "test-runtime-fallback" or "test-capture-recovery" or "test-capture-exhausted" or "test-clipboard" or "test-clipboard-failure" or "test-clipboard-rich" or "test-clipboard-rich-failure" or "test-clipboard-files" or "test-displays" or "test-topology" or "test-topology-init-race" or "test-session-unavailable" or "test-audio" or "test-audio-failure" or "test-video-settings-static")) throw new ArgumentException("Unknown capture backend");
+if (backend is not ("auto" or "dxgi" or "gdi" or "test-software" or "test-hardware" or "test-deflate" or "test-oversized-udp" or "test-resolution" or "test-idle" or "test-producer-failure" or "test-runtime-fallback" or "test-capture-recovery" or "test-capture-exhausted" or "test-clipboard" or "test-clipboard-failure" or "test-clipboard-rich" or "test-clipboard-rich-failure" or "test-clipboard-files" or "test-displays" or "test-topology" or "test-topology-init-race" or "test-session-unavailable" or "test-session-locked" or "test-session-switched" or "test-session-desktop" or "test-desktop-pause" or "test-admin-lifecycle" or "test-admin-worker-loss" or "test-audio" or "test-audio-failure" or "test-video-settings-static")) throw new ArgumentException("Unknown capture backend");
 if (backend.StartsWith("test-", StringComparison.Ordinal) && !IPAddress.IsLoopback(address)) throw new ArgumentException("Synthetic test is loopback-only");
 using var cert = SessionCertificate.Create();
 bool persistent = shellMode || listenMode || interactiveLaunch;
@@ -97,7 +164,7 @@ try
             using var client = await listener.AcceptTcpClientAsync(stop.Token); client.NoDelay = true;
             using var diagnosticScope=DiagnosticCorrelation.Begin();
             using var scope = shell?.Begin();
-            try { await HostConnection.Run(listener, client, cert, token, backend, selectedFileRoot, scope, scope?.Token ?? stop.Token,fileResumes,selectedDisplay); }
+            try { await HostConnection.Run(listener, client, cert, token, backend, selectedFileRoot, scope, scope?.Token ?? stop.Token,fileResumes,selectedDisplay,guestOnly,adminDisabled); }
             finally { if (shellMode) ShellBridge.Emit("session-ended", sessionId: scope!.Id); }
         }
         catch (Exception e) when (e is IOException or AuthenticationException or OperationCanceledException or SocketException or InvalidDataException or System.Runtime.InteropServices.ExternalException or System.Threading.Channels.ChannelClosedException)

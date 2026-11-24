@@ -10,6 +10,14 @@ From a Release solution build (use a fresh output directory for every run):
 python scripts/summarize-renderers.py benchmarks/my-renderers --modes deflate software hardware-cpu
 ```
 
+Run the source office acceptance suite against the same Release build:
+
+```powershell
+dotnet build/my-artifacts/bin/RelaxDesk.Smoke/release/RelaxDesk.Smoke.dll --office-suite-source build/my-artifacts build/my-office-results
+```
+
+The suite saves a per-case stdout and stderr log alongside `result.json`. It exercises file integrity during Auto switching, WPF media recovery and statistics after fallback, and saves software text-quality measurements from a generated editor frame. It uses the loopback network and synthetic desktop sources and does not request Windows administrator consent.
+
 Omit `-ArtifactsDirectory` for conventional project build paths. For a final self-contained bundle, use `-PackageRoot <extracted-bundle>` instead; it launches EXEs without a globally installed SDK/runtime. This source change prepares those commands for the final bundle; it does not produce or validate a new package. Default renderer modes also include `gpu`, which requires actual supported window/Present conditions; explicitly select runnable modes when blocked. Selected modes are recorded and never presented as a complete four-mode comparison. `Frames` is 60–1800; renderer tests use a fixed received-media budget, not equal wall-clock duration or guaranteed submitted/displayed FPS.
 
 The Smoke driver reports only `Role`, PID and process creation UTC ticks for its owned Host/Viewer. Discovery does not require WMI process enumeration and does not collect command lines, pins, tokens or inputs. Sampling verifies PID plus creation time, skips mismatched identities, resets CPU deltas across identity changes and disposes process handles. Each direction of video/control remains production code with normal authentication/approval. New diagnostic lines are emitted only by Smoke, with no production protocol change.

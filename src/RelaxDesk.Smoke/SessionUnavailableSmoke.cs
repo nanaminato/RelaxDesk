@@ -7,8 +7,16 @@ internal static class SessionUnavailableSmoke
 {
     public static async Task Run(string application)
     {
+        await Verify(application, "test-session-unavailable", SessionEndReason.WindowsSessionUnavailable);
+        await Verify(application, "test-session-locked", SessionEndReason.WindowsLocked);
+        await Verify(application, "test-session-switched", SessionEndReason.WindowsSessionChanged);
+        await Verify(application, "test-session-desktop", SessionEndReason.WindowsDesktopUnavailable);
+    }
+
+    static async Task Verify(string application, string backend, SessionEndReason expectedReason)
+    {
         var reservation=new TcpListener(IPAddress.Loopback,0);reservation.Start();int port=((IPEndPoint)reservation.LocalEndpoint).Port;reservation.Stop();
-        using var host=Process.Start(ChildProcess.Create(application,"127.0.0.1",port.ToString(),"test-session-unavailable"))??throw new IOException("Host launch failed");
+        using var host=Process.Start(ChildProcess.Create(application,"127.0.0.1",port.ToString(),backend))??throw new IOException("Host launch failed");
         using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(20));using var client=new SessionClient();Task<string>? logs=null;Task? media=null;int frames=0;
         try
         {
@@ -19,10 +27,10 @@ internal static class SessionUnavailableSmoke
             await host.StandardInput.WriteLineAsync("APPROVE");await host.StandardInput.FlushAsync();logs=host.StandardOutput.ReadToEndAsync(deadline.Token);await connecting;
             media=Task.Run(async()=>{try{while(true){_=await MediaProtocol.Read(client.Media,deadline.Token);Interlocked.Increment(ref frames);}}catch(EndOfStreamException){}catch(IOException){}},deadline.Token);
             var terminal=await SessionControl.Read(client.Control,deadline.Token);
-            if(!ConnectionRecovery.IsExplicitEnd(terminal)||ConnectionRecovery.IsTransient(new RemoteSessionEndedException()))throw new IOException("Session loss did not terminate authorization");
+            if(!ConnectionRecovery.IsExplicitEnd(terminal)||terminal.EndReason!=expectedReason||ConnectionRecovery.IsTransient(new RemoteSessionEndedException(terminal.EndReason)))throw new IOException($"Session loss did not terminate authorization with {expectedReason}");
             await host.WaitForExitAsync(deadline.Token);await media;string output=await logs;
             if(host.ExitCode!=0||frames==0||!output.Contains("worker=windows-session")||!output.Contains("WindowsSessionUnavailableException")||!output.Contains("native_live_resources=0"))throw new IOException("Session guard did not stop and clean the production pipeline: "+output);
-            Console.WriteLine($"PASS actual Host/TLS synthetic session-unavailable watch: frames={frames}, terminal notice, no auto retry, native resources zero; no actual lock or SendInput");
+            Console.WriteLine($"PASS actual Host/TLS synthetic {expectedReason}: frames={frames}, terminal notice, no auto retry, native resources zero; no real desktop transition or SendInput");
         }
         finally
         {

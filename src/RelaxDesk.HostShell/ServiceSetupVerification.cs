@@ -129,9 +129,12 @@ internal static class ServiceSetupVerification
                 // An earlier read-only query must not overwrite post-transaction state.
                 var oldQuery=new TaskCompletionSource<MachineServiceStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
                 backend.Query=()=>oldQuery.Task;var scanning=window.InspectServiceInstallation();
-                await window.RunServiceSetup(false);backend.Query=()=>Task.FromResult(new MachineServiceStatus(true,4,2,false));
+                await window.RunServiceSetup(false);backend.Query=()=>Task.FromResult(new MachineServiceStatus(true,4,2,false,AdminWorkerDeployment.AccessDenied));
                 oldQuery.SetResult(new(false,0,0,false));await scanning;
-                Check(window.InstallationStatus.Contains("运行中")&&window.InstallationStatus.Contains("开机自动"));
+                bool accessDeniedShown=window.InstallationStatus.Contains("运行中")&&window.InstallationStatus.Contains("开机自动")&&window.InstallationStatus.Contains("无法读取");
+                backend.Query=()=>Task.FromResult(new MachineServiceStatus(true,4,2,false,AdminWorkerDeployment.Verified));
+                await window.InspectServiceInstallation();
+                Check(accessDeniedShown&&window.InstallationStatus.Contains("部署已验证"));
                 var listener=new TcpListener(IPAddress.Loopback,0);listener.Start();int port=((IPEndPoint)listener.LocalEndpoint).Port;listener.Stop();
                 await window.StartSharing("127.0.0.1",port,"test-hardware");await Until(()=>window.Status=="等待连接");previous=backend.Prepared;
                 Check(!window.InstallServiceButton.IsEnabled&&!window.UninstallServiceButton.IsEnabled);

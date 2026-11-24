@@ -9,6 +9,17 @@ internal static class ToolbarVerification
 {
     [DllImport("user32.dll")] static extern nint WindowFromPoint(SessionToolbar.PixelPoint p);
     [DllImport("user32.dll")] static extern bool IsChild(nint parent, nint child);
+    [DllImport("user32.dll")] static extern nint GetWindow(nint window, uint command);
+
+    static bool IsAboveOwner(nint toolbar, nint owner)
+    {
+        const uint PreviousInZOrder = 3;
+        var visited = new HashSet<nint>();
+        for (nint window = GetWindow(owner, PreviousInZOrder); window != 0 && visited.Add(window);
+            window = GetWindow(window, PreviousInZOrder))
+            if (window == toolbar) return true;
+        return false;
+    }
     public static void Run(Application app)
     {
         var window = new ViewerWindow { Topmost = true };
@@ -31,9 +42,15 @@ internal static class ToolbarVerification
                 Point edge = bar.Surface.PointToScreen(new Point(bar.Surface.ActualWidth / 2, 2));
                 pointer = new() { X = (int)edge.X, Y = (int)edge.Y }; await Task.Delay(300);
                 if (!bar.Expanded) throw new Exception("Top-edge hover did not reveal toolbar");
-                var point = new SessionToolbar.PixelPoint { X = (int)edge.X, Y = (int)edge.Y };
+                var button = bar.DisconnectButton;
+                Point center = button.PointToScreen(new Point(button.ActualWidth / 2, button.ActualHeight / 2));
+                var point = new SessionToolbar.PixelPoint { X = (int)center.X, Y = (int)center.Y };
                 nint hit = WindowFromPoint(point), toolbarHwnd = new WindowInteropHelper(bar.Surface).Handle;
-                if (hit != toolbarHwnd && !IsChild(toolbarHwnd, hit)) throw new Exception("Toolbar is behind HwndHost (airspace regression)");
+                nint ownerHwnd = new WindowInteropHelper(window).Handle;
+                if (!bar.Surface.IsVisible || !IsAboveOwner(toolbarHwnd, ownerHwnd) || hit == ownerHwnd || IsChild(ownerHwnd, hit))
+                    throw new Exception($"Toolbar is missing or behind its native video surface at ({point.X}, {point.Y}); hit={hit:X}, toolbar={toolbarHwnd:X}, owner={ownerHwnd:X}, native={child.Handle:X}");
+                if (hit != toolbarHwnd && !IsChild(toolbarHwnd, hit))
+                    Console.WriteLine("Toolbar owned HWND order verified; another window occluded the screen hit-test");
                 bar.FullScreenButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(200);
                 if (window.WindowStyle != WindowStyle.None || (string)bar.FullScreenButton.Content != "返回窗口") throw new Exception("Fullscreen action failed");
                 bar.FullScreenButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(200);
@@ -47,6 +64,10 @@ internal static class ToolbarVerification
                 using (var testBar = new SessionToolbar(window, () => { }, () => { }, shortcuts.Add,()=>releaseRequests++))
                 {
                     testBar.SetSession("owned shortcut test", false);
+                    const string workStatus = "Work · 等待 Host 本机确认 Windows 授权 · long-host-name.example";
+                    testBar.SetEndpoint(workStatus);
+                    if (testBar.EndpointText != workStatus || !Equals(testBar.EndpointToolTip, workStatus))
+                        throw new Exception("Session mode/status must lead the compact toolbar and remain readable in its tooltip");
                     var media = new RelaxDesk.Core.MediaFrame(RelaxDesk.Core.MediaCodec.H264, 1, 1, 64, 64, true, true, 0, 0, [], []);
                     if (testBar.MediaPathText != "等待首帧") throw new Exception("New session retained an old media path");
                     testBar.SetMediaPath(media, true);
@@ -80,7 +101,7 @@ internal static class ToolbarVerification
                 if (!window.ConnectionPanelVisible || window.Toolbar is not null || window.DesktopFillsClient) throw new Exception("Disconnect did not restore connection chrome");
                 window.StartLocalPreview(); var closingBar = window.Toolbar!; window.Close();
                 if (!closingBar.IsDisposed || closingBar.Surface.IsVisible) throw new Exception("Closing owner leaked toolbar/timer");
-                Console.WriteLine("PASS real HWND toolbar: persistent media path/fallback labels and session reset, full-client desktop, timed hide, top-edge reveal, above HwndHost hit-test, 15 shortcut menu actions, disabled secure attention, offline shortcut denial, fullscreen/window actions, minimize/restore, disconnect and disposal; simulated pointer positions, synthetic preview, no remote input; physical hover/DPI pending");
+                Console.WriteLine("PASS real HWND toolbar: persistent media path/fallback labels and session reset, full-client desktop, timed hide, top-edge reveal, HWND order above native video, 15 shortcut menu actions, disabled secure attention, offline shortcut denial, fullscreen/window actions, minimize/restore, disconnect and disposal; simulated pointer positions, synthetic preview, no remote input; physical hover/DPI pending");
             }
             catch (Exception e) { Console.Error.WriteLine(e); Environment.ExitCode = 1; }
             finally { child?.Dispose(); window.StopLocalPreview(); window.Close(); }

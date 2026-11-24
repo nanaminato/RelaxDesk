@@ -11,6 +11,7 @@ namespace RelaxDesk.Session;
 public static class LocalAgentPipe
 {
     public const string Name="RelaxDesk.SessionBroker.v1",ServiceName="RelaxDeskBroker";
+    const string AdminPrefix = "RelaxDesk.AdminInput.";
     public const uint ClientAccess=0x0012019B; // Individual rights: excludes FILE_CREATE_PIPE_INSTANCE (4).
     [StructLayout(LayoutKind.Sequential)] struct SecurityAttributes{public int Length;public nint Descriptor;public int Inherit;}
     [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool ConvertStringSecurityDescriptorToSecurityDescriptor(string text,uint revision,out nint descriptor,out uint bytes);
@@ -24,6 +25,10 @@ public static class LocalAgentPipe
     [DllImport("kernel32.dll",SetLastError=true)] static extern SafeProcessHandle OpenProcess(uint access,bool inherit,uint pid);
     [DllImport("kernel32.dll",SetLastError=true)] static extern bool ProcessIdToSessionId(uint pid,out uint session);
     [DllImport("advapi32.dll",SetLastError=true)] static extern bool OpenProcessToken(SafeProcessHandle process,uint access,out SafeAccessTokenHandle token);
+    [DllImport("advapi32.dll",SetLastError=true)] static extern bool GetTokenInformation(SafeAccessTokenHandle token,int information,out uint value,uint size,out uint returned);
+    [DllImport("advapi32.dll",EntryPoint="GetTokenInformation",SetLastError=true)] static extern bool QueryTokenBuffer(SafeAccessTokenHandle token,int information,nint buffer,uint size,out uint returned);
+    [DllImport("advapi32.dll")] static extern nint GetSidSubAuthorityCount(nint sid);
+    [DllImport("advapi32.dll")] static extern nint GetSidSubAuthority(nint sid,uint index);
     [DllImport("kernel32.dll")] internal static extern uint WaitForSingleObject(SafeProcessHandle process,uint milliseconds);
     [DllImport("wtsapi32.dll",EntryPoint="WTSQuerySessionInformationW",SetLastError=true)] static extern bool QuerySession(nint server,uint session,int info,out nint memory,out uint bytes);
     [DllImport("wtsapi32.dll")] static extern void WTSFreeMemory(nint memory);
@@ -38,6 +43,75 @@ public static class LocalAgentPipe
     {
         if(name!=Name&&!(name.StartsWith("RelaxDesk.Test.",StringComparison.Ordinal)&&SessionAgentProtocol.Identifier(name[15..])))throw new ArgumentException("Invalid local agent pipe name");
     }
+    static string AdminName(Guid grant) => grant == Guid.Empty
+        ? throw new ArgumentException("A non-empty administrator grant is required", nameof(grant))
+        : AdminPrefix + grant.ToString("N");
+
+    public static NamedPipeServerStream CreateAdminServer(Guid grant, string owner)
+    {
+        owner = CanonicalUser(owner);
+        return CreateServerCore(AdminName(grant), $"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;RC;;;OW)(A;;0x{ClientAccess:X8};;;{owner})", true, 1);
+    }
+
+    public static Task<NamedPipeClientStream> ConnectAdmin(Guid grant, CancellationToken cancellation) =>
+        ConnectCore(AdminName(grant), 0x10000, cancellation); // Identification only. The server cannot impersonate the elevated client.
+
+    public static void AuthenticateAdminCoordinator(NamedPipeClientStream pipe, int expectedPid, string expectedUser)
+    {
+        Check(GetNamedPipeServerProcessId(pipe.SafePipeHandle, out uint pid));
+        Check(GetNamedPipeServerSessionId(pipe.SafePipeHandle, out uint session));
+        RequirePeer(pid, session, expectedPid);
+        using var process = OpenProcess(0x1000, false, pid);
+        if (process.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
+        Check(OpenProcessToken(process, 8, out var token));
+        using (token)
+        using (var identity = new WindowsIdentity(token.DangerousGetHandle()))
+        {
+            if (identity.User?.Value != CanonicalUser(expectedUser))
+                throw new SecurityException("Administrator input coordinator SID mismatch");
+            const int TokenElevation = 20, TokenUiAccess = 26;
+            Check(GetTokenInformation(token, TokenElevation, out uint elevated, sizeof(uint), out uint elevationSize));
+            Check(GetTokenInformation(token, TokenUiAccess, out uint uiAccess, sizeof(uint), out uint uiAccessSize));
+            if (elevationSize != sizeof(uint) || uiAccessSize != sizeof(uint) || elevated != 0 || uiAccess != 0 ||
+                CoordinatorIntegrity(token) > 0x2000)
+                throw new SecurityException("Administrator input requires an ordinary coordinator without UIAccess");
+        }
+    }
+
+    static uint CoordinatorIntegrity(SafeAccessTokenHandle token)
+    {
+        const int TokenIntegrityLevel = 25;
+        _ = QueryTokenBuffer(token, TokenIntegrityLevel, 0, 0, out uint size);
+        if (size < IntPtr.Size || size > 4096) throw new SecurityException("Coordinator integrity is unavailable");
+        nint buffer = Marshal.AllocHGlobal((int)size);
+        try
+        {
+            Check(QueryTokenBuffer(token, TokenIntegrityLevel, buffer, size, out _));
+            nint sid = Marshal.ReadIntPtr(buffer);
+            if (sid == 0) throw new SecurityException("Coordinator integrity SID is missing");
+            int count = Marshal.ReadByte(GetSidSubAuthorityCount(sid));
+            if (count == 0) throw new SecurityException("Coordinator integrity SID has no subauthority");
+            return unchecked((uint)Marshal.ReadInt32(GetSidSubAuthority(sid, (uint)(count - 1))));
+        }
+        finally { Marshal.FreeHGlobal(buffer); }
+    }
+
+    public static void AuthenticateAdminWorker(NamedPipeServerStream pipe, int expectedPid)
+    {
+        Check(GetNamedPipeClientProcessId(pipe.SafePipeHandle, out uint pid));
+        Check(GetNamedPipeClientSessionId(pipe.SafePipeHandle, out uint session));
+        RequirePeer(pid, session, expectedPid);
+    }
+
+    static void RequirePeer(uint pid, uint session, int expectedPid)
+    {
+        if (expectedPid <= 0 || pid != (uint)expectedPid ||
+            !ProcessIdToSessionId((uint)Environment.ProcessId, out uint ownSession) ||
+            !ProcessIdToSessionId(pid, out uint peerSession) ||
+            session != ownSession || session != peerSession || !SessionActive(session))
+            throw new SecurityException("Administrator input pipe process or Windows session mismatch");
+    }
+
     public static string SecurityDescriptor(string user,string server)
     {
         user=CanonicalUser(user);server=new SecurityIdentifier(server).Value;
@@ -45,11 +119,17 @@ public static class LocalAgentPipe
     }
     public static NamedPipeServerStream CreateServer(string name,string user,string server,bool first)
     {
-        ValidateName(name);Check(ConvertStringSecurityDescriptorToSecurityDescriptor(SecurityDescriptor(user,server),1,out var descriptor,out _));
+        ValidateName(name);
+        return CreateServerCore(name, SecurityDescriptor(user, server), first, 9);
+    }
+
+    static NamedPipeServerStream CreateServerCore(string name, string sddl, bool first, uint instances)
+    {
+        Check(ConvertStringSecurityDescriptorToSecurityDescriptor(sddl,1,out var descriptor,out _));
         try
         {
             var attributes=new SecurityAttributes{Length=Marshal.SizeOf<SecurityAttributes>(),Descriptor=descriptor};
-            var handle=CreateNamedPipe(@"\\.\pipe\"+name,3|0x40000000u|(first?0x80000u:0),8,9,4096,4096,0,ref attributes); // Overlapped, local-only; one spare instance for accept-race replacement.
+            var handle=CreateNamedPipe(@"\\.\pipe\"+name,3|0x40000000u|(first?0x80000u:0),8,instances,4096,4096,0,ref attributes); // Overlapped, local-only; one spare instance for accept-race replacement.
             if(handle.IsInvalid){handle.Dispose();throw new Win32Exception(Marshal.GetLastWin32Error());}
             try{return new NamedPipeServerStream(PipeDirection.InOut,true,false,handle);}catch{handle.Dispose();throw;}
         }
@@ -58,10 +138,15 @@ public static class LocalAgentPipe
     public static async Task<NamedPipeClientStream> Connect(string name,CancellationToken ct)
     {
         ValidateName(name);
+        return await ConnectCore(name, 0x20000, ct);
+    }
+
+    static async Task<NamedPipeClientStream> ConnectCore(string name, uint impersonationLevel, CancellationToken ct)
+    {
         while(true)
         {
             ct.ThrowIfCancellationRequested();
-            var handle=CreateFile(@"\\.\pipe\"+name,ClientAccess,0,0,3,0x40000000|0x100000|0x20000,0); // Overlapped + explicit impersonation SQOS.
+            var handle=CreateFile(@"\\.\pipe\"+name,ClientAccess,0,0,3,0x40000000|0x100000|impersonationLevel,0); // Overlapped + explicit impersonation SQOS.
             if(!handle.IsInvalid){try{return new NamedPipeClientStream(PipeDirection.InOut,true,handle);}catch{handle.Dispose();throw;}}
             int error=Marshal.GetLastWin32Error();handle.Dispose();
             if(error is not (2 or 231))throw new Win32Exception(error);

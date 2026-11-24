@@ -2,6 +2,12 @@ using RelaxDesk.Core;
 
 static class InputChecks
 {
+    sealed class QueueClock : TimeProvider
+    {
+        public long Now;
+        public override long TimestampFrequency => 1000;
+        public override long GetTimestamp() => Now;
+    }
     public static async Task<int> Run()
     {
         int count=0;
@@ -27,6 +33,33 @@ static class InputChecks
         try{InputProtocol.KeyMessage(65,1025,false);throw new IOException("Unbounded repeats");}catch(InvalidDataException){count++;}
         var pressed=new PressedRemoteInputs();foreach(var key in repeats)pressed.Update(key);Check(pressed.Count==1);pressed.Update(new("button",Button:5));Check(pressed.ReleaseButtons() is[{Button:5,Up:true}]);Check(pressed.Count==1);Check(pressed.ReleaseAll() is[{Up:true,RepeatCount:1}]);Check(pressed.Count==0);
         var queue=new OutgoingControlQueue(5);Check(queue.TryWrite(new("input-v2",Input:samples[1])));Check(queue.TryWrite(new("input-v2",Input:new("move",X:9))));Check(queue.Depth==1);
+        var reused = new OutgoingControlQueue(3);
+        var move = new Packet("input-v2", 1, Input: new("move", X: 1));
+        var click = new Packet("input-v2", 2, Input: new("button", Button: 1));
+        var later = move with { Sequence = 3 };
+        var latest = move with { Sequence = 4 };
+        Check(reused.TryWrite(move) && reused.TryWrite(click) && reused.TryRead(out var first) && first == move);
+        Check(reused.TryWrite(later) && reused.TryWrite(latest) && reused.Depth == 2);
+        Check(reused.TryRead(out var second) && second == click && reused.TryRead(out var last) && last == latest && reused.Depth == 0);
+        long beforeQueue = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1024; i++)
+            if (!reused.TryWrite(click) || !reused.TryRead(out var next) || !ReferenceEquals(next, click))
+                throw new IOException("Control queue lost a prebuilt packet");
+        long queueBytes = GC.GetAllocatedBytesForCurrentThread() - beforeQueue;
+        Check(queueBytes == 0);
+        Console.WriteLine($"PASS fixed control queue storage: 1024 prebuilt write/read pairs, queue_allocated_bytes={queueBytes}");
+        var clock = new QueueClock();
+        var timedQueue = new OutgoingControlQueue(clock: clock);
+        Check(timedQueue.TryWrite(move));
+        clock.Now = 15;
+        Check(timedQueue.TryWrite(latest));
+        clock.Now = 20;
+        double delay = -1;
+        await foreach (var timed in timedQueue.ReadAllAsync(CancellationToken.None, (_, elapsed) => delay = elapsed))
+        {
+            Check(timed == latest && delay == 5);
+            break;
+        }
         Check(PointerPosition.TryNormalize(0,0,640,360,1920,1080,false,out int nx,out int ny)&&nx==0&&ny==0);
         Check(PointerPosition.TryNormalize(639,359,640,360,1920,1080,false,out nx,out ny)&&nx==65535&&ny==65535);
         Check(!PointerPosition.TryNormalize(640,360,640,360,1920,1080,false,out _,out _));

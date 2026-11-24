@@ -8,6 +8,34 @@ using System.Windows.Threading;
 using RelaxDesk.Core;
 namespace RelaxDesk.HostShell;
 
+internal sealed partial class HostWindow
+{
+    internal void VerifyAdminStatusEvents()
+    {
+        const string current = "current-session";
+        const string previous = "previous-session";
+        Changed(new("approval-request", SessionId: current, Mode: "Work"));
+        Changed(new("admin-ready", SessionId: previous));
+        if (activeMode != "Work" || revokeAdminInput.Visibility != Visibility.Collapsed)
+            throw new IOException("A stale administrator event modified the current session");
+        Changed(new("admin-awaiting-viewer", SessionId: current));
+        if (revokeAdminInput.Visibility != Visibility.Visible || state.Text != "等待 Viewer 确认")
+            throw new IOException("Pending administrator activation could not be cancelled");
+        Changed(new("admin-ready", SessionId: current));
+        Changed(new("admin-revoked", SessionId: previous));
+        if (activeMode != "Admin" || !detail.Text.Contains("管理员输入代理已连接") || revokeAdminInput.Visibility != Visibility.Visible)
+            throw new IOException("Administrator activation status was missing or overwritten");
+        Changed(new("admin-revoked", SessionId: current));
+        if (activeMode != "Work" || revokeAdminInput.Visibility != Visibility.Collapsed)
+            throw new IOException("Administrator revocation did not restore Work status");
+        Changed(new("session-ended", SessionId: current));
+        Changed(new("admin-ready", SessionId: current));
+        if (state.Text != "会话已结束" || revokeAdminInput.Visibility != Visibility.Collapsed)
+            throw new IOException("A delayed administrator event restored ended session controls");
+        Changed(new("stopped"));
+    }
+}
+
 internal static class ShellVerification
 {
     public static void Run(Application app,string host,string output)
@@ -21,6 +49,8 @@ internal static class ShellVerification
             using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(60));
             try
             {
+                window.VerifyAdminStatusEvents();
+                Console.WriteLine("PASS WPF Host administrator status rejects stale session events and clears controls on revocation/end");
                 await Until(()=>window.DisplayEnumerationFinished);await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);Snapshot("host-idle.png");
                 if(!window.DisplayConfigurationEnabled||window.DisplayChoiceCount<2)throw new IOException("Physical display metadata choices missing");
                 int port=Port();await window.StartSharing("127.0.0.1",port,"test-hardware");await Until(()=>window.Status=="等待连接");
@@ -33,12 +63,39 @@ internal static class ShellVerification
                     await window.Decide(true);await connection;
                     var frame=await MediaProtocol.Read(viewer.Media,timeout.Token);
                     if(frame.Data.Length==0||frame.Codec!=MediaCodec.H264||window.RequestVisible)throw new IOException("Shell-approved video missing");
-                    await Until(()=>window.Status=="正在共享");Snapshot("host-sharing.png");
+                    await Until(()=>window.Status=="正在共享 · Work");Snapshot("host-sharing.png");
                     await window.StopSharing();await window.Host.Finished.WaitAsync(TimeSpan.FromSeconds(10));
                 }
                 if(window.Host.Running||window.Host.Pending)throw new IOException("Stop left child/session running");
                 if(!window.DisplayConfigurationEnabled)throw new IOException("Stopped Host did not restore display choice");
                 Console.WriteLine("PASS WPF Host display selection: real metadata choices, fixed scope while listening, settings restored after stop; synthetic video only, physical secondary capture pending");
+                port = Port();
+                await window.StartSharing("127.0.0.1", port, "test-displays");
+                await Until(() => window.Status == "等待连接");
+                using (var work = new SessionClient { RequestedMode = SessionMode.Work, RequestAdminUpgrade = true })
+                {
+                    var connecting = work.ConnectByApproval("127.0.0.1", port, timeout.Token);
+                    await Until(() => window.RequestVisible);
+                    await window.Decide(true);
+                    await connecting;
+                    if (!work.AdminUpgrade || window.AdminRequestVisible) throw new IOException("Incorrect initial administrator approval state");
+                    var frame = await work.Video.Read(timeout.Token);
+                    await Wire.Write(work.Control, new("admin-input-request-v2", 1), timeout.Token);
+                    await Until(() => window.AdminRequestVisible);
+                    if (window.RequestVisible) throw new IOException("Administrator approval reopened initial consent");
+                    Snapshot("host-admin-request.png");
+                    await Wire.Write(work.Control, new("ping-v2", 2), timeout.Token);
+                    if (await Wire.Read(work.Control, timeout.Token) != new Packet("pong-v2", 2))
+                        throw new IOException("Administrator approval blocked control");
+                    await window.DecideAdmin(false);
+                    if (await Wire.Read(work.Control, timeout.Token) != new Packet("admin-input-denied-v2"))
+                        throw new IOException("Local administrator denial did not reach Viewer");
+                    await Until(() => !window.AdminRequestVisible && window.Status == "正在共享 · Work");
+                    if ((await work.Video.Read(timeout.Token)).Sequence <= frame.Sequence) throw new IOException("Work media did not continue");
+                }
+                await window.StopSharing();
+                await window.Host.Finished;
+                Console.WriteLine("PASS WPF in-session administrator approval: separate local panel, control heartbeat during approval, denial closes panel and Work media continues; no UAC");
                 port=Port();await window.StartSharing("127.0.0.1",port,"test-hardware");await Until(()=>window.Status=="等待连接");
                 using(var viewer=new SessionClient())
                 {

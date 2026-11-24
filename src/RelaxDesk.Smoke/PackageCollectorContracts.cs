@@ -51,6 +51,12 @@ internal sealed partial class PackageCollector
         Check(await collector.Exec("unwritable", application, ["--collector-output-fixture", "10"]) != 0 && collector.steps.Last().status == "FAIL", "Child exit 0 hid failed evidence write");
         var applications = new OfficeApplications("host", "viewer", "shell", "service", "smoke", "tests");
         var cases = OfficeAcceptanceCases.Create(applications, fixture);
+        Check(cases.Any(test => test.Name == "office-windows-session-end" && test.Application == applications.Smoke
+            && test.Arguments.SequenceEqual(new[] { applications.Host, "--session-unavailable" })), "Office acceptance omitted authenticated Windows session termination");
+        Check(cases.Any(test => test.Name == "office-auto-files" && test.Arguments.Contains("--file-transfer-auto")), "Office acceptance omitted file transfer during Auto recovery");
+        Check(cases.Any(test => test.Name == "office-auto-recovery" && test.Arguments.Contains("auto-recovery-cpu")), "Office acceptance omitted WPF media recovery");
+        Check(cases.Any(test => test.Name == "office-viewer-fallback-statistics" && test.Arguments.Contains("oversized")), "Office acceptance omitted WPF fallback diagnostics");
+        Check(cases.Any(test => test.Name == "office-viewer-text-quality" && test.Arguments.SequenceEqual(new[] { "--office-text-quality", "software" })), "Office acceptance omitted the software text quality benchmark");
         foreach (string requirement in new[] { "office-core-tls", "office-collector", "office-broker", "office-service-setup", "office-file-resume", "office-persistent-host", "office-network-shaped", "office-topology", "office-viewer-audio", "office-viewer-file-session", "office-viewer-reconnect", "office-viewer-video-settings-static", "office-viewer-failure-viewer-update", "office-viewer-diagnostics", "office-viewer-error-details", "office-host-recovery", "office-host-service-setup-ui" })
             Check(cases.Any(test => test.Name == requirement), "Office acceptance omitted " + requirement);
         string[] forbidden = ["--keyboard-contracts", "--capture-test", "--capture-diagnose", "--video-desktop", "--render-test", "--present-diagnose"];

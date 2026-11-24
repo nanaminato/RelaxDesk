@@ -6,10 +6,177 @@ async Task Reject(byte[] bytes) { try { await Wire.Read(new MemoryStream(bytes))
 var gate = new AccessGate(); var input = new Packet("input", 1, Code: 65);
 Check(!gate.Accept(input)); gate.Approve(); Check(gate.Accept(input)); Check(!gate.Accept(input)); Check(!gate.Accept(input with { Sequence = 2, X = -1 })); Check(!gate.Accept(input with { Sequence = 2, Kind = "frame-v1" })); Check(gate.Accept(input with { Sequence = 2 })); gate.Revoke(); Check(!gate.Accept(input with { Sequence = 3 })); gate.Approve(); Check(gate.Accept(input));
 using var stream = new MemoryStream(); var packet = new Packet("frame-v1", 7, 2, 2, [1, 2, 3]); await Wire.Write(stream, packet); stream.Position = 0; var read = await Wire.Read(stream); Check(read.Kind == packet.Kind && read.Sequence == 7 && read.Data!.SequenceEqual(packet.Data!));
+using (var wire = new CountingWireStream())
+{
+    await Wire.Write(wire, new("input-v2", 1, Input: new("move", X: 20, Y: 30)));
+    await Wire.Write(wire, new("ping-v2", 2));
+    Check(wire.Writes == 2);
+    string largeText = new('x', 8192);
+    await Wire.Write(wire, new("fixture", Text: largeText));
+    Check(wire.Writes == 4);
+    wire.Position = 0;
+    Check((await Wire.Read(wire)).Input == new RemoteInput("move", X: 20, Y: 30));
+    Check(await Wire.Read(wire) == new Packet("ping-v2", 2));
+    Check((await Wire.Read(wire)).Text == largeText && wire.Position == wire.Length);
+}
 await Reject([]); await Reject([1, 0, 0, 0]); await Reject([255, 255, 255, 255]); byte[] oversized = new byte[4]; BinaryPrimitives.WriteInt32LittleEndian(oversized, Wire.Limit + 1); await Reject(oversized); await Reject([5, 0, 0, 0, 123]); await Reject([2, 0, 0, 0, 123, 125, 0]);
 
+Check(!SessionAccess.Available(SessionMode.Admin) && !SessionAccess.Available((SessionMode)99));
+Check(SessionAccess.Approve(null, false) == new SessionAccess(SessionMode.Work, true));
+Check(!SessionAccess.Approve(SessionMode.Guest, false).InputAllowed);
+Check(SessionAccess.Approve(SessionMode.Guest, true).InputAllowed);
+var guest = new AccessGate();
+guest.Approve([SessionCapabilities.ClipboardText], InputProtocol.Version, allowInput: false);
+Check(!guest.TryExecuteInput(input, () => throw new Exception("Guest input executed")));
+Check(guest.Allows(SessionCapabilities.ClipboardText));
+Check(!guest.AcceptControl(new Packet("ping-v2", 1, Mode: SessionMode.Admin, InputAllowed: true)));
+Check(guest.AcceptControl(new Packet("ping-v2", 1)));
+var revokedInput = new AccessGate();
+revokedInput.Approve();
+Check(revokedInput.TryExecuteInput(input, () => { }));
+revokedInput.RevokeInput();
+Check(!revokedInput.Accept(input with { Sequence = 2 }));
+Check(revokedInput.TryExecuteInput(input with { Sequence = 2 }, () => throw new Exception("Revoked input executed")));
+Check(!revokedInput.TryExecuteInput(input with { Sequence = 2 }, () => throw new Exception("Replayed input executed")));
+Check(revokedInput.AcceptControl(new Packet("ping-v2", 3)));
+guest.Revoke();
+Check(!guest.Allows(SessionCapabilities.ClipboardText));
+Check(!guest.AcceptControl(new Packet("ping-v2", 2)));
+
+var admin = new AdminInputAuthorization(SessionMode.Work);
+var guestAdmin = new AdminInputAuthorization(SessionMode.Guest);
+Check(guestAdmin.Request() is null);
+Guid adminRequest = admin.Request()!.Value;
+Check(admin.Request() is null);
+Check(!admin.TryExecute(adminRequest, () => throw new Exception("Unapproved administrator input")));
+Check(!admin.Decide(Guid.NewGuid(), true, true));
+Check(!admin.Decide(adminRequest, true, false));
+Check(!admin.Decide(adminRequest, true, true));
+adminRequest = admin.Request()!.Value;
+Check(admin.Decide(adminRequest, true, true));
+Check(admin.Request() is null && admin.TryExecute(adminRequest, () => { }));
+admin.Revoke();
+Check(!admin.TryExecute(adminRequest, () => throw new Exception("Revoked administrator input")));
+Guid staleAdmin = admin.Request()!.Value;
+admin.Revoke();
+Check(!admin.Decide(staleAdmin, true, true));
+Guid freshAdmin = admin.Request()!.Value;
+Check(admin.Decide(freshAdmin, true, true));
+admin.End();
+Check(admin.Request() is null && !admin.TryExecute(freshAdmin, () => throw new Exception("Ended administrator input")));
+
+using (var commands = new MemoryStream())
+{
+    Guid grant = Guid.NewGuid();
+    string binding = grant.ToString("N");
+    var command = new Packet("admin-input", 2, Origin: binding, Input: new("move"));
+    await Wire.Write(commands, new("admin-input-heartbeat", 1, Origin: binding));
+    await Wire.Write(commands, command);
+    await Wire.Write(commands, command);
+    commands.Position = 0;
+    int applied = 0, released = 0;
+    try
+    {
+        await AdminInputChannel.Run(commands, grant, _ => applied++, () => released++, CancellationToken.None);
+        throw new Exception("Administrator input replay allowed");
+    }
+    catch (InvalidDataException) { Check(applied == 1 && released == 1); }
+}
+using (var wrongSession = new MemoryStream())
+{
+    await Wire.Write(wrongSession, new("admin-input", 1, Origin: Guid.NewGuid().ToString("N"), Input: new("move")));
+    wrongSession.Position = 0;
+    bool released = false;
+    try
+    {
+        await AdminInputChannel.Run(wrongSession, Guid.NewGuid(), _ => throw new Exception("Wrong grant injected"),
+            () => released = true, CancellationToken.None);
+        throw new Exception("Wrong administrator input grant allowed");
+    }
+    catch (InvalidDataException) { Check(released); }
+}
+
+var modeGate = new AccessGate();
+modeGate.Approve();
+Check(!modeGate.AcceptControl(new("admin-input-stop-v2", 1)));
+Check(!modeGate.AcceptControl(new("admin-input-stop-v2", 1, Code: 65), adminTransition: true));
+Check(modeGate.AcceptControl(new("admin-input-stop-v2", 1), adminTransition: true));
+Check(!modeGate.AcceptControl(new("work-input-ready-v2", 1), adminTransition: true));
+Check(modeGate.AcceptControl(new("work-input-ready-v2", 2), adminTransition: true));
+var activation = new Packet("admin-input-activate-v2", 3, Text: Guid.NewGuid().ToString("N"));
+Check(!modeGate.AcceptControl(activation));
+Check(!modeGate.AcceptControl(activation with { Text = null }, adminTransition: true));
+Check(!modeGate.AcceptControl(activation with { Code = 65 }, adminTransition: true));
+Check(modeGate.AcceptControl(activation, adminTransition: true));
+Check(!modeGate.AcceptControl(activation, adminTransition: true));
+var adminRequestGate = new AccessGate();
+var adminRequestPacket = new Packet("admin-input-request-v2", 1);
+Check(!adminRequestGate.AcceptControl(adminRequestPacket, adminRequest: true));
+adminRequestGate.Approve();
+Check(!adminRequestGate.AcceptControl(adminRequestPacket, adminRequest: true));
+adminRequestGate.Approve(inputVersion: InputProtocol.Version, allowInput: false);
+Check(!adminRequestGate.AcceptControl(adminRequestPacket, adminRequest: true));
+adminRequestGate.Approve(inputVersion: InputProtocol.Version);
+Check(!adminRequestGate.AcceptControl(adminRequestPacket));
+Check(!adminRequestGate.AcceptControl(adminRequestPacket with { Code = 65 }, adminRequest: true));
+Check(adminRequestGate.AcceptControl(adminRequestPacket, adminRequest: true));
+Check(!adminRequestGate.AcceptControl(adminRequestPacket, adminRequest: true));
+adminRequestGate.RevokeInput();
+Check(!adminRequestGate.AcceptControl(adminRequestPacket with { Sequence = 2 }, adminRequest: true));
+
+using (var device = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256))
+using (var publicDevice = WorkDeviceIdentity.Import(WorkDeviceIdentity.Export(device)))
+using (var unrelated = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256))
+{
+    byte[] challenge = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+    byte[] newChallenge = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+    string serverPin = new('A', 64);
+    var signature = WorkDeviceIdentity.Sign(device, challenge, serverPin);
+    Check(WorkDeviceIdentity.Fingerprint(device) == WorkDeviceIdentity.Fingerprint(publicDevice));
+    Check(WorkDeviceIdentity.Verify(publicDevice, challenge, serverPin, signature));
+    Check(!WorkDeviceIdentity.Verify(publicDevice, newChallenge, serverPin, signature));
+    Check(!WorkDeviceIdentity.Verify(publicDevice, challenge, new string('B', 64), signature));
+    Check(!WorkDeviceIdentity.Verify(unrelated, challenge, serverPin, signature));
+    Check(!modeGate.AcceptControl(new Packet("ping-v2", 3, DeviceKey: WorkDeviceIdentity.Export(device))));
+}
 count += await InputChecks.Run();
 count += await MediaChecks.Run();
+var adaptive = new QuicBitrateController();
+adaptive.Observe(new(100, 0));
+adaptive.Observe(new(200, 8));
+Check(adaptive.Target(8_000_000) == 8_000_000);
+adaptive.Observe(new(300, 16));
+Check(adaptive.Target(8_000_000) == 6_000_000 && adaptive.Target(4_000_000) == 3_000_000);
+for (ulong sent = 400; sent <= 800; sent += 100) adaptive.Observe(new(sent, 16));
+Check(adaptive.Target(8_000_000) == 6_000_000);
+adaptive.Observe(new(900, 16));
+Check(adaptive.Target(8_000_000) == 6_800_000);
+adaptive.Observe(new(905, 20));
+Check(adaptive.Target(1_000_000) == 1_000_000 && adaptive.Target(8_000_000) == 6_800_000);
+var sparseAdaptive = new QuicBitrateController();
+sparseAdaptive.Observe(new(100, 0));
+sparseAdaptive.Observe(new(200, 8));
+sparseAdaptive.Observe(new(300, 16));
+for (int sample = 0; sample < 24; sample++) sparseAdaptive.Observe(new(300, 16));
+Check(sparseAdaptive.Target(8_000_000) == 6_000_000);
+for (ulong sample = 1; sample < 24; sample++) sparseAdaptive.Observe(new(300 + sample * 4, 16));
+Check(sparseAdaptive.Target(8_000_000) == 6_000_000);
+sparseAdaptive.Observe(new(396, 16));
+Check(sparseAdaptive.Target(8_000_000) == 6_800_000);
+var severeLoss = new QuicBitrateController();
+severeLoss.Observe(new(100, 0));
+for (ulong i = 1; i <= 5; i++) severeLoss.Observe(new(100 + i * 40, i * 10));
+Check(!severeLoss.PreferReliableMedia && severeLoss.Target(8_000_000) < 8_000_000);
+severeLoss.Observe(new(340, 60));
+Check(severeLoss.PreferReliableMedia);
+severeLoss.Observe(new(380, 60));
+Check(!severeLoss.PreferReliableMedia);
+Check(QuicSendStatistics.FromCounters(100, 8, 3) == new QuicSendStatistics(100, 5));
+Check(QuicSendStatistics.FromCounters(100, 2, 7) == new QuicSendStatistics(100, 0));
+Check(QuicSendStatistics.FromCounters(10, 20, 3) == new QuicSendStatistics(10, 10));
+Check(!new QuicSendStatistics(1, 2).IsValid);
+Check(!modeGate.AcceptControl(new Packet("ping-v2", 3, QuicSend: new(2, 1))));
+count += await DatagramVideoChecks.Run(includeSockets: args is not ["--core"]);
 count += await ShortcutChecks.Run();
 count += await ClipboardChecks.Run();
 count += await ClipboardContentChecks.Run();
@@ -36,6 +203,7 @@ Check(!invitation.ToString().Contains(invitation.Token));
 foreach (string invalid in new[] { "anything", "https://localhost/", invitation.Encode()+"&token="+invitation.Token, invitation.Encode().Replace("192.168.1.2", "0.0.0.0"), invitation.Encode().Replace("48200", "0"), invitation.Encode().Replace("token=", "other="), invitation.Encode().Replace("fingerprint=", "fingerprint=x"), invitation.Encode()+"#secret" })
 { try { ConnectionInvitation.Parse(invalid); throw new Exception("Invalid invitation accepted"); } catch (FormatException) { Check(true); } }
 if (args is ["--core"]) { Console.WriteLine($"PASS {count} protocol/access/media checks (TLS not run)"); return; }
+count += await QuicMediaAttachmentChecks.Run();
 count += await InputTlsChecks.Run();
 count += await DisplayTlsChecks.Run();
 count += await ClipboardSessionTlsChecks.Run();
@@ -59,3 +227,13 @@ try
 catch { await server; throw; }
 finally { listener.Stop(); }
 Console.WriteLine($"PASS {count} protocol/access/TLS integration checks");
+
+sealed class CountingWireStream : MemoryStream
+{
+    public int Writes { get; private set; }
+    public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        Writes++;
+        return base.WriteAsync(buffer, cancellationToken);
+    }
+}

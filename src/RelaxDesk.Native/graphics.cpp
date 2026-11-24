@@ -15,7 +15,7 @@ void gpu::create(IDXGIAdapter* adapter) {
 void capture_context::initialize() {
     duplication.Reset();texture.Reset();staging.Reset();converter.reset();color_output.Reset();graphics={};
     dirty.clear();moves.clear();pointer.clear();shape={};pointer_position={};
-    duplication_desc={};format_negotiated=false;last_desktop_time=0;
+    duplication_desc={};format_negotiated=false;last_desktop_time=0;previous_protected_mask=false;last_copy_pixels=0;
     source_format=DXGI_FORMAT_UNKNOWN;color={};color_checked=0;
     ComPtr<IDXGIFactory1> factory;check(CreateDXGIFactory1(IID_PPV_ARGS(&factory)),"CreateDXGIFactory1");
     // Choose the attached primary physical output and its adapter, never a different logon session.
@@ -46,6 +46,7 @@ void capture_context::initialize() {
     check(DXGI_ERROR_NOT_FOUND,"selected DXGI output is not attached");
 }
 bool capture_context::accept_surface(const DXGI_OUTDUPL_FRAME_INFO& info,IDXGIResource* resource) {
+    last_copy_pixels=0;
     auto action=classify_capture(info,texture!=nullptr);
     if(action==capture_action::wait)return false;
     if(action==capture_action::cached){
@@ -63,9 +64,40 @@ bool capture_context::accept_surface(const DXGI_OUTDUPL_FRAME_INFO& info,IDXGIRe
     if(!texture){auto owned=desc;owned.Format=DXGI_FORMAT_B8G8R8A8_UNORM;owned.BindFlags=D3D11_BIND_SHADER_RESOURCE|D3D11_BIND_RENDER_TARGET;owned.MiscFlags=0;owned.Usage=D3D11_USAGE_DEFAULT;owned.CPUAccessFlags=0;check(graphics.device->CreateTexture2D(&owned,nullptr,&texture),"create owned desktop texture");}
     D3D11_TEXTURE2D_DESC owned{};texture->GetDesc(&owned);if(owned.Width!=desc.Width||owned.Height!=desc.Height)check(DXGI_ERROR_ACCESS_LOST,detail("resolution changed; recreate capture and encoder").c_str());
     if(color_output&&(source_format!=desc.Format||GetTickCount64()-color_checked>=1000))refresh_color();
-    if(desc.Format==DXGI_FORMAT_B8G8R8A8_UNORM)graphics.commands->CopyResource(texture.Get(),source.Get());
+    if(desc.Format==DXGI_FORMAT_B8G8R8A8_UNORM){
+        const uint64_t full_pixels=static_cast<uint64_t>(desc.Width)*desc.Height;
+        const size_t regions=dirty.size()+moves.size();
+        uint64_t region_pixels=0;
+        auto valid=[&](const RECT& rect){
+            if(rect.left<0||rect.top<0||rect.right<=rect.left||rect.bottom<=rect.top||
+                static_cast<UINT>(rect.right)>desc.Width||static_cast<UINT>(rect.bottom)>desc.Height)return false;
+            region_pixels+=static_cast<uint64_t>(rect.right-rect.left)*(rect.bottom-rect.top);
+            return region_pixels<=full_pixels/4;
+        };
+        bool partial=source_format==desc.Format&&last_desktop_time!=0&&info.AccumulatedFrames==1&&
+            !info.RectsCoalesced&&!info.ProtectedContentMaskedOut&&!previous_protected_mask&&regions>0&&regions<=16;
+        if(partial){
+            for(const auto& move:moves)if(!valid(move.DestinationRect)){partial=false;break;}
+            if(partial)for(const auto& rect:dirty)if(!valid(rect)){partial=false;break;}
+        }
+        if(partial){
+            // The acquired surface already holds the current pixels at each move destination.
+            // Read both lists from that surface, so overlapping moves never depend on copy order.
+            auto copy=[&](const RECT& rect){
+                const D3D11_BOX box{static_cast<UINT>(rect.left),static_cast<UINT>(rect.top),0,
+                    static_cast<UINT>(rect.right),static_cast<UINT>(rect.bottom),1};
+                graphics.commands->CopySubresourceRegion(texture.Get(),0,box.left,box.top,0,source.Get(),0,&box);
+            };
+            for(const auto& move:moves)copy(move.DestinationRect);
+            for(const auto& rect:dirty)copy(rect);
+            last_copy_pixels=region_pixels;
+        }else{
+            graphics.commands->CopyResource(texture.Get(),source.Get());
+            last_copy_pixels=full_pixels;
+        }
+    }
     else {if(!converter)converter=std::make_unique<desktop_converter>();converter->convert(graphics,source.Get(),texture.Get(),color);}
-    source_format=desc.Format;last_desktop_time=info.LastPresentTime.QuadPart;return true;
+    source_format=desc.Format;last_desktop_time=info.LastPresentTime.QuadPart;previous_protected_mask=info.ProtectedContentMaskedOut!=FALSE;return true;
 }
 void capture_context::acquire(uint32_t timeout,rd_frame& result) {
     lifetime.verify();if(!duplication)initialize();
@@ -76,7 +108,6 @@ void capture_context::acquire(uint32_t timeout,rd_frame& result) {
     check(hr,"AcquireNextFrame");
     capture_lease release{duplication.Get()};
     if(info.TotalMetadataBufferSize>1024*1024||info.PointerShapeBufferSize>1024*1024)check(E_INVALIDARG,"capture metadata cap exceeded");
-    bool has_desktop=accept_surface(info,resource.Get());
     dirty.clear();moves.clear();UINT bytes=0;
     if(info.TotalMetadataBufferSize){
         dirty.resize((info.TotalMetadataBufferSize+sizeof(RECT)-1)/sizeof(RECT));
@@ -84,6 +115,7 @@ void capture_context::acquire(uint32_t timeout,rd_frame& result) {
         moves.resize((info.TotalMetadataBufferSize+sizeof(DXGI_OUTDUPL_MOVE_RECT)-1)/sizeof(DXGI_OUTDUPL_MOVE_RECT));
         check(duplication->GetFrameMoveRects(static_cast<UINT>(moves.size()*sizeof(DXGI_OUTDUPL_MOVE_RECT)),moves.data(),&bytes),"GetFrameMoveRects");moves.resize(bytes/sizeof(DXGI_OUTDUPL_MOVE_RECT));
     }
+    bool has_desktop=accept_surface(info,resource.Get());
     if(info.PointerShapeBufferSize){pointer.resize(info.PointerShapeBufferSize);check(duplication->GetFramePointerShape(static_cast<UINT>(pointer.size()),pointer.data(),&bytes,&shape),"GetFramePointerShape");pointer.resize(bytes);}
     if(info.LastMouseUpdateTime.QuadPart)pointer_position=info.PointerPosition;
     D3D11_TEXTURE2D_DESC desc{};if(texture)texture->GetDesc(&desc);
@@ -97,6 +129,7 @@ void capture_context::acquire(uint32_t timeout,rd_frame& result) {
 RD int32_t rd_capture_create(void** context){if(!context)return E_POINTER;*context=nullptr;return guarded([&]{auto c=std::make_unique<capture_context>();c->initialize();*context=c.release();});}
 RD int32_t rd_capture_create_display(const wchar_t* name,void** context){if(!context)return E_POINTER;*context=nullptr;if(!name||wcsnlen_s(name,33)==0||wcsnlen_s(name,33)>31)return E_INVALIDARG;return guarded([&]{auto c=std::make_unique<capture_context>();c->selected_device=name;c->initialize();*context=c.release();});}
 RD int32_t rd_capture_next(void* context,uint32_t timeout,rd_frame* frame){if(!context||!frame||timeout>1000)return E_INVALIDARG;return guarded([&]{static_cast<capture_context*>(context)->acquire(timeout,*frame);});}
+RD int32_t rd_capture_copy_pixels(void* context,uint64_t* pixels){if(!context||!pixels)return E_POINTER;return guarded([&]{auto& capture=*static_cast<capture_context*>(context);capture.lifetime.verify();*pixels=capture.last_copy_pixels;});}
 RD int32_t rd_capture_blob(void* context,uint32_t kind,const void** data,uint32_t* bytes){if(!context||!data||!bytes)return E_INVALIDARG;return guarded([&]{auto& c=*static_cast<capture_context*>(context);c.lifetime.verify();
     if(kind==0){*data=c.dirty.data();*bytes=static_cast<uint32_t>(c.dirty.size()*sizeof(RECT));}
     else if(kind==1){*data=c.moves.data();*bytes=static_cast<uint32_t>(c.moves.size()*sizeof(DXGI_OUTDUPL_MOVE_RECT));}

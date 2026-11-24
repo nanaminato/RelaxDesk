@@ -8,6 +8,12 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
+    readonly CheckBox identifyWorkDevice = new() { Content = "在工作模式下向 Host 提供此设备身份" };
+    readonly ComboBox networkMode = new() { ItemsSource = new[] { "Auto", "TCP", "UDP" }, SelectedIndex = 0 };
+    readonly ComboBox fileRateLimit = new() { ItemsSource = new[] { "20 MiB/s（默认）", "4 MiB/s", "1 MiB/s", "256 KiB/s" }, SelectedIndex = 0 };
+    readonly ComboBox requestedMode = new() { ItemsSource = new[] { "Work（工作）", "Guest（访客）", "Admin（管理员）" }, SelectedIndex = 0 };
+    SessionMode activeMode = SessionMode.Work;
+
     void BuildInterface()
     {
         Title = "RelaxDesk " + BuildIdentity.Display; Width = 1100; Height = 750; MinWidth = 680; MinHeight = 480;
@@ -33,12 +39,17 @@ public sealed partial class ViewerWindow
         form.Children.Add(new TextBlock { Text = "远程电脑 IP", Margin = new Thickness(0, 16, 0, 0) }); form.Children.Add(host);
         form.Children.Add(new TextBlock { Text = "端口" }); form.Children.Add(port);
         AddConnectionHistory(form);
+        form.Children.Add(new TextBlock { Text = "会话模式" });
+        form.Children.Add(requestedMode);
         requestClipboard.Margin = new Thickness(0, 10, 0, 4); form.Children.Add(requestClipboard);
         form.Children.Add(requestClipboardImage);form.Children.Add(requestClipboardHtml);
         requestFiles.Margin=new Thickness(0,2,0,4);form.Children.Add(requestFiles);form.Children.Add(requestFileClipboard);
         form.Children.Add(requestAudio);
         var advanced = new StackPanel();
         void Field(string name, FrameworkElement control) { advanced.Children.Add(new TextBlock { Text = name }); advanced.Children.Add(control); }
+        Field("媒体传输", networkMode);
+        Field("文件传输限速（上传和下载）", fileRateLimit);
+        advanced.Children.Add(identifyWorkDevice);
         advanced.Children.Add(pinnedConnection);
         Field("固定指纹连接信息（可选）", invitation); Field("SHA256 指纹", fingerprint); Field("一次性凭证", token);
         advanced.Children.Add(legacy); advanced.Children.Add(gpuRendering);advanced.Children.Add(requestTopology);
@@ -70,6 +81,37 @@ public sealed partial class ViewerWindow
         host.Text = code.Host; port.Text = code.Port.ToString(); fingerprint.Text = code.Fingerprint; token.Password = code.Token;
         pinnedConnection.IsChecked = true;
     }
+    bool adminUpgradeAvailable;
+    int adminUpgradePending;
+
+    void RequestAdminUpgrade()
+    {
+        if (!adminUpgradeAvailable || activeMode != SessionMode.Work ||
+            session is not { IsCancellationRequested: false } current) return;
+        adminUpgradeAvailable = false;
+        ReleaseHeldInputs();
+        inputAuthorized = false;
+        CloseTextInput();
+        sessionToolbar?.SetAdminDowngrade(null);
+        sessionToolbar?.SetRemoteShortcuts(false);
+        sessionToolbar?.SetTextInput(null);
+        sessionToolbar?.SetEndpoint($"Work · 等待本机管理员授权 · {host.Text}");
+        Volatile.Write(ref adminUpgradePending, 1);
+        if (!outgoing.TryWrite(new("admin-input-request-v2", ++sequence))) current.Cancel();
+    }
+
+    void RequestAdminDowngrade()
+    {
+        if (activeMode != SessionMode.Admin || session is not { IsCancellationRequested: false } current) return;
+        ReleaseHeldInputs();
+        inputAuthorized = false;
+        sessionToolbar?.SetAdminDowngrade(null);
+        sessionToolbar?.SetRemoteShortcuts(false);
+        sessionToolbar?.SetTextInput(null);
+        sessionToolbar?.SetEndpoint($"Admin · 正在撤销高权限输入 · {host.Text}");
+        if (!outgoing.TryWrite(new("admin-input-stop-v2", ++sequence))) current.Cancel();
+    }
+
     internal void ShowConnectedView(bool connected)
     {
         connectionOverlay.Visibility = connected ? Visibility.Collapsed : Visibility.Visible;
@@ -78,8 +120,11 @@ public sealed partial class ViewerWindow
         {
             sessionToolbar ??= new SessionToolbar(this, ToggleFullScreen, () => disconnect.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)),
                 session is null ? null : SendShortcut,ReleaseHeldInputs);
-            sessionToolbar.SetSession(host.Text, fullScreen);
+            sessionToolbar.SetSession($"{activeMode} · {host.Text}", fullScreen);
             sessionToolbar.SetClipboard(sessionPermissions is{} clipboardGate&&ClipboardFormats.Granted(clipboardGate).Any, DisableClipboard);
+            sessionToolbar.SetAdminDowngrade(activeMode == SessionMode.Admin ? RequestAdminDowngrade :
+                adminUpgradeAvailable ? RequestAdminUpgrade : null, upgrade: adminUpgradeAvailable);
+            sessionToolbar.SetRemoteShortcuts(inputAuthorized);
             sessionToolbar.SetTextInput(inputAuthorized&&inputVersion==2?OpenTextInput:null);
             RefreshFileToolbar();RefreshFileClipboardToolbar();RefreshDisplayMenu();RefreshAudioToolbar();RefreshStatisticsToolbar();RefreshVideoSettingsMenu();sessionToolbar.SetViewport(CurrentViewport,SetViewportZoom);
         }

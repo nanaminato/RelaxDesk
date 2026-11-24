@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.ComponentModel;
 using System.IO.Pipes;
 using System.Security;
 using System.Security.AccessControl;
@@ -19,6 +20,139 @@ internal static class SessionBrokerSmoke
         Check(typeof(SessionAgentClient).Assembly.GetReferencedAssemblies().All(reference=>reference.Name is not ("RelaxDesk.Windows" or "PresentationFramework" or "PresentationCore")));
         string serviceFolder=Path.GetDirectoryName(Path.GetFullPath(application))!;
         Check(!File.Exists(Path.Combine(serviceFolder,"RelaxDesk.Native.dll"))&&!File.Exists(Path.Combine(serviceFolder,"RelaxDesk.Windows.dll")));
+        Guid grant = Guid.NewGuid();
+        using (var adminServer = LocalAgentPipe.CreateAdminServer(grant, own))
+        using (var adminDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            bool duplicateDenied = false;
+            try { using var duplicate = LocalAgentPipe.CreateAdminServer(grant, own); }
+            catch (Win32Exception error) when (error.NativeErrorCode == 5) { duplicateDenied = true; }
+            Check(duplicateDenied);
+            var accepting = adminServer.WaitForConnectionAsync(adminDeadline.Token);
+            using var adminClient = await LocalAgentPipe.ConnectAdmin(grant, adminDeadline.Token);
+            await accepting;
+            int pid = Environment.ProcessId;
+            LocalAgentPipe.AuthenticateAdminCoordinator(adminClient, pid, own);
+            LocalAgentPipe.AuthenticateAdminWorker(adminServer, pid);
+            Check(adminServer.IsConnected);
+            bool rejected = false;
+            try { LocalAgentPipe.AuthenticateAdminWorker(adminServer, pid + 1); }
+            catch (SecurityException) { rejected = true; }
+            Check(rejected);
+            rejected = false;
+            try { LocalAgentPipe.AuthenticateAdminCoordinator(adminClient, pid, "S-1-5-21-1-2-3-1001"); }
+            catch (SecurityException) { rejected = true; }
+            Check(rejected);
+        }
+        Guid mismatchedGrant = Guid.NewGuid();
+        using (var wrongServer = LocalAgentPipe.CreateAdminServer(mismatchedGrant, own))
+        using (var wrongDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            var serverHandle = wrongServer.SafePipeHandle;
+            var accepting = AdminInputConnection.Accept(wrongServer, mismatchedGrant, Environment.ProcessId, wrongDeadline.Token);
+            using var peer = await LocalAgentPipe.ConnectAdmin(mismatchedGrant, wrongDeadline.Token);
+            await Wire.Write(peer, new("admin-input-ready", Origin: grant.ToString("N")), wrongDeadline.Token);
+            bool rejected = false;
+            try { await using var unexpected = await accepting; }
+            catch (SecurityException) { rejected = true; }
+            Check(rejected && serverHandle.IsClosed);
+            Check(await peer.ReadAsync(new byte[1], wrongDeadline.Token) == 0);
+        }
+        Guid liveGrant = Guid.NewGuid();
+        using (var adminServer = LocalAgentPipe.CreateAdminServer(liveGrant, own))
+        using (var adminTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            var accepting = AdminInputConnection.Accept(adminServer, liveGrant, Environment.ProcessId, adminTimeout.Token);
+            using var peer = await LocalAgentPipe.ConnectAdmin(liveGrant, adminTimeout.Token);
+            await Wire.Write(peer, new("admin-input-ready", Origin: liveGrant.ToString("N")), adminTimeout.Token);
+            await using var connection = await accepting;
+            await connection.Send(new("move"), adminTimeout.Token);
+            var command = await Wire.Read(peer, adminTimeout.Token);
+            Check(command == new Packet("admin-input", 1, Origin: liveGrant.ToString("N"), Input: new("move")));
+            Check(await Wire.Read(peer, adminTimeout.Token) == new Packet("admin-input-heartbeat", 2, Origin: liveGrant.ToString("N")));
+            var closing = connection.End(adminTimeout.Token);
+            string binding = liveGrant.ToString("N");
+            var endRequest = await Wire.Read(peer, adminTimeout.Token);
+            Check(endRequest == new Packet("admin-input-end", endRequest.Sequence, Origin: binding) && endRequest.Sequence >= 3);
+            Check(!closing.IsCompleted);
+            await Wire.Write(peer, new("admin-input-ended", endRequest.Sequence, Origin: binding), adminTimeout.Token);
+            await closing;
+            byte[] end = new byte[1];
+            Check(await peer.ReadAsync(end, adminTimeout.Token) == 0);
+        }
+        Guid launchGrant = Guid.NewGuid();
+        Guid lostWorkerGrant = Guid.NewGuid();
+        using (var lostServer = LocalAgentPipe.CreateAdminServer(lostWorkerGrant, own))
+        using (var lostDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            var accepting = AdminInputConnection.Accept(lostServer, lostWorkerGrant, Environment.ProcessId, lostDeadline.Token);
+            using (var peer = await LocalAgentPipe.ConnectAdmin(lostWorkerGrant, lostDeadline.Token))
+            {
+                await Wire.Write(peer, new("admin-input-ready", Origin: lostWorkerGrant.ToString("N")), lostDeadline.Token);
+                await using var connected = await accepting;
+                peer.Dispose();
+                bool disconnected = false;
+                try { await connected.Completion.WaitAsync(lostDeadline.Token); }
+                catch (IOException) { disconnected = true; }
+                Check(disconnected && !lostDeadline.IsCancellationRequested);
+            }
+        }
+        using (var replacement = LocalAgentPipe.CreateAdminServer(lostWorkerGrant, own))
+            Check(!replacement.IsConnected);
+        string fixtureExecutable = Path.GetFullPath(application);
+        try
+        {
+            _ = await AdminInputLauncher.Start(Guid.NewGuid(), "all", own,
+                _ => throw new SecurityException("Missing protected deployment"),
+                _ => throw new InvalidOperationException("Missing deployment reached a process launch"), CancellationToken.None);
+            throw new IOException("Missing administrator deployment was accepted");
+        }
+        catch (AdminInputDeploymentException error) { Check(error.InnerException is SecurityException); }
+        bool intercepted = false;
+        try
+        {
+            _ = await AdminInputLauncher.Start(launchGrant, "all", own,
+                sid => sid == own ? fixtureExecutable : throw new IOException("Incorrect launch owner"),
+                info =>
+                {
+                    intercepted = true;
+                    Check(info.FileName == fixtureExecutable && info.UseShellExecute && info.Verb == "runas");
+                    Check(info.WorkingDirectory == Path.GetDirectoryName(fixtureExecutable));
+                    Check(info.ArgumentList.SequenceEqual([launchGrant.ToString("N"), Environment.ProcessId.ToString(), own, "all"]));
+                    throw new System.ComponentModel.Win32Exception(1223);
+                }, CancellationToken.None);
+            throw new IOException("Expected local elevation cancellation");
+        }
+        catch (OperationCanceledException) { Check(intercepted); }
+        using (var afterCancel = LocalAgentPipe.CreateAdminServer(launchGrant, own))
+            Check(!afterCancel.IsConnected);
+        Guid abandonedGrant = Guid.NewGuid();
+        using (var launchCancellation = new CancellationTokenSource())
+        using (var testDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            var launchEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var dismissPrompt = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var abandoned = AdminInputLauncher.Start(abandonedGrant, "all", own, _ => fixtureExecutable, _ =>
+            {
+                launchEntered.SetResult();
+                dismissPrompt.Task.GetAwaiter().GetResult();
+                throw new System.ComponentModel.Win32Exception(1223);
+            }, launchCancellation.Token);
+            try
+            {
+                await launchEntered.Task.WaitAsync(testDeadline.Token);
+                launchCancellation.Cancel();
+                try
+                {
+                    await abandoned.WaitAsync(testDeadline.Token);
+                    throw new IOException("Expected abandoned launch to cancel");
+                }
+                catch (OperationCanceledException error) when (error.CancellationToken == launchCancellation.Token) { }
+                using var nextServer = LocalAgentPipe.CreateAdminServer(abandonedGrant, own);
+                Check(!nextServer.IsConnected && !dismissPrompt.Task.IsCompleted);
+            }
+            finally { dismissPrompt.TrySetResult(); }
+        }
         string name="RelaxDesk.Test."+Guid.NewGuid().ToString("N");
         using var child=Process.Start(ChildProcess.Create(application,"--pipe-contract-server",name,"--owner-sid",own))??throw new IOException("Broker child launch failed");
         using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(35));Task<string>? logs=null;SessionAgentClient? active=null;bool passed=false;

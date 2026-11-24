@@ -68,6 +68,14 @@ internal static class ServiceSetupSmoke
             File.WriteAllText(Path.Combine(source,"SHA256SUMS.json"),JsonSerializer.Serialize(entries));
         }
         string first=Payload("source-one","0.6.0-contract.1"),second=Payload("source-two","0.6.0-contract.2");
+        string workerSource = Path.Combine(second, "ElevatedInput");
+        Directory.CreateDirectory(workerSource);
+        foreach (string member in new[] { "RelaxDesk.ElevatedInput.exe", "RelaxDesk.ElevatedInput.dll",
+                     "RelaxDesk.ElevatedInput.runtimeconfig.json", "RelaxDesk.ElevatedInput.deps.json",
+                     "RelaxDesk.Core.dll", "RelaxDesk.Session.dll", "RelaxDesk.Windows.dll",
+                     "coreclr.dll", "hostfxr.dll", "hostpolicy.dll", "System.Private.CoreLib.dll" })
+            File.WriteAllText(Path.Combine(workerSource, member), "inert worker fixture " + member);
+        Manifest(second);
         var files=new ServiceFilePolicy(Path.Combine(fixture,"broker 中文 & (Service)"),true);var services=new FakeServices();string fault="";
         var setup=new ServiceSetupTransaction(files,services,()=>true,point=>{if(point==fault)throw new IOException("Injected "+point);});
         var plan=await setup.Install(first,own,null,false,true,CancellationToken.None);
@@ -122,6 +130,14 @@ internal static class ServiceSetupSmoke
         await Reject(async()=>await setup.Install(second,"S-1-5-21-1-2-3-99999",null,false,false,CancellationToken.None));Check(services.Writes==before);
         var owned=services.Current!;services.Current=owned with{Account="LocalSystem"};await Reject(async()=>await setup.Uninstall(own,false,CancellationToken.None));Check(services.Writes==before);services.Current=owned;
         var updated=await setup.Install(second,own,null,false,false,CancellationToken.None);Check(updated.Startup==2&&updated.Running&&files.ReadState()!.Current!=initial.Current&&!Directory.Exists(files.ReleasePath(initial.Current)));
+        string protectedWorker = ServiceDeploymentTrust.ResolveElevatedInput(files, own);
+        Check(protectedWorker == Path.Combine(files.ReleasePath(files.ReadState()!.Current), "ElevatedInput", "RelaxDesk.ElevatedInput.exe"));
+        RejectPolicy(() => ServiceDeploymentTrust.ResolveElevatedInput(files, "S-1-5-21-1-2-3-99999"));
+        string extraWorker = Path.Combine(Path.GetDirectoryName(protectedWorker)!, "unlisted.dll");
+        using (var extra = files.CreatePrivateFile(extraWorker)) extra.WriteByte(1);
+        RejectPolicy(() => ServiceDeploymentTrust.ResolveElevatedInput(files, own));
+        File.Delete(extraWorker);
+        Check(ServiceDeploymentTrust.ResolveElevatedInput(files, own) == protectedWorker);
         var manual=await setup.Install(first,own,false,false,false,CancellationToken.None);Check(manual.Startup==3&&services.Current?.Startup==3&&manual.Running);
         var removePlan=await setup.Uninstall(own,true,CancellationToken.None);Check(!removePlan.Changed&&Directory.Exists(files.Root)&&services.Current is not null);
         string junction=Path.Combine(files.ReleasePath(files.ReadState()!.Current),"unowned-junction");

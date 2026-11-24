@@ -42,15 +42,21 @@ try {
         $manifest=@(Get-Content -LiteralPath (Join-Path $package 'SHA256SUMS.json') -Raw | ConvertFrom-Json)
         Confirm (@(Get-ChildItem -LiteralPath $package -Recurse -File).Count -eq $manifest.Count+1) 'Unlisted package files'
         Confirm ($metadata.self_contained -and !$metadata.working_tree_dirty -and $metadata.rid -eq 'win-x64') 'Unexpected package provenance/runtime'
+        Confirm ($metadata.version -and $metadata.file_version -and $metadata.revision -cmatch '^[0-9a-f]{40}([0-9a-f]{24})?$') 'Missing or invalid role build provenance'
         Confirm (Test-Path -LiteralPath (Join-Path $package $metadata.entry) -PathType Leaf) 'Role entry missing'
-        $null=Invoke-App ($metadata.role+'-manifest') $SmokeApplication @('--collect-package',$package,'--verify-only')
         $packages+= [pscustomobject]@{root=$package;metadata=$metadata;archive=$archive;sha256=$hash;bytes=(Get-Item -LiteralPath $archive).Length;manifest_files=$manifest.Count}
     }
     $hostPackage=$packages[0];$viewerPackage=$packages[1]
     Confirm ($hostPackage.metadata.role -eq 'host' -and $viewerPackage.metadata.role -eq 'viewer') 'Wrong role assignments'
-    Confirm ($hostPackage.metadata.version -ceq $viewerPackage.metadata.version -and $hostPackage.metadata.revision -ceq $viewerPackage.metadata.revision) 'Role build mismatch'
-    Confirm (!(Test-Path (Join-Path $hostPackage.root 'Viewer')) -and !(Test-Path (Join-Path $viewerPackage.root 'Host')) -and !(Test-Path (Join-Path $viewerPackage.root 'HostUi')) -and !(Test-Path (Join-Path $viewerPackage.root 'Service'))) 'Cross-role payload found'
-    Confirm (@($hostPackage.metadata.components).Count -eq 3 -and @($viewerPackage.metadata.components).Count -eq 1) 'Unexpected component count'
+    Confirm ($hostPackage.metadata.version -ceq $viewerPackage.metadata.version -and
+        $hostPackage.metadata.file_version -ceq $viewerPackage.metadata.file_version -and
+        $hostPackage.metadata.revision -ceq $viewerPackage.metadata.revision) 'Role build mismatch'
+    foreach($package in $packages){
+        $null=Invoke-App ($package.metadata.role+'-manifest') $SmokeApplication @('--collect-package',$package.root,'--verify-only')
+    }
+    Confirm (!(Test-Path (Join-Path $hostPackage.root 'Viewer')) -and !(Test-Path (Join-Path $viewerPackage.root 'Host')) -and !(Test-Path (Join-Path $viewerPackage.root 'HostUi')) -and !(Test-Path (Join-Path $viewerPackage.root 'Service')) -and !(Test-Path (Join-Path $viewerPackage.root 'ElevatedInput'))) 'Cross-role payload found'
+    Confirm (@($hostPackage.metadata.components).Count -eq 4 -and $hostPackage.metadata.components -contains 'RelaxDesk.ElevatedInput' -and @($viewerPackage.metadata.components).Count -eq 1) 'Unexpected role components'
+    Confirm (Test-Path -LiteralPath (Join-Path $hostPackage.root 'ElevatedInput/RelaxDesk.ElevatedInput.exe') -PathType Leaf) 'Administrator input worker missing from Host package'
     $hostExe=Join-Path $hostPackage.root 'Host/RelaxDesk.Host.exe';$shellExe=Join-Path $hostPackage.root 'HostUi/RelaxDesk.HostShell.exe';$serviceExe=Join-Path $hostPackage.root 'Service/RelaxDesk.Service.exe';$viewerExe=Join-Path $viewerPackage.root 'Viewer/RelaxDesk.Viewer.exe'
     $deployment=Invoke-App 'host-runtime' $hostExe @('--deployment-info') | ConvertFrom-Json
     Confirm ($deployment.x64 -and $deployment.runtime.StartsWith((Join-Path $hostPackage.root 'Host')+'\',[StringComparison]::OrdinalIgnoreCase) -and $deployment.version -ceq $hostPackage.metadata.version) 'Host did not use its matching bundled x64 runtime'
@@ -59,15 +65,41 @@ try {
     Confirm ((Invoke-App 'service-version' $serviceExe @('--version')).Trim() -ceq ('v'+$hostPackage.metadata.version)) 'Service version mismatch'
     $native=@((Join-Path $hostPackage.root 'Host/RelaxDesk.Native.dll'),(Join-Path $hostPackage.root 'HostUi/RelaxDesk.Native.dll'),(Join-Path $viewerPackage.root 'Viewer/RelaxDesk.Native.dll')) | ForEach-Object {(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash}
     Confirm (@($native | Select-Object -Unique).Count -eq 1) 'Native DLL mismatch'
+    $hostQuic = Join-Path $hostPackage.root 'Host/msquic.dll'
+    $viewerQuic = Join-Path $viewerPackage.root 'Viewer/msquic.dll'
+    Confirm ((Test-Path -LiteralPath $hostQuic -PathType Leaf) -and (Test-Path -LiteralPath $viewerQuic -PathType Leaf)) 'Bundled MsQuic runtime missing'
+    Confirm ((Get-FileHash -LiteralPath $hostQuic -Algorithm SHA256).Hash -ceq (Get-FileHash -LiteralPath $viewerQuic -Algorithm SHA256).Hash) 'Bundled MsQuic runtime mismatch'
     $identity=[Security.Principal.WindowsIdentity]::GetCurrent();$owner=$identity.User.Value;$identity.Dispose()
     $preview=Invoke-App 'host-service-readonly-preflight' $serviceExe @('--install-service','--package',$hostPackage.root,'--owner-sid',$owner,'--what-if') | ConvertFrom-Json
     Confirm (!$preview.Changed -and $preview.Version -ceq $hostPackage.metadata.version) 'Service package readonly preview failed'
     $ui=Invoke-App 'host-one-click-ui' $shellExe @('--service-setup-ui-contracts',$hostExe,(Join-Path $output 'ui-fixtures'))
     Confirm ($ui.Contains('PASS 54 actual WPF')) 'One-click UI acceptance marker missing'
-    foreach($mode in @('deflate','approval-fallback-cpu')){
+    foreach($mode in @('deflate','approval-fallback-cpu','udp-cpu','auto-recovery-cpu')){
         $session=Invoke-App ('cross-role-'+$mode) $SmokeApplication @($hostExe,'--wpf',$viewerExe,$mode)
         Confirm ($session.Contains('PASS WPF') -and $session.Contains('native_live_resources=0')) 'Cross-role synthetic session/cleanup evidence missing'
+        if($mode -eq 'auto-recovery-cpu'){
+            Confirm ($session -match 'recovery_tcp_frames=[1-9][0-9]* recovery_udp_frames=[1-9][0-9]*') 'Packaged Viewer Auto transport switch missing'
+        }
     }
+    $quicSession = Invoke-App 'packaged-host-quic' $SmokeApplication @($hostExe, '--quic-production') 150
+    Confirm ($quicSession.Contains('PASS production Host/SessionClient: UDP, Auto UDP, Auto fallback') -and
+        $quicSession.Contains('PASS persistent QUIC loss caused Host TCP fallback') -and
+        $quicSession.Contains('PASS Auto recovered UDP again after previously recovering and falling back') -and
+        $quicSession.Contains('PASS recovered-path loss triggered Host TCP fallback') -and
+        $quicSession.Contains('PASS healthy static UDP video stayed connected through the datagram silence interval') -and
+        $quicSession.Contains('PASS requested static desktop refresh delivered a decodable key frame over the same UDP path')) 'Packaged Host QUIC, fallback, or static refresh evidence missing'
+    $autoFiles = Invoke-App 'packaged-auto-files' $SmokeApplication @($hostExe, '--file-transfer-auto', (Join-Path $output 'auto-file-fixtures')) 150
+    Confirm ($autoFiles.Contains('PASS Auto switched from TCP to UDP during the same download, file SHA-256 verified and TLS control kept alive')) 'Packaged Host file integrity during Auto recovery evidence missing'
+    $fallbackStatistics = Invoke-App 'packaged-viewer-fallback-statistics' $viewerExe @('--statistics-contracts', $hostExe, (Join-Path $output 'fallback-statistics-fixtures'), 'oversized') 150
+    Confirm ($fallbackStatistics.Contains('PASS WPF shows the authenticated oversized UDP frame fallback reason')) 'Packaged Viewer fallback statistics evidence missing'
+    $sessionEnd = Invoke-App 'packaged-host-session-end' $SmokeApplication @($hostExe, '--session-unavailable')
+    foreach ($reason in @('WindowsSessionUnavailable','WindowsLocked','WindowsSessionChanged','WindowsDesktopUnavailable')) {
+        Confirm ($sessionEnd.Contains("PASS actual Host/TLS synthetic $reason")) "Packaged Host session termination evidence missing for $reason"
+    }
+    $adminLifecycle = Invoke-App 'packaged-admin-lifecycle' $viewerExe @('--admin-lifecycle-contracts',$hostExe)
+    Confirm ($adminLifecycle.Contains('PASS WPF Viewer twice entered Admin and routed input to protected non-injecting pipe workers')) 'Packaged Admin lifecycle evidence missing'
+    $workTrust = Invoke-App 'packaged-work-trust' $shellExe @('--work-trust-contracts',$hostExe,(Join-Path $output 'work-trust-fixtures'))
+    Confirm ($workTrust.Contains('PASS WPF Work device trust') -and $workTrust.Contains('PASS WPF one-use Work preapproval')) 'Packaged Work device trust and one-use approval evidence missing'
     $details=[pscustomobject]@{version=$hostPackage.metadata.version;revision=$hostPackage.metadata.revision;native_sha256=$native[0];packages=@($packages | ForEach-Object {[pscustomobject]@{role=$_.metadata.role;archive=$_.archive;sha256=$_.sha256;bytes=$_.bytes;manifest_files=$_.manifest_files}})}
     $status='PASS_SEPARATE_PACKAGES_SYNTHETIC_ONLY'
 } finally {

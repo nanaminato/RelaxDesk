@@ -4,7 +4,11 @@ namespace RelaxDesk.Core;
 
 public enum ConnectionPhase { Idle, Connecting, Authenticating, AwaitingApproval, Negotiating, Connected, Reconnecting, Disconnected, Failed }
 public sealed class HostConsentRejectedException() : AuthenticationException("Host declined this connection");
-public sealed class RemoteSessionEndedException() : IOException("Host explicitly ended this session");
+public enum SessionEndReason { WindowsSessionUnavailable = 1, WindowsLocked = 2, WindowsSessionChanged = 3, WindowsDesktopUnavailable = 4 }
+public sealed class RemoteSessionEndedException(SessionEndReason? reason = null) : IOException("Host explicitly ended this session")
+{
+    public SessionEndReason? Reason { get; } = reason;
+}
 
 public static class ConnectionRecovery
 {
@@ -28,7 +32,9 @@ public static class ConnectionRecovery
     public static bool IsExplicitEnd(Packet packet)
     {
         if (packet.Kind != "session-ended-v2") return false;
-        if (packet != new Packet("session-ended-v2", Text: "host-ended")) throw new InvalidDataException("Malformed session end response");
+        if (packet.EndReason is { } reason && !Enum.IsDefined(reason) ||
+            packet != new Packet("session-ended-v2", Text: "host-ended", EndReason: packet.EndReason))
+            throw new InvalidDataException("Malformed session end response");
         return true;
     }
 }

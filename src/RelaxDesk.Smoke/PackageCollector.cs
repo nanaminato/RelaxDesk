@@ -160,7 +160,15 @@ internal sealed partial class PackageCollector
             File.Copy(App("SHA256SUMS.json"), Path.Combine(output, "package-hashes.json"));
             using var os = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
             string? edition = os?.GetValue("EditionID") as string;
-            await Save("machine.json", new { collected_at = DateTimeOffset.Now, edition, product = os?.GetValue("ProductName"), build = os?.GetValue("CurrentBuildNumber"), ubr = os?.GetValue("UBR"), architecture = System.Runtime.InteropServices.RuntimeInformation.OSArchitecture.ToString(), diagnostic_only = diagnostic, manual_input = "NOT_TESTED", physical_scanout = "NOT_TESTED", dual_pc_lan = "NOT_TESTED" });
+            await Save("machine.json", new
+            {
+                collected_at = DateTimeOffset.Now, edition, product = os?.GetValue("ProductName"),
+                build = os?.GetValue("CurrentBuildNumber"), ubr = os?.GetValue("UBR"),
+                architecture = System.Runtime.InteropServices.RuntimeInformation.OSArchitecture.ToString(),
+                diagnostic_only = diagnostic, manual_input = "NOT_TESTED", physical_scanout = "NOT_TESTED",
+                dual_pc_lan = "NOT_TESTED", admin_window_input = "NOT_TESTED", uac_secure_desktop = "NOT_TESTED",
+                lock_unlock = "NOT_TESTED", sign_in = "NOT_TESTED", console_user_switch = "NOT_TESTED"
+            });
             // Read-only inventory command; no script file or execution-policy override.
             await Exec("display-drivers", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), @"WindowsPowerShell\v1.0\powershell.exe"), ["-NoProfile", "-Command", "Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion,CurrentHorizontalResolution,CurrentVerticalResolution | ConvertTo-Json"], 30);
             var hashes = new List<object>(); string? nativeHash = null;

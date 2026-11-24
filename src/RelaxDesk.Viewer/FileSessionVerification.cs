@@ -19,12 +19,26 @@ public sealed partial class ViewerWindow
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token); deadline.CancelAfter(TimeSpan.FromSeconds(20));
             async Task Until(Func<bool> condition) { while (!condition()) await Task.Delay(20, deadline.Token); }
             if (fileQueue is null || sessionToolbar?.FilesButton.IsEnabled != true) throw new IOException("Negotiated file session did not expose toolbar");
-            string local = Path.Combine(root, "viewer-source.txt"); await File.WriteAllTextAsync(local, "session test 中文 / 日本語", deadline.Token);
+            string local = Path.Combine(root, "viewer-source.txt");
+            string payload = "session test 中文 / 日本語\n" + new string('x', 512 * 1024);
+            await File.WriteAllTextAsync(local, payload, deadline.Token);
             FilesDropped([local]);
             if (fileWindow?.PendingUploadCount != 1 || fileQueue.Snapshot().Length != 0) throw new IOException("Session drop bypassed confirmation");
+            var transfer = Stopwatch.StartNew();
             fileWindow.ConfirmUploadButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             await Until(() => fileQueue.Snapshot() is [{ State: TransferJobState.Completed }]);
-            if (File.ReadAllText(Path.Combine(root, "host", "viewer-source.txt")) != "session test 中文 / 日本語") throw new IOException("Session file upload failed");
+            if (File.ReadAllText(Path.Combine(root, "host", "viewer-source.txt")) != payload) throw new IOException("Session file upload failed");
+            var uploadTime = transfer.Elapsed;
+            if (uploadTime < TimeSpan.FromSeconds(1.5)) throw new IOException("Viewer did not apply the selected upload limit");
+            var destination = new WindowsFileRoot(root);
+            var activeFiles = fileClient ?? throw new IOException("Missing active file client");
+            int beforeDownload = smokeFrames;
+            transfer.Restart();
+            await activeFiles.Download("viewer-source.txt", bytes => destination.CreateUpload("viewer-download.txt", bytes, false), deadline.Token);
+            var downloadTime = transfer.Elapsed;
+            if (downloadTime < TimeSpan.FromSeconds(1.5) || File.ReadAllText(Path.Combine(root, "viewer-download.txt")) != payload || smokeFrames <= beforeDownload)
+                throw new IOException("Limited download did not preserve file contents and advancing video");
+            Console.WriteLine($"PASS WPF configured file cap 256 KiB/s: upload_seconds={uploadTime.TotalSeconds:F2} download_seconds={downloadTime.TotalSeconds:F2}, video advanced during download");
             fileWindow.Close(); sessionToolbar.FilesButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Until(() => fileWindow.IsVisible);
             fileWindow.StopFilesButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Until(() => Interlocked.Read(ref fileRevocationReplies) > 0);
             await Until(() => smokeFrames > 0); await Task.Delay(250, deadline.Token);
@@ -56,7 +70,9 @@ internal static class FileSessionVerification
         });
         try
         {
-            app.Run(new ViewerWindow(new("127.0.0.1", port, pin, token, Renderer: "cpu", Frames: 1, FileTransfer: true, FileFixtureRoot: root)));
+            var viewer = new ViewerWindow(new("127.0.0.1", port, pin, token, Renderer: "cpu", Frames: 1, FileTransfer: true, FileFixtureRoot: root));
+            viewer.SelectFileRateForVerification(3);
+            app.Run(viewer);
             host.WaitForExitAsync(deadline.Token).GetAwaiter().GetResult(); string logs = approval.GetAwaiter().GetResult();
             if (host.ExitCode != 0 || !logs.Contains("native_live_resources=0")) throw new IOException("Session Host resource cleanup failed");
             Console.WriteLine($"PASS file-session Host cleanup; fixtures={root}");

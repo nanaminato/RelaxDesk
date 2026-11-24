@@ -205,6 +205,11 @@ struct decoder_context {
 
 };
 }
+RD int32_t rd_encoder_set_bitrate(void* encoder, uint32_t bitrate) {
+    if (!encoder || bitrate < 1000000 || bitrate > 40000000) return E_INVALIDARG;
+    auto* context = static_cast<encoder_context*>(encoder);
+    return codec_property(context->transform.Get(), CODECAPI_AVEncCommonMeanBitRate, bitrate);
+}
 RD int32_t rd_encoder_create(void* capture,uint32_t width,uint32_t height,uint32_t fps,uint32_t bitrate,int hardware,void** encoder){if(!encoder||!width||!height||(width&1)||(height&1)||width>7680||height>4320||fps<1||fps>120||bitrate<100000||bitrate>100000000)return E_INVALIDARG;*encoder=nullptr;return guarded([&]{auto e=std::make_unique<encoder_context>(width,height,fps);e->initialize(static_cast<capture_context*>(capture),hardware!=0,bitrate);*encoder=e.release();});}
 RD int32_t rd_encoder_frame(void* encoder,int64_t time,int force,const uint8_t** data,uint32_t* bytes,int* key,int64_t* output_time){if(!encoder||!data||!bytes||!key||!output_time)return E_INVALIDARG;HRESULT result=S_OK;HRESULT hr=guarded([&]{auto& e=*static_cast<encoder_context*>(encoder);e.lifetime.verify();if(!e.hardware||!e.capture)check(E_INVALIDARG,"GPU encode requires hardware capture context");e.begin_timing();if(e.profile_open)e.capture->graphics.commands->End(e.upload_end.Get());auto sample=e.gpu_sample();result=e.encode(sample.Get(),time,force!=0,data,bytes,key,output_time);e.finish_timing();});return FAILED(hr)?hr:result;}
 RD int32_t rd_encoder_bgra(void* encoder,const uint8_t* data,uint32_t bytes,int64_t time,int force,const uint8_t** output,uint32_t* length,int* key,int64_t* output_time){if(!encoder||!data||!output||!length||!key||!output_time)return E_INVALIDARG;HRESULT result=S_OK;HRESULT hr=guarded([&]{auto& e=*static_cast<encoder_context*>(encoder);e.lifetime.verify();if(bytes!=static_cast<uint64_t>(e.width)*e.height*4)check(E_INVALIDARG,"BGRA encoder input");e.begin_timing();

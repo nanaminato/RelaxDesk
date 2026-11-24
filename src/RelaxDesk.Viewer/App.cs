@@ -1,6 +1,7 @@
 using System.IO;
 using System.IO.Compression;
 using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
 using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Security.Cryptography;
@@ -17,7 +18,7 @@ using System.Text.Json;
 using System.Net;
 namespace RelaxDesk.Viewer;
 
-public sealed record ViewerSmokeSettings(string Host, int Port, string Fingerprint, string Token, string Renderer = "cpu", bool HardwareDecode = true, int Frames = 60, bool ExerciseWindow = false, bool RequireGpu = false, bool CloseWhileStreaming = false, bool FixedMediaBudget = false, bool SimulateDeviceLoss = false, bool SimulateGap = false, bool IdleRepaintTest = false, bool IdleSessionTest = false, string? ConnectionCode = null, bool FileTransfer = false, string? FileFixtureRoot = null, bool ReconnectTest = false,bool RichClipboardTest=false,bool DenyRichClipboard=false);
+public sealed record ViewerSmokeSettings(string Host, int Port, string Fingerprint, string Token, string Renderer = "cpu", bool HardwareDecode = true, int Frames = 60, bool ExerciseWindow = false, bool RequireGpu = false, bool CloseWhileStreaming = false, bool FixedMediaBudget = false, bool SimulateDeviceLoss = false, bool SimulateGap = false, bool IdleRepaintTest = false, bool IdleSessionTest = false, string? ConnectionCode = null, bool FileTransfer = false, string? FileFixtureRoot = null, bool ReconnectTest = false,bool RichClipboardTest=false,bool DenyRichClipboard=false, bool RequireUdp=false, bool DesktopSample=false, bool AutoRecoveryTest=false);
 public sealed class App : Application
 {
     internal static bool VerificationMode{get;private set;}
@@ -38,12 +39,19 @@ public sealed class App : Application
         {
             var app = new App();
             if(args is ["--error-details-contracts",var errorFixtures])ViewerWindow.VerifyErrorDetails(app,errorFixtures);
+            else if(args is ["--office-text-quality", "software" or "hardware"])OfficeTextQuality.Run(args[1] == "hardware");
             else if(args is ["--pipeline-failure-contracts",var pipelineHost,var pipelineStage])ViewerWindow.VerifyPipelineFailure(app,pipelineHost,pipelineStage);
             else if(args is ["--diagnostic-log-contracts",var diagnosticFixtures])DiagnosticLogVerification.Run(app,diagnosticFixtures);
             else if(args is ["--viewport-contracts"])ViewerWindow.VerifyViewport(app);
             else if(args is ["--audio-session-contracts",var audioHost])ViewerWindow.VerifyAudioSession(app,audioHost);
             else if(args is ["--history-contracts",var historyHost,var historyFixtures])ViewerWindow.VerifyConnectionHistory(app,historyHost,historyFixtures);
             else if(args is ["--statistics-contracts",var statisticsHost,var statisticsFixtures])ViewerWindow.VerifyStatistics(app,statisticsHost,statisticsFixtures);
+            else if(args is ["--statistics-contracts",var udpStatisticsHost,var udpStatisticsFixtures,"udp"])ViewerWindow.VerifyStatistics(app,udpStatisticsHost,udpStatisticsFixtures,udp:true);
+            else if(args is ["--statistics-contracts",var fallbackStatisticsHost,var fallbackStatisticsFixtures,"oversized"])ViewerWindow.VerifyStatistics(app,fallbackStatisticsHost,fallbackStatisticsFixtures,oversized:true);
+            else if(args is ["--statistics-contracts",var legacyStatisticsHost,var legacyStatisticsFixtures,"legacy-auto"])ViewerWindow.VerifyStatistics(app,legacyStatisticsHost,legacyStatisticsFixtures,legacyAuto:true);
+            else if (args is ["--admin-upgrade-contracts", var adminHost]) ViewerWindow.VerifyAdminUpgrade(app, adminHost);
+            else if (args is ["--admin-lifecycle-contracts", var lifecycleHost]) ViewerWindow.VerifyAdminUpgrade(app, lifecycleHost, activate: true);
+            else if (args is ["--admin-worker-loss-contracts", var workerLossHost]) ViewerWindow.VerifyAdminUpgrade(app, workerLossHost, activate: true, workerLoss: true);
             else if(args is ["--video-settings-contracts",var settingsHost,var settingsMode])ViewerWindow.VerifyVideoSettings(app,settingsHost,settingsMode);
             else if(args is ["--display-legacy-session-contracts",var legacyDisplayHost])ViewerWindow.VerifyDisplaySession(app,legacyDisplayHost,false,true);
             else if(args is ["--topology-race-contracts",var raceHost])ViewerWindow.VerifyDisplaySession(app,raceHost,false,false,true);
@@ -105,6 +113,8 @@ public sealed partial class ViewerWindow : Window
             try
             {
                 ApplyInvitation();
+                if (legacy.IsChecked == true && requestedMode.SelectedIndex != 0)
+                { status.Text = "所选模式需要支持会话授权的 Host。请关闭旧协议兼容模式。"; return; }
                 if (legacy.IsChecked == true) await Connect(); else await ConnectVideo();
             }
             catch (Exception error) { status.Text = error.Message; ShowConnectionError(error, "configuration"); }
@@ -177,7 +187,15 @@ public sealed partial class ViewerWindow : Window
         StopLocalPreview(); connectionCard.IsEnabled = false; disconnect.IsEnabled = true; connect.IsEnabled = false; using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime); session = cancellation; sequence = 0; ResetInputState();
         ++connectionGeneration; Exception? attemptError=null; bool established=false,restoreFullScreen=target.FullScreen; string[] retryFeatures=target.Features;long connectedAt=0;bool fileTransportInterrupted=false;
         while (outgoing.Reader.TryRead(out _)) { }
-        using var connection = new SessionClient { RequestedFeatures = target.Features,RequestedDisplayVersion=target.DisplayVersion,RequestedVideoVersion=VideoSettingsProtocol.Version }; using var abort = cancellation.Token.Register(connection.Dispose);
+        int quicAttempts = 0, recoveryTcpFrames = 0, recoveryUdpFrames = 0;
+        bool autoRecoveryTest = smoke?.AutoRecoveryTest == true;
+        IQuicDatagrams OpenQuic(IPEndPoint endpoint, X509Certificate2 certificate)
+        {
+            if (autoRecoveryTest && Interlocked.Increment(ref quicAttempts) == 1)
+                throw new IOException("Injected initial UDP connection failure");
+            return WindowsQuicDatagrams.Connect(endpoint, certificate);
+        }
+        using var connection = new SessionClient { RequestedFeatures = target.Features,RequestedMode=target.Mode,RequestAdminUpgrade=true,RequestPointerCompression=true,RequestQuicRecovery=smoke is null || autoRecoveryTest,Network=target.Network,OpenWorkDeviceKey=target.IdentifyWorkDevice ? WindowsWorkDeviceKey.Open : null,ConnectQuic=smoke is null || smoke.RequireUdp || autoRecoveryTest ? OpenQuic : null,RequestedDisplayVersion=target.DisplayVersion,RequestedVideoVersion=VideoSettingsProtocol.Version }; using var abort = cancellation.Token.Register(connection.Dispose);
         string attemptStage = "connect";
         connection.PhaseChanged+=phase=>{attemptStage=phase switch { ConnectionPhase.Authenticating=>"authenticating",ConnectionPhase.AwaitingApproval=>"awaiting-approval",ConnectionPhase.Negotiating=>"negotiating",ConnectionPhase.Connected=>"session-setup",_=>"connect" };if(ReferenceEquals(session,cancellation)&&!cancellation.IsCancellationRequested)SetConnectionPhase(phase);};
         ClipboardSynchronizer? clipboard = null;
@@ -223,7 +241,13 @@ public sealed partial class ViewerWindow : Window
                 DisplayPresented(frame);ExerciseWindow(count);
                 audioSession?.VideoPresented(frame.Timestamp100ns);
                 VideoSettingsPresented(frame);
-                if (smoke is not null && !smoke.FileTransfer && !smoke.RichClipboardTest && !smoke.ReconnectTest && !smoke.IdleSessionTest && !smoke.IdleRepaintTest && !smoke.FixedMediaBudget && count >= smoke.Frames && !smoke.CloseWhileStreaming) cancellation.Cancel();
+                if (autoRecoveryTest)
+                {
+                    if (connection.Video.TransportName == "TCP/TLS") recoveryTcpFrames++;
+                    else if (connection.Video.TransportName == "UDP") recoveryUdpFrames++;
+                    if (recoveryTcpFrames >= 5 && recoveryUdpFrames >= 5) cancellation.Cancel();
+                }
+                else if (smoke is not null && !smoke.FileTransfer && !smoke.RichClipboardTest && !smoke.ReconnectTest && !smoke.IdleSessionTest && !smoke.IdleRepaintTest && !smoke.FixedMediaBudget && count >= smoke.Frames && !smoke.CloseWhileStreaming) cancellation.Cancel();
                 }
                 catch (Exception error) { Failed("ui-state", "viewer-update", error); cancellation.Cancel(); }
             }
@@ -264,13 +288,15 @@ public sealed partial class ViewerWindow : Window
             }
             established=true;connectedAt=Stopwatch.GetTimestamp();onConnected();
             token.Clear();
-            var permissionGate = new AccessGate(); permissionGate.Approve(connection.Features); sessionPermissions = permissionGate; inputVersion=connection.InputVersion;inputAuthorized=true;
+            var permissionGate = new AccessGate(); permissionGate.Approve(connection.Features); sessionPermissions = permissionGate; inputVersion=connection.InputVersion;inputAuthorized=connection.InputAllowed;activeMode=target.Mode??SessionMode.Work;
+            adminUpgradeAvailable = connection.AdminUpgrade;
+            Volatile.Write(ref adminUpgradePending, 0);
             StartDisplaySession(connection);
             BeginVideoSettings(connection);
             await StartFileSession(connection,cancellation.Token);
             StartRichClipboard(connection,permissionGate,cancellation.Token);
             StartAudio(connection,permissionGate,cancellation.Token);
-            BeginStatistics(()=>new(metrics.Snapshot(decoded.Dropped+Interlocked.Read(ref skipped),decoded.Depth),Volatile.Read(ref receivedFrames),Interlocked.Read(ref gpuFrames),Interlocked.Read(ref cpuFrames),Interlocked.Read(ref readbackBytes),Volatile.Read(ref rendererGenerations)));
+            BeginStatistics(()=>new(metrics.Snapshot(decoded.Dropped+Interlocked.Read(ref skipped),decoded.Depth),Volatile.Read(ref receivedFrames),Interlocked.Read(ref gpuFrames),Interlocked.Read(ref cpuFrames),Interlocked.Read(ref readbackBytes),Volatile.Read(ref rendererGenerations),connection.Video.TransportName,connection.VideoFallback,connection.ReadVideoNetworkStatistics(),connection.HostVideoQueue));
             if (connection.ClipboardData is null&&permissionGate.Allows(SessionCapabilities.ClipboardText))
                 clipboard = new ClipboardSynchronizer(() => new WindowsTextClipboard(), permissionGate, QueueClipboardUpdate, cancellation.Token,
                     message => Dispatcher.BeginInvoke(() => { if (!ReferenceEquals(sessionPermissions, permissionGate) || cancellation.IsCancellationRequested) return; status.Text = message; if (!permissionGate.Allows(SessionCapabilities.ClipboardText)) DisableClipboard(); }));
@@ -284,7 +310,7 @@ public sealed partial class ViewerWindow : Window
             heartbeat.Tick += (_, _) =>
             {
                 if (cancellation.IsCancellationRequested) { heartbeat.Stop(); return; }
-                var ping=new Packet("ping-v2",++sequence);roundTrip.Sent(ping.Sequence);if (!outgoing.Writer.TryWrite(ping)) cancellation.Cancel();
+                var ping=new Packet("ping-v2",++sequence,QueryVideoQueue:true);roundTrip.Sent(ping.Sequence);if (!outgoing.Writer.TryWrite(ping)) cancellation.Cancel();
             };
             heartbeat.Start();
         if (preferGpu)
@@ -305,15 +331,29 @@ public sealed partial class ViewerWindow : Window
             }
         }
 
-            var writer = Task.Run(() => Observe(async () => { await foreach (var packet in outgoing.Reader.ReadAllAsync(cancellation.Token)) await Wire.Write(connection.Control, packet, cancellation.Token); }, "control-write", "control-write"));
+            void ObserveQueue(Packet packet, double elapsed) => metrics.Add(packet.Kind is "input" or "input-v2" ? "input_queue" : "control_queue", elapsed);
+            var writer = Task.Run(() => Observe(async () => { await foreach (var packet in outgoing.Reader.ReadAllAsync(cancellation.Token, ObserveQueue)) await Wire.Write(connection.Control, packet, cancellation.Token); }, "control-write", "control-write"));
+            Task recoveryProbe = Task.CompletedTask;
             var control = Task.Run(() => Observe(async () =>
             {
                 long clipboardSequence = 0;
+                bool guestInputRevoked = false, adminActive = target.Mode == SessionMode.Admin, adminDesktopPaused = false;
                 while (true)
                 {
                     var packet = await SessionControl.Read(connection.Control, cancellation.Token);
-                    if(ConnectionRecovery.IsExplicitEnd(packet))throw new RemoteSessionEndedException();
-                    if (packet.Kind == "pong-v2") { Interlocked.Increment(ref heartbeatReplies);if(roundTrip.Reply(packet.Sequence) is{} rtt)metrics.Add("control_rtt",rtt);continue; }
+                    if(ConnectionRecovery.IsExplicitEnd(packet))throw new RemoteSessionEndedException(packet.EndReason);
+                    if (packet.Kind == "pong-v2") { Interlocked.Increment(ref heartbeatReplies);if(roundTrip.Reply(packet.Sequence) is{} rtt){connection.ObserveControlPong(packet);metrics.Add("control_rtt",rtt);}continue; }
+                    if (packet.Kind == QuicRecoveryProtocol.OfferKind)
+                    {
+                        if (!connection.SupportsQuicRecovery || !recoveryProbe.IsCompletedSuccessfully)
+                            throw new InvalidDataException("Unexpected QUIC recovery offer");
+                        recoveryProbe = Task.Run(() => Observe(async () =>
+                        {
+                            var result = await connection.ProbeQuicRecovery(packet, cancellation.Token);
+                            if (!outgoing.TryWrite(result)) throw new IOException("QUIC recovery result could not be queued");
+                        }, "media", "quic-recovery"));
+                        continue;
+                    }
                     if(packet.Kind=="video-settings-state-v2"){ReceiveVideoSettings(packet,cancellation.Token);continue;}
                     if(packet.Kind is "display-state-v2" or "display-topology-v2")
                     {
@@ -332,6 +372,75 @@ public sealed partial class ViewerWindow : Window
                                 else{RefreshDisplayMenu();if(!outgoing.TryWrite(new("keyframe-v2",++sequence)))cancellation.Cancel();}
                             });
                         }
+                    }
+                    else if (packet == new Packet("admin-desktop-paused-v2"))
+                    {
+                        if (!connection.AdminUpgrade || Volatile.Read(ref adminUpgradePending) != 1 || adminDesktopPaused)
+                            throw new InvalidDataException("Unexpected administrator desktop pause");
+                        adminDesktopPaused = true;
+                        _ = Dispatcher.BeginInvoke(() =>
+                        {
+                            if (!ReferenceEquals(session, cancellation) || cancellation.IsCancellationRequested) return;
+                            sessionToolbar?.SetEndpoint($"Work · 等待 Host 本机确认 Windows 授权 · {host.Text}");
+                        });
+                    }
+                    else if (packet.Kind == "admin-input-ready-v2" || packet == new Packet("admin-input-denied-v2") ||
+                             packet == new Packet("admin-input-denied-v2", Text: "retry-disabled"))
+                    {
+                        if (!connection.AdminUpgrade || Interlocked.Exchange(ref adminUpgradePending, 0) != 1)
+                            throw new InvalidDataException("Unexpected administrator approval response");
+                        adminActive = packet.Kind == "admin-input-ready-v2";
+                        if (adminActive && (!Guid.TryParseExact(packet.Text, "N", out var challenge) || challenge == Guid.Empty ||
+                            packet != new Packet(packet.Kind, Text: packet.Text))) throw new InvalidDataException("Invalid administrator activation challenge");
+                        adminDesktopPaused = false;
+                        bool granted = adminActive;
+                        _ = Dispatcher.BeginInvoke(() =>
+                        {
+                            if (!ReferenceEquals(session, cancellation) || cancellation.IsCancellationRequested) return;
+                            if (granted && !outgoing.TryWrite(new("admin-input-activate-v2", ++sequence, Text: packet.Text))) { cancellation.Cancel(); return; }
+                            activeMode = granted ? SessionMode.Admin : SessionMode.Work;
+                            inputAuthorized = true;
+                            sessionToolbar?.SetEndpoint($"{activeMode} · {host.Text}");
+                            adminUpgradeAvailable = !granted && packet.Text != "retry-disabled";
+                            sessionToolbar?.SetAdminDowngrade(granted ? RequestAdminDowngrade : adminUpgradeAvailable ? RequestAdminUpgrade : null, upgrade: adminUpgradeAvailable);
+                            sessionToolbar?.SetRemoteShortcuts(true);
+                            sessionToolbar?.SetTextInput(inputVersion == 2 ? OpenTextInput : null);
+                        });
+                    }
+                    else if (adminActive && (packet == new Packet("admin-input-revoked-v2") ||
+                             connection.AdminUpgrade && packet == new Packet("admin-input-revoked-v2", Text: "retry-available")))
+                    {
+                        adminActive = false;
+                        _ = Dispatcher.BeginInvoke(() =>
+                        {
+                            if (!ReferenceEquals(session, cancellation) || cancellation.IsCancellationRequested) return;
+                            richHeld.ReleaseAll();
+                            heldInputs.ReleaseAll();
+                            CloseTextInput();
+                            if (!outgoing.TryWrite(new("work-input-ready-v2", ++sequence))) { cancellation.Cancel(); return; }
+                            activeMode = SessionMode.Work;
+                            inputAuthorized = true;
+                            sessionToolbar?.SetEndpoint($"{activeMode} · {host.Text}");
+                            adminUpgradeAvailable = packet.Text == "retry-available";
+                            sessionToolbar?.SetAdminDowngrade(adminUpgradeAvailable ? RequestAdminUpgrade : null, upgrade: adminUpgradeAvailable);
+                            sessionToolbar?.SetRemoteShortcuts(true);
+                            sessionToolbar?.SetTextInput(inputVersion == 2 ? OpenTextInput : null);
+                        });
+                    }
+                    else if (packet == new Packet("guest-input-revoked-v2") &&
+                             target.Mode == SessionMode.Guest && connection.InputAllowed && !guestInputRevoked)
+                    {
+                        guestInputRevoked = true;
+                        _ = Dispatcher.BeginInvoke(() =>
+                        {
+                            if (!ReferenceEquals(session, cancellation) || cancellation.IsCancellationRequested) return;
+                            inputAuthorized = false;
+                            richHeld.ReleaseAll();
+                            heldInputs.ReleaseAll();
+                            CloseTextInput();
+                            sessionToolbar?.SetRemoteShortcuts(false);
+                            sessionToolbar?.SetTextInput(null);
+                        });
                     }
                     else if (packet.Kind == "clipboard-text-v2")
                     {
@@ -407,7 +516,7 @@ public sealed partial class ViewerWindow : Window
                     {
                         if (pendingRead is null)
                         {
-                            pendingRead = MediaProtocol.Read(connection.Media, cancellation.Token,connection.DisplayVersion!=0,connection.VideoVersion!=0);
+                            pendingRead = connection.Video.Read(cancellation.Token);
                             ioNotification = pendingRead.ContinueWith(_ => ioReady.Set(), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
                         }
                         int signal = WaitHandle.WaitAny(wake,renderer?.OutputBlocked==true?100:Timeout.Infinite); if (signal == 2) break;
@@ -438,6 +547,7 @@ public sealed partial class ViewerWindow : Window
                         if (smoke?.SimulateGap == true && !simulatedGap && receivedFrames == 15) { simulatedGap = true; continue; }
                         if (gpu)
                         {
+                            frame = frame with { Metadata = CaptureMetadataCodec.ForNativeRenderer(frame.Metadata) };
                             try
                             {
                                 if (smoke?.SimulateDeviceLoss == true && simulatedLosses < 3 && gpuFrames >= 10 * (simulatedLosses + 1)) { simulatedLosses++; throw new System.Runtime.InteropServices.ExternalException("Simulated device removal for recovery test", unchecked((int)0x887A0005)); }
@@ -473,7 +583,7 @@ public sealed partial class ViewerWindow : Window
                 {
                     // Close this reader without prematurely aborting the control
                     // socket: it may already carry an explicit Host-end notice.
-                    try { connection.Media.Dispose(); } catch (Exception error) { Failed("media", "media-close", error); }
+                    try { connection.CloseVideo(); } catch (Exception error) { Failed("media", "media-close", error); }
                     if (pendingRead is not null) { try { pendingRead.GetAwaiter().GetResult(); } catch (Exception) { } }
                     if (ioNotification is not null) { try { ioNotification.GetAwaiter().GetResult(); } catch (Exception) { } }
                     retained?.Dispose(); renderer?.Dispose(); decoder.Dispose();
@@ -487,6 +597,7 @@ public sealed partial class ViewerWindow : Window
             Exception? ended=null;
             try { await first; } catch(Exception error){ended=error;}
             try { await Task.WhenAll(writer,control,receiver); } catch(Exception) { }
+            try { await recoveryProbe; } catch (Exception) { }
             // Independent sockets can deliver media EOF before the authorized
             // terminal notice. Preserve explicit Host stop over transport EOF,
             // while retaining an already captured decode/display fault.
@@ -516,8 +627,9 @@ public sealed partial class ViewerWindow : Window
             {
                 var resources = GraphicsDiagnostics.Resources();
                 bool visibilityVerified = !smoke.FixedMediaBudget || !smoke.RequireGpu || (gpuFrames >= smoke.Frames * .9 && hiddenPresents == 0 && occludedPresents == 0);
-                bool faultsVerified = (!smoke.RichClipboardTest||richClipboardTestVerified) && (!smoke.FileTransfer||fileSessionVerified) && (!smoke.IdleSessionTest || (heartbeatReplies >= 4 && pacing.Elapsed.TotalSeconds >= 25 && receivedFrames == 1)) && (!smoke.IdleRepaintTest || (idleRepaints >= 2 && resizeCount >= 2 && receivedFrames == 1)) && (!smoke.SimulateDeviceLoss || (simulatedLosses == 3 && gpuFrames >= 30 && cpuFrames > 0)) && (!smoke.SimulateGap || (keyframeRequests > 0 && rendererGenerations >= 2));
-                if ((smoke.FixedMediaBudget ? receivedFrames == smoke.Frames && smokeFrames > 0 : smokeFrames >= smoke.Frames) && (!smoke.RequireGpu || (gpuFrames > 0 && readbackBytes == 0 && cpuFrames == 0)) && resources.Empty && faultsVerified && visibilityVerified) Console.WriteLine("PASS WPF " + report + $" heartbeat_replies={heartbeatReplies} native_live_resources=0");
+                bool faultsVerified = (!smoke.RichClipboardTest||richClipboardTestVerified) && (!smoke.FileTransfer||fileSessionVerified) && (!smoke.IdleSessionTest || (heartbeatReplies >= 4 && pacing.Elapsed.TotalSeconds >= 25 && (receivedFrames == 1 || smoke.DesktopSample))) && (!smoke.IdleRepaintTest || (idleRepaints >= 2 && resizeCount >= 2 && receivedFrames == 1)) && (!smoke.SimulateDeviceLoss || (simulatedLosses == 3 && gpuFrames >= 30 && cpuFrames > 0)) && (!smoke.SimulateGap || (keyframeRequests > 0 && rendererGenerations >= 2));
+                bool recoveryVerified = !autoRecoveryTest || recoveryTcpFrames >= 5 && recoveryUdpFrames >= 5 && heartbeatReplies >= 2;
+                if ((smoke.FixedMediaBudget ? receivedFrames == smoke.Frames && smokeFrames > 0 : smokeFrames >= smoke.Frames) && (!smoke.RequireGpu || (gpuFrames > 0 && readbackBytes == 0 && cpuFrames == 0)) && resources.Empty && faultsVerified && visibilityVerified && recoveryVerified && (smoke.RequireUdp != true || connection.Video?.TransportName == "UDP")) Console.WriteLine("PASS WPF " + report + $" heartbeat_replies={heartbeatReplies} recovery_tcp_frames={recoveryTcpFrames} recovery_udp_frames={recoveryUdpFrames} native_live_resources=0");
                 else { Environment.ExitCode = 1; Console.Error.WriteLine("FAIL WPF " + report + $" resources_empty={resources.Empty}"); }
             }
             else Debug.WriteLine("viewer " + report);
@@ -542,6 +654,7 @@ public sealed partial class ViewerWindow : Window
             if ((await Wire.Read(tls, cancellation.Token)).Kind != "approved-v1") throw new AuthenticationException("Host did not approve");
             QueueConnectionHistory(host.Text,int.Parse(port.Text));
             inputAuthorized=true;
+            activeMode=SessionMode.Work;
             ShowConnectedView(true);
             var writer = Task.Run(async () => { try { await foreach (var p in outgoing.Reader.ReadAllAsync(cancellation.Token)) await Wire.Write(tls, p, cancellation.Token); } finally { cancellation.Cancel(); } });
             try

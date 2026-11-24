@@ -6,6 +6,8 @@ File engine: independently granted `file.transfer` binds a third pinned TLS stre
 
 Current optional v2 session extension: `Features` is separate from media codec negotiation. Clipboard formats require explicit Viewer requests and independent Host opt-in. Text-only updates retain the bounded TLS control path. Image/HTML grants bind a separate pinned TLS stream using a distinct one-use clipboard ticket after media/optional file attachment, and all granted clipboard formats share one bounded worker on it. Windows clipboard IO never runs on the Dispatcher/network reader or input authorization lock; optional failure does not end the media session. Original v1/v2 codec/media tickets remain. Full [clipboard protocol/lifecycle](CLIPBOARD.md) and [rich content/binding](CLIPBOARD-CONTENT.md). File bytes remain independent of clipboard and input.
 
+[Session access and transport development](SESSION-ACCESS.md) documents Host-enforced Guest/Work grants, ordinary-token checks, and the TCP/TLS video frame boundary.
+
 ## Design objective
 
 Provide a **physical-desktop screen-sharing remote controller**, initially for Windows 10/11 Home. The design is not a new RDP server and does not create independent Windows logon sessions. It should approach the responsiveness of MSTSC on comparable office tasks while retaining fidelity and safe operation.

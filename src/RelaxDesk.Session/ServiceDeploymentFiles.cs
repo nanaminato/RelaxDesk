@@ -132,6 +132,27 @@ internal sealed class ServiceFilePolicy
         security.AddAccessRule(new(new SecurityIdentifier(LocalServiceSid),FileSystemRights.ReadAndExecute,AccessControlType.Allow));
         new FileInfo(path).SetAccessControl(security);Check(path);
     }
+    internal void AllowOwnerRead(string path, string user)
+    {
+        Check(path);
+        var rule = new FileSystemAccessRule(new SecurityIdentifier(user), FileSystemRights.ReadAndExecute, AccessControlType.Allow);
+        if (Directory.Exists(path))
+        {
+            var directory = new DirectoryInfo(path);
+            var security = directory.GetAccessControl(AccessControlSections.Access);
+            security.AddAccessRule(rule);
+            directory.SetAccessControl(security);
+        }
+        else
+        {
+            var file = new FileInfo(path);
+            var security = file.GetAccessControl(AccessControlSections.Access);
+            security.AddAccessRule(rule);
+            file.SetAccessControl(security);
+        }
+        Check(path);
+    }
+
     internal IEnumerable<string> Tree(string directory,bool directories=false)
     {
         var pending=new Stack<string>();pending.Push(directory);int count=0;
@@ -146,7 +167,11 @@ internal sealed class ServiceFilePolicy
     {if(!System.Text.RegularExpressions.Regex.IsMatch(id,"^app-[a-f0-9]{32}$",System.Text.RegularExpressions.RegexOptions.CultureInvariant))throw new InvalidDataException("Invalid managed release");string path=Path.Combine(Root,id);NoReparse(path);return path;}
     internal ServiceInstallState? ReadState()
     {
-        if(!Directory.Exists(Root))return null;CheckBoundary();Check(Root);string path=Path.Combine(Root,"broker-install.json");Check(path);
+        FileAttributes attributes;
+        try { attributes = File.GetAttributes(Root); }
+        catch (Exception error) when (error is FileNotFoundException or DirectoryNotFoundException) { return null; }
+        if ((attributes & FileAttributes.Directory) == 0) throw new SecurityException("Machine deployment root is not a directory");
+        CheckBoundary();Check(Root);string path=Path.Combine(Root,"broker-install.json");Check(path);
         var state=JsonSerializer.Deserialize<ServiceInstallState>(ReadMetadata(path))??throw new InvalidDataException("Deployment state missing");
         if(state.Format!=1||LocalAgentPipe.CanonicalUser(state.Owner)!=state.Owner||state.Releases is not {Length:>0 and <=4}||state.Releases.Select(item=>item.Id).Distinct(StringComparer.Ordinal).Count()!=state.Releases.Length||!state.Releases.Any(item=>item.Id==state.Current))throw new InvalidDataException("Invalid deployment state");
         foreach(var release in state.Releases)
@@ -160,7 +185,20 @@ internal sealed class ServiceFilePolicy
     internal void WriteState(ServiceInstallState state)
     {
         Check(Root);string target=Path.Combine(Root,"broker-install.json"),temporary=Path.Combine(Root,"state-"+Guid.NewGuid().ToString("N")+".tmp");NoReparse(target);
-        try{using(var file=CreatePrivateFile(temporary)){JsonSerializer.Serialize(file,state);file.Flush(true);}AllowServiceRead(temporary);if(File.Exists(target)){Check(target);File.Replace(temporary,target,null);}else File.Move(temporary,target);}
+        try
+        {
+            using (var file = CreatePrivateFile(temporary)) { JsonSerializer.Serialize(file, state); file.Flush(true); }
+            AllowServiceRead(temporary);
+            bool workerPresent = state.Releases.Any(release => release.Files.Any(entry => ServicePayload.IsWorkerFile(entry.Path)));
+            if (workerPresent) AllowOwnerRead(temporary, state.Owner);
+            if (File.Exists(target))
+            {
+                Check(target);
+                File.Replace(temporary, target, null);
+                if (workerPresent) AllowOwnerRead(target, state.Owner);
+            }
+            else File.Move(temporary, target);
+        }
         finally{if(File.Exists(temporary)){Check(temporary);File.Delete(temporary);}}
     }
     internal bool RemoveRelease(ServiceRelease release)
@@ -185,8 +223,50 @@ internal sealed class ServiceFilePolicy
     }
 }
 
+public enum AdminWorkerDeployment { Verified, RepairRequired, AccessDenied }
+
 public static class ServiceDeploymentTrust
 {
+    public static AdminWorkerDeployment InspectElevatedInput(string owner)
+    {
+        try
+        {
+            _ = ResolveElevatedInput(owner);
+            return AdminWorkerDeployment.Verified;
+        }
+        catch (UnauthorizedAccessException) { return AdminWorkerDeployment.AccessDenied; }
+        catch (Exception error) when (error is IOException or SecurityException or InvalidDataException)
+        { return AdminWorkerDeployment.RepairRequired; }
+    }
+
+    public static string ResolveElevatedInput(string owner) =>
+        ResolveElevatedInput(new ServiceFilePolicy(ServiceFilePolicy.MachineRoot), owner);
+
+    internal static string ResolveElevatedInput(ServiceFilePolicy files, string owner)
+    {
+        var state = files.ReadState() ?? throw new SecurityException("Machine deployment missing");
+        if (!state.Ready || state.PendingDelete || state.Owner != LocalAgentPipe.CanonicalUser(owner))
+            throw new SecurityException("Administrator input deployment is inactive or belongs to another owner");
+
+        var release = state.Releases.Single(item => item.Id == state.Current);
+        string directory = files.ReleasePath(release.Id);
+        files.Check(directory);
+        string workerDirectory = ServiceFilePolicy.Member(directory, "ElevatedInput");
+        files.Check(workerDirectory);
+        var registered = release.Files.Where(entry => ServicePayload.IsWorkerFile(entry.Path)).ToArray();
+        if (registered.Length == 0 || files.Tree(workerDirectory).Count() != registered.Length)
+            throw new SecurityException("Administrator input worker installation is incomplete");
+        foreach (var entry in registered)
+        {
+            string path = ServiceFilePolicy.Member(directory, entry.Path);
+            files.Check(path);
+            if (!ServiceFilePolicy.Matches(path, entry)) throw new SecurityException("Administrator input worker hash mismatch");
+        }
+        string executable = ServiceFilePolicy.Member(workerDirectory, "RelaxDesk.ElevatedInput.exe");
+        files.Check(executable);
+        return executable;
+    }
+
     public static void RequireRuntime(string directory,string owner)=>RequireRuntime(new ServiceFilePolicy(ServiceFilePolicy.MachineRoot),directory,owner);
     internal static void RequireRuntime(ServiceFilePolicy files,string directory,string owner)
     {

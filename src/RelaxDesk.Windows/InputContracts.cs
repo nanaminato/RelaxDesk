@@ -37,6 +37,21 @@ public static class InputContracts
             Check(WindowsInputPlan.IsUp(sends[^1][0])&&WindowsInputPlan.IsUp(sends[^1][1]));Check(ensures>=5);
             accepted=0;try{session.Inject(new("key",VirtualKey:65));throw new InvalidOperationException("Zero accepted");}catch(IOException){Check(session.HeldCount==0);}
         }
+        sends.Clear();
+        using (var ordinary = new WindowsInputSession(batch =>
+        {
+            sends.Add(batch);
+            return (uint)Math.Min(accepted, batch.Length);
+        }, () => { }, () => geometry))
+        {
+            accepted = 1;
+            Check(!ordinary.TryInjectOrdinary(new("text", Text: "a")) && ordinary.HeldCount == 1);
+            accepted = 0;
+            Check(!ordinary.TryInjectOrdinary(new("key", VirtualKey: 66)) && sends.Count == 2 && WindowsInputPlan.IsUp(sends[1][0]));
+            accepted = 2;
+            Check(ordinary.TryInjectOrdinary(new("key", VirtualKey: 67)) && ordinary.HeldCount == 1);
+            Check(sends.Count == 4 && WindowsInputPlan.IsUp(sends[2][0]) && sends[3][0].Value.Keyboard.Key == 67);
+        }
         bool permitted=false;using(var session=new WindowsInputSession(_=>throw new InvalidOperationException("Desktop guard bypassed"),()=>{if(!permitted)throw new IOException("Desktop unavailable");},()=>geometry))
         {try{session.Inject(new("key",VirtualKey:65));throw new InvalidOperationException("Guard bypassed");}catch(IOException){Check(session.HeldCount==0);}}
         var retryBatches=new List<NativeInput[]>();permitted=true;

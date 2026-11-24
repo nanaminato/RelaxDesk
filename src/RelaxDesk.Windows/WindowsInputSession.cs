@@ -74,6 +74,8 @@ public sealed class WindowsInputSession : IDisposable
     readonly Func<InputGeometry> geometry;
     readonly bool production;
     bool disposed;
+    bool releaseBeforeNextInput;
+    sealed class InputRejectedException(string message) : IOException(message);
     public int HeldCount=>held.Count;
     public WindowsInputSession():this(batch=>SendInput((uint)batch.Length,batch,Marshal.SizeOf<NativeInput>()),Desktop.EnsureInteractiveDesktop,
         ()=>new(new(0,0,GetSystemMetrics(0),GetSystemMetrics(1)),new(GetSystemMetrics(76),GetSystemMetrics(77),GetSystemMetrics(78),GetSystemMetrics(79))),true){}
@@ -88,7 +90,7 @@ public sealed class WindowsInputSession : IDisposable
         if(batch.Length==0)return;
         uint accepted=send(batch);if(accepted>batch.Length)throw new IOException("Invalid native input result");
         for(int i=0;i<accepted;i++)Record(batch[i]);
-        if(accepted!=batch.Length)throw new IOException("Input unavailable or partial (UIPI/desktop restriction)");
+        if(accepted!=batch.Length)throw new InputRejectedException("Input unavailable or partial (UIPI/desktop restriction)");
     }
     void FlushDeferred()
     {
@@ -98,24 +100,65 @@ public sealed class WindowsInputSession : IDisposable
             var releases=deferred.ToArray();if(releases.Length==0)return;var batch=releases.Select(pair=>pair.Value).ToArray();uint count=send(batch);
             if(count>batch.Length)throw new IOException("Invalid native cleanup result");
             for(int i=0;i<Math.Min(count,batch.Length);i++)deferred.Remove(releases[i].Key);
-            if(count!=batch.Length)throw new IOException("Deferred input cleanup unavailable");
+            if(count!=batch.Length)throw new InputRejectedException("Deferred input cleanup unavailable");
         }
     }
+    readonly object inputSync = new();
+
     public void InjectLegacy(int code,bool up,int x,int y)=>Inject(WindowsInputPlan.Legacy(code,up,x,y));
+    public bool TryInjectOrdinaryLegacy(int code, bool up, int x, int y) => TryInjectOrdinary(WindowsInputPlan.Legacy(code, up, x, y));
+
+    public bool TryInjectOrdinary(RemoteInput input)
+    {
+        lock (inputSync)
+        {
+            try
+            {
+                if (releaseBeforeNextInput) ReleaseAll();
+                releaseBeforeNextInput = false;
+                Inject(input);
+                return true;
+            }
+            catch (InputRejectedException)
+            {
+                // Never replay a partially accepted command. Only retry releases.
+                releaseBeforeNextInput = true;
+                return false;
+            }
+        }
+    }
+
     public void Inject(RemoteInput input)
     {
-        ObjectDisposedException.ThrowIf(disposed,this);var batch=WindowsInputPlan.Build(input,geometry());ensure();FlushDeferred();
-        if(input.Kind=="release")ReleaseAll();else Apply(batch);
+        lock (inputSync)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            var batch = WindowsInputPlan.Build(input, geometry());
+            ensure();
+            FlushDeferred();
+            if (input.Kind == "release") ReleaseAll(); else Apply(batch);
+        }
     }
     public void ReleaseAll()
     {
-        if(held.Count==0)return;ensure();Apply(held.Values.Reverse().Select(WindowsInputPlan.Release).ToArray());
+        lock (inputSync)
+        {
+            if (held.Count == 0) return;
+            ensure();
+            Apply(held.Values.Reverse().Select(WindowsInputPlan.Release).ToArray());
+        }
     }
     public void Dispose()
     {
-        if(disposed)return;
-        try{ReleaseAll();}catch(IOException){}
-        if(production&&held.Count!=0)lock(deferredSync){foreach(var pair in held)deferred[pair.Key]=WindowsInputPlan.Release(pair.Value);}
-        held.Clear();disposed=true;
+        lock (inputSync)
+        {
+            if (disposed) return;
+            try { ReleaseAll(); } catch (IOException) { }
+            if (production && held.Count != 0)
+                lock (deferredSync)
+                    foreach (var pair in held) deferred[pair.Key] = WindowsInputPlan.Release(pair.Value);
+            held.Clear();
+            disposed = true;
+        }
     }
 }

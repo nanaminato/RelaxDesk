@@ -1,4 +1,4 @@
-param([switch]$Graphics, [switch]$Wpf, [switch]$Capture, [switch]$SkipBuild, [string]$NativeBuildDirectory = 'build/native', [string]$PackageRoot = '', [string]$ArtifactsDirectory = '', [switch]$SkipInteractiveInput, [switch]$SkipPhysicalGraphics,[switch]$LargeFiles)
+param([switch]$Graphics, [switch]$Wpf, [switch]$Capture, [switch]$SkipBuild, [string]$NativeBuildDirectory = 'build/native', [string]$PackageRoot = '', [string]$ArtifactsDirectory = '', [switch]$SkipInteractiveInput, [switch]$SkipPhysicalGraphics,[switch]$LargeFiles, [switch]$Quic)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 if ($PackageRoot) { $root = [IO.Path]::GetFullPath($PackageRoot); $SkipBuild = $true }
@@ -54,6 +54,18 @@ try {
     }
     Run-App $tests
     if ($LASTEXITCODE) { throw 'Core/TLS checks failed' }
+    if ($Quic) {
+        Run-App $smokeDll $hostDll --quic-production
+        if ($LASTEXITCODE) { throw "Production QUIC transport checks failed" }
+        Run-App $smokeDll $hostDll --wpf $viewer auto-recovery-cpu
+        if ($LASTEXITCODE) { throw 'WPF Auto media recovery checks failed' }
+        Run-App $smokeDll $hostDll --file-transfer-udp (Join-Path $root 'build/file-transfer-validation')
+        if ($LASTEXITCODE) { throw 'Concurrent TCP file and UDP media checks failed' }
+        Run-App $smokeDll $hostDll --file-transfer-auto (Join-Path $root 'build/file-transfer-validation')
+        if ($LASTEXITCODE) { throw 'Concurrent file transfer during an Auto media switch failed' }
+    }
+    Run-App $smokeDll $hostDll --session-access
+    if ($LASTEXITCODE) { throw "Session access checks failed" }
     Run-App $smokeDll --collector-contracts (Join-Path $root 'build/collector-verification')
     if($LASTEXITCODE){throw 'Collector integrity/output/coverage contracts failed'}
     Run-App $smokeDll $serviceDll --broker-contracts
@@ -66,6 +78,8 @@ try {
     if($LASTEXITCODE){throw 'History store contracts failed'}
     Run-App $smokeDll --session-contracts
     if ($LASTEXITCODE) { throw 'Windows session contracts failed' }
+    Run-App $smokeDll $hostDll --desktop-pause
+    if ($LASTEXITCODE) { throw 'Desktop pause/resume contracts failed' }
     Run-App $smokeDll --capture-refresh-contracts
     if($LASTEXITCODE){throw 'Explicit capture refresh contracts failed'}
     Run-App $smokeDll --diagnostic-log-contracts (Join-Path $root 'build/diagnostic-log-verification')
@@ -130,6 +144,8 @@ try {
         if ($PackageRoot) { $shell = Join-Path $root 'HostUi/RelaxDesk.HostShell.exe' }
         Run-App $shell --shell-contracts $hostDll (Join-Path $root 'build/host-shell-verification')
         if ($LASTEXITCODE) { throw 'WPF Host approval/stop contracts failed' }
+        Run-App $shell --work-trust-contracts $hostDll (Join-Path $root 'build/work-trust-verification')
+        if ($LASTEXITCODE) { throw 'WPF Work device trust contracts failed' }
         Run-App $shell --service-contracts $hostDll $serviceDll
         if($LASTEXITCODE){throw 'Service coordination failed'}
         Run-App $shell --recovery-contracts $hostDll
@@ -142,6 +158,12 @@ try {
         if($LASTEXITCODE){throw 'Viewer history privacy/session checks failed'}
         Run-App $viewer --statistics-contracts $hostDll (Join-Path $root 'build/statistics-wpf-verification')
         if($LASTEXITCODE){throw 'Viewer live statistics checks failed'}
+        if ($Quic) {
+            Run-App $viewer --statistics-contracts $hostDll (Join-Path $root 'build/statistics-wpf-verification') udp
+            if ($LASTEXITCODE) { throw 'Viewer live UDP statistics checks failed' }
+            Run-App $viewer --statistics-contracts $hostDll (Join-Path $root 'build/statistics-wpf-verification') oversized
+            if ($LASTEXITCODE) { throw 'Viewer UDP fallback statistics checks failed' }
+        }
         foreach($settingsMode in @('h264','deflate','audio','static')){
             Run-App $viewer --video-settings-contracts $hostDll $settingsMode
             if($LASTEXITCODE){throw "Viewer video settings failed: $settingsMode"}
@@ -184,6 +206,12 @@ try {
     }
     if($LargeFiles){Run-App $smokeDll $hostDll --file-resume-large (Join-Path $root 'build/file-resume-verification');if($LASTEXITCODE){throw '>1GiB production TLS file-resume verification failed'}}
     if ($Wpf) {
+        Run-App $viewer --admin-upgrade-contracts $hostDll
+        if ($LASTEXITCODE) { throw 'Viewer in-session administrator request checks failed' }
+        Run-App $viewer --admin-lifecycle-contracts $hostDll
+        if ($LASTEXITCODE) { throw 'Viewer administrator lifecycle checks failed' }
+        Run-App $viewer --admin-worker-loss-contracts $hostDll
+        if ($LASTEXITCODE) { throw 'Viewer administrator worker-loss recovery checks failed' }
         foreach($consent in @('granted','denied')) {
             Run-App $viewer --rich-clipboard-session-contracts $hostDll $consent
             if ($LASTEXITCODE) { throw "Viewer rich clipboard session failed: $consent" }
@@ -221,6 +249,12 @@ try {
         if ($LASTEXITCODE) { throw 'Real capture unavailable; inspect diagnostics and run on authorized local console' }
         Run-App $smokeDll $hostDll --wpf $viewer desktop-gpu
         if ($LASTEXITCODE) { throw 'Real desktop-to-GPU-display proof failed' }
+        if ($Quic) {
+            Run-App $smokeDll $hostDll --wpf $viewer desktop-gpu-udp
+            if ($LASTEXITCODE) { throw 'Real desktop-to-QUIC-to-GPU-display proof failed' }
+            Run-App $smokeDll $hostDll --wpf $viewer desktop-gpu-auto-recovery
+            if ($LASTEXITCODE) { throw 'Real desktop Auto media recovery failed' }
+        }
     }
 }
 finally { Pop-Location }

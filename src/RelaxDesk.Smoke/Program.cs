@@ -17,6 +17,7 @@ if(args is ["--audio-device-contracts"]){try{await RelaxDesk.Windows.AudioDevice
 if(args is [var serviceSetupApplication,"--service-setup-contracts",var serviceSetupOutput]){try{await ServiceSetupSmoke.Run(serviceSetupApplication,serviceSetupOutput);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is [var brokerApplication,"--broker-contracts"]){try{await SessionBrokerSmoke.Run(brokerApplication);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is ["--session-contracts"]){await RelaxDesk.Windows.WindowsSessionContracts.Run();return;}
+if(args is [var pausedHost,"--desktop-pause"]){await DesktopPauseSmoke.Run(pausedHost);return;}
 if(args is [var sessionHost,"--session-unavailable"]){await SessionUnavailableSmoke.Run(sessionHost);return;}
 if(args is [var topologyHost,"--topology-session",var topologyFixtures]){try{await TopologySmoke.Run(topologyHost,topologyFixtures);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is ["--viewport-contracts"]){try{RelaxDesk.Windows.ViewportContracts.Run();}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
@@ -33,12 +34,18 @@ if(args is [var largeResumeHost,"--file-resume-large",var largeResumeFixtures]){
 if (args is [var persistentHost, "--persistent-host", var persistentFixtures]) { await PersistentHostSmoke.Run(persistentHost, persistentFixtures); return; }
 if (args is ["--file-root-contracts", var fileFixture]) { await RelaxDesk.Windows.FileTransferContracts.Run(fileFixture); return; }
 if (args is [var fileHost, var fileMode, var fileOutput] && fileMode is "--file-transfer" or "--file-denied") { await FileTransferSmoke.Run(fileHost, fileOutput, fileMode=="--file-transfer"); return; }
+if (args is [var udpFileHost, "--file-transfer-udp", var udpFileOutput]) { await FileTransferSmoke.Run(udpFileHost, udpFileOutput, udp: true); return; }
+if (args is [var autoFileHost, "--file-transfer-auto", var autoFileOutput]) { await FileTransferSmoke.Run(autoFileHost, autoFileOutput, autoRecovery: true); return; }
 if(args is [var dataHost,"--reject-data",var dataFixtures]){string root=Path.Combine(Path.GetFullPath(dataFixtures),"rejected-data-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);await SecuritySmoke.Run(dataHost,"--reject-data",root);return;}
 if (args is [var clipboardHost, var clipboardMode] && clipboardMode is "--clipboard-text" or "--clipboard-denied" or "--clipboard-unnegotiated" or "--clipboard-failure") { await ClipboardSmoke.Run(clipboardHost, clipboardMode); return; }
+if (args is [var quicHost, "--quic-production"]) { await ProductionQuicSmoke.Run(quicHost); return; }
+if (args is ["--quic-datagram-probe", var quicNative]) { await QuicDatagramSmoke.Run(quicNative); return; }
+if (args is [var accessHost, "--session-access"]) { await SessionAccessSmoke.Run(accessHost); return; }
 if (args is [var approvalHost, "--deny-approval"]) { await ApprovalSmoke.Denied(approvalHost); return; }
 if (args is ["--collect-package", var packageRoot, .. var collectorArguments]) { Environment.ExitCode = await PackageCollector.Run(packageRoot, collectorArguments); return; }
 if (args is ["--windows-contracts"]) { RelaxDesk.Windows.WindowsContracts.Run(); return; }
 if (args is [var budgetHost, "--wpf-budget", var budgetViewer, var budgetMode, var budgetFrames]) { await WpfSmoke.Run(budgetHost, budgetViewer, budgetMode, int.Parse(budgetFrames), true); return; }
+if (args is [var idleDesktopHost, "--video-desktop-idle"]) { await VideoSmoke.Run(idleDesktopHost, "--video-desktop-idle"); return; }
 if (args is [var renderHost, "--wpf", var renderViewer, var mode]) { await WpfSmoke.Run(renderHost, renderViewer, mode); return; }
 if (args is [var matrixHost, "--wpf", var matrixViewer, var matrixMode, var renderFrames]) { await WpfSmoke.Run(matrixHost, matrixViewer, matrixMode, int.Parse(renderFrames)); return; }
 if (args is [var hostPath, "--wpf", var viewerPath]) { await WpfSmoke.Run(hostPath, viewerPath); return; }

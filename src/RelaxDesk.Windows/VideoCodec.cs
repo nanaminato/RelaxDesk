@@ -27,6 +27,12 @@ public sealed class H264Encoder : IDisposable
     {
         context = new(capture, width, height, hardware, fps, bitrate); Hardware = hardware;
     }
+    public bool TrySetBitrate(int bitrate)
+    {
+        try { return NativeMethods.rd_encoder_set_bitrate(context.Value, checked((uint)bitrate)) == 0; }
+        catch (EntryPointNotFoundException) { return false; }
+    }
+
     public EncodedVideo? EncodeGpu(long timestamp, bool forceKeyFrame)
     {
         int hr = NativeMethods.rd_encoder_frame(context.Value, timestamp, forceKeyFrame ? 1 : 0, out var data, out var bytes, out int key, out long time);

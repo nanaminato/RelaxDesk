@@ -68,6 +68,8 @@ struct capture_context {
     DXGI_OUTDUPL_DESC duplication_desc{};
     bool format_negotiated=false;
     int64_t last_desktop_time=0;
+    bool previous_protected_mask=false;
+    uint64_t last_copy_pixels=0;
     desktop_color color;
     ComPtr<IDXGIOutput6> color_output;
     std::unique_ptr<desktop_converter> converter;

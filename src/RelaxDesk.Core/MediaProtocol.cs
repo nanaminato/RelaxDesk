@@ -20,43 +20,73 @@ public static class MediaProtocol
     }
     public static async Task Write(Stream stream, MediaFrame frame, CancellationToken ct = default)
     {
-        Validate(frame);
         byte[] header = new byte[HeaderSize];
-        BinaryPrimitives.WriteUInt32LittleEndian(header, Magic);
-        BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(4), 2);
-        BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(6), (ushort)frame.Codec);
-        BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(8), (frame.KeyFrame ? 1u : 0) | (frame.HardwareEncoded ? 2u : 0));
-        BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(12), frame.Width);
-        BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(16), frame.Height);
-        BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(20), frame.Metadata.Length);
-        BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(24), frame.Data.Length);
-        BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(28),frame.VideoGeneration);
-        BinaryPrimitives.WriteInt64LittleEndian(header.AsSpan(32), frame.Sequence);
-        BinaryPrimitives.WriteInt64LittleEndian(header.AsSpan(40), frame.Timestamp100ns);
-        BinaryPrimitives.WriteInt64LittleEndian(header.AsSpan(48), frame.CaptureMicroseconds);
-        BinaryPrimitives.WriteInt64LittleEndian(header.AsSpan(56), frame.EncodeMicroseconds);
-        BinaryPrimitives.WriteInt64LittleEndian(header.AsSpan(64), frame.DisplayGeneration);
+        WriteHeader(frame, header);
         await stream.WriteAsync(header, ct);
-        await stream.WriteAsync(frame.Metadata, ct);
+        if (frame.Metadata.Length != 0) await stream.WriteAsync(frame.Metadata, ct);
         await stream.WriteAsync(frame.Data, ct);
+    }
+
+    internal static void WriteHeader(MediaFrame frame, Span<byte> header)
+    {
+        Validate(frame);
+        BinaryPrimitives.WriteUInt32LittleEndian(header, Magic);
+        BinaryPrimitives.WriteUInt16LittleEndian(header.Slice(4), 2);
+        BinaryPrimitives.WriteUInt16LittleEndian(header.Slice(6), (ushort)frame.Codec);
+        BinaryPrimitives.WriteUInt32LittleEndian(header.Slice(8), (frame.KeyFrame ? 1u : 0) | (frame.HardwareEncoded ? 2u : 0));
+        BinaryPrimitives.WriteInt32LittleEndian(header.Slice(12), frame.Width);
+        BinaryPrimitives.WriteInt32LittleEndian(header.Slice(16), frame.Height);
+        BinaryPrimitives.WriteInt32LittleEndian(header.Slice(20), frame.Metadata.Length);
+        BinaryPrimitives.WriteInt32LittleEndian(header.Slice(24), frame.Data.Length);
+        BinaryPrimitives.WriteInt32LittleEndian(header.Slice(28),frame.VideoGeneration);
+        BinaryPrimitives.WriteInt64LittleEndian(header.Slice(32), frame.Sequence);
+        BinaryPrimitives.WriteInt64LittleEndian(header.Slice(40), frame.Timestamp100ns);
+        BinaryPrimitives.WriteInt64LittleEndian(header.Slice(48), frame.CaptureMicroseconds);
+        BinaryPrimitives.WriteInt64LittleEndian(header.Slice(56), frame.EncodeMicroseconds);
+        BinaryPrimitives.WriteInt64LittleEndian(header.Slice(64), frame.DisplayGeneration);
     }
     public static async Task<MediaFrame> Read(Stream stream, CancellationToken ct = default,bool displayGeneration=false,bool videoGeneration=false)
     {
         byte[] header = new byte[HeaderSize]; await stream.ReadExactlyAsync(header, ct);
-        if (BinaryPrimitives.ReadUInt32LittleEndian(header) != Magic || BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(4)) != 2 ||
-            (videoGeneration?BinaryPrimitives.ReadInt32LittleEndian(header.AsSpan(28)) is <1 or >1_000_000:BinaryPrimitives.ReadInt32LittleEndian(header.AsSpan(28))!=0) || (displayGeneration?BinaryPrimitives.ReadInt64LittleEndian(header.AsSpan(64)) is <1 or >1_000_000:BinaryPrimitives.ReadInt64LittleEndian(header.AsSpan(64)) != 0))
-            throw new InvalidDataException("Unknown binary media version/header");
-        uint flags = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(8));
-        int metadata = BinaryPrimitives.ReadInt32LittleEndian(header.AsSpan(20)), payload = BinaryPrimitives.ReadInt32LittleEndian(header.AsSpan(24));
-        if ((flags & ~3u) != 0 || metadata < 0 || metadata > MetadataLimit || payload <= 0 || payload > PayloadLimit)
-            throw new InvalidDataException("Binary media size/flags rejected");
-        var frame = new MediaFrame((MediaCodec)BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(6)),
-            BinaryPrimitives.ReadInt64LittleEndian(header.AsSpan(32)), BinaryPrimitives.ReadInt64LittleEndian(header.AsSpan(40)),
-            BinaryPrimitives.ReadInt32LittleEndian(header.AsSpan(12)), BinaryPrimitives.ReadInt32LittleEndian(header.AsSpan(16)),
-            (flags & 1) != 0, (flags & 2) != 0, BinaryPrimitives.ReadInt64LittleEndian(header.AsSpan(48)), BinaryPrimitives.ReadInt64LittleEndian(header.AsSpan(56)), [], [1],BinaryPrimitives.ReadInt64LittleEndian(header.AsSpan(64)),BinaryPrimitives.ReadInt32LittleEndian(header.AsSpan(28)));
-        Validate(frame); // Reject invalid dimensions/codec before allocating payload.
+        var frame = ReadHeader(header, displayGeneration, videoGeneration, out int metadata, out int payload);
         frame = frame with { Metadata = new byte[metadata], Data = new byte[payload] };
         await stream.ReadExactlyAsync(frame.Metadata, ct); await stream.ReadExactlyAsync(frame.Data, ct); return frame;
+    }
+
+    internal static MediaFrame ReadDatagramFrame(ReadOnlySpan<byte> bytes, long sequence, bool displayGeneration, bool videoGeneration)
+    {
+        var frame = ReadDatagramHeader(bytes, sequence, bytes.Length, displayGeneration, videoGeneration, out int metadata, out int payload);
+        return frame with { Metadata = bytes.Slice(HeaderSize, metadata).ToArray(), Data = bytes.Slice(HeaderSize + metadata, payload).ToArray() };
+    }
+
+    internal static MediaFrame ReadDatagramHeader(ReadOnlySpan<byte> header, long sequence, int length,
+        bool displayGeneration, bool videoGeneration, out int metadata, out int payload)
+    {
+        var frame = ReadHeader(header, displayGeneration, videoGeneration, out metadata, out payload);
+        if (frame.Sequence != sequence || HeaderSize + (long)metadata + payload != length)
+            throw new InvalidDataException("Datagram frame binding mismatch");
+        return frame;
+    }
+
+    static MediaFrame ReadHeader(ReadOnlySpan<byte> header, bool displayGeneration, bool videoGeneration, out int metadata, out int payload)
+    {
+        int video = BinaryPrimitives.ReadInt32LittleEndian(header[28..]);
+        long display = BinaryPrimitives.ReadInt64LittleEndian(header[64..]);
+        if (BinaryPrimitives.ReadUInt32LittleEndian(header) != Magic || BinaryPrimitives.ReadUInt16LittleEndian(header[4..]) != 2 ||
+            (videoGeneration ? video is < 1 or > 1_000_000 : video != 0) ||
+            (displayGeneration ? display is < 1 or > 1_000_000 : display != 0))
+            throw new InvalidDataException("Unknown binary media version/header");
+        uint flags = BinaryPrimitives.ReadUInt32LittleEndian(header[8..]);
+        metadata = BinaryPrimitives.ReadInt32LittleEndian(header[20..]);
+        payload = BinaryPrimitives.ReadInt32LittleEndian(header[24..]);
+        if ((flags & ~3u) != 0 || metadata < 0 || metadata > MetadataLimit || payload <= 0 || payload > PayloadLimit)
+            throw new InvalidDataException("Binary media size/flags rejected");
+        var frame = new MediaFrame((MediaCodec)BinaryPrimitives.ReadUInt16LittleEndian(header[6..]),
+            BinaryPrimitives.ReadInt64LittleEndian(header[32..]), BinaryPrimitives.ReadInt64LittleEndian(header[40..]),
+            BinaryPrimitives.ReadInt32LittleEndian(header[12..]), BinaryPrimitives.ReadInt32LittleEndian(header[16..]),
+            (flags & 1) != 0, (flags & 2) != 0, BinaryPrimitives.ReadInt64LittleEndian(header[48..]), BinaryPrimitives.ReadInt64LittleEndian(header[56..]), [], [1], display, video);
+        Validate(frame); // Reject invalid dimensions/codec before allocating payload.
+        return frame;
     }
 }
 

@@ -4,6 +4,7 @@ $root=Split-Path $PSScriptRoot -Parent
 Push-Location $root
 try {
     $revision=& git rev-parse HEAD
+    if($LASTEXITCODE -or !$revision){throw 'Installer recipe revision unavailable'}
     $changes=@(& git status --porcelain)
     if($LASTEXITCODE -or $changes.Count){throw 'Installer recipe must be committed and clean'}
     if(!$OutputDirectory){$OutputDirectory='build/RelaxDesk-installers-win-x64-'+(Get-Date -Format 'yyyyMMdd-HHmmss')}
@@ -16,7 +17,7 @@ try {
     if($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Pyrsys B.V.'){throw 'Compiler publisher/signature invalid'}
     $compilerVersion=(& $iscc --version | Out-String).Trim()
     if($LASTEXITCODE -or $compilerVersion -ne '7.1.1'){throw 'Use the reviewed stable Inno Setup 7.1.1 compiler'}
-    $results=@();$sharedVersion=$null
+    $results=@();$sharedVersion=$null;$sharedFileVersion=$null
     foreach($role in @('Host','Viewer')){
         $archive=Join-Path ([IO.Path]::GetFullPath($RoleDirectory)) ('RelaxDesk-'+$role+'-win-x64.zip')
         $archiveHash=(Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
@@ -25,7 +26,10 @@ try {
         $payload=Join-Path $work ('RelaxDesk-'+$role+'-win-x64')
         $metadata=Get-Content -LiteralPath (Join-Path $payload 'package.json') -Raw | ConvertFrom-Json
         if($metadata.role -cne $role.ToLowerInvariant() -or !$metadata.self_contained -or $metadata.rid -ne 'win-x64' -or $metadata.working_tree_dirty){throw 'Invalid role package metadata'}
-        if($sharedVersion -and $metadata.version -cne $sharedVersion){throw 'Host/Viewer versions differ'};$sharedVersion=$metadata.version
+        if($metadata.revision -cne $revision){throw "Role package revision does not match the installer recipe: $role"}
+        if(!$metadata.version -or !$metadata.file_version){throw "Role package version is missing: $role"}
+        if($sharedVersion -and ($metadata.version -cne $sharedVersion -or $metadata.file_version -cne $sharedFileVersion)){throw 'Host/Viewer versions differ'}
+        $sharedVersion=$metadata.version;$sharedFileVersion=$metadata.file_version
         $manifestPath=Join-Path $payload 'SHA256SUMS.json';$manifest=@(Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json)
         if(@(Get-ChildItem -LiteralPath $payload -File -Recurse).Count -ne $manifest.Count+1){throw 'Unexpected role payload files'}
         $release='app-'+(Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.Substring(0,32).ToLowerInvariant()

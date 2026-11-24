@@ -24,8 +24,10 @@ internal static class NativeMethods
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_capture_color_status(nint context, out nint json);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_capture_next(nint context, uint timeout, out FrameInfo frame);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_capture_blob(nint context, uint kind, out nint data, out uint bytes);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_capture_copy_pixels(nint context, out ulong pixels);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_capture_pixels(nint context, [Out] byte[] data, uint bytes);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern void rd_capture_destroy(nint context);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_encoder_set_bitrate(nint encoder, uint bitrate);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_encoder_create(nint capture, uint width, uint height, uint fps, uint bitrate, int hardware, out nint encoder);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_encoder_frame(nint encoder, long timestamp, int forceKeyframe, out nint data, out uint bytes, out int keyframe, out long outputTime);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_encoder_bgra(nint encoder, byte[] bgra, uint bytes, long timestamp, int forceKeyFrame, out nint output, out uint length, out int keyframe, out long outputTime);
@@ -53,11 +55,15 @@ internal static class NativeMethods
     {
         if (result < 0) throw new ExternalException($"{Marshal.PtrToStringUTF8(rd_last_error())}: HRESULT 0x{result:X8}", result);
     }
-    internal static byte[] Copy(nint data, uint bytes)
+    internal static unsafe byte[] Copy(nint data, uint bytes, byte[]? previous = null)
     {
         if (bytes > 32 * 1024 * 1024) throw new InvalidDataException("Native buffer exceeds cap");
+        if (bytes == 0) return [];
+        if (data == 0) throw new InvalidDataException("Native buffer is missing");
+        if (previous is not null && previous.Length == bytes && new ReadOnlySpan<byte>((void*)data, (int)bytes).SequenceEqual(previous))
+            return previous;
         byte[] copy = new byte[bytes];
-        if (bytes != 0) Marshal.Copy(data, copy, 0, checked((int)bytes));
+        Marshal.Copy(data, copy, 0, checked((int)bytes));
         return copy;
     }
 }

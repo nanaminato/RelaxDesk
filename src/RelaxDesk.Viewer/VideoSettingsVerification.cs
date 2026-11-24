@@ -39,10 +39,15 @@ public sealed partial class ViewerWindow
             {
                 running=window.ConnectVideo();await Until(()=>window.videoSettingsSession?.Ready==true);
                 if(window.sessionToolbar?.VideoSettingsAction.IsEnabled!=true)throw new IOException("Video settings menu missing");
-                var toolbar=window.sessionToolbar;toolbar.ShortcutMenu.PlacementTarget=toolbar.ShortcutsButton;toolbar.ShortcutMenu.IsOpen=true;toolbar.VideoSettingsAction.IsSubmenuOpen=true;
-                await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-                if(PresentationSource.FromVisual((MenuItem)toolbar.VideoSettingsAction.Items[0])?.RootVisual is not FrameworkElement popup||popup.ActualWidth<=0||popup.ActualHeight<=0)throw new IOException("Video settings popup did not render");
-                var image=new RenderTargetBitmap((int)Math.Ceiling(popup.ActualWidth),(int)Math.Ceiling(popup.ActualHeight),96,96,System.Windows.Media.PixelFormats.Pbgra32);image.Render(popup);var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(image));string screenshots=Path.Combine(Environment.CurrentDirectory,"build","video-settings-menu-verification");Directory.CreateDirectory(screenshots);using(var file=File.Create(Path.Combine(screenshots,mode+"-"+Guid.NewGuid().ToString("N")+".png")))png.Save(file);toolbar.ShortcutMenu.IsOpen=false;
+                var toolbar=window.sessionToolbar;toolbar.ShortcutMenu.PlacementTarget=toolbar.ShortcutsButton;toolbar.ShortcutMenu.IsOpen=true;
+                var settingsAction = toolbar.VideoSettingsAction;
+                await Until(() => PresentationSource.FromVisual(settingsAction) is not null);
+                settingsAction.IsSubmenuOpen = true;
+                FrameworkElement? popup = null;
+                await Until(() => (popup = PresentationSource.FromVisual((MenuItem)settingsAction.Items[0])?.RootVisual as FrameworkElement)
+                    is { ActualWidth: > 0, ActualHeight: > 0 });
+                var rendered = popup ?? throw new IOException("Video settings popup did not render");
+                var image=new RenderTargetBitmap((int)Math.Ceiling(rendered.ActualWidth),(int)Math.Ceiling(rendered.ActualHeight),96,96,System.Windows.Media.PixelFormats.Pbgra32);image.Render(rendered);var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(image));string screenshots=Path.Combine(Environment.CurrentDirectory,"build","video-settings-menu-verification");Directory.CreateDirectory(screenshots);using(var file=File.Create(Path.Combine(screenshots,mode+"-"+Guid.NewGuid().ToString("N")+".png")))png.Save(file);toolbar.ShortcutMenu.IsOpen=false;
                 if(mode=="audio")await Until(()=>audio?.Writes>0);
                 if(mode=="deflate"&&((MenuItem)window.sessionToolbar.VideoSettingsAction.Items[1]).IsEnabled)throw new IOException("Deflate advertised bitrate effect");
                 int generation=1;

@@ -8,7 +8,7 @@ using RelaxDesk.Windows;
 
 internal static class FileTransferSmoke
 {
-    public static async Task Run(string hostPath, string outputDirectory, bool grant = true)
+    public static async Task Run(string hostPath, string outputDirectory, bool grant = true, bool udp = false, bool autoRecovery = false)
     {
         string fixture = Path.Combine(Path.GetFullPath(outputDirectory), "tls-" + Guid.NewGuid().ToString("N"));
         string hostRoot = Path.Combine(fixture, "host"), viewerRoot = Path.Combine(fixture, "viewer");
@@ -16,8 +16,27 @@ internal static class FileTransferSmoke
         var local = new WindowsFileRoot(viewerRoot);
         var reservation = new TcpListener(IPAddress.Loopback, 0); reservation.Start(); int port = ((IPEndPoint)reservation.LocalEndpoint).Port; reservation.Stop();
         using var host = Process.Start(ChildProcess.Create(hostPath, "--file-root", hostRoot, "127.0.0.1", port.ToString(), "test-hardware")) ?? throw new IOException("Host launch failed");
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
-        using var client = new SessionClient { RequestedFeatures = [SessionCapabilities.FileTransfer] };
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(autoRecovery ? 90 : 45));
+        UdpLossRelay? relay = null;
+        int quicAttempts = 0;
+        const int SharedDownstreamBytesPerSecond = 512 * 1024;
+        using var budget = grant ? new NetworkImpairmentRelay.SharedBudget(SharedDownstreamBytesPerSecond) : null;
+        await using var tcpRelay = budget is not null ? new NetworkImpairmentRelay(port, connections: udp ? 2 : 3) : null;
+        NetworkImpairmentRelay.Link? mediaLink = null, fileLink = null;
+        using var client = new SessionClient
+        {
+            RequestedFeatures = [SessionCapabilities.FileTransfer],
+            Network = autoRecovery ? NetworkMode.Auto : udp ? NetworkMode.Udp : NetworkMode.Tcp,
+            RequestQuicRecovery = autoRecovery,
+            ConnectQuic = udp || autoRecovery ? (endpoint, certificate) =>
+            {
+                if (autoRecovery && Interlocked.Increment(ref quicAttempts) == 1)
+                    throw new IOException("Injected initial UDP attachment failure");
+                relay = new UdpLossRelay(endpoint);
+                if (autoRecovery) relay.EnableShaping(budget);
+                return WindowsQuicDatagrams.Connect(relay.Endpoint, certificate);
+            } : null
+        };
         Task? media = null, control = null; Task<string>? logs = null;
         using var running = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
         var rtt = new ConcurrentBag<double>(); int frames = 0;
@@ -25,13 +44,22 @@ internal static class FileTransferSmoke
         {
             string pin = (await host.StandardOutput.ReadLineAsync(timeout.Token) ?? throw new IOException("No pin")).Split(": ")[1];
             string token = (await host.StandardOutput.ReadLineAsync(timeout.Token) ?? throw new IOException("No token")).Split(": ")[1]; _ = await host.StandardOutput.ReadLineAsync(timeout.Token);
-            await Task.Delay(100, timeout.Token); var connecting = client.Connect("127.0.0.1", port, pin, token, timeout.Token);
+            await Task.Delay(100, timeout.Token); var connecting = client.Connect("127.0.0.1", tcpRelay?.Port ?? port, pin, token, timeout.Token);
             if (!(await host.StandardOutput.ReadLineAsync(timeout.Token) ?? "").Contains("APPROVE")) throw new IOException("No consent prompt");
             if (!(await host.StandardOutput.ReadLineAsync(timeout.Token) ?? "").Contains("APPROVE_FILES")) throw new IOException("No separate file approval prompt");
             await host.StandardInput.WriteLineAsync(grant ? "APPROVE_FILES" : "APPROVE"); await host.StandardInput.FlushAsync(); await connecting;
+            if (client.Video.TransportName != (udp ? "UDP" : "TCP/TLS")) throw new IOException("Unexpected media transport");
+            relay?.EnableShaping(budget);
+            if (tcpRelay is not null && budget is not null)
+            {
+                if (!udp) mediaLink = await tcpRelay.Connected(1, timeout.Token);
+                fileLink = await tcpRelay.Connected(udp ? 1 : 2, timeout.Token);
+                mediaLink?.ShareDownstream(budget);
+                fileLink.ShareDownstream(budget);
+            }
             if (client.Features.Contains(SessionCapabilities.FileTransfer) != grant || (client.Data is not null) != grant) throw new IOException("Independent file grant mismatch");
             logs = host.StandardOutput.ReadToEndAsync(timeout.Token);
-            media = Task.Run(async () => { while (true) { await MediaProtocol.Read(client.Media, running.Token); Interlocked.Increment(ref frames); } });
+            media = Task.Run(async () => { while (true) { await client.Video.Read(running.Token); Interlocked.Increment(ref frames); } });
             control = Task.Run(async () =>
             {
                 long sequence = 0;
@@ -39,6 +67,12 @@ internal static class FileTransferSmoke
                 {
                     var timer = Stopwatch.StartNew(); await Wire.Write(client.Control, new("ping-v2", ++sequence), running.Token);
                     var reply = await Wire.Read(client.Control, running.Token);
+                    while (reply.Kind == QuicRecoveryProtocol.OfferKind && autoRecovery)
+                    {
+                        var result = await client.ProbeQuicRecovery(reply, running.Token);
+                        await Wire.Write(client.Control, result, running.Token);
+                        reply = await Wire.Read(client.Control, running.Token);
+                    }
                     if (reply.Kind != "pong-v2" || reply.Sequence != sequence) throw new IOException("Control failed during transfer");
                     rtt.Add(timer.Elapsed.TotalMilliseconds); await Task.Delay(25, running.Token);
                 }
@@ -46,7 +80,7 @@ internal static class FileTransferSmoke
             if (grant)
             {
                 await using var files = new FileTransferClient(client.Data!, running.Token, 2 * 1024 * 1024);
-                byte[] payload = new byte[2 * 1024 * 1024 + 17]; new Random(718).NextBytes(payload);
+                byte[] payload = new byte[(autoRecovery ? 8 : 2) * 1024 * 1024 + 17]; new Random(718).NextBytes(payload);
                 var pause = new TransferControl(); var paused = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); long reported = 0;
                 using (var source = new MemoryStream(payload))
                 {
@@ -58,10 +92,32 @@ internal static class FileTransferSmoke
                     await paused.Task.WaitAsync(timeout.Token); long stoppedAt = Interlocked.Read(ref reported);
                     await Task.Delay(5500, timeout.Token); // Exercises data heartbeat while paused.
                     if (reported != stoppedAt || File.Exists(Path.Combine(hostRoot, "中文/日本語/data.bin"))) throw new IOException("Paused upload committed/continued");
+                    int beforeUpload = Volatile.Read(ref frames);
+                    int controlBeforeUpload = rtt.Count;
                     pause.Paused = false; await uploading;
+                    if (Volatile.Read(ref frames) <= beforeUpload || rtt.Count <= controlBeforeUpload)
+                        throw new IOException("Media or control stalled during active upload");
                 }
+                int beforeDownload = Volatile.Read(ref frames);
+                int controlBeforeDownload = rtt.Count;
+                long VideoBytes() => (mediaLink?.DownstreamBytes ?? 0) + (relay?.DownstreamBytes ?? 0);
+                long videoBytesBeforeDownload = VideoBytes();
+                long fileBytesBeforeDownload = fileLink?.DownstreamBytes ?? 0;
+                string initialDownloadTransport = client.Video.TransportName;
                 await files.Download("中文/日本語/data.bin", length => local.CreateUpload("下载/内容.bin", length, false), timeout.Token);
+                if (autoRecovery && (initialDownloadTransport != "TCP/TLS" || client.Video.TransportName != "UDP"))
+                    throw new IOException("Auto did not switch from TCP to UDP during the same download");
+                if (Volatile.Read(ref frames) <= beforeDownload || rtt.Count <= controlBeforeDownload)
+                    throw new IOException("Media or control stalled during active download");
+                if (fileLink is not null)
+                {
+                    long videoBytes = VideoBytes() - videoBytesBeforeDownload;
+                    long fileBytes = fileLink.DownstreamBytes - fileBytesBeforeDownload;
+                    if (videoBytes <= 0 || fileBytes < payload.Length) throw new IOException("Both streams did not traverse the shared budget");
+                    Console.WriteLine($"PASS shared downstream cap={SharedDownstreamBytesPerSecond} B/s: active download video_transport={client.Video.TransportName}, video_forwarded_bytes={videoBytes}, file_tls_bytes={fileBytes}");
+                }
                 if (!SHA256.HashData(File.ReadAllBytes(Path.Combine(viewerRoot, "下载/内容.bin"))).SequenceEqual(SHA256.HashData(payload))) throw new IOException("Transferred file hash mismatch");
+                if (autoRecovery) Console.WriteLine("PASS Auto switched from TCP to UDP during the same download, file SHA-256 verified and TLS control kept alive");
                 using (var empty = new MemoryStream()) await files.Upload("empty.txt", empty, false, timeout.Token);
                 await files.Download("empty.txt", length=>local.CreateUpload("empty.txt",length,false), timeout.Token);
                 if (new FileInfo(Path.Combine(viewerRoot,"empty.txt")).Length!=0)throw new IOException("Empty file transfer failed");
@@ -89,19 +145,25 @@ internal static class FileTransferSmoke
                 if(frames==0||rtt.Count<20)throw new IOException("Media/control did not continue during transfer");
             }
             else if(Directory.EnumerateFileSystemEntries(hostRoot).Any())throw new IOException("Denied feature touched root contents");
+            if (relay is not null)
+            {
+                if (relay.Shaped < 16 || relay.ReorderedPairs == 0) throw new IOException("UDP media shaping was not exercised");
+                Console.WriteLine($"PASS concurrent video and files with UDP media capped at {UdpLossRelay.ShapedBytesPerSecond} B/s, shaped_packets={relay.Shaped}, reordered_pairs={relay.ReorderedPairs}");
+            }
             running.Cancel();client.Dispose();
             try{await Task.WhenAll(media,control);}catch(Exception)when(running.IsCancellationRequested){}
             await host.WaitForExitAsync(timeout.Token);string output=await logs;
             if(host.ExitCode!=0||!output.Contains("native_live_resources=0"))throw new IOException("Host transfer cleanup failed");
             double[] samples=rtt.Order().ToArray();
             string checks = grant ? "separate pinned/one-use data binding, scoped Unicode/empty upload/download, SHA256, overwrite consent, folder listing, pause+data heartbeat, cancel and reusable channel" : "screen-only approval denied files, no data connection and no root contents accessed";
-            Console.WriteLine($"PASS file TLS grant={grant}: {checks}; media_frames={frames} control_samples={samples.Length} control_p95_ms={(samples.Length==0?0:samples[(int)Math.Ceiling(samples.Length*.95)-1]):F2}; loopback synthetic video, real fixture files only; fixtures={fixture}");
+            Console.WriteLine($"PASS file TLS grant={grant} media_transport={client.Video.TransportName}: {checks}; media_frames={frames} control_samples={samples.Length} control_p95_ms={(samples.Length==0?0:samples[(int)Math.Ceiling(samples.Length*.95)-1]):F2}; loopback synthetic video, real fixture files only; fixtures={fixture}");
         }
         finally
         {
             running.Cancel();client.Dispose();
             if(media is not null&&control is not null){try{await Task.WhenAll(media,control);}catch(Exception){}}
             if(!host.HasExited)host.Kill(true);
+            if (relay is not null) await relay.DisposeAsync();
         }
     }
 }
