@@ -5,9 +5,24 @@ using System.Text;
 namespace RelaxDesk.Session;
 
 public sealed record ServiceSetupResult(string Operation,bool Changed,string Root,string Owner,string? Version,uint Startup,bool Running,bool PendingDelete,bool RetainedFiles);
+public sealed record MachineServiceStatus(bool Installed,uint State,uint Startup,bool PendingDelete);
 
 public static class MachineServiceSetup
 {
+    // Read-only bundle preflight, independent of protected installed receipts.
+    public static string ValidatePackage(string package)=>ServicePayload.Read(ServiceFilePolicy.FullPath(package)).Version;
+    public static MachineServiceStatus Inspect(string owner)=>Inspect(LocalAgentPipe.CanonicalUser(owner),new WindowsServiceRegistrationStore().Read());
+    internal static MachineServiceStatus Inspect(string owner,ServiceRegistration? item)
+    {
+        owner=LocalAgentPipe.CanonicalUser(owner);
+        if(item is null)return new(false,0,0,false);
+        if(item.PendingDelete)return new(true,0,0,true);
+        BrokerServiceSecurity.Validate(item.Security,owner);
+        var match=System.Text.RegularExpressions.Regex.Match(item.Command,"app-([a-f0-9]{32})",System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        string expected=match.Success?"\""+Path.Combine(ServiceFilePolicy.MachineRoot,"app-"+match.Groups[1].Value,"RelaxDesk.Service.exe")+"\" --service --owner-sid "+owner:"";
+        if(item.Type!=16||!item.Account.Equals(@"NT AUTHORITY\LocalService",StringComparison.OrdinalIgnoreCase)||item.Startup is not (2 or 3)||!item.Command.Equals(expected,StringComparison.OrdinalIgnoreCase))throw new SecurityException("Service does not match this user's broker configuration");
+        return new(true,item.State,item.Startup,false);
+    }
     public static Task<ServiceSetupResult> Install(string package,string owner,bool? automatic,bool start,bool whatIf,CancellationToken ct)=>new ServiceSetupTransaction(new(ServiceFilePolicy.MachineRoot),new WindowsServiceRegistrationStore(),()=>WindowsServiceRegistrationStore.Administrator).Install(package,owner,automatic,start,whatIf,ct);
     public static Task<ServiceSetupResult> Uninstall(string owner,bool whatIf,CancellationToken ct)=>new ServiceSetupTransaction(new(ServiceFilePolicy.MachineRoot),new WindowsServiceRegistrationStore(),()=>WindowsServiceRegistrationStore.Administrator).Uninstall(owner,whatIf,ct);
 }

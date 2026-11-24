@@ -1,17 +1,17 @@
 # Protected machine broker installation and removal
 
-Implemented source adds explicit service setup commands to `RelaxDesk.Service.exe`. The ordinary user installer remains independent and never registers/starts this component. No machine service has been registered, upgraded, stopped or removed on the development runner: its token is not an elevated administrator. Actual LocalService/SCM acceptance remains pending. No new distribution/package has been generated.
+Current source adds [HostShell install/update/start/uninstall buttons](SERVICE-SETUP-UI.md), using a separate explicitly elevated service-maintenance process. The existing CLI remains available in the delivered `g5ebe35d` package, which does not contain the new buttons. Implemented source adds explicit service setup commands to `RelaxDesk.Service.exe`. The ordinary user installer remains independent and never registers/starts this component. No machine service has been registered, upgraded, stopped or removed on the development runner: its token is not an elevated administrator. Actual LocalService/SCM acceptance remains pending. No new package is generated for this UI update.
 
 ## Operator entry points
 
-These commands are for the final complete self-contained win-x64 bundle, after review of its origin/integrity. Use an **external bundle copy**, not an executable inside the installed machine release. This avoids a running maintenance executable preventing its own clean removal. The installer never launches UAC, stores credentials or changes execution policy; a mutating operation requires the operator to have explicitly opened an elevated administrator shell. `--what-if` does not elevate and writes no deployment/SCM state.
+These commands are for the final complete self-contained win-x64 bundle, after review of its origin/integrity. Use an **external bundle copy**, not an executable inside the installed machine release. This avoids a running maintenance executable preventing its own clean removal. The CLI itself does not request UAC, store credentials or change execution policy; the new HostShell buttons explicitly request UAC only after package validation and user confirmation; a mutating operation requires the operator to have explicitly opened an elevated administrator shell. `--what-if` does not elevate and writes no deployment/SCM state.
 
 Capture the intended ordinary user's actual SID before changing to another administrator account. There is no default allowed user, no group-based grant and no inferred permission to share the desktop:
 
 ```powershell
 [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 
-# From a future external complete bundle; substitute the intended user's SID.
+# From the external complete bundle; substitute the intended user's SID.
 ./Service/RelaxDesk.Service.exe --install-service --package . --owner-sid '<user SID>' --what-if
 # First install defaults to manual/stopped. --start explicitly starts the broker now.
 ./Service/RelaxDesk.Service.exe --install-service --package . --owner-sid '<user SID>' --start
@@ -61,6 +61,6 @@ dotnet build RelaxDesk.sln -c Release --artifacts-path E:\RelaxDesk\build\servic
 dotnet build/service-setup-final-artifacts/bin/RelaxDesk.Smoke/release/RelaxDesk.Smoke.dll build/service-setup-final-artifacts/bin/RelaxDesk.Service/release/RelaxDesk.Service.dll --service-setup-contracts E:\RelaxDesk\build\machine-service-setup-verification
 ```
 
-Still required: actual elevated deployment/ACLs, Create/Change/SetSecurity/Delete/Start/Stop under SCM, LocalService effective read/query/impersonation permissions, final self-contained payload execution, manual/automatic boot behavior, pending-deletion handles, protected upgrade/uninstall under file locks/AV/power loss, cross-account denial and the Home physical session transition matrix. Logon launch/restart coordination and audio remain next development. Do not count fixture runtime stand-ins or simulated service startup as those exits.
+Still required: actual elevated deployment/ACLs, Create/Change/SetSecurity/Delete/Start/Stop under SCM, LocalService effective read/query/impersonation permissions, final self-contained payload execution, manual/automatic boot behavior, pending-deletion handles, protected upgrade/uninstall under file locks/AV/power loss, cross-account denial and the Home physical session transition matrix. Logon launch/restart coordination and audio now have separate source contracts; their actual deployment/hardware acceptance remains pending. Do not count fixture runtime stand-ins or simulated service startup as those exits.
 
 API references: [CreateService and LocalService/startup policy](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-createservicew), [service security rights](https://learn.microsoft.com/en-us/windows/win32/services/service-security-and-access-rights), [setting service security](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-setserviceobjectsecurity), [deferred DeleteService semantics](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-scmr/6744cdb8-f162-4be0-bb31-98996b6495be), [atomic directory creation with security](https://learn.microsoft.com/en-us/dotnet/api/system.io.directoryinfo.create).

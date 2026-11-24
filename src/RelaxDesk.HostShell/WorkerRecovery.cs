@@ -32,7 +32,7 @@ internal sealed partial class HostWindow
     {
         if(change.Kind!="ended"||closing||restartBudget is null)return;
         if(RestartPending){deferredExit=change;return;}
-        bool allowed=!ServiceRequired||ServiceReady;
+        bool allowed=!ServiceSetupBusy&&(!ServiceRequired||ServiceReady);
         try{WindowsSessionAccess.EnsureAllowed();}catch{allowed=false;}
         var delay=restartBudget.Next(RestartEnabled,change.ExitCode,allowed);
         if(delay is null)return;

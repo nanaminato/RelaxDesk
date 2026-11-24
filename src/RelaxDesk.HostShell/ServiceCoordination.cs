@@ -22,16 +22,18 @@ internal sealed partial class HostWindow
     void AddServiceSettings(Panel settings)
     {
         var panel=new StackPanel();panel.Children.Add(useService);panel.Children.Add(serviceStatus);panel.Children.Add(connectService);
-        settings.Children.Add(new Expander{Header="系统服务协调（可选）",Content=panel,Margin=new(0,8,0,0)});
+        AddServiceSetup(panel);
+        settings.Children.Add(new Expander{Header="系统服务安装与协调（可选）",Content=panel,Margin=new(0,8,0,0)});
         connectService.Click+=async(_,_)=>await ConnectService();
         useService.Checked+=(_,_)=>{if(!ServiceReady)serviceStatus.Text="服务模式尚未连接；不会开始共享。";UpdateServiceControls();};
         useService.Unchecked+=async(_,_)=>{if(Host.Running){useService.IsChecked=true;return;}await DisconnectService();serviceStatus.Text="普通用户模式：不需要安装系统服务。";UpdateServiceControls();};
     }
     void UpdateServiceControls()
     {
-        useService.IsEnabled=!Host.Running&&!serviceConnecting&&!serviceCleaning&&!closing;
-        connectService.IsEnabled=ServiceRequired&&!Host.Running&&!serviceConnecting&&!serviceCleaning&&!ServiceReady&&!closing;
-        start.IsEnabled=!Host.Running&&!serviceConnecting&&!serviceCleaning&&!closing&&(!ServiceRequired||ServiceReady);
+        useService.IsEnabled=!Host.Running&&!serviceConnecting&&!serviceCleaning&&!closing&&!ServiceSetupBusy;
+        connectService.IsEnabled=ServiceRequired&&!Host.Running&&!serviceConnecting&&!serviceCleaning&&!ServiceReady&&!closing&&!ServiceSetupBusy;
+        start.IsEnabled=!Host.Running&&!serviceConnecting&&!serviceCleaning&&!closing&&!ServiceSetupBusy&&(!ServiceRequired||ServiceReady);
+        UpdateServiceSetupControls();
         UpdateRecoveryControls();
     }
     internal Task ConnectService(Func<CancellationToken,Task<SessionAgentClient>>? connect=null)
@@ -41,7 +43,7 @@ internal sealed partial class HostWindow
     }
     async Task ConnectServiceCore(Func<CancellationToken,Task<SessionAgentClient>> connect)
     {
-        if(!ServiceRequired||Host.Running||serviceCleaning||ServiceReady||closing)return;
+        if(!ServiceRequired||Host.Running||serviceCleaning||ServiceReady||closing||ServiceSetupBusy)return;
         int generation=++serviceGeneration;serviceConnecting=true;serviceAttempt=new();UpdateServiceControls();
         serviceStatus.Text="正在验证本机已安装的系统服务…";
         SessionAgentClient? candidate=null;

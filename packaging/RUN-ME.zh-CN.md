@@ -48,6 +48,8 @@
 
 从 Windows 应用列表卸载，或按 `docs/USER-INSTALL.md` 使用卸载脚本。未知/修改过的文件与独立日志会保留。可选当前用户登录入口必须显式选择，登录后只显示窗口，不开始共享。安装脚本遵循系统 PowerShell 执行策略，不绕过策略或解除下载阻止。
 
+新版受控端可在“系统服务安装与协调（可选）”里选择启动方式，点击“安装／更新并启动服务（管理员）”或“卸载服务（管理员）”。先校验完整包并确认，再请求 Windows UAC；仅维护子进程提升权限，仍为原普通用户授权。共享运行中不可维护。完成后勾选服务协调并连接，不会自动开始共享。源码新增入口的验证边界见 `docs/SERVICE-SETUP-UI.md`；旧版本 ZIP 不会因此增加按钮。
+
 机器级服务仅供单独的管理员部署验收：先阅读 `docs/MACHINE-SERVICE-INSTALL.md` 和 `docs/SESSION-BROKER.md`，在外部完整包目录运行 `Service\RelaxDesk.Service.exe --install-service --package . --owner-sid <目标普通用户SID> --what-if` 查看计划。实际安装去掉 `--what-if`；仅明确加 `--start` 才启动，默认手动启动，仅 `--automatic` 才设自动。程序不自行提权。服务不负责捕获/输入，仍须目标普通用户启动可见 HostShell、选择服务协调、开始共享并逐次批准。
 
 卸载从外部包运行 `Service\RelaxDesk.Service.exe --uninstall-service --owner-sid <同一SID>`。`PendingDelete=true`/退出码2时保留文件，关闭相关服务管理句柄后重试；未知或修改文件保留并报告。真实 SCM、LocalService、开机/登录及安装升级均待操作者专门验收。

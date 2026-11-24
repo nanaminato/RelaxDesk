@@ -49,6 +49,7 @@ internal static class OfficeAcceptanceCases
         foreach (string mode in new[] { "h264", "deflate", "audio", "static" })
             Add("office-viewer-video-settings-" + mode, a.Viewer, "--video-settings-contracts", a.Host, mode);
         Add("office-host-ui", a.Shell, "--shell-contracts", a.Host, Folder("host-ui"));
+        Add("office-host-service-setup-ui",a.Shell,"--service-setup-ui-contracts",a.Host,Folder("service-setup-ui"));
         Add("office-host-service", a.Shell, "--service-contracts", a.Host, a.Service);
         foreach (string mode in new[] { "recovery", "audio" }) Add("office-host-" + mode, a.Shell, "--" + mode + "-contracts", a.Host);
         if (cases.Count > 128 || cases.Select(test => test.Name).Distinct().Count() != cases.Count || cases.Any(test => test.Seconds is < 1 or > 180))

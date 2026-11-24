@@ -8,7 +8,8 @@ public sealed class App:Application
     {
         if(args is ["--version"]){Console.WriteLine(BuildIdentity.Version);return;}
         var app=new App();
-        if(args is ["--service-contracts",var serviceHost,var service])ServiceVerification.Run(app,serviceHost,service);
+        if(args is ["--service-setup-ui-contracts",var setupHost,var setupOutput])ServiceSetupVerification.Run(app,setupHost,setupOutput);
+        else if(args is ["--service-contracts",var serviceHost,var service])ServiceVerification.Run(app,serviceHost,service);
         else if(args is ["--shell-contracts",var host,var output]) ShellVerification.Run(app,host,output);
         else if(args is ["--recovery-contracts",var recoveryHost])RecoveryVerification.Run(app,recoveryHost);
         else if(args is ["--audio-contracts",var audioHost])AudioVerification.Run(app,audioHost);

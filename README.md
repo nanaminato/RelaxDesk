@@ -1,5 +1,7 @@
 # RelaxDesk
 
+Current source adds [service installation/update/start/removal inside HostShell](docs/SERVICE-SETUP-UI.md), with explicit UAC for a separate maintenance helper and the original user's SID. No per-change package: the delivered g5ebe35d ZIP is unchanged and still uses the documented administrator CLI. Actual UAC/SCM deployment remains pending.
+
 ## Final unified candidate — 2026-11-24
 
 The final self-contained office bundle includes the source features described below. See [exact artifact, automated result and open physical gates](docs/FINAL-DELIVERY.md) and the [original requirement audit](docs/REQUIREMENTS-AUDIT.md). The first unified candidate was rejected and replaced after a deep-path service regression; its failure remains documented. Home dual-PC, actual clipboard/input/audio, hardware/office performance and real administrator deployment are not certified.

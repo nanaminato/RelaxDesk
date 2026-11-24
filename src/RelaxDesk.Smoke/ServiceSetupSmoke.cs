@@ -75,6 +75,16 @@ internal static class ServiceSetupSmoke
         await Reject(async()=>await new ServiceSetupTransaction(files,services,()=>false).Install(first,own,null,false,false,CancellationToken.None));Check(services.Writes==0&&!Directory.Exists(files.Root));
         RejectPolicy(()=>ServiceDeploymentTrust.RequireRuntime(fixture,own));
         var allowed=BrokerServiceSecurity.Descriptor(own);BrokerServiceSecurity.Validate(allowed,own);Check(true);
+        Check(MachineServiceSetup.ValidatePackage(first)=="0.6.0-contract.1");
+        Check(!MachineServiceSetup.Inspect(own,null).Installed);
+        string queryCommand="\""+Path.Combine(ServiceFilePolicy.MachineRoot,"app-"+new string('a',32),"RelaxDesk.Service.exe")+"\" --service --owner-sid "+own;
+        var queryRegistration=new ServiceRegistration(queryCommand,@"NT AUTHORITY\LocalService",16,3,4,allowed);
+        var queried=MachineServiceSetup.Inspect(own,queryRegistration);Check(queried.Installed&&queried.State==4&&queried.Startup==3&&!queried.PendingDelete);
+        Check(MachineServiceSetup.Inspect(own,queryRegistration with{State=1,Startup=2}).Startup==2);
+        Check(MachineServiceSetup.Inspect(own,queryRegistration with{PendingDelete=true}).PendingDelete);
+        foreach(var invalidQuery in new[]{queryRegistration with{Command=queryCommand+" --extra"},queryRegistration with{Command=queryCommand.Replace("app-","other-")},queryRegistration with{Account="LocalSystem"},queryRegistration with{Type=32},queryRegistration with{Startup=4}})
+            RejectPolicy(()=>MachineServiceSetup.Inspect(own,invalidQuery));
+        RejectPolicy(()=>MachineServiceSetup.Inspect("S-1-5-21-1-2-3-99999",queryRegistration));
         RejectPolicy(()=>BrokerServiceSecurity.Validate(new($"O:BAG:BAD:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x00020025;;;{own})"),own));
         RejectPolicy(()=>BrokerServiceSecurity.Validate(new($"O:{own}G:BAD:P(A;;GA;;;SY)(A;;GA;;;BA)"),own));
         var production=new ServiceFilePolicy(ServiceFilePolicy.MachineRoot);

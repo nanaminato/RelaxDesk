@@ -50,7 +50,7 @@ internal sealed partial class HostWindow:Window
         var scroll=new ScrollViewer{Content=content,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};Grid.SetColumn(scroll,1);root.Children.Add(scroll);Content=root;
         start.Click+=async(_,_)=>await StartSharing();stop.Click+=async(_,_)=>await StopSharing();allow.Click+=async(_,_)=>await Decide(true);deny.Click+=async(_,_)=>await Decide(false);
         Host.Changed+=change=>Dispatcher.BeginInvoke(()=>Changed(change));Host.Diagnostic+=line=>Dispatcher.BeginInvoke(()=>{logs.Text=string.Join(Environment.NewLine,Host.Snapshot());if(line.StartsWith("producer_error")||line.StartsWith("Session ended:")||line.StartsWith("clipboard_")||line.StartsWith("file_transfer_disabled"))detail.Text=line;if(line.StartsWith("clipboard_disabled"))revokeClipboard.Visibility=Visibility.Collapsed;if(line.StartsWith("file_transfer_disabled"))revokeFiles.Visibility=Visibility.Collapsed;if(line.StartsWith("audio_disabled")){revokeAudio.Visibility=Visibility.Collapsed;detail.Text="声音传输已关闭；画面与输入仍可使用。";}});
-        Closing+=async(_,e)=>{CancelRecovery();if(!Host.Running&&serviceAgent is null&&serviceAttempt is null&&serviceWatch is null)return;e.Cancel=true;if(closing)return;closing=true;await DisconnectService();await StopSharing();Close();};
+        Closing+=async(_,e)=>{if(ServiceSetupBusy){e.Cancel=true;serviceSetupNotice.Text="服务维护仍在进行，请在 Windows 授权或维护结果窗口完成／取消后再关闭。";return;}CancelRecovery();if(!Host.Running&&serviceAgent is null&&serviceAttempt is null&&serviceWatch is null)return;e.Cancel=true;if(closing)return;closing=true;await DisconnectService();await StopSharing();Close();};
     }
     static SolidColorBrush Brush(string value)=>new((Color)ColorConverter.ConvertFromString(value));
     static TextBlock Text(string value,double size=14,bool bold=false,Brush? foreground=null)=>new(){Text=value,FontSize=size,FontWeight=bold?FontWeights.SemiBold:FontWeights.Normal,Foreground=foreground??Brush("#17243A"),TextWrapping=TextWrapping.Wrap,Margin=new(0,0,0,4)};
@@ -65,6 +65,7 @@ internal sealed partial class HostWindow:Window
     internal bool DesktopUnavailableVisible=>desktopUnavailable&&detail.Text==DesktopUnavailableNotice;
     internal async Task StartSharing(string? address=null,int? number=null,string backend="dxgi",bool recovering=false)
     {
+        if(ServiceSetupBusy)return;
         if(!recovering){if(RestartPending)return;restartBudget=new();restartBackend=backend;}
         if(ServiceRequired&&!ServiceReady){state.Text="服务协调不可用";detail.Text="请先连接已授权的系统服务；没有开始共享。";UpdateServiceControls();return;}
         try{if(address is not null)ip.Text=address;if(number.HasValue)port.Text=number.Value.ToString();if(!int.TryParse(port.Text,out int selected))throw new ArgumentException("端口应为 1–65535");ip.IsEnabled=port.IsEnabled=start.IsEnabled=false;SetFileConfigurationEnabled(false);SetDisplayConfigurationEnabled(false);stop.IsEnabled=true;state.Text="正在启动";await Host.Start(application,ip.Text.Trim(),selected,backend,selectedFileRoot,SelectedDisplay);}
