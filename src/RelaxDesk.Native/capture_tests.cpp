@@ -1,11 +1,15 @@
 #include "internal.h"
 #include "capture_frame.h"
+#include "desktop_formats.h"
 #include <sstream>
 #include <cmath>
 
 RD int32_t rd_capture_self_test(const char** report){if(!report)return E_POINTER;static thread_local std::string text;return guarded([&]{
     int tests=0;
     auto require=[&](bool ok,const char* name){check(ok?S_OK:E_FAIL,name);++tests;};
+    bool offers_fp16=false,offers_bgra8=false,offers_rgb10=false;
+    for(auto format:desktop_formats){offers_fp16|=format==DXGI_FORMAT_R16G16B16A16_FLOAT;offers_bgra8|=format==DXGI_FORMAT_B8G8R8A8_UNORM;offers_rgb10|=format==DXGI_FORMAT_R10G10B10A2_UNORM;}
+    require(offers_fp16&&offers_bgra8&&!offers_rgb10,"duplication requests scRGB and compatibility BGRA, never ambiguous RGB10");
     DXGI_OUTDUPL_FRAME_INFO pointer{};pointer.LastMouseUpdateTime.QuadPart=2;
     require(classify_capture(pointer,false)==capture_action::wait,"pointer-only before initial image must wait");
     require(classify_capture(pointer,true)==capture_action::cached,"pointer-only must reuse cached image");
@@ -56,13 +60,18 @@ RD int32_t rd_capture_self_test(const char** report){if(!report)return E_POINTER
         auto colored=make(4,4,DXGI_FORMAT_R16G16B16A16_FLOAT,fp16);require(c.accept_surface(desktop,colored.Get()),"colored scRGB highlight accepted");read();require(abs(static_cast<int>((readback[0]>>16)&255)-252)<=2&&abs(static_cast<int>((readback[0]>>8)&255)-135)<=2&&abs(static_cast<int>(readback[0]&255)-70)<=2,"scRGB shoulder preserves channel ratios before gamma");
         for(int i=0;i<16;++i){fp16[i*4]=fp16[i*4+1]=fp16[i*4+2]=0x35c3;fp16[i*4+3]=0x3c00;} // .36 scRGB / 160nit SDR white = .18
         auto scaled=make(4,4,DXGI_FORMAT_R16G16B16A16_FLOAT,fp16);c.color.white_nits=160;require(c.accept_surface(desktop,scaled.Get()),"SDR white-level calibrated HDR accepted");read();require(abs(static_cast<int>(readback[0]&255)-118)<=2,"Windows SDR white scaling does not wash out mid-gray");
-        auto pq=[](double nits){double p=pow(nits/10000.0,2610.0/16384.0);return static_cast<uint32_t>(lround(pow((3424.0/4096.0+2413.0/128.0*p)/(1+2392.0/128.0*p),2523.0/32.0)*1023));};
-        uint32_t pq_pixels[16];for(int i=0;i<16;++i){auto code=pq(i%4==0?0:i%4==1?14.4:i%4==2?80:1000);pq_pixels[i]=code|(code<<10)|(code<<20)|(3u<<30);}
-        auto hdr10=make(4,4,DXGI_FORMAT_R10G10B10A2_UNORM,pq_pixels);c.color.white_nits=80;require(c.accept_surface(desktop,hdr10.Get()),"PQ BT2020 HDR10 accepted");read();require(abs(static_cast<int>(readback[1]&255)-118)<=3&&abs(static_cast<int>(readback[2]&255)-243)<=3,"PQ EOTF/BT2020-to-709 matches reference neutrals");
-        for(auto& value:pq_pixels)value=pq(14.4)|(3u<<30);auto pq_red=make(4,4,DXGI_FORMAT_R10G10B10A2_UNORM,pq_pixels);require(c.accept_surface(desktop,pq_red.Get()),"PQ BT2020 primary accepted");read();require(abs(static_cast<int>((readback[0]>>16)&255)-149)<=3&&(readback[0]&0xffff)==0,"BT2020 primary is transformed to BT709 and gamut clipped");
-        c.color.hdr=false;for(auto& value:pq_pixels)value=512u|(512u<<10)|(512u<<20)|(3u<<30);auto rgb10=make(4,4,DXGI_FORMAT_R10G10B10A2_UNORM,pq_pixels);require(c.accept_surface(desktop,rgb10.Get()),"SDR RGB10 accepted");read();require(abs(static_cast<int>(readback[0]&255)-128)<=1,"SDR RGB10 is not mistaken for PQ");
+        uint32_t rgb10_pixels[16];for(auto& value:rgb10_pixels)value=512u|(512u<<10)|(512u<<20)|(3u<<30);
+        auto rgb10=make(4,4,DXGI_FORMAT_R10G10B10A2_UNORM,rgb10_pixels);
+        hr=guarded([&]{c.accept_surface(desktop,rgb10.Get());});
+        require(hr==DXGI_ERROR_UNSUPPORTED&&rd_error.find("transfer function unknown")!=std::string::npos,"HDR output alone cannot label RGB10 pixels as PQ");
+        // Reject before writing the owned frame; an unsupported format cannot
+        // replace good pixels with a washed-out image.
+        read();require(abs(static_cast<int>(readback[0]&255)-118)<=2,"ambiguous RGB10 leaves previous owned pixels intact");
+        c.color.hdr=false;require(c.accept_surface(desktop,rgb10.Get()),"SDR RGB10 accepted");read();require(abs(static_cast<int>(readback[0]&255)-128)<=1,"SDR RGB10 is not mistaken for PQ");
+        c.color.hdr=true;
+        auto hdr_bgra=make(4,4,DXGI_FORMAT_B8G8R8A8_UNORM,gray);require(c.accept_surface(desktop,hdr_bgra.Get()),"HDR BGRA compatibility accepted");read();require(readback[0]==0xff808080,"HDR BGRA compatibility has no extra gamma or PQ decode");
         c.duplication_desc.ModeDesc.Width=8;hr=guarded([&]{c.accept_surface(pointer,nullptr);});require(hr==DXGI_ERROR_ACCESS_LOST,"pointer update cannot hide mode changes");c.duplication_desc.ModeDesc.Width=4;
         auto resized=make(8,4,DXGI_FORMAT_B8G8R8A8_UNORM);hr=guarded([&]{c.accept_surface(desktop,resized.Get());});require(hr==DXGI_ERROR_ACCESS_LOST,"new image dimensions require capture/encoder recreation");
     }
-    text="PASS "+std::to_string(tests)+" capture/color/release WARP contracts; scRGB/PQ/SDR white/transfer validated on GPU textures; no physical HDR desktop validation";*report=text.c_str();
+    text="PASS "+std::to_string(tests)+" capture/color/release WARP contracts; scRGB/SDR white/transfer and ambiguous RGB10 rejection validated on GPU textures; no physical HDR desktop validation";*report=text.c_str();
 });}

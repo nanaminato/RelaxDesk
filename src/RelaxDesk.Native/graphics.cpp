@@ -1,5 +1,6 @@
 #include "internal.h"
 #include "capture_frame.h"
+#include "desktop_formats.h"
 #include <dxgi1_5.h>
 #include <sstream>
 thread_local std::string rd_error;
@@ -31,8 +32,7 @@ void capture_context::initialize() {
             if(SUCCEEDED(newer)){
                 // Keep HDR/scRGB precision until our GPU tone mapper, rather
                 // than asking DXGI to clip it into an eight-bit SDR surface.
-                DXGI_FORMAT supported[]={DXGI_FORMAT_R16G16B16A16_FLOAT,DXGI_FORMAT_R10G10B10A2_UNORM,DXGI_FORMAT_B8G8R8A8_UNORM,DXGI_FORMAT_R8G8B8A8_UNORM};
-                newer=output5->DuplicateOutput1(graphics.device.Get(),0,4,supported,&duplication);
+                newer=output5->DuplicateOutput1(graphics.device.Get(),0,static_cast<UINT>(std::size(desktop_formats)),desktop_formats,&duplication);
                 if(SUCCEEDED(newer))format_negotiated=true;
             }
             if(!format_negotiated){

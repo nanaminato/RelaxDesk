@@ -4,8 +4,8 @@
 #include <cmath>
 #include <sstream>
 
-// FP16 duplication is linear scRGB, 1.0 = 80 nits. RGB10 on an HDR output
-// carries PQ/BT.2020. Convert both to linear BT.709 relative to Windows SDR
+// FP16 duplication is linear scRGB, 1.0 = 80 nits.
+// Convert to linear BT.709 relative to Windows SDR
 // reference white, then use a hue-preserving shoulder and sRGB encoding.
 static const char* shader=R"(
 cbuffer Settings : register(b0) { uint kind; float whiteNits; float2 unused; };
@@ -14,20 +14,12 @@ float4 vs(uint id : SV_VertexID) : SV_Position {
     return float4(id==0?float2(-1,-1):id==1?float2(-1,3):float2(3,-1),0,1);
 }
 float3 srgb(float3 v) { return lerp(12.92*v,1.055*pow(max(v,0),1.0/2.4)-.055,step(.0031308,v)); }
-float3 pqNits(float3 value) {
-    float3 p=pow(saturate(value),1.0/(2523.0/32.0));
-    return 10000*pow(max(p-3424.0/4096.0,0)/max(2413.0/128.0-2392.0/128.0*p,1e-6),1.0/(2610.0/16384.0));
-}
 float4 ps(float4 position : SV_Position) : SV_Target {
     float3 v=image.Load(int3(int2(position.xy),0)).rgb;
     v=float3(isfinite(v.r)?v.r:0,isfinite(v.g)?v.g:0,isfinite(v.b)?v.b:0);
     if(kind==0) return float4(saturate(v),1); // encoded SDR UNORM, no second gamma
     if(kind==3) return float4(saturate(srgb(max(v,0))),1); // sRGB view decoded by hardware
-    if(kind==1) v=v*80/max(whiteNits,1); // scRGB
-    else {
-        v=pqNits(v)/max(whiteNits,1);
-        v=float3(dot(v,float3(1.660491,-.587641,-.072850)),dot(v,float3(-.124550,1.132900,-.008349)),dot(v,float3(-.018151,-.100579,1.118730)));
-    }
+    v=v*80/max(whiteNits,1); // scRGB
     v=max(v,0);
     float peak=max(v.r,max(v.g,v.b));
     if(peak>.8) { float x=peak-.8; float mapped=.8+x/(1+x/.2); v*=mapped/peak; }
@@ -37,6 +29,8 @@ float4 ps(float4 position : SV_Position) : SV_Target {
 void desktop_converter::convert(gpu& graphics,ID3D11Texture2D* source,ID3D11Texture2D* target,const desktop_color& color){
     D3D11_TEXTURE2D_DESC input{},output{};source->GetDesc(&input);target->GetDesc(&output);
     if(input.Width!=output.Width||input.Height!=output.Height)check(E_INVALIDARG,"desktop conversion dimensions");
+    if(input.Format==DXGI_FORMAT_R10G10B10A2_UNORM&&color.hdr)
+        check(DXGI_ERROR_UNSUPPORTED,"ambiguous RGB10 HDR capture: transfer function unknown; scRGB required");
     if(!vertex){
         ComPtr<ID3DBlob> vs,ps,error;
         check(D3DCompile(shader,strlen(shader),nullptr,nullptr,nullptr,"vs","vs_4_0",D3DCOMPILE_ENABLE_STRICTNESS,0,&vs,&error),"desktop conversion vertex shader");
@@ -57,7 +51,7 @@ void desktop_converter::convert(gpu& graphics,ID3D11Texture2D* source,ID3D11Text
     // that binding; no Map/readback/byte[] occurs on this production path.
     graphics.commands->CopyResource(readable.Get(),source);
     ComPtr<ID3D11RenderTargetView> target_view;check(graphics.device->CreateRenderTargetView(target,nullptr,&target_view),"desktop BGRA output view");
-    UINT kind=input.Format==DXGI_FORMAT_R16G16B16A16_FLOAT?1:input.Format==DXGI_FORMAT_R10G10B10A2_UNORM&&color.hdr?2:
+    UINT kind=input.Format==DXGI_FORMAT_R16G16B16A16_FLOAT?1:
         input.Format==DXGI_FORMAT_R8G8B8A8_UNORM_SRGB||input.Format==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB||input.Format==DXGI_FORMAT_B8G8R8X8_UNORM_SRGB?3:0;
     struct settings{UINT kind;float white;float unused[2];} settings{kind,std::clamp(color.white_nits,1.0f,10000.0f),{0,0}};
     graphics.commands->UpdateSubresource(constants.Get(),0,nullptr,&settings,0,0);
@@ -86,6 +80,6 @@ void capture_context::refresh_color(){
 
 RD int32_t rd_capture_color_status(void* context,const char** json){if(!context||!json)return E_INVALIDARG;static thread_local std::string text;return guarded([&]{
     auto& c=*static_cast<capture_context*>(context);c.lifetime.verify();std::ostringstream s;
-    const char* transform=c.source_format==DXGI_FORMAT_R16G16B16A16_FLOAT?"scRGB-to-SDR":c.source_format==DXGI_FORMAT_R10G10B10A2_UNORM&&c.color.hdr?"PQ2020-to-SDR":"SDR";
+    const char* transform=c.source_format==DXGI_FORMAT_R16G16B16A16_FLOAT?"scRGB-to-SDR":"SDR";
     s<<"{\"source_format\":"<<c.source_format<<",\"output_format\":87,\"hdr_active\":"<<(c.color.hdr?"true":"false")<<",\"sdr_white_nits\":"<<c.color.white_nits<<",\"white_level_known\":"<<(c.color.white_known?"true":"false")<<",\"transform\":\""<<transform<<"\"}";text=s.str();*json=text.c_str();
 });}
