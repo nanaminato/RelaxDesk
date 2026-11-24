@@ -45,6 +45,7 @@ if (args is [var autoFileHost, "--file-transfer-auto", var autoFileOutput]) { aw
 if(args is [var dataHost,"--reject-data",var dataFixtures]){string root=Path.Combine(Path.GetFullPath(dataFixtures),"rejected-data-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);await SecuritySmoke.Run(dataHost,"--reject-data",root);return;}
 if (args is [var clipboardHost, var clipboardMode] && clipboardMode is "--clipboard-text" or "--clipboard-denied" or "--clipboard-unnegotiated" or "--clipboard-failure") { await ClipboardSmoke.Run(clipboardHost, clipboardMode); return; }
 if (args is [var quicHost, "--quic-production"]) { await ProductionQuicSmoke.Run(quicHost); return; }
+if (args is [var hostWithoutUdp, "--quic-host-unavailable"]) { await ProductionQuicSmoke.VerifyUnavailableHost(hostWithoutUdp); return; }
 if (args is ["--quic-datagram-probe", var quicNative]) { await QuicDatagramSmoke.Run(quicNative); return; }
 if (args is [var accessHost, "--session-access"]) { await SessionAccessSmoke.Run(accessHost); return; }
 if (args is [var approvalHost, "--deny-approval"]) { await ApprovalSmoke.Denied(approvalHost); return; }

@@ -54,7 +54,7 @@ internal static class VideoHostSession
         using var datagrams = OpenDatagrams();
         WindowsQuicDatagrams? OpenDatagrams()
         {
-            if (hello.Network is not (NetworkMode.Auto or NetworkMode.Udp)) return null;
+            if (backend == "test-udp-unavailable" || hello.Network is not (NetworkMode.Auto or NetworkMode.Udp)) return null;
             try { return WindowsQuicDatagrams.Listen(((IPEndPoint)controlSocket.Client.LocalEndPoint!).Address, certificate); }
             catch (Exception error) when (QuicDatagramAttachment.Recoverable(error))
             {

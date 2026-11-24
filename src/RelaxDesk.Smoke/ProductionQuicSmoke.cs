@@ -13,6 +13,7 @@ internal static class ProductionQuicSmoke
         await Verify(host, NetworkMode.Auto, false, "UDP", null);
         await Verify(host, NetworkMode.Auto, true, "TCP/TLS", "udp-attach-failed");
         await Verify(host, NetworkMode.Auto, false, "TCP/TLS", "udp-local-unavailable", noLocalUdp: true);
+        await VerifyUnavailableHost(host);
         await Verify(host, NetworkMode.Tcp, false, "TCP/TLS", null);
         await Verify(host, NetworkMode.Udp, true, null, null);
         await Verify(host, NetworkMode.Auto, false, "UDP", null, interrupt: true);
@@ -25,15 +26,21 @@ internal static class ProductionQuicSmoke
         Console.WriteLine("PASS production Host/SessionClient: UDP, Auto UDP, Auto fallback, forced TCP and strict UDP failure with live TLS control on established modes");
     }
 
-    static async Task Verify(string host, NetworkMode mode, bool hideUdp, string? transport, string? fallback, bool interrupt = false, bool silent = false, bool simulateLoss = false, bool shapeUdp = false, bool persistentLoss = false, bool noLocalUdp = false, bool incompleteFrames = false, bool oversized = false)
+    public static async Task VerifyUnavailableHost(string host)
+    {
+        await Verify(host, NetworkMode.Auto, false, "TCP/TLS", "udp-not-offered", noHostUdp: true);
+        await Verify(host, NetworkMode.Udp, false, null, null, noHostUdp: true);
+    }
+
+    static async Task Verify(string host, NetworkMode mode, bool hideUdp, string? transport, string? fallback, bool interrupt = false, bool silent = false, bool simulateLoss = false, bool shapeUdp = false, bool persistentLoss = false, bool noLocalUdp = false, bool incompleteFrames = false, bool oversized = false, bool noHostUdp = false)
     {
         var reservation = new TcpListener(IPAddress.Loopback, 0);
         reservation.Start();
         int port = ((IPEndPoint)reservation.LocalEndpoint).Port;
         reservation.Stop();
-        bool h264 = interrupt || simulateLoss || shapeUdp || persistentLoss || hideUdp && mode == NetworkMode.Auto;
+        bool h264 = noHostUdp || interrupt || simulateLoss || shapeUdp || persistentLoss || hideUdp && mode == NetworkMode.Auto;
         bool exerciseAudio = hideUdp && mode == NetworkMode.Auto;
-        using var process = Process.Start(ChildProcess.Create(host, "127.0.0.1", port.ToString(), exerciseAudio ? "test-audio" : oversized ? "test-oversized-udp" : silent ? "test-video-settings-static" : h264 ? "test-software" : "test-deflate"))
+        using var process = Process.Start(ChildProcess.Create(host, "127.0.0.1", port.ToString(), noHostUdp ? "test-udp-unavailable" : exerciseAudio ? "test-audio" : oversized ? "test-oversized-udp" : silent ? "test-video-settings-static" : h264 ? "test-software" : "test-deflate"))
             ?? throw new IOException("Host launch failed");
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(hideUdp && mode == NetworkMode.Auto ? 70 : simulateLoss ? 30 : persistentLoss ? 25 : 18));
         InterruptibleDatagrams? liveDatagrams = null;
@@ -90,19 +97,24 @@ internal static class ProductionQuicSmoke
         var ct = deadline.Token;
         try
         {
-            for (int i = 0; i < 3; i++) _ = await process.StandardOutput.ReadLineAsync(ct);
+            for (int i = 0; i < 3; i++)
+                if (await process.StandardOutput.ReadLineAsync(ct) is null)
+                    throw new IOException($"Host exited before advertising the QUIC fixture: {await process.StandardError.ReadToEndAsync(ct)}");
             await Task.Delay(100, ct);
             Task handshake = viewer.ConnectByApproval("127.0.0.1", port, ct);
-            if (!(await process.StandardOutput.ReadLineAsync(ct) ?? "").Contains("APPROVE", StringComparison.Ordinal))
-                throw new IOException("Host approval prompt missing");
+            var approval = await process.StandardOutput.ReadLineAsync(ct);
+            if (!(approval ?? "").Contains("APPROVE", StringComparison.Ordinal))
+                throw new IOException($"Host approval prompt missing: {approval}");
             await process.StandardInput.WriteLineAsync(exerciseAudio ? "APPROVE_AUDIO" : "APPROVE");
             await process.StandardInput.FlushAsync(ct);
             try { await handshake; }
-            catch (UdpMediaUnavailableException error) when (transport is null && error.Reason == UdpMediaFailure.AttachmentFailed)
+            catch (UdpMediaUnavailableException error) when (transport is null &&
+                error.Reason == (noHostUdp ? UdpMediaFailure.HostUnavailable : UdpMediaFailure.AttachmentFailed))
             {
                 viewer.Dispose();
                 await process.WaitForExitAsync(ct);
                 if (process.ExitCode != 0) throw new IOException("Host shutdown failed after strict UDP refusal");
+                if (noHostUdp) Console.WriteLine("PASS strict UDP reported that the Host did not offer UDP");
                 return;
             }
             if (transport is null) throw new IOException("Forced UDP silently fell back");
@@ -145,6 +157,7 @@ internal static class ProductionQuicSmoke
             }
             if (frame.Codec != (h264 ? MediaCodec.H264 : MediaCodec.DeflateBgra) || frame.Data.Length == 0)
                 throw new IOException("Transport did not deliver a real synthetic frame");
+            if (noHostUdp) Console.WriteLine("PASS Auto received TCP video when the Host did not offer UDP");
             if (transport == "UDP")
             {
                 var stats = viewer.ReadVideoNetworkStatistics();
