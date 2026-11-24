@@ -20,9 +20,10 @@ public sealed partial class ViewerWindow
         if(!path.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))info.ArgumentList.Add(path);foreach(string value in new[]{"127.0.0.1",number.ToString(),oversized ? "test-oversized-udp" : hostWithoutUdp ? "test-udp-unavailable" : "test-hardware"})info.ArgumentList.Add(value);
         using var host=Process.Start(info)??throw new IOException("Statistics Host launch failed");using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(35));
         string Read()=>host.StandardOutput.ReadLineAsync(timeout.Token).AsTask().GetAwaiter().GetResult()??throw new IOException("Host closed");string pin=Read().Split(": ")[1],token=Read().Split(": ")[1];_=Read();
+        int approvalRequests = 0;
         var logs=Task.Run(async()=>
         {
-            string? line;while((line=await host.StandardOutput.ReadLineAsync(timeout.Token)) is not null)if(line.Contains("Type APPROVE",StringComparison.Ordinal)){await host.StandardInput.WriteLineAsync("APPROVE");await host.StandardInput.FlushAsync();break;}
+            string? line;while((line=await host.StandardOutput.ReadLineAsync(timeout.Token)) is not null)if(line.Contains("Type APPROVE",StringComparison.Ordinal)){Interlocked.Increment(ref approvalRequests);await host.StandardInput.WriteLineAsync("APPROVE");await host.StandardInput.FlushAsync();break;}
             return await host.StandardOutput.ReadToEndAsync(timeout.Token);
         });
         var window=new ViewerWindow{ShowActivated=false};window.host.Text="127.0.0.1";window.port.Text=number.ToString();window.fingerprint.Text=pin;window.token.Password=token;window.pinnedConnection.IsChecked=true;window.gpuRendering.IsChecked=false;Task? running=null;
@@ -32,6 +33,16 @@ public sealed partial class ViewerWindow
         {
             try
             {
+                if (viewerWithoutUdp)
+                {
+                    window.networkMode.SelectedIndex = 2;
+                    await window.ConnectVideo().WaitAsync(timeout.Token);
+                    if (!window.status.Text.Contains("本机无法使用 UDP 媒体") || window.smokeFrames != 0 ||
+                        Volatile.Read(ref approvalRequests) != 0)
+                        throw new IOException("Forced UDP did not reject unavailable local media before Host approval");
+                    window.networkMode.SelectedIndex = 0;
+                    Console.WriteLine("PASS WPF forced UDP failed locally without requesting Host approval");
+                }
                 running=window.ConnectVideo();await Until(()=>window.smokeFrames>0);
                 if(window.sessionToolbar?.StatisticsAction.IsEnabled!=true||window.statisticsWindow is not null)throw new IOException("Statistics auto-opened or missing action");
                 var actual=window.statisticsSource??throw new IOException("Source missing");int snapshots=0;window.statisticsSource=()=>{Interlocked.Increment(ref snapshots);return actual();};
