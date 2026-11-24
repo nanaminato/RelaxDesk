@@ -78,6 +78,15 @@ Viewer queue drops. Capture, encode, and decode P95 were 1.81, 5.42, and 0.55 ms
 Host pointer-shape data was 2,215,936 bytes before compression and 198,547 bytes
 after compression on the sampled frames. GPU utilization was unavailable.
 
+A repeat at `98db405` with OpenSSL-backed QUIC received 540 frames and submitted
+539 to D3D11 in 25.74 s, with one Viewer drop and zero full-frame readbacks.
+The Host reported 3.788 Mbit/s in media send accounting and 0.53% CPU. The
+Viewer reported 0.84% CPU. Capture, encode and decode P95 were 2.24, 5.49 and
+0.61 ms. DXGI used region copies on 377 of 541 captured frames and copied
+889,176,325 pixels, 44.6% of the full-frame equivalent. This counts copied
+pixels and leaves GPU memory bandwidth, utilization and visible scanout
+unmeasured. The loopback held no remote input authorization.
+
 The no-window `--video-desktop-idle` fixture avoids the Viewer refreshing its
 own capture. This console still delivered 672 DXGI updates in a 25-second
 run, all with dirty rectangles and only one full-screen rectangle. The sample
