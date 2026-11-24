@@ -104,6 +104,8 @@ internal sealed partial class HostWindow:Window
 
     internal string Status=>state.Text;
     internal string? DesktopStatusNotice => detail.Text == desktopNotice ? desktopNotice : null;
+    internal bool AdminDeploymentNoticeVisible => detail.Text == AdminDeploymentNotice;
+    string ListeningDetail => desktopNotice ?? (adminDeploymentUnavailable ? AdminDeploymentNotice : $"Viewer 可连接 {ip.Text}:{port.Text}，收到请求后由你确认。");
     internal async Task StartSharing(string? address=null,int? number=null,string backend="dxgi",bool recovering=false)
     {
         if(ServiceSetupBusy)return;
@@ -153,7 +155,7 @@ internal sealed partial class HostWindow:Window
             case "admin-approval-closed" when change.SessionId == displayedSessionId && change.RequestId == displayedAdminRequestId:
                 CloseAdminRequest();
                 break;
-            case "listening":revokeAdminInput.Visibility=revokeGuestInput.Visibility=revokeAudio.Visibility=Visibility.Collapsed;request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=revokeFiles.Visibility=disconnectSession.Visibility=Visibility.Collapsed;displayedSessionId=null;state.Text="等待连接";detail.Text=desktopNotice??(adminDeploymentUnavailable?AdminDeploymentNotice:$"Viewer 可连接 {ip.Text}:{port.Text}，收到请求后由你确认。");break;
+            case "listening":revokeAdminInput.Visibility=revokeGuestInput.Visibility=revokeAudio.Visibility=Visibility.Collapsed;request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=revokeFiles.Visibility=disconnectSession.Visibility=Visibility.Collapsed;displayedSessionId=null;state.Text="等待连接";detail.Text=ListeningDetail;break;
             case "desktop-unavailable":
                 detail.Text = desktopNotice = change.DesktopReason switch
                 {

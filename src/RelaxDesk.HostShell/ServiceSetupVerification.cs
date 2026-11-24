@@ -137,6 +137,14 @@ internal static class ServiceSetupVerification
                 Check(accessDeniedShown&&window.InstallationStatus.Contains("部署已验证"));
                 var listener=new TcpListener(IPAddress.Loopback,0);listener.Start();int port=((IPEndPoint)listener.LocalEndpoint).Port;listener.Stop();
                 await window.StartSharing("127.0.0.1",port,"test-hardware");await Until(()=>window.Status=="等待连接");previous=backend.Prepared;
+                backend.Query=()=>Task.FromResult(new MachineServiceStatus(true,4,2,false,AdminWorkerDeployment.AccessDenied));
+                await window.InspectServiceInstallation();
+                if (!window.AdminDeploymentNoticeVisible || !window.Host.Running)
+                    throw new IOException("Deployment preflight did not show the administrator repair notice while preserving the listener");
+                backend.Query=()=>Task.FromResult(new MachineServiceStatus(true,4,2,false,AdminWorkerDeployment.Verified));
+                await window.InspectServiceInstallation();
+                if (window.AdminDeploymentNoticeVisible)
+                    throw new IOException("Verified deployment retained the administrator repair notice");
                 Check(!window.InstallServiceButton.IsEnabled&&!window.UninstallServiceButton.IsEnabled);
                 await window.RunServiceSetup(false);Check(backend.Prepared==previous&&window.Host.Running);
                 await window.StopSharing();await window.Host.Finished;await Until(()=>window.InstallServiceButton.IsEnabled);

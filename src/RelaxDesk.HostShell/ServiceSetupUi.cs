@@ -68,6 +68,11 @@ internal sealed partial class HostWindow
         {
             var status=await SetupBackend.Inspect();if(serviceSetupClosed)return;
             if(generation!=serviceSetupGeneration){serviceInspectAgain=true;return;}
+            if (status.WorkerDeployment is { } workerDeployment)
+            {
+                adminDeploymentUnavailable = workerDeployment != AdminWorkerDeployment.Verified;
+                if (state.Text == "等待连接") detail.Text = ListeningDetail;
+            }
             serviceInstallation.Text=!status.Installed?"系统服务未安装（普通用户模式仍可使用）。":status.PendingDelete?"服务正在等待删除；关闭服务管理窗口后再次卸载，保留现有文件。":$"服务已安装 · {(status.State==4?"运行中":status.State==1?"已停止":"状态转换中")} · {(status.Startup==2?"开机自动启动":"手动启动")}";
             serviceInstallation.Text += status.WorkerDeployment switch
             {
