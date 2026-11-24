@@ -68,6 +68,17 @@ try {
     }
     Run-App $smokeDll $hostDll --session-access
     if ($LASTEXITCODE) { throw "Session access checks failed" }
+    $adminDiagnosticOutput = Run-App $hostDll --admin-input-diagnose
+    $adminDiagnosticExit = $LASTEXITCODE
+    if ($adminDiagnosticExit -notin @(0, 2)) { throw 'Administrator input diagnostic failed' }
+    $adminDiagnostic = ($adminDiagnosticOutput -join "`n") | ConvertFrom-Json
+    if ($adminDiagnostic.uac -cne 'NOT_TESTED' -or $adminDiagnostic.elevatedWindowInput -cne 'NOT_TESTED' -or
+        $adminDiagnostic.protectedWorker -ne ($adminDiagnostic.deploymentStatus -ceq 'verified') -or
+        $adminDiagnostic.readyForLocalApproval -ne ($adminDiagnostic.ordinaryCoordinator -and $adminDiagnostic.protectedWorker -and $null -eq $adminDiagnostic.interactive.Denial) -or
+        $adminDiagnostic.readyForLocalApproval -ne ($adminDiagnosticExit -eq 0)) {
+        throw 'Administrator input diagnostic reported inconsistent readiness or test coverage'
+    }
+    Write-Output "PASS read-only administrator input diagnostic: protected worker deployment=$($adminDiagnostic.deploymentStatus); no UAC or elevated window input tested"
     Run-App $smokeDll --collector-contracts (Join-Path $root 'build/collector-verification')
     if($LASTEXITCODE){throw 'Collector integrity/output/coverage contracts failed'}
     Run-App $smokeDll $serviceDll --broker-contracts
