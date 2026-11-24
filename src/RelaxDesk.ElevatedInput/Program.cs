@@ -9,6 +9,9 @@ if (args is not [var grantText, var pidText, var owner, var display] ||
     display.Length is < 1 or > 256)
     return 2;
 
+try { WindowsInputPrivilege.EnsureElevatedProcess(); }
+catch (IOException) { return 4; }
+
 try
 {
     string installed = ServiceDeploymentTrust.ResolveElevatedInput(owner);

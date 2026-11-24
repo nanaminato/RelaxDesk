@@ -7,7 +7,7 @@ if(!$output.StartsWith((Join-Path $repository 'build')+'\',[StringComparison]::O
 $steps=New-Object 'Collections.Generic.List[object]'
 $checks=0;$status='FAIL';$details=$null
 function Confirm([bool]$Condition,[string]$Message){if(!$Condition){throw $Message};$script:checks++}
-function Invoke-App([string]$Name,[string]$Application,[string[]]$Arguments,[int]$Seconds=90){
+function Invoke-App([string]$Name,[string]$Application,[string[]]$Arguments,[int]$Seconds=90,[int]$ExpectedExitCode=0){
     $applicationPath=[IO.Path]::GetFullPath($Application)
     $info=[Diagnostics.ProcessStartInfo]::new()
     $info.FileName=if($applicationPath.EndsWith('.dll',[StringComparison]::OrdinalIgnoreCase)){'dotnet'}else{$applicationPath}
@@ -22,7 +22,7 @@ function Invoke-App([string]$Name,[string]$Application,[string[]]$Arguments,[int
         [IO.File]::WriteAllText((Join-Path $output ($Name+'.stdout.txt')),$stdout.GetAwaiter().GetResult())
         [IO.File]::WriteAllText((Join-Path $output ($Name+'.stderr.txt')),$stderr.GetAwaiter().GetResult())
         $steps.Add([pscustomobject]@{name=$Name;exit_code=$process.ExitCode;seconds=$timer.Elapsed.TotalSeconds})
-        if($process.ExitCode){throw "Verification failed: $Name (exit $($process.ExitCode))"}
+        if($process.ExitCode -ne $ExpectedExitCode){throw "Verification failed: $Name (exit $($process.ExitCode), expected $ExpectedExitCode)"}
         Write-Host "$Name : PASS"
         return $stdout.GetAwaiter().GetResult()
     } finally {$process.Dispose()}
@@ -71,6 +71,16 @@ try {
     Confirm ((Get-FileHash -LiteralPath $hostQuic -Algorithm SHA256).Hash -ceq (Get-FileHash -LiteralPath $viewerQuic -Algorithm SHA256).Hash) 'Bundled MsQuic runtime mismatch'
     $servicePayloadVersion = Invoke-App 'host-service-payload' $SmokeApplication @('--service-package-contract', $hostPackage.root)
     Confirm ($servicePayloadVersion.Trim() -ceq $hostPackage.metadata.version) 'Package-only service validation failed'
+    $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
+    try {
+        $principal=[Security.Principal.WindowsPrincipal]::new($identity)
+        if($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){
+            $steps.Add([pscustomobject]@{name='ordinary-token-worker-rejection';status='NOT_TESTED';reason='Run package checks from an ordinary Windows console'})
+        } else {
+            $workerExe=Join-Path $hostPackage.root 'ElevatedInput/RelaxDesk.ElevatedInput.exe'
+            $null=Invoke-App 'ordinary-token-worker-rejection' $workerExe @([guid]::NewGuid().ToString('N'),[string]$PID,$identity.User.Value,'all') 10 4
+        }
+    } finally {$identity.Dispose()}
     if($SkipMachineServicePreview){
         $steps.Add([pscustomobject]@{name='host-service-readonly-preflight';status='NOT_TESTED';reason='Machine service preview explicitly skipped'})
     } else {

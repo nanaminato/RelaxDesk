@@ -39,7 +39,7 @@ public static class WindowsInputPrivilege
             throw new IOException("Start RelaxDesk Host with an ordinary Windows token to share this desktop.");
     }
 
-    internal static void EnsureElevatedProcess()
+    public static void EnsureElevatedProcess()
     {
         var token = ReadProcessToken();
         if (!token.Elevated || token.UiAccess || token.IntegrityRid != 0x3000)
