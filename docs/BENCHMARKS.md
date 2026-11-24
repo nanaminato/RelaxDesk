@@ -216,9 +216,17 @@ RGB channel error at 52,072 colored pixels. Lower values are better.
 | Encoder | Target | Encoded bytes | Edge error | Color error |
 | --- | ---: | ---: | ---: | ---: |
 | Microsoft software H.264 MFT | 2 Mbit/s | 226,633 | 5.51 | 18.68 |
+| Microsoft software H.264 MFT | 4 Mbit/s | 353,372 | 2.26 | 16.65 |
+| Microsoft software H.264 MFT | 6 Mbit/s | 362,514 | 2.26 | 16.63 |
 | Microsoft software H.264 MFT | 8 Mbit/s | 361,974 | 2.25 | 16.62 |
 | NVIDIA H.264 MFT (RTX 5060 Ti) | 2 Mbit/s | 150,455 | 11.19 | 21.07 |
+| NVIDIA H.264 MFT (RTX 5060 Ti) | 4 Mbit/s | 221,801 | 4.96 | 17.48 |
+| NVIDIA H.264 MFT (RTX 5060 Ti) | 6 Mbit/s | 282,263 | 2.94 | 16.40 |
 | NVIDIA H.264 MFT (RTX 5060 Ti) | 8 Mbit/s | 349,877 | 2.25 | 16.02 |
+
+At 6 Mbit/s the NVIDIA encoder produced 19% fewer bytes than at 8 Mbit/s,
+with mean edge error rising from 2.25 to 2.94. At 4 Mbit/s the software
+encoder was already close to its 8 Mbit/s edge error on this fixture.
 
 This measures codec distortion on a synthetic static source. RelaxDesk
 normally skips unchanged desktop frames, so these bytes do not predict

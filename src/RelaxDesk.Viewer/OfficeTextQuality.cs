@@ -19,7 +19,7 @@ internal static class OfficeTextQuality
 
     static void Measure(byte[] reference, bool hardware)
     {
-        foreach (int bitrate in new[] { 2_000_000, 8_000_000 })
+        foreach (int bitrate in new[] { 2_000_000, 4_000_000, 6_000_000, 8_000_000 })
         {
             using var encoder = new H264Encoder(null, Width, Height, hardware, fps: 30, bitrate: bitrate);
             using var decoder = new H264Decoder(Width, Height);
