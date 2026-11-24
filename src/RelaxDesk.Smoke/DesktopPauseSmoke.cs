@@ -39,9 +39,11 @@ internal static class DesktopPauseSmoke
             if (await Wire.Read(viewer.Control, ct) != new Packet("desktop-resumed-v2"))
                 throw new IOException("Desktop did not resume");
             var recovered = await next;
-            using var decoder = new MediaDecoder(() => { }, preferHardware: false);
-            if (recovered.Sequence <= before.Sequence || !recovered.KeyFrame || decoder.Decode(recovered) is null)
-                throw new IOException("Desktop resume did not deliver a decodable keyframe");
+            using (var decoder = new MediaDecoder(() => { }, preferHardware: false))
+            {
+                if (recovered.Sequence <= before.Sequence || !recovered.KeyFrame || decoder.Decode(recovered) is null)
+                    throw new IOException("Desktop resume did not deliver a decodable keyframe");
+            }
             viewer.Dispose();
             await host.WaitForExitAsync(ct);
             if (host.ExitCode != 0) throw new IOException("Host exit failed");
