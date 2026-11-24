@@ -25,6 +25,7 @@ internal sealed partial class HostWindow
     readonly Button cancelNextWork = new() { Content = "取消 Work 预授权", IsEnabled = false };
     readonly TextBlock trustNotice = new() { TextWrapping = TextWrapping.Wrap };
     WorkTrustEntry[] trusted = [];
+    readonly HashSet<string> revokedDuringRun = new(StringComparer.Ordinal);
     string? workFingerprint;
     string[] workFeatures = [];
     bool trustBusy, trustLoaded;
@@ -66,7 +67,7 @@ internal sealed partial class HostWindow
     {
         if (allowedModes.SelectedIndex == 2)
         { trustNotice.Text = "当前共享只允许访客模式。"; return false; }
-        if (!Host.Running || !trustLoaded || trustBusy || !trusted.Any(entry => entry.Fingerprint == fingerprint)) return false;
+        if (!Host.Running || !trustLoaded || trustBusy || revokedDuringRun.Contains(fingerprint) || !trusted.Any(entry => entry.Fingerprint == fingerprint)) return false;
         var desktop = WindowsSessionAccess.Read();
         if (desktop.Denial is not null)
         { trustNotice.Text = "请回到普通桌面后再预授权。"; return false; }
@@ -161,7 +162,7 @@ internal sealed partial class HostWindow
         rememberWorkDevice.Visibility = workFingerprint is not null ? Visibility.Visible : Visibility.Collapsed;
         // A reconnect can arrive before a revoke has finished writing the store.
         // In that interval require the operator to select every optional grant.
-        if (!trustLoaded || trustBusy) return;
+        if (!trustLoaded || trustBusy || workFingerprint is null || revokedDuringRun.Contains(workFingerprint)) return;
         var saved = trusted.FirstOrDefault(entry => entry.Fingerprint == workFingerprint);
         if (saved is null) return;
         peer.Text += Environment.NewLine + "已保存此设备的工作权限配置，请确认本次连接。";
@@ -192,6 +193,7 @@ internal sealed partial class HostWindow
         try
         {
             SetTrusted(await workTrust.Save(entry));
+            revokedDuringRun.Remove(entry.Fingerprint);
             trustNotice.Text = "已保存设备及工作权限。";
         }
         catch (Exception error) when (IsTrustStorageError(error)) { trustNotice.Text = "本次权限已处理，设备记录未能保存。"; }
@@ -201,6 +203,7 @@ internal sealed partial class HostWindow
     async Task RevokeWorkDevice(string fingerprint)
     {
         if (trustBusy) return;
+        revokedDuringRun.Add(fingerprint);
         if (nextWorkFingerprint == fingerprint) ClearNextWork();
         trustBusy = true;
         forgetDevice.IsEnabled = false;
@@ -214,9 +217,10 @@ internal sealed partial class HostWindow
                 await Host.Disconnect(active);
             }
             SetTrusted(await workTrust.Remove(fingerprint));
+            revokedDuringRun.Remove(fingerprint);
             trustNotice.Text = "已撤销所选设备。";
         }
-        catch (Exception error) when (IsTrustStorageError(error)) { trustNotice.Text = "设备记录未能撤销。"; }
+        catch (Exception error) when (IsTrustStorageError(error)) { trustNotice.Text = "本次运行已暂停该设备信任，但未能删除磁盘记录。请在关闭 Host 前重试撤销。"; }
         finally { trustBusy = false; forgetDevice.IsEnabled = trustedDevices.SelectedItem is ListBoxItem; }
     }
 

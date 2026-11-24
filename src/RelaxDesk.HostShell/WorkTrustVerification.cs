@@ -120,6 +120,23 @@ internal sealed partial class HostWindow
                 }
                 await WaitFor(() => window.Status == "等待连接");
 
+                var priorTrust = (await new WorkTrustStore(file).Load()).Single();
+                using (File.Open(file, FileMode.Open, FileAccess.Read, FileShare.Read))
+                {
+                    await window.RevokeWorkDevice(fingerprint);
+                    if (!window.trustNotice.Text.Contains("未能删除磁盘记录") || window.ArmNextWork(fingerprint))
+                        throw new IOException("Failed storage removal left Work preapproval available");
+                    using var afterFailedRevoke = Viewer(SessionCapabilities.ClipboardText);
+                    var pending = afterFailedRevoke.ConnectByApproval("127.0.0.1", port, ct);
+                    await WaitFor(() => window.RequestVisible);
+                    if (window.ClipboardAllowed || pending.IsCompleted)
+                        throw new IOException("Failed storage removal left saved Work permissions active");
+                    await window.Decide(false);
+                    try { await pending; throw new IOException("Work request after failed revoke was not denied"); }
+                    catch (HostConsentRejectedException) { }
+                }
+                await window.SaveWorkTrust(priorTrust);
+                await WaitFor(() => window.Status == "等待连接");
                 using (var trustedViewer = Viewer(SessionCapabilities.ClipboardText))
                 {
                     Task connection = trustedViewer.ConnectByApproval("127.0.0.1", port, ct);
