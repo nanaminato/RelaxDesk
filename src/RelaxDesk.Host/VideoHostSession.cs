@@ -420,16 +420,19 @@ internal static class VideoHostSession
             }
             if (approved && (!synthetic || testAdminLifecycle))
             {
-                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(downgrade.Token);
-                deadline.CancelAfter(TimeSpan.FromSeconds(45));
                 int displayRequest = Volatile.Read(ref displayRequests);
                 string device = testAdminLifecycle ? "fixture" : (displays?.Active ?? displaySelection!).Device;
                 WindowsSessionSnapshot ReadDesktop() => testAdminLifecycle ? TestDesktop() : WindowsSessionAccess.Read();
-                await desktopPause.Begin(ReadDesktop()).WaitAsync(deadline.Token);
-                await WriteControl(new("admin-desktop-paused-v2"));
-                ShellBridge.Emit("admin-starting", sessionId: shell.Id, mode: SessionMode.Admin);
+                // Finish the capture pause even if permission is withdrawn so
+                // Resume can verify the original desktop and restore Work.
+                await desktopPause.Begin(ReadDesktop()).WaitAsync(TimeSpan.FromSeconds(5), session.Token);
+                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(downgrade.Token);
+                deadline.CancelAfter(TimeSpan.FromSeconds(45));
+                if (!deadline.IsCancellationRequested) await WriteControl(new("admin-desktop-paused-v2"));
                 try
                 {
+                    deadline.Token.ThrowIfCancellationRequested();
+                    ShellBridge.Emit("admin-starting", sessionId: shell.Id, mode: SessionMode.Admin);
                     Guid grant = Guid.NewGuid();
                     worker = testAdminLifecycle ? await StartTestAdminWorker(grant, deadline.Token) :
                         await AdminInputLauncher.StartAfterLocalApproval(grant, device, deadline.Token);
