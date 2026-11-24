@@ -4,6 +4,17 @@ namespace RelaxDesk.Core;
 
 public enum ConnectionPhase { Idle, Connecting, Authenticating, AwaitingApproval, Negotiating, Connected, Reconnecting, Disconnected, Failed }
 public sealed class HostConsentRejectedException() : AuthenticationException("Host declined this connection");
+public enum UdpMediaFailure { LocalUnavailable, HostUnavailable, AttachmentFailed }
+public sealed class UdpMediaUnavailableException(UdpMediaFailure reason, Exception? cause = null) : IOException(
+    reason switch
+    {
+        UdpMediaFailure.LocalUnavailable => "QUIC support is unavailable",
+        UdpMediaFailure.HostUnavailable => "Host did not offer UDP media",
+        _ => "UDP media attachment failed"
+    }, cause)
+{
+    public UdpMediaFailure Reason { get; } = reason;
+}
 public enum SessionEndReason { WindowsSessionUnavailable = 1, WindowsLocked = 2, WindowsSessionChanged = 3, WindowsDesktopUnavailable = 4 }
 public sealed class RemoteSessionEndedException(SessionEndReason? reason = null) : IOException("Host explicitly ended this session")
 {
@@ -18,7 +29,8 @@ public static class ConnectionRecovery
     {
         while (error is AggregateException aggregate && aggregate.InnerExceptions.Count == 1) error = aggregate.InnerExceptions[0];
         for (Exception? cause = error; cause is not null; cause = cause.InnerException)
-            if (cause is AuthenticationException or InvalidDataException or RemoteSessionEndedException) return false;
+            if (cause is AuthenticationException or InvalidDataException or RemoteSessionEndedException ||
+                cause is UdpMediaUnavailableException { Reason: UdpMediaFailure.LocalUnavailable or UdpMediaFailure.HostUnavailable }) return false;
         return error is IOException or SocketException;
     }
     // retry is one-based. The total outage budget includes consent/negotiation.

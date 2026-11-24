@@ -8,6 +8,9 @@ internal static class RecoveryChecks
     {
         int count = 0;
         void Check(bool value) { if (!value) throw new InvalidDataException($"Recovery assertion {count + 1}"); count++; }
+        Check(!ConnectionRecovery.IsTransient(new UdpMediaUnavailableException(UdpMediaFailure.LocalUnavailable)));
+        Check(!ConnectionRecovery.IsTransient(new UdpMediaUnavailableException(UdpMediaFailure.HostUnavailable)));
+        Check(ConnectionRecovery.IsTransient(new UdpMediaUnavailableException(UdpMediaFailure.AttachmentFailed)));
         foreach (Exception error in new Exception[] { new IOException(), new EndOfStreamException(), new SocketException(), new AggregateException(new IOException()), new IOException("control silence timeout", new OperationCanceledException()) }) Check(ConnectionRecovery.IsTransient(error));
         foreach (Exception error in new Exception[] { new AuthenticationException(), new HostConsentRejectedException(), new RemoteSessionEndedException(), new InvalidDataException(), new OperationCanceledException(), new InvalidOperationException(), new AggregateException(new InvalidDataException()), new AuthenticationException("TLS", new IOException()), new IOException("wrapped TLS", new AuthenticationException()) }) Check(!ConnectionRecovery.IsTransient(error));
         for (int attempt = 1; attempt <= 5; attempt++)

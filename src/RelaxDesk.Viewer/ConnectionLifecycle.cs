@@ -65,6 +65,9 @@ public sealed partial class ViewerWindow
                     status.Text = result.Error switch
                     {
                         HostConsentRejectedException => "Host 已拒绝本次连接，已停止自动重连。",
+                        UdpMediaUnavailableException { Reason: UdpMediaFailure.LocalUnavailable } => "本机无法使用 UDP 媒体。请选择 Auto 或 TCP 后重试。",
+                        UdpMediaUnavailableException { Reason: UdpMediaFailure.HostUnavailable } => "Host 未提供 UDP 媒体。请选择 Auto 或 TCP 后重试。",
+                        UdpMediaUnavailableException => "无法建立 UDP 媒体连接。请检查网络，或选择 Auto 后重试。",
                         RemoteSessionEndedException { Reason: SessionEndReason.WindowsLocked } => "Host 已锁屏，本次授权已结束。请在 Host 解锁后重新连接。",
                         RemoteSessionEndedException { Reason: SessionEndReason.WindowsSessionChanged } => "Host 已切换 Windows 会话。重新连接需要本机再次授权。",
                         RemoteSessionEndedException { Reason: SessionEndReason.WindowsDesktopUnavailable } => "Host 的输入桌面已不可用。请回到原用户的普通桌面后重新连接。",

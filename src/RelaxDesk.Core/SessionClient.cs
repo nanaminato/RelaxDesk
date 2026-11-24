@@ -158,7 +158,7 @@ public sealed class SessionClient : IDisposable
             throw new ArgumentOutOfRangeException(nameof(Network));
         var requestedNetwork = ConnectQuic is not null && Network != NetworkMode.Tcp ? Network : (NetworkMode?)null;
         bool requestQuicRecovery = RequestQuicRecovery && requestedNetwork == NetworkMode.Auto;
-        if (Network == NetworkMode.Udp && requestedNetwork is null) throw new IOException("QUIC support is unavailable");
+        if (Network == NetworkMode.Udp && requestedNetwork is null) throw new UdpMediaUnavailableException(UdpMediaFailure.LocalUnavailable);
         string expected = fingerprint.Replace(" ", "").Replace(":", "").ToUpperInvariant();
         if ((!approvalOnly || expected.Length != 0) && (expected.Length != 64 || !expected.All(Uri.IsHexDigit))) throw new AuthenticationException("Trusted SHA256 fingerprint required");
         async Task<SslStream> Open(TcpClient socket, bool firstContact = false,CancellationToken? deadline=null)
@@ -251,7 +251,7 @@ public sealed class SessionClient : IDisposable
             }
             catch (Exception error) when (!ct.IsCancellationRequested && QuicDatagramAttachment.Recoverable(error))
             {
-                if (Network == NetworkMode.Udp) throw new IOException("UDP media attachment failed", error);
+                if (Network == NetworkMode.Udp) throw new UdpMediaUnavailableException(UdpMediaFailure.AttachmentFailed, error);
                 VideoFallback = "udp-attach-failed";
             }
 
@@ -269,7 +269,7 @@ public sealed class SessionClient : IDisposable
             }
             finally { candidate?.Dispose(); }
         }
-        else if (requestedNetwork == NetworkMode.Udp) throw new IOException("Host did not offer UDP media");
+        else if (requestedNetwork == NetworkMode.Udp) throw new UdpMediaUnavailableException(UdpMediaFailure.HostUnavailable);
         else if (Network == NetworkMode.Auto)
             VideoFallback = requestedNetwork is null ? "udp-local-unavailable" : "udp-not-offered";
 

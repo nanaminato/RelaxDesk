@@ -98,7 +98,7 @@ internal static class ProductionQuicSmoke
             await process.StandardInput.WriteLineAsync(exerciseAudio ? "APPROVE_AUDIO" : "APPROVE");
             await process.StandardInput.FlushAsync(ct);
             try { await handshake; }
-            catch (IOException error) when (transport is null && error.Message == "UDP media attachment failed")
+            catch (UdpMediaUnavailableException error) when (transport is null && error.Reason == UdpMediaFailure.AttachmentFailed)
             {
                 viewer.Dispose();
                 await process.WaitForExitAsync(ct);
