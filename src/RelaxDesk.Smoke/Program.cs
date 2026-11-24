@@ -13,7 +13,12 @@ if (args is ["--service-package-contract", var servicePackageRoot])
 }
 if(args is ["--collector-contracts",var collectorFixtures]){try{await PackageCollector.Contracts(collectorFixtures);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is ["--collector-output-fixture",var collectorLength]){int length=int.Parse(collectorLength);if(length is <0 or >2*1024*1024)throw new ArgumentOutOfRangeException(nameof(args));Console.Write(new string('x',length));return;}
-if(args is ["--office-suite-source",var officeArtifacts,var officeOutput]){try{Environment.ExitCode=await PackageCollector.SourceOffice(officeArtifacts,officeOutput);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
+if (args is ["--office-suite-source", _, _] or ["--office-suite-source", _, _, "--core-dotnet", _])
+{
+    try { Environment.ExitCode = await PackageCollector.SourceOffice(args[1], args[2], args.Length == 5 ? args[4] : null); }
+    catch (Exception error) { Console.Error.WriteLine(error); Environment.ExitCode = 1; }
+    return;
+}
 if(args is ["--diagnostic-log-contracts",var diagnosticFixtures]){try{await RelaxDesk.Windows.DiagnosticLogContracts.Run(diagnosticFixtures);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is [var networkHost,"--network-impairment",var networkMode]){try{await NetworkImpairmentSmoke.Run(networkHost,networkMode);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is ["--capture-refresh-contracts"]){try{RelaxDesk.Windows.CaptureRefreshContracts.Run();}catch(Exception e){Console.Error.WriteLine(e);Environment.ExitCode=1;}return;}

@@ -13,6 +13,12 @@ Source verification resolves Host/Viewer/HostShell/Service/Smoke/Tests DLLs from
 
 For UDP diagnostics, run the built Host with `--deployment-info` to record the .NET runtime directory and recognized QUIC provider. Use a current `RelaxDesk.Native.dll` from the native build and pass its full path via `-p:RelaxDeskNativePath=...` when building the solution. If the machine's runtime cannot run the production UDP cases, repeat those cases with the matching native library and MsQuic provider in an isolated runtime. Put that runtime first on `PATH` for the test process so its child `dotnet` processes use it too. Keep the original report. The core suite also exercises `System.Net.Quic` and can have different provider requirements from the production DATAGRAM transport.
 
+To run both sets of cases in one report, start with the isolated runtime first on `PATH` and pass the full path to the system `dotnet.exe` for Core. The choice applies only to the `office-core-tls` case and is recorded in `office-suite.json`.
+
+```powershell
+dotnet <Smoke.dll> --office-suite-source build/my-artifacts build/fresh-office-results --core-dotnet 'C:\Program Files\dotnet\dotnet.exe'
+```
+
 In the final extracted bundle, `Test-Office.cmd` calls `Smoke.exe --collect-package <root> --office-only`. The collector first verifies the package hash manifest, then executes the same cases through the included EXEs. Its passing status is `PASS_PACKAGED_SYNTHETIC_OFFICE_ONLY`; Home eligibility is explicitly not evaluated and all physical measurements remain `NOT_TESTED`. Do not combine this mode with `--verify-only` or `--diagnostic-only`. Actual final self-contained execution remains to be validated when the owner requests the unified package.
 
 `Collect-Logs.cmd` retains the full Home eligibility/environment gates, deployment/runtime/version checks and separately gated capture/visible-GPU/benchmark checks, and also runs the office cases. It still cannot certify visible correctness or actual input. `--verify-only` checks listed-file integrity only; this is not publisher authentication and the experimental bundle remains unsigned. The optional PowerShell full graphics/WPF step now has a 1,800-second outer budget because the expanded office tests already exceed the historical 300-second bound. Individual EXE office cases retain 120-second budgets, and all waits/owned-child termination are bounded.

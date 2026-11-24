@@ -63,10 +63,11 @@ internal sealed partial class PackageCollector
         }
         return (text.ToString(), truncated);
     }
-    async Task<int> Exec(string name, string application, string[] arguments, int seconds = 120, int[]? blocked = null)
+    async Task<int> Exec(string name, string application, string[] arguments, int seconds = 120, int[]? blocked = null, string? dotnetHost = null)
     {
         var clock = Stopwatch.StartNew(); int code = -1;
         var info = ChildProcess.Create(application, arguments); info.WorkingDirectory = root;
+        if (dotnetHost is not null) info.FileName = dotnetHost;
         using var process = new Process { StartInfo = info };
         try
         {
@@ -94,24 +95,30 @@ internal sealed partial class PackageCollector
         && e.GetProperty("station_visible").GetBoolean() && e.GetProperty("window_station").GetString() == "WinSta0"
         && e.GetProperty("input_desktop").GetString() == "Default" && e.GetProperty("thread_desktop").GetString() == "Default"
         && e.GetProperty("input_desktop_error").GetInt32() == 0 && e.GetProperty("connection_state").GetInt32() == 0;
-    async Task Office(OfficeApplications applications)
+    async Task Office(OfficeApplications applications, string? coreDotnet = null)
     {
         var cases = OfficeAcceptanceCases.Create(applications, Path.Combine(output, "office-fixtures"));
-        await Save("office-suite.json", new { source = "synthetic-contracts", count = cases.Length, cases,
+        await Save("office-suite.json", new { source = "synthetic-contracts", count = cases.Length, core_dotnet_override = coreDotnet, cases,
             excluded = new[] { "physical capture/input/scanout", "real audio audibility", "actual SCM/startup mutation", "PowerShell installer contracts", ">1GiB file copy", "long soak", "matched office/MSTSC performance" } });
         foreach (var test in cases)
-            await Exec(test.Name, test.Application, test.Arguments, test.Seconds);
+            await Exec(test.Name, test.Application, test.Arguments, test.Seconds, dotnetHost: test.Name == "office-core-tls" ? coreDotnet : null);
     }
-    public static async Task<int> SourceOffice(string artifacts, string destination)
+    public static async Task<int> SourceOffice(string artifacts, string destination, string? coreDotnet = null)
     {
         artifacts = Path.GetFullPath(artifacts); destination = Path.GetFullPath(destination);
         if (Directory.Exists(destination) || File.Exists(destination)) throw new IOException("Choose a fresh office result directory");
+        if (coreDotnet is not null)
+        {
+            coreDotnet = Path.GetFullPath(coreDotnet);
+            if (!File.Exists(coreDotnet) || !Path.GetFileName(coreDotnet).Equals("dotnet.exe", StringComparison.OrdinalIgnoreCase))
+                throw new FileNotFoundException("Choose an existing dotnet.exe for the Core suite", coreDotnet);
+        }
         string Dll(string role) => Path.Combine(artifacts, "bin", "RelaxDesk." + role, "release", "RelaxDesk." + role + ".dll");
         var applications = new OfficeApplications(Dll("Host"), Dll("Viewer"), Dll("HostShell"), Dll("Service"), Dll("Smoke"), Dll("Tests"));
         foreach (var file in new[] { applications.Host, applications.Viewer, applications.Shell, applications.Service, applications.Smoke, applications.Tests })
             if (!File.Exists(file)) throw new FileNotFoundException("Office application missing", file);
         var collector = new PackageCollector(Environment.CurrentDirectory, destination); Directory.CreateDirectory(destination);
-        await collector.Office(applications);
+        await collector.Office(applications, coreDotnet);
         bool good = collector.steps.Count > 0 && collector.steps.All(step => step.status == "PASS");
         await collector.Save("result.json", new { status = good ? "PASS_SOURCE_AUTOMATION_ONLY" : "FAIL", steps = collector.steps, physical_scanout = "NOT_TESTED", input_to_photon = "NOT_TESTED", dual_pc_lan = "NOT_TESTED", packaged_runtime = "NOT_TESTED" });
         Console.WriteLine($"Source office checks: {collector.steps.Count}; result={destination}; no package or physical acceptance");
