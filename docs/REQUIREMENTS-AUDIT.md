@@ -14,6 +14,8 @@ checks use commit `ed21ca0` on `codex/dxgi-media-pipeline`.
 | Media and office resources | Independent EXEs exercised real DXGI, hardware H.264, QUIC and D3D11 on Windows 11 Home. Single-machine Auto recovery took 4.70 s between first TCP and first UDP frames. File resume verified both directions above 1 GiB and synthetic audio tests verified revocation and failure isolation. | True static desktop, physical input-to-photon, visible/audio acceptance, matched MSTSC comparison and Windows 10 Home validation. |
 | Delivery | `build/office-ed21ca0/result.json` passes 92 source cases. `build/roles-ed21ca0-verify/result.json` passes 54 candidate ZIP assertions with machine preflight skipped. `build/installer-check-ed21ca0/compile-check.json` covers both Inno Setup templates in check-only mode. | Final independent EXE installers and current-user install, update and uninstall on a clean test account. The current account already has a Host installation. |
 
+At `8c0cfe9`, `scripts/test-user-setup.ps1` passed 82 checks using real files, an isolated HKCU key and fixture shortcut directories. Its payload EXEs are placeholder files. The 46 actual Inno Setup lifecycle checks documented in [EXE installers](EXE-INSTALLERS.md#历史交付及证据) apply to the earlier `7e51e95` installer release.
+
 Use the [physical acceptance checklist](PHYSICAL-ACCEPTANCE.md) for results
 that depend on a second device, foreground input or local authorization.
 
