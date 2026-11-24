@@ -150,8 +150,10 @@ Give each video transport epoch bounded packet and frame sequence tracking,
 MTU-aware fragmentation, expiry and reassembly limits. Require a decoder
 keyframe on discontinuity. Keep reliable input and optional feature traffic on TLS.
 Exercise initial refusal and mid-session media recovery under delay, loss,
-reordering, jitter and a shaped link with concurrent files. Auto uses a
-15-second minimum cooldown between recovery attempts. Use the same workloads to compare static
+reordering, jitter and a shaped link with concurrent files. Auto waits five
+seconds for the first retry after an initial UDP attachment failure. It
+retains a 15-second cooldown after failure of an established path and between
+subsequent attempts. Use the same workloads to compare static
 traffic, queue age, text fidelity and interaction latency.
 
 QUIC DATAGRAM traffic uses QUIC congestion control and carries no automatic

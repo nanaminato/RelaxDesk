@@ -16,6 +16,14 @@ The cut cases close just one relay link after three decoded frames. The other TL
 
 The fixture has a 40-second deadline, exactly two forwarding connections and one 4KiB application buffer per direction (four buffers total). OS TCP and TLS buffers are additional bounded implementation buffers. Relay socket buffer requests are 16KiB; actual OS allocation can differ. Original production media queue is still two frames, with stale dropping and a two-second write deadline. All owned relay sockets/workers and child processes are joined or terminated on failure. Test output omits Host's initial identity/pairing lines and never prints pixels or input.
 
-These are functional **Automated Verified** stream-delay/backpressure/interruption tests, not packet-level loss injection, real LAN, physical capture, physical input-to-photon or matched MSTSC benchmarks. Existing tests cover open silent sockets, unread media deadlines, pinned reconnect success/denial/identity change/exhaustion, file-data failure isolation and optional audio/clipboard failures. Actual packet loss/retransmission, NIC disconnect/reconnect, dual-PC office workloads and long-duration network/IO soak remain pending. Use the physical acceptance workflow and record network/hardware conditions separately; do not translate these loopback timings into office responsiveness claims.
+These TCP cases verify stream delay, backpressure and interruption. Existing tests also cover open silent sockets, unread media deadlines, pinned reconnect success/denial/identity change/exhaustion, file-data failure isolation and optional audio/clipboard failures.
 
 Recorded results: [2026-11-24 validation](../benchmarks/2026-11-24-network-impairment-validation.md).
+
+## QUIC DATAGRAM impairment
+
+Run `dotnet <Smoke.dll> <Host.dll> --quic-production` with the QUIC provider and native library used by the Host. This exercises production encrypted UDP over a loopback datagram relay. A run at `d4815bf` recorded three relay drops and three Host-estimated losses, with the active H.264 target reduced from 8 to 6 Mbit/s. The shaping case applied a 512 KiB/s budget with 8/20 ms delay pulses, observed three reordered pairs and continued delivering frames. Sustained UDP loss restored TCP with a decodable keyframe on the original TLS control connection. The same suite verified recovery back to UDP.
+
+Run `--file-transfer-udp <fixtures>` and `--file-transfer-auto <fixtures>` to cover a shared downstream budget with TLS files and video, including a download that spans a TCP-to-UDP transition and verifies SHA-256. [Transport design and recovery tradeoffs](SESSION-ACCESS.md#transport-milestones)
+
+Dual-PC Home LAN, physical NIC disconnect/reconnect, long-duration mixed I/O, physical input-to-photon and matched MSTSC measurements remain separate acceptance items. [Physical acceptance](PHYSICAL-ACCEPTANCE.md)
