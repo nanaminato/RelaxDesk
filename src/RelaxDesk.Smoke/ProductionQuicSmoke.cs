@@ -205,6 +205,8 @@ internal static class ProductionQuicSmoke
                 }
                 var result = await probing;
                 if (!QuicDatagramAttachment.ValidBudget(result.Width)) throw new IOException("QUIC recovery probe did not bind");
+                // Model a pong already in flight from the former UDP path.
+                viewer.ObserveControlPong(new("pong-v2", 1, QuicSend: new(100, 50)));
                 await Wire.Write(viewer.Control, result, ct);
                 await Wire.Write(viewer.Control, new("ping-v2", 2), ct);
                 var recoveryPong = await Wire.Read(viewer.Control, ct);
@@ -219,7 +221,7 @@ internal static class ProductionQuicSmoke
                     if (viewer.Video.TransportName == "UDP") break;
                     next = viewer.Video.Read(ct);
                 } while (true);
-                if (!recovered.KeyFrame || viewer.VideoFallback is not null || viewer.ReadVideoNetworkStatistics() is null)
+                if (!recovered.KeyFrame || viewer.VideoFallback is not null || viewer.ReadVideoNetworkStatistics() is not { HostSend: null })
                     throw new IOException("Recovered UDP path did not start with an independent frame and fresh statistics");
                 using (var decoder = new MediaDecoder(() => { }, preferHardware: false))
                     if (decoder.Decode(recovered) is null) throw new IOException("Recovered UDP key frame could not initialize a decoder");

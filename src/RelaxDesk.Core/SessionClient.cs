@@ -33,7 +33,8 @@ public sealed class SessionClient : IDisposable
             pong.VideoFallbackReason is not (null or "udp-persistent-loss" or "udp-recovered-persistent-loss" or "udp-frame-too-large" or "udp-host-send-interrupted") ||
             pong != new Packet("pong-v2", pong.Sequence, QuicSend: pong.QuicSend, VideoQueue: pong.VideoQueue, VideoFallbackReason: pong.VideoFallbackReason))
             throw new InvalidDataException("Invalid Host video statistics");
-        if (pong.QuicSend is not null) Volatile.Write(ref hostSend, pong.QuicSend);
+        if (pong.QuicSend is not null && Video.TransportName == "UDP")
+            Volatile.Write(ref hostSend, pong.QuicSend);
         if (pong.VideoQueue is not null) Volatile.Write(ref hostVideoQueue, pong.VideoQueue);
         if (pong.VideoFallbackReason is { } fallback && Video.TransportName == "TCP/TLS")
             Interlocked.CompareExchange(ref videoFallback, fallback, "udp-host-fallback");
