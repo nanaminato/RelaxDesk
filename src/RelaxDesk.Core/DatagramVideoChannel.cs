@@ -18,19 +18,30 @@ public sealed class DatagramVideoChannel : IVideoFrameChannel
     sealed class Assembly(int bytes, int fragments, long started, MediaFrame? frame)
     {
         public readonly int Length = bytes;
-        public readonly MediaFrame? Frame = frame;
-        public readonly byte[]? Staging = frame is null ? new byte[bytes] : null;
+        public MediaFrame? Frame { get; private set; } = frame;
+        // Until fragment zero supplies the payload layout, retain only bytes that arrived.
+        byte[]?[]? earlyFragments = frame is null ? new byte[fragments][] : null;
         public readonly bool[] Received = new bool[fragments];
         public readonly long Started = started;
         public int Count;
 
-        public void Copy(ReadOnlySpan<byte> source, int offset)
+        public void SetHeader(MediaFrame header, int fragmentBytes)
+        {
+            Frame = header;
+            if (earlyFragments is not { } staged) return;
+            for (int index = 1; index < staged.Length; index++)
+                if (staged[index] is { } part) Copy(part, index, fragmentBytes);
+            earlyFragments = null;
+        }
+
+        public void Copy(ReadOnlySpan<byte> source, int index, int fragmentBytes)
         {
             if (Frame is not { } target)
             {
-                source.CopyTo(Staging.AsSpan(offset));
+                earlyFragments![index] = source.ToArray();
                 return;
             }
+            int offset = index * fragmentBytes;
             if (offset == 0) { source = source[MediaProtocol.HeaderSize..]; offset = MediaProtocol.HeaderSize; }
             offset -= MediaProtocol.HeaderSize;
             if (offset < target.Metadata.Length)
@@ -188,13 +199,7 @@ public sealed class DatagramVideoChannel : IVideoFrameChannel
                 if (sequence <= oldest) return default;
                 RetireThrough(oldest);
             }
-            MediaFrame? frame = null;
-            if (index == 0)
-            {
-                var header = MediaProtocol.ReadDatagramHeader(message[HeaderSize..], sequence, bytes, displayGeneration,
-                    videoGeneration, out int metadata, out int payload);
-                frame = header with { Metadata = new byte[metadata], Data = new byte[payload] };
-            }
+            var frame = index == 0 ? ReadHeader(message[HeaderSize..], sequence, bytes) : null;
             pending.Add(sequence, assembly = new Assembly(bytes, fragments, clock.GetTimestamp(), frame));
             Volatile.Write(ref depth, pending.Count);
         }
@@ -203,11 +208,20 @@ public sealed class DatagramVideoChannel : IVideoFrameChannel
         // Keep its slot until the prefix expires or a frame advances the watermark.
         if (clock.GetElapsedTime(assembly.Started) >= Lifetime) return default;
         if (assembly.Received[index]) return default;
-        assembly.Copy(message[HeaderSize..], offset);
+        if (index == 0 && assembly.Frame is null)
+            assembly.SetHeader(ReadHeader(message[HeaderSize..], sequence, bytes), fragmentBytes);
+        assembly.Copy(message[HeaderSize..], index, fragmentBytes);
         assembly.Received[index] = true;
         if (++assembly.Count != fragments) return default;
         RetireThrough(sequence);
-        return assembly.Frame ?? MediaProtocol.ReadDatagramFrame(assembly.Staging, sequence, displayGeneration, videoGeneration);
+        return assembly.Frame;
+    }
+
+    MediaFrame ReadHeader(ReadOnlySpan<byte> fragment, long sequence, int bytes)
+    {
+        var header = MediaProtocol.ReadDatagramHeader(fragment, sequence, bytes, displayGeneration,
+            videoGeneration, out int metadata, out int payload);
+        return header with { Metadata = new byte[metadata], Data = new byte[payload] };
     }
 
     void RetireThrough(long sequence)

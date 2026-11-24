@@ -108,6 +108,15 @@ frame. Both measurements include the decoder-facing payload copy and exclude
 fragment assembly, native I/O, and decoding. This comparison measures managed
 allocation only.
 
+With a 4 MiB frame and prebuilt UDP fragments, the current receiver allocates
+4,198,280 bytes in order and 4,227,952 bytes when fragment zero arrives second.
+The previous receiver allocated the full 4 MiB staging buffer as soon as any
+fragment arrived before zero. Full reverse order now allocates 8,519,456
+bytes, compared with 8,392,688 before this change. The additional allocation
+in that extreme case is the cost of holding the early fragments separately.
+The fixture verifies identical payload and metadata after reassembly. It
+measures managed allocation on a synchronous test receiver.
+
 The receive reassembly fixture now writes in-order fragments directly into
 the decoder-facing buffers when the frame header arrives first. A managed
 4 MiB fixture allocated 4,625,056 bytes in first-fragment-first order and

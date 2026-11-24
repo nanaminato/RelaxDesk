@@ -177,9 +177,11 @@ internal static class DatagramVideoChecks
             return allocated;
         }
         long inOrder = ReadAllocation(packets);
+        long lateHeader = ReadAllocation(packets.Skip(1).Take(1).Concat(packets.Take(1)).Concat(packets.Skip(2)));
         long reverseOrder = ReadAllocation(packets.AsEnumerable().Reverse());
+        Check(lateHeader - inOrder < 64 * 1024);
         Check(reverseOrder - inOrder >= keyframe.Data.Length);
-        Console.WriteLine($"PASS 4 MiB UDP receive allocation: first fragment arrived first={inOrder} bytes, reverse order={reverseOrder} bytes");
+        Console.WriteLine($"PASS 4 MiB UDP receive allocation: in order={inOrder} bytes, header second={lateHeader} bytes, reverse order={reverseOrder} bytes");
 
         packets.Clear();
         try
