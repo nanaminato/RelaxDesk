@@ -26,6 +26,6 @@ public sealed record VideoQueueStatistics(int Depth, long Dropped)
 }
 
 public readonly record struct DatagramVideoStatistics(long DeliveredFrames, long MissingFrames, int ReassemblyDepth,
-    double? FrameArrivalJitterMs = null);
+    double? FrameArrivalJitterMs = null, long DiscardedAssemblies = 0);
 
 public readonly record struct VideoNetworkStatistics(QuicPathStatistics? Quic, DatagramVideoStatistics Frames, QuicSendStatistics? HostSend = null);

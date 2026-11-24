@@ -52,7 +52,7 @@ public sealed class DatagramVideoChannel : IVideoFrameChannel
     readonly bool detectSilence;
     readonly SortedList<long, Assembly> pending = new(MaxPending);
     long retiredSequence;
-    long lastDelivered, delivered, missing;
+    long lastDelivered, delivered, missing, discardedAssemblies;
     long lastArrival, lastMediaTimestamp;
     double arrivalJitter = double.NaN;
     int depth;
@@ -61,7 +61,7 @@ public sealed class DatagramVideoChannel : IVideoFrameChannel
     {
         double jitter = Volatile.Read(ref arrivalJitter);
         return new(Interlocked.Read(ref delivered), Interlocked.Read(ref missing), Volatile.Read(ref depth),
-            double.IsNaN(jitter) ? null : jitter);
+            double.IsNaN(jitter) ? null : jitter, Interlocked.Read(ref discardedAssemblies));
     }
 
     public DatagramVideoChannel(int datagramBytes,
@@ -133,6 +133,8 @@ public sealed class DatagramVideoChannel : IVideoFrameChannel
             try { message = await receive(silence?.Token ?? cancellation); }
             catch (OperationCanceledException) when (silence?.IsCancellationRequested == true && !cancellation.IsCancellationRequested)
             { throw new DatagramSilenceException(); }
+            while (pending.Count != 0 && clock.GetElapsedTime(pending.GetValueAtIndex(0).Started) >= Lifetime)
+                RetireThrough(pending.GetKeyAtIndex(0));
             if (message.Span.SequenceEqual(Heartbeat))
             {
                 silence?.CancelAfter(SilenceLimit);
@@ -160,9 +162,6 @@ public sealed class DatagramVideoChannel : IVideoFrameChannel
 
     MediaFrame? Add(ReadOnlySpan<byte> message)
     {
-        while (pending.Count != 0 && clock.GetElapsedTime(pending.GetValueAtIndex(0).Started) >= Lifetime)
-            RetireThrough(pending.GetKeyAtIndex(0));
-
         if (message.Length < HeaderSize || message.Length > HeaderSize + fragmentBytes ||
             BinaryPrimitives.ReadUInt32LittleEndian(message) != Magic) return default;
 
@@ -215,7 +214,11 @@ public sealed class DatagramVideoChannel : IVideoFrameChannel
     {
         retiredSequence = sequence;
         while (pending.Count != 0 && pending.GetKeyAtIndex(0) <= sequence)
+        {
+            var assembly = pending.GetValueAtIndex(0);
+            if (assembly.Count < assembly.Received.Length) Interlocked.Increment(ref discardedAssemblies);
             pending.RemoveAt(0);
+        }
         Volatile.Write(ref depth, pending.Count);
     }
 }

@@ -52,7 +52,7 @@ internal sealed class SessionStatisticsWindow:Window
                 {
                     double observed = udp.Frames.DeliveredFrames + (double)udp.Frames.MissingFrames;
                     string gaps = observed == 0 ? "等待样本" : $"{udp.Frames.MissingFrames * 100d / observed:F1}%";
-                    network = $"UDP 帧序号缺口：{gaps}（含发送端跳帧）\nUDP 重组队列：{udp.Frames.ReassemblyDepth} 帧\n";
+                    network = $"UDP 帧序号缺口：{gaps}（含发送端跳帧）\nUDP 重组队列：{udp.Frames.ReassemblyDepth} 帧 · 未完成丢弃：{udp.Frames.DiscardedAssemblies} 帧\n";
                     if (udp.Frames.FrameArrivalJitterMs is double jitter)
                         network += $"视频帧到达抖动：{jitter:F2} ms（含编码和重组波动）\n";
                     if (udp.HostSend is { SentPackets: > 0 } sent)

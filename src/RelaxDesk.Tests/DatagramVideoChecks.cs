@@ -79,12 +79,31 @@ internal static class DatagramVideoChecks
         }, videoGeneration: true, clock: clock);
         var recovered = await expiring.Read(CancellationToken.None);
         Check(recovered.Sequence == 3 && recovered.Data.SequenceEqual(frame.Data));
-        Check(expiring.ReadStatistics() == new DatagramVideoStatistics(1, 0, 0));
+        Check(expiring.ReadStatistics() == new DatagramVideoStatistics(1, 0, 0, DiscardedAssemblies: 1));
         packets.Clear();
         await channel.Write(frame with { Sequence = 5 }, CancellationToken.None);
         foreach (var packet in packets) incoming.Enqueue(packet);
         Check((await expiring.Read(CancellationToken.None)).Sequence == 5);
-        Check(expiring.ReadStatistics() == new DatagramVideoStatistics(2, 1, 0));
+        Check(expiring.ReadStatistics() == new DatagramVideoStatistics(2, 1, 0, DiscardedAssemblies: 1));
+        packets.Clear();
+        await channel.SendHeartbeat(CancellationToken.None);
+        var heartbeat = packets.Single();
+        incoming.Enqueue(expired[0]);
+        incoming.Enqueue(heartbeat);
+        using (var stop = new CancellationTokenSource())
+        {
+            int readsDuringIdle = 0;
+            var idle = new DatagramVideoChannel(1200, (_, _) => ValueTask.CompletedTask, _ =>
+            {
+                if (++readsDuringIdle == 2) clock.Now += 151;
+                if (incoming.TryDequeue(out var message)) return ValueTask.FromResult<ReadOnlyMemory<byte>>(message);
+                stop.Cancel();
+                return ValueTask.FromCanceled<ReadOnlyMemory<byte>>(stop.Token);
+            }, videoGeneration: true, clock: clock);
+            try { await idle.Read(stop.Token); throw new IOException("Idle heartbeat returned a video frame"); }
+            catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
+            Check(idle.ReadStatistics() == new DatagramVideoStatistics(0, 0, 0, DiscardedAssemblies: 1));
+        }
         packets.Clear();
         await channel.Write(frame with { Sequence = 3 }, CancellationToken.None);
         Check(incoming.Count == 0);
