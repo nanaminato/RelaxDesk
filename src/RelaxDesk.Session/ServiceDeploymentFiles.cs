@@ -249,12 +249,14 @@ public static class ServiceDeploymentTrust
             throw new SecurityException("Administrator input deployment is inactive or belongs to another owner");
 
         var release = state.Releases.Single(item => item.Id == state.Current);
+        var registered = release.Files.Where(entry => ServicePayload.IsWorkerFile(entry.Path)).ToArray();
+        if (registered.Length == 0)
+            throw new SecurityException("Administrator input worker is not registered in the active release");
         string directory = files.ReleasePath(release.Id);
         files.Check(directory);
         string workerDirectory = ServiceFilePolicy.Member(directory, "ElevatedInput");
         files.Check(workerDirectory);
-        var registered = release.Files.Where(entry => ServicePayload.IsWorkerFile(entry.Path)).ToArray();
-        if (registered.Length == 0 || files.Tree(workerDirectory).Count() != registered.Length)
+        if (files.Tree(workerDirectory).Count() != registered.Length)
             throw new SecurityException("Administrator input worker installation is incomplete");
         foreach (var entry in registered)
         {

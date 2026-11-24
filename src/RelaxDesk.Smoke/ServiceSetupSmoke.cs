@@ -112,6 +112,7 @@ internal static class ServiceSetupSmoke
         var initial=files.ReadState()!;files.ValidateRelease(initial.Releases.Single(),true);Check(true);
         Check(files.ReleasePath(initial.Current).Length>260);
         ServiceDeploymentTrust.RequireRuntime(files,files.ReleasePath(initial.Current),own);Check(true);
+        RejectPolicy(() => ServiceDeploymentTrust.ResolveElevatedInput(files, own));
         RejectPolicy(()=>ServiceDeploymentTrust.RequireRuntime(files,files.ReleasePath(initial.Current),"S-1-5-21-1-2-3-99999"));
         files.WriteState(initial with{Ready=false});RejectPolicy(()=>ServiceDeploymentTrust.RequireRuntime(files,files.ReleasePath(initial.Current),own));files.WriteState(initial);
         string initialCommand=services.Current!.Command;Check(initialCommand.StartsWith('"')&&initialCommand.EndsWith("--owner-sid "+own,StringComparison.Ordinal));
@@ -121,6 +122,7 @@ internal static class ServiceSetupSmoke
             int stops=services.Stops,starts=services.Starts;fault=failure;
             await Reject(async()=>await setup.Install(second,own,null,false,false,CancellationToken.None));
             Check(services.Current?.Command==initialCommand&&services.Current.State==4&&files.ReadState()!.Current==initial.Current);
+            RejectPolicy(() => ServiceDeploymentTrust.ResolveElevatedInput(files, own));
             Check(Directory.EnumerateDirectories(files.Root).Count()==1);
             if(failure is "mid-copy" or "after-copy" or "after-state")Check(services.Stops==stops&&services.Starts==starts);
         }
@@ -139,6 +141,7 @@ internal static class ServiceSetupSmoke
         File.Delete(extraWorker);
         Check(ServiceDeploymentTrust.ResolveElevatedInput(files, own) == protectedWorker);
         var manual=await setup.Install(first,own,false,false,false,CancellationToken.None);Check(manual.Startup==3&&services.Current?.Startup==3&&manual.Running);
+        RejectPolicy(() => ServiceDeploymentTrust.ResolveElevatedInput(files, own));
         var removePlan=await setup.Uninstall(own,true,CancellationToken.None);Check(!removePlan.Changed&&Directory.Exists(files.Root)&&services.Current is not null);
         string junction=Path.Combine(files.ReleasePath(files.ReadState()!.Current),"unowned-junction");
         Junction(junction,first);

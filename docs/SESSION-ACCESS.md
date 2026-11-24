@@ -70,9 +70,16 @@ failure and revocation path.
    desktops. Windows also limits ordinary synthetic input by integrity level.
    Direct secure-desktop capture and input, remote login and unattended Admin
    authorization are outside the implemented path.
+   The Remote Assistance UIAccess policy moves eligible prompts onto the
+   interactive desktop. RelaxDesk keeps the configured secure-desktop policy.
+   WTSQueryUserToken provides a logged-on user's token to a highly trusted
+   service with SeTcbPrivilege. The current LocalService broker manages session
+   leases and does not acquire user tokens.
    [DXGI DuplicateOutput](https://learn.microsoft.com/en-us/windows/win32/api/dxgi1_2/nf-dxgi1_2-idxgioutput1-duplicateoutput)
    [Interactive Services](https://learn.microsoft.com/en-us/windows/win32/services/interactive-services)
    [SendInput](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput)
+   [UIAccess elevation policy](https://learn.microsoft.com/en-us/windows/security/threat-protection/security-policy-settings/user-account-control-allow-uiaccess-applications-to-prompt-for-elevation-without-using-the-secure-desktop)
+   [WTSQueryUserToken](https://learn.microsoft.com/en-us/windows/win32/api/wtsapi32/nf-wtsapi32-wtsqueryusertoken)
 4. Work device grants use authenticated keys and a revocable Host list.
    While sharing from an eligible desktop, the operator can separately
    preapprove the next Work connection for one selected device within 15 minutes.
