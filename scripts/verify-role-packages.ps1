@@ -115,6 +115,8 @@ try {
     }
     $ui=Invoke-App 'host-one-click-ui' $shellExe @('--service-setup-ui-contracts',$hostExe,(Join-Path $output 'ui-fixtures'))
     Confirm ($ui.Contains('PASS 54 actual WPF')) 'One-click UI acceptance marker missing'
+    $inputUi = Invoke-App 'packaged-viewer-input' $viewerExe @('--input-ui-contracts')
+    Confirm ($inputUi.Contains('standalone motion drops without cancelling and a rejected click position prevents button submission')) 'Packaged Viewer control queue overflow evidence missing'
     foreach($mode in @('deflate','approval-fallback-cpu','udp-cpu','auto-recovery-cpu')){
         $session=Invoke-App ('cross-role-'+$mode) $SmokeApplication @($hostExe,'--wpf',$viewerExe,$mode)
         Confirm ($session.Contains('PASS WPF') -and $session.Contains('native_live_resources=0')) 'Cross-role synthetic session/cleanup evidence missing'
