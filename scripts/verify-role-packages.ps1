@@ -70,6 +70,10 @@ try {
     Confirm ((Test-Path -LiteralPath $hostQuic -PathType Leaf) -and (Test-Path -LiteralPath $viewerQuic -PathType Leaf)) 'Bundled MsQuic runtime missing'
     Confirm ((Get-FileHash -LiteralPath $hostQuic -Algorithm SHA256).Hash -ceq (Get-FileHash -LiteralPath $viewerQuic -Algorithm SHA256).Hash) 'Bundled MsQuic runtime mismatch'
     $provider=$hostPackage.metadata.quic_tls_provider
+    $runtimeSource=$hostPackage.metadata.quic_runtime_source
+    if($runtimeSource -or $viewerPackage.metadata.quic_runtime_source){
+        Confirm ($runtimeSource -cin @('dotnet-runtime','microsoft-nuget') -and $runtimeSource -ceq $viewerPackage.metadata.quic_runtime_source) 'MsQuic runtime source mismatch'
+    }
     if($provider -or $viewerPackage.metadata.quic_tls_provider){
         Confirm ($provider -cin @('schannel','openssl') -and $provider -ceq $viewerPackage.metadata.quic_tls_provider) 'MsQuic provider mismatch'
         Confirm ($deployment.quicTlsProvider -ceq $provider) 'Host loaded a different QUIC TLS provider than its manifest'
@@ -81,6 +85,12 @@ try {
                 foreach($notice in @('LICENSE','THIRD-PARTY-NOTICES')){
                     Confirm (Test-Path -LiteralPath (Join-Path $package.root "ThirdParty/MsQuic-OpenSSL-2.5.13/$notice") -PathType Leaf) 'OpenSSL redistribution notice missing'
                 }
+            }
+        }
+        if($provider -ceq 'schannel' -and $runtimeSource -ceq 'microsoft-nuget'){
+            Confirm ((Get-FileHash -LiteralPath $hostQuic -Algorithm SHA256).Hash -ceq 'ADDFF9F940BD2DFE914D390EA508242EE11D89EF963BD7D9160AF33AC1243CF2') 'Unreviewed Schannel MsQuic binary'
+            foreach($package in $packages){
+                Confirm (Test-Path -LiteralPath (Join-Path $package.root 'ThirdParty/MsQuic-schannel-2.5.13/LICENSE') -PathType Leaf) 'Schannel redistribution notice missing'
             }
         }
     }

@@ -134,8 +134,10 @@ For a Windows 10 validation candidate, pass
 `-MsQuicOpenSslPackage <path-to-reviewed-2.5.13.nupkg>` to
 `scripts/package-roles.ps1`. The script checks the pinned package hash and
 NuGet signatures, copies the x64 DLL and its redistribution notices, and
-records the provider and runtime version in each role. The regular build
-uses the runtime's Schannel implementation.
+records the provider and runtime version in each role. The default build
+uses the .NET runtime's Schannel implementation. For an independent Schannel
+maintenance candidate, `-MsQuicSchannelPackage` accepts the reviewed
+Microsoft Schannel 2.5.13 package and records its separate provenance.
 The Host's read-only `--deployment-info` reports the provider obtained from
 the loaded library. The role verifier compares that value with the manifest.
 [Microsoft OpenSSL package](https://www.nuget.org/packages/Microsoft.Native.Quic.MsQuic.OpenSSL/2.5.13)
