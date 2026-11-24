@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$RoleDirectory,[Parameter(Mandatory)][string]$CompilerDirectory,[string]$OutputDirectory='')
+param([Parameter(Mandatory)][string]$RoleDirectory,[Parameter(Mandatory)][string]$CompilerDirectory,[string]$OutputDirectory='', [switch]$CheckOnly)
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 Push-Location $root
@@ -48,12 +48,19 @@ try {
         $entryExe=if($role -eq 'Host'){'HostUi\RelaxDesk.HostShell.exe'}else{'Viewer\RelaxDesk.Viewer.exe'}
         $query=if($role -eq 'Host'){'SELECT ExecutablePath FROM Win32_Process WHERE Name=''RelaxDesk.HostShell.exe'' OR Name=''RelaxDesk.Host.exe'''}else{'SELECT ExecutablePath FROM Win32_Process WHERE Name=''RelaxDesk.Viewer.exe'''}
         $query=$query.Replace("'","''")
-        & $iscc '--quiet' ("--define=Role=$role") ("--define=Title=$title") ("--define=AppVersion="+$metadata.version) ("--define=FileVersion="+$metadata.file_version) ("--define=Release=$release") ("--define=Entry=$entryExe") ("--define=Payload=$payload") ("--define=Receipt=$receipt") ("--define=ReceiptHash="+(Get-FileHash -LiteralPath $receipt -Algorithm SHA256).Hash.ToLowerInvariant()) ("--define=CompilerLicense=$license") ("--define=OutputDirectory=$output") ("--define=ProcessQuery=$query") (Join-Path $root 'packaging/installer/RelaxDesk.iss')
+        $compilerOptions = @('--quiet')
+        if($CheckOnly){$compilerOptions += '--output=no'}
+        & $iscc @compilerOptions ("--define=Role=$role") ("--define=Title=$title") ("--define=AppVersion="+$metadata.version) ("--define=FileVersion="+$metadata.file_version) ("--define=Release=$release") ("--define=Entry=$entryExe") ("--define=Payload=$payload") ("--define=Receipt=$receipt") ("--define=ReceiptHash="+(Get-FileHash -LiteralPath $receipt -Algorithm SHA256).Hash.ToLowerInvariant()) ("--define=CompilerLicense=$license") ("--define=OutputDirectory=$output") ("--define=ProcessQuery=$query") (Join-Path $root 'packaging/installer/RelaxDesk.iss')
         if($LASTEXITCODE){throw "Installer compile failed: $role"}
+        if($CheckOnly){
+            $results += [pscustomobject]@{role=$role.ToLowerInvariant();status='COMPILE_CHECK_ONLY';package_version=$metadata.version;revision=$revision;source_archive_sha256=$archiveHash;compiler=$compilerVersion}
+            continue
+        }
         $exe=Join-Path $output ("RelaxDesk-$role-Setup-x64.exe");$hash=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
         ($hash+' *'+[IO.Path]::GetFileName($exe)) | Set-Content -LiteralPath ($exe+'.sha256') -Encoding ascii
         $results+= [pscustomobject]@{role=$role.ToLowerInvariant();file=$exe;sha256=$hash;bytes=(Get-Item -LiteralPath $exe).Length;package_version=$metadata.version;application_revision=$metadata.revision;release=$release;source_archive_sha256=$archiveHash;recipe_revision=$revision;compiler=$compilerVersion;compiler_pe_product_version=(Get-Item -LiteralPath $iscc).VersionInfo.ProductVersion;compiler_sha256=(Get-FileHash -LiteralPath $iscc -Algorithm SHA256).Hash;signature='UNSIGNED_EXPERIMENTAL'}
         Write-Output ($role.ToUpperInvariant()+'_INSTALLER='+$exe)
     }
-    $results | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $output 'installers.json') -Encoding utf8
+    $resultName=if($CheckOnly){'compile-check.json'}else{'installers.json'}
+    $results | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $output $resultName) -Encoding utf8
 } finally {Pop-Location}
