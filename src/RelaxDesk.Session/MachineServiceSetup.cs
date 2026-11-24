@@ -55,7 +55,11 @@ internal sealed class ServiceSetupTransaction(ServiceFilePolicy files,IServiceRe
         if(!administrator())throw new UnauthorizedAccessException("Explicit administrator elevation is required; setup does not request elevation or change policies");
         if(!files.Fixture&&Environment.ProcessPath is {} process&&ServiceFilePolicy.Child(Path.GetFullPath(process),files.Root))throw new IOException("Run maintenance from the external complete bundle, not an installed service executable");
     }
-    internal async Task<ServiceSetupResult> Install(string package,string owner,bool? automatic,bool start,bool whatIf,CancellationToken ct)
+    internal Task<ServiceSetupResult> Install(string package,string owner,bool? automatic,bool start,bool whatIf,CancellationToken ct)=>
+        Task.Run(()=>InstallCore(package,owner,automatic,start,whatIf,ct),ct);
+
+    // Keep the Windows mutex on its acquiring thread across SCM polling.
+    ServiceSetupResult InstallCore(string package,string owner,bool? automatic,bool start,bool whatIf,CancellationToken ct)
     {
         owner=LocalAgentPipe.CanonicalUser(owner);
         if(!whatIf)DemandAdmin();
@@ -80,13 +84,13 @@ internal sealed class ServiceSetupTransaction(ServiceFilePolicy files,IServiceRe
             {
                 payload.CopyTo(files,release,Point);
                 files.WriteState(staged);Point("after-state");
-                if(before is not null&&before.State!=1){stoppedExisting=true;await services.Stop(before,ct);before=services.Read()??throw new IOException("Service disappeared while updating");ValidateRegistration(before,staged);}
+                if(before is not null&&before.State!=1){stoppedExisting=true;services.Stop(before,ct).GetAwaiter().GetResult();before=services.Read()??throw new IOException("Service disappeared while updating");ValidateRegistration(before,staged);}
                 Point("after-stop");
                 if(before is null){touched=true;services.Create(Command(files,release.Id,owner),owner);}
                 var current=services.Read()??throw new IOException("Service registration missing");ValidateRegistration(current,staged);
                 touched=true;services.Configure(current,Command(files,release.Id,owner),startup);Point("after-configure");
                 var ready=staged with{Current=release.Id,Ready=true};files.WriteState(ready);Point("after-commit");
-                if(start||wasRunning){var configured=services.Read()??throw new IOException("Service registration missing");ValidateRegistration(configured,ready);await services.Start(configured,ct);}
+                if(start||wasRunning){var configured=services.Read()??throw new IOException("Service registration missing");ValidateRegistration(configured,ready);services.Start(configured,ct).GetAwaiter().GetResult();}
                 committed=true;
                 var retained=new List<ServiceRelease>{release};
                 foreach(var old in previous?.Releases??[])if(!files.RemoveRelease(old))retained.Add(old);
@@ -104,9 +108,9 @@ internal sealed class ServiceSetupTransaction(ServiceFilePolicy files,IServiceRe
                         if(current is not null&&(touched||stoppedExisting))
                         {
                             ValidateRegistration(current,staged);
-                            if(current.State!=1&&!current.PendingDelete){await services.Stop(current,recovery.Token);current=services.Read()!;}
+                            if(current.State!=1&&!current.PendingDelete){services.Stop(current,recovery.Token).GetAwaiter().GetResult();current=services.Read()!;}
                             if(before is null)
-                            {if(!current.PendingDelete)services.Delete(current);if(!await services.WaitDeleted(recovery.Token))throw new IOException("Rollback registration deletion pending");}
+                            {if(!current.PendingDelete)services.Delete(current);if(!services.WaitDeleted(recovery.Token).GetAwaiter().GetResult())throw new IOException("Rollback registration deletion pending");}
                             else if(touched)services.Configure(current,before.Command,before.Startup);
                         }
                         if(previous is not null)files.WriteState(previous);else{string marker=Path.Combine(files.Root,"broker-install.json");if(File.Exists(marker)){files.Check(marker);File.Delete(marker);}}
@@ -117,7 +121,7 @@ internal sealed class ServiceSetupTransaction(ServiceFilePolicy files,IServiceRe
                             throw new IOException("Unverified or modified staging files retained; review the protected installation before retrying removal");
                         }
                         if(previous is null&&!Directory.EnumerateFileSystemEntries(files.Root).Any())Directory.Delete(files.Root);
-                        if(wasRunning&&before is not null&&(touched||stoppedExisting)){var restored=services.Read()??throw new IOException("Previous service missing during recovery");ValidateRegistration(restored,previous);await services.Start(restored,recovery.Token);}
+                        if(wasRunning&&before is not null&&(touched||stoppedExisting)){var restored=services.Read()??throw new IOException("Previous service missing during recovery");ValidateRegistration(restored,previous);services.Start(restored,recovery.Token).GetAwaiter().GetResult();}
                     }
                     catch(Exception recoveryError){throw new IOException("Service setup failed and rollback is incomplete; protected state/files were retained for explicit recovery",recoveryError);}
                 }
@@ -126,7 +130,10 @@ internal sealed class ServiceSetupTransaction(ServiceFilePolicy files,IServiceRe
         }
         finally{mutex.ReleaseMutex();}
     }
-    internal async Task<ServiceSetupResult> Uninstall(string owner,bool whatIf,CancellationToken ct)
+    internal Task<ServiceSetupResult> Uninstall(string owner,bool whatIf,CancellationToken ct)=>
+        Task.Run(()=>UninstallCore(owner,whatIf,ct),ct);
+
+    ServiceSetupResult UninstallCore(string owner,bool whatIf,CancellationToken ct)
     {
         owner=LocalAgentPipe.CanonicalUser(owner);if(!whatIf)DemandAdmin();
         var initial=files.ReadState()??throw new IOException("Owned machine service installation not found");Preflight(initial,owner);
@@ -138,10 +145,10 @@ internal sealed class ServiceSetupTransaction(ServiceFilePolicy files,IServiceRe
             var state=files.ReadState()??throw new IOException("Machine installation disappeared");Preflight(state,owner);registration=services.Read();if(registration is not null)ValidateRegistration(registration,state);
             if(registration is not null)
             {
-                if(!registration.PendingDelete&&registration.State!=1){await services.Stop(registration,ct);registration=services.Read()??throw new IOException("Service disappeared during removal");ValidateRegistration(registration,state);}
+                if(!registration.PendingDelete&&registration.State!=1){services.Stop(registration,ct).GetAwaiter().GetResult();registration=services.Read()??throw new IOException("Service disappeared during removal");ValidateRegistration(registration,state);}
                 state=state with{Ready=false,PendingDelete=true};files.WriteState(state);
                 if(!registration.PendingDelete)services.Delete(registration);
-                if(!await services.WaitDeleted(ct))return new("uninstall",false,files.Root,owner,null,registration.Startup,false,true,true);
+                if(!services.WaitDeleted(ct).GetAwaiter().GetResult())return new("uninstall",false,files.Root,owner,null,registration.Startup,false,true,true);
             }
             var retained=new List<ServiceRelease>();foreach(var release in state.Releases)if(!files.RemoveRelease(release))retained.Add(release);
             if(retained.Count>0)files.WriteState(state with{Ready=false,PendingDelete=false,Current=retained[0].Id,Releases=retained.ToArray()});

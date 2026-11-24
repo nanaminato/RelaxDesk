@@ -32,10 +32,10 @@ internal static class ServiceSetupSmoke
         public void Create(string command,string owner){if(Current is not null)throw new IOException("Collision");Creates++;Writes++;Current=new(command,@"NT AUTHORITY\LocalService",16,3,1,BrokerServiceSecurity.Descriptor(owner));}
         void Expected(ServiceRegistration expected){if(Current is null||Current.Command!=expected.Command||Current.Startup!=expected.Startup)throw new SecurityException("Concurrent fixture modification");}
         public void Configure(ServiceRegistration expected,string command,uint startup){Expected(expected);Writes++;Current=Current! with{Command=command,Startup=startup};}
-        public Task Stop(ServiceRegistration expected,CancellationToken ct){Expected(expected);ct.ThrowIfCancellationRequested();Writes++;Stops++;Current=Current! with{State=1};return Task.CompletedTask;}
-        public Task Start(ServiceRegistration expected,CancellationToken ct){Expected(expected);ct.ThrowIfCancellationRequested();Writes++;Starts++;if(FailNextStart){FailNextStart=false;throw new IOException("Injected startup failure");}Current=Current! with{State=4};return Task.CompletedTask;}
+        public async Task Stop(ServiceRegistration expected,CancellationToken ct){await Task.Yield();Expected(expected);ct.ThrowIfCancellationRequested();Writes++;Stops++;Current=Current! with{State=1};}
+        public async Task Start(ServiceRegistration expected,CancellationToken ct){await Task.Yield();Expected(expected);ct.ThrowIfCancellationRequested();Writes++;Starts++;if(FailNextStart){FailNextStart=false;throw new IOException("Injected startup failure");}Current=Current! with{State=4};}
         public void Delete(ServiceRegistration expected){Expected(expected);Writes++;Current=Current! with{PendingDelete=true,State=1};}
-        public Task<bool> WaitDeleted(CancellationToken ct){ct.ThrowIfCancellationRequested();if(HoldDeletion)return Task.FromResult(false);Current=null;return Task.FromResult(true);}
+        public async Task<bool> WaitDeleted(CancellationToken ct){await Task.Yield();ct.ThrowIfCancellationRequested();if(HoldDeletion)return false;Current=null;return true;}
     }
     internal static async Task Run(string application,string output)
     {

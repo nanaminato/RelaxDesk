@@ -30,7 +30,12 @@ float4 ps(float4 position : SV_Position) : SV_Target {
     uint3 b = (uint3)round(saturate(background.Load(int3(local,0)).rgb)*255);
     uint4 s = (uint4)round(saturate(shape.Load(int3(source,0)))*255);
     uint3 rgb;
-    if(details.x==1) rgb=(b & s.r)^s.g;
+    // Match the CPU compositor's neutral reverse-video cursor over colored text edges.
+    if((details.x==1 && s.r==255 && s.g==255) || (details.x==4 && s.a==255 && all(s.rgb==255))) {
+        uint gray=255-((54*b.r+183*b.g+19*b.b+128)>>8);
+        rgb=uint3(gray,gray,gray);
+    }
+    else if(details.x==1) rgb=(b & s.r)^s.g;
     else if(details.x==4) rgb=s.a==0?s.rgb:(b^s.rgb);
     else rgb=(s.rgb*s.a+b*(255-s.a)+127)/255;
     return float4(float3(rgb)/255,1);
