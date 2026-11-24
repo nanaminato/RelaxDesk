@@ -82,8 +82,18 @@ internal static class FileTransferSmoke
                 await using var files = new FileTransferClient(client.Data!, running.Token, 2 * 1024 * 1024);
                 byte[] payload = new byte[(autoRecovery ? 8 : 2) * 1024 * 1024 + 17]; new Random(718).NextBytes(payload);
                 var pause = new TransferControl(); var paused = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); long reported = 0;
-                using (var source = new MemoryStream(payload))
+                if (autoRecovery)
                 {
+                    // Seed the download locally so it starts before the first
+                    // recovery probe. Upload pause and heartbeat are tested by
+                    // the separate TCP and UDP file cases.
+                    string remoteFile = Path.Combine(hostRoot, "中文", "日本語", "data.bin");
+                    Directory.CreateDirectory(Path.GetDirectoryName(remoteFile)!);
+                    await File.WriteAllBytesAsync(remoteFile, payload, timeout.Token);
+                }
+                else
+                {
+                    using var source = new MemoryStream(payload);
                     var uploading = files.Upload("中文/日本語/data.bin", source, false, timeout.Token, pause, progress =>
                     {
                         Interlocked.Exchange(ref reported, progress.Completed);
@@ -155,7 +165,8 @@ internal static class FileTransferSmoke
             await host.WaitForExitAsync(timeout.Token);string output=await logs;
             if(host.ExitCode!=0||!output.Contains("native_live_resources=0"))throw new IOException("Host transfer cleanup failed");
             double[] samples=rtt.Order().ToArray();
-            string checks = grant ? "separate pinned/one-use data binding, scoped Unicode/empty upload/download, SHA256, overwrite consent, folder listing, pause+data heartbeat, cancel and reusable channel" : "screen-only approval denied files, no data connection and no root contents accessed";
+            string checks = grant ? "separate pinned/one-use data binding, scoped Unicode download, empty upload/download, SHA256, overwrite consent, folder listing, cancel and reusable channel" : "screen-only approval denied files, no data connection and no root contents accessed";
+            if (grant && !autoRecovery) checks += ", scoped Unicode upload and upload pause with data heartbeat";
             Console.WriteLine($"PASS file TLS grant={grant} media_transport={client.Video.TransportName}: {checks}; media_frames={frames} control_samples={samples.Length} control_p95_ms={(samples.Length==0?0:samples[(int)Math.Ceiling(samples.Length*.95)-1]):F2}; loopback synthetic video, real fixture files only; fixtures={fixture}");
         }
         finally

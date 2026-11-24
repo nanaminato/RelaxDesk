@@ -84,6 +84,11 @@ was 14.70 s, including the time spent receiving 317 TCP frames while waiting
 for the recovery probe. This is a recovery interval, with continuous TCP
 media during the wait. It does not quantify a frame outage or input latency.
 
+With the first recovery probe scheduled after 5 s when the initial UDP
+attachment fails, the same fixture measured 4.66 s from first TCP frame to
+first UDP frame. Recovery after an established UDP path fails and subsequent
+retry attempts retain the 15 s cooldown.
+
 The `desktop-gpu-udp` fixture captured the 2560 × 1440 console with DXGI and
 used hardware H.264, QUIC UDP, and D3D11 Viewer submission. In 25.7 seconds it
 received and submitted 540 frames, with zero full-frame readback and no

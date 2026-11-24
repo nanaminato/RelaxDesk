@@ -259,7 +259,8 @@ public sealed partial class ViewerWindow : Window
                         if (recoveryUdpFrames++ == 0 && recoveryTcpFrames > 0)
                             recoveryFrameIntervalMs = Stopwatch.GetElapsedTime(firstRecoveryTcpFrame).TotalMilliseconds;
                     }
-                    if (recoveryTcpFrames >= 5 && recoveryUdpFrames >= 5) cancellation.Cancel();
+                    if (recoveryTcpFrames >= 5 && recoveryUdpFrames >= 5 && Interlocked.Read(ref heartbeatReplies) >= 2)
+                        cancellation.Cancel();
                 }
                 else if (smoke is not null && !smoke.FileTransfer && !smoke.RichClipboardTest && !smoke.ReconnectTest && !smoke.IdleSessionTest && !smoke.IdleRepaintTest && !smoke.FixedMediaBudget && count >= smoke.Frames && !smoke.CloseWhileStreaming) cancellation.Cancel();
                 }

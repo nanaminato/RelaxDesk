@@ -258,7 +258,11 @@ internal static class VideoHostSession
                     await Task.Delay(TimeSpan.FromSeconds(1), session.Token);
                 for (long attempt = 1; ; attempt++)
                 {
-                    await Task.Delay(QuicRecoveryProtocol.MinimumRetryInterval, session.Token);
+                    // An initial attachment failure has not switched away from
+                    // a live UDP path. Retry it sooner, then use the normal cooldown.
+                    var interval = quicBudget == 0 && attempt == 1
+                        ? TimeSpan.FromSeconds(5) : QuicRecoveryProtocol.MinimumRetryInterval;
+                    await Task.Delay(interval, session.Token);
                     using var candidate = OpenDatagrams();
                     if (candidate is null) continue;
                     var recoveryTicket = new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(10));
