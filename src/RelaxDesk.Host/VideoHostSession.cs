@@ -807,6 +807,9 @@ internal static class VideoHostSession
         string worker = failures.First?.Worker ?? (first == observedInput ? "control-read" : first == observedSender ? "media-send" : "capture-encode");
         var failure = failures.First;
         HostSessionLog.Write($"session_end worker={worker} stage={failure?.Stage ?? "shutdown"} completed_frames={failure?.CompletedFrames ?? 0} state={first.Status} error_type={failure?.Error.GetType().Name ?? "none"} hresult=0x{failure?.Error.HResult ?? 0:X8} reason={failure?.Error.Message ?? "worker completed/cancelled"}");
+        // Stop file I/O before closing the shared grants so transport loss can
+        // suspend a resumable transfer instead of looking like a file denial.
+        fileSession.Cancel();
         gate.Revoke();
         if (elevated is not null) await elevated.DisposeAsync();
         if (stop.IsCancellationRequested || failure?.Error is WindowsSessionUnavailableException)

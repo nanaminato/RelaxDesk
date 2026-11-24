@@ -19,7 +19,13 @@ public sealed class FileTransferServer(WindowsFileRoot root, AccessGate gate, Fi
             try { await FileDataProtocol.Write(data, message with { Sequence = ++outgoingSequence }, deadline.Token); }
             catch (Exception error) when (error is IOException or OperationCanceledException or ObjectDisposedException) { throw new TransportFailure(error); }
         }
-        void Authorize() { ct.ThrowIfCancellationRequested(); if (!gate.Allows(SessionCapabilities.FileTransfer)) throw new UnauthorizedAccessException("File transfer grant revoked"); }
+        void Authorize()
+        {
+            ct.ThrowIfCancellationRequested();
+            if (gate.Allows(SessionCapabilities.FileTransfer)) return;
+            ct.ThrowIfCancellationRequested();
+            throw new UnauthorizedAccessException("File transfer grant revoked");
+        }
         async Task<TransferMessage> Read()
         {
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct); deadline.CancelAfter(TimeSpan.FromSeconds(30));
