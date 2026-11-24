@@ -9,7 +9,8 @@ public sealed record WindowsSessionSnapshot(uint? SessionId, int? ConnectionStat
 {
     public string? Denial => SessionId is null ? "session-query-failed" : SessionId == 0 ? "session-zero" :
         ConnectionState != 0 ? "session-not-active" : Locked == true ? "session-locked" : VisibleWindowStation != true ? "window-station-not-visible" :
-        ThreadDesktop != "Default" ? "thread-desktop-unsupported" : InputDesktop != "Default" ? "input-desktop-unavailable" : null;
+        ThreadDesktop != "Default" ? "thread-desktop-unsupported" : InputDesktop is null ? "input-desktop-unavailable" :
+        InputDesktop != "Default" ? "input-desktop-unsupported" : null;
     public void EnsureAllowed() { if (Denial is {} reason) throw new WindowsSessionUnavailableException(reason); }
 }
 

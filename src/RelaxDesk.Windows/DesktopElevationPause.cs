@@ -39,7 +39,7 @@ public sealed class DesktopElevationPause(TimeProvider? clock = null)
         {
             if (parked is null) { current.EnsureAllowed(); return; }
             RequireSameSession(current);
-            if (current.Denial is not (null or "input-desktop-unavailable"))
+            if (current.Denial is not (null or "input-desktop-unavailable" or "input-desktop-unsupported"))
                 current.EnsureAllowed();
         }
     }

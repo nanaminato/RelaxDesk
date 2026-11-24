@@ -17,6 +17,8 @@ public static class WindowsSessionContracts
         var active=new WindowsSessionSnapshot(1,0,true,"Default","Default");
         Check(active.Denial is null);active.EnsureAllowed();
         Check((active with { Locked = true }).Denial == "session-locked");
+        Check((active with { InputDesktop = null }).Denial == "input-desktop-unavailable");
+        Check((active with { InputDesktop = "Winlogon" }).Denial == "input-desktop-unsupported");
         foreach(var denied in new[]{active with{SessionId=null},active with{SessionId=0},active with{ConnectionState=null},active with{ConnectionState=4},active with{VisibleWindowStation=null},active with{VisibleWindowStation=false},active with{ThreadDesktop=null},active with{ThreadDesktop="Winlogon"},active with{InputDesktop=null},active with{InputDesktop="Winlogon"},active with{InputDesktop="default"}})
         {
             Check(denied.Denial is not null);
@@ -28,6 +30,7 @@ public static class WindowsSessionContracts
         var parked = pause.Begin(active);
         Check(pause.IsPaused && !parked.IsCompleted);
         pause.Check(active with { InputDesktop = null });
+        pause.Check(active with { InputDesktop = "Winlogon" });
         try { pause.Check(active with { Locked = true, InputDesktop = null }); throw new Exception("Pause masked a Windows lock"); }
         catch (WindowsSessionUnavailableException error) { Check(error.Reason == "session-locked"); }
         try { pause.Check(active with { ConnectionState = 4 }); throw new Exception("Pause masked a WTS disconnect"); }

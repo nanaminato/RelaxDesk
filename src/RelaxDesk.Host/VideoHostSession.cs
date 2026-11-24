@@ -838,7 +838,7 @@ internal static class VideoHostSession
                     {
                         "session-locked" => SessionEndReason.WindowsLocked,
                         "physical-console-session-changed" => SessionEndReason.WindowsSessionChanged,
-                        "input-desktop-unavailable" or "thread-desktop-unsupported" => SessionEndReason.WindowsDesktopUnavailable,
+                        "input-desktop-unavailable" or "input-desktop-unsupported" or "thread-desktop-unsupported" => SessionEndReason.WindowsDesktopUnavailable,
                         null => (SessionEndReason?)null,
                         _ => SessionEndReason.WindowsSessionUnavailable
                     };
