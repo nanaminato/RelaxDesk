@@ -10,6 +10,13 @@ namespace RelaxDesk.HostShell;
 
 internal sealed partial class HostWindow
 {
+    internal void SelectAllowedModesForVerification(string label)
+    {
+        allowedModes.SelectedItem = label;
+        if (allowedModes.SelectedItem is not string selected || selected != label)
+            throw new IOException("The requested session policy is missing in Host settings");
+    }
+
     internal void VerifyAdminStatusEvents()
     {
         const string current = "current-session";
@@ -69,6 +76,39 @@ internal static class ShellVerification
                 if(window.Host.Running||window.Host.Pending)throw new IOException("Stop left child/session running");
                 if(!window.DisplayConfigurationEnabled)throw new IOException("Stopped Host did not restore display choice");
                 Console.WriteLine("PASS WPF Host display selection: real metadata choices, fixed scope while listening, settings restored after stop; synthetic video only, physical secondary capture pending");
+                window.SelectAllowedModesForVerification("仅工作");
+                port = Port();
+                await window.StartSharing("127.0.0.1", port, "test-displays");
+                await Until(() => window.Status == "等待连接");
+                using (var guest = new SessionClient { RequestedMode = SessionMode.Guest })
+                {
+                    try
+                    {
+                        await guest.ConnectByApproval("127.0.0.1", port, timeout.Token);
+                        throw new IOException("Host UI Work-only policy admitted a Guest");
+                    }
+                    catch (HostConsentRejectedException) { }
+                    if (window.RequestVisible) throw new IOException("Host UI requested approval for an excluded mode");
+                }
+                await window.StopSharing();
+                await window.Host.Finished;
+                port = Port();
+                await window.StartSharing("127.0.0.1", port, "test-displays");
+                await Until(() => window.Status == "等待连接");
+                using (var work = new SessionClient { RequestedMode = SessionMode.Work, RequestAdminUpgrade = true })
+                {
+                    var connecting = work.ConnectByApproval("127.0.0.1", port, timeout.Token);
+                    await Until(() => window.RequestVisible);
+                    if (connecting.IsCompleted) throw new IOException("Work-only policy skipped local consent");
+                    await window.Decide(true);
+                    await connecting;
+                    if (work.AdminUpgrade || !work.InputAllowed || (await work.Video.Read(timeout.Token)).Data.Length == 0)
+                        throw new IOException("Host UI Work-only policy negotiated the wrong capabilities");
+                }
+                await window.StopSharing();
+                await window.Host.Finished;
+                window.SelectAllowedModesForVerification("访客、工作和管理员");
+                Console.WriteLine("PASS WPF Host Work-only settings reject Guest and allow separately approved Work without administrator upgrade");
                 port = Port();
                 await window.StartSharing("127.0.0.1", port, "test-displays");
                 await Until(() => window.Status == "等待连接");
