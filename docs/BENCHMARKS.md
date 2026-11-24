@@ -84,6 +84,21 @@ run, all with dirty rectangles and only one full-screen rectangle. The sample
 is a desktop activity observation, with static-idle performance, physical
 input-to-photon timing and matched two-device MSTSC comparison still open.
 
+A repeat at revision `a6d51e7` measured the synthetic single-frame workload
+and the active console separately. The 25.6 s WPF idle fixture received one
+frame, dropped none, and completed five control heartbeats. Mean Host and
+Viewer CPU were 0.07% and 0.29% of total processor capacity. The sample
+includes the initial frame and renderer startup.
+
+The 25.25 s headless DXGI sample received 541 updates after the first frame
+and completed 96 control heartbeats. Media averaged 3.651 Mbit/s, with Host
+CPU at 0.54%, capture P95 at 2.56 ms and encode P95 at 5.73 ms. On the encode
+path, 236 of 543 transfers were regional. The GPU copy covered 1,133,090,592
+pixels versus 2,001,715,200 full-frame-equivalent pixels, a 43.4% reduction
+in copy area. The encoder reported zero CPU upload bytes. GPU utilization
+was unavailable for both samples. The console produced dirty rectangles
+throughout, so the DXGI sample characterizes desktop activity.
+
 ### UDP frame parsing allocations
 
 A Release microbenchmark parsed the same reassembled 4 MiB H.264 payload
