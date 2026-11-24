@@ -202,7 +202,7 @@ public sealed partial class ViewerWindow : Window
                 throw new IOException("Injected initial UDP connection failure");
             return WindowsQuicDatagrams.Connect(endpoint, certificate);
         }
-        using var connection = new SessionClient { RequestedFeatures = target.Features,RequestedMode=target.Mode,RequestAdminUpgrade=true,RequestPointerCompression=true,RequestQuicRecovery=smoke is null || autoRecoveryTest,Network=target.Network,OpenWorkDeviceKey=target.IdentifyWorkDevice ? WindowsWorkDeviceKey.Open : null,ConnectQuic=canOfferUdp ? OpenQuic : null,RequestedDisplayVersion=target.DisplayVersion,RequestedVideoVersion=VideoSettingsProtocol.Version }; using var abort = cancellation.Token.Register(connection.Dispose);
+        using var connection = new SessionClient { RequestedFeatures = target.Features,RequestedMode=target.Mode,RequestAdminUpgrade=true,RequestWorkInputRevoke=true,RequestPointerCompression=true,RequestQuicRecovery=smoke is null || autoRecoveryTest,Network=target.Network,OpenWorkDeviceKey=target.IdentifyWorkDevice ? WindowsWorkDeviceKey.Open : null,ConnectQuic=canOfferUdp ? OpenQuic : null,RequestedDisplayVersion=target.DisplayVersion,RequestedVideoVersion=VideoSettingsProtocol.Version }; using var abort = cancellation.Token.Register(connection.Dispose);
         string attemptStage = "connect";
         connection.PhaseChanged+=phase=>{attemptStage=phase switch { ConnectionPhase.Authenticating=>"authenticating",ConnectionPhase.AwaitingApproval=>"awaiting-approval",ConnectionPhase.Negotiating=>"negotiating",ConnectionPhase.Connected=>"session-setup",_=>"connect" };if(ReferenceEquals(session,cancellation)&&!cancellation.IsCancellationRequested)SetConnectionPhase(phase);};
         ClipboardSynchronizer? clipboard = null;
@@ -353,7 +353,7 @@ public sealed partial class ViewerWindow : Window
             var control = Task.Run(() => Observe(async () =>
             {
                 long clipboardSequence = 0;
-                bool guestInputRevoked = false, adminActive = target.Mode == SessionMode.Admin, adminDesktopPaused = false;
+                bool inputRevoked = false, adminActive = target.Mode == SessionMode.Admin, adminDesktopPaused = false;
                 while (true)
                 {
                     var packet = await SessionControl.Read(connection.Control, cancellation.Token);
@@ -415,12 +415,12 @@ public sealed partial class ViewerWindow : Window
                             if (!ReferenceEquals(session, cancellation) || cancellation.IsCancellationRequested) return;
                             if (granted && !outgoing.TryWrite(new("admin-input-activate-v2", ++sequence, Text: packet.Text))) { cancellation.Cancel(); return; }
                             activeMode = granted ? SessionMode.Admin : SessionMode.Work;
-                            inputAuthorized = true;
+                            inputAuthorized = !inputRevoked;
                             sessionToolbar?.SetEndpoint($"{activeMode} · {host.Text}");
-                            adminUpgradeAvailable = !granted && packet.Text != "retry-disabled";
+                            adminUpgradeAvailable = !inputRevoked && !granted && packet.Text != "retry-disabled";
                             sessionToolbar?.SetAdminDowngrade(granted ? RequestAdminDowngrade : adminUpgradeAvailable ? RequestAdminUpgrade : null, upgrade: adminUpgradeAvailable);
-                            sessionToolbar?.SetRemoteShortcuts(true);
-                            sessionToolbar?.SetTextInput(inputVersion == 2 ? OpenTextInput : null);
+                            sessionToolbar?.SetRemoteShortcuts(inputAuthorized);
+                            sessionToolbar?.SetTextInput(inputAuthorized && inputVersion == 2 ? OpenTextInput : null);
                         });
                     }
                     else if (adminActive && (packet == new Packet("admin-input-revoked-v2") ||
@@ -435,22 +435,25 @@ public sealed partial class ViewerWindow : Window
                             CloseTextInput();
                             if (!outgoing.TryWrite(new("work-input-ready-v2", ++sequence))) { cancellation.Cancel(); return; }
                             activeMode = SessionMode.Work;
-                            inputAuthorized = true;
+                            inputAuthorized = !inputRevoked;
                             sessionToolbar?.SetEndpoint($"{activeMode} · {host.Text}");
-                            adminUpgradeAvailable = packet.Text == "retry-available";
+                            adminUpgradeAvailable = !inputRevoked && packet.Text == "retry-available";
                             sessionToolbar?.SetAdminDowngrade(adminUpgradeAvailable ? RequestAdminUpgrade : null, upgrade: adminUpgradeAvailable);
-                            sessionToolbar?.SetRemoteShortcuts(true);
-                            sessionToolbar?.SetTextInput(inputVersion == 2 ? OpenTextInput : null);
+                            sessionToolbar?.SetRemoteShortcuts(inputAuthorized);
+                            sessionToolbar?.SetTextInput(inputAuthorized && inputVersion == 2 ? OpenTextInput : null);
                         });
                     }
-                    else if (packet == new Packet("guest-input-revoked-v2") &&
-                             target.Mode == SessionMode.Guest && connection.InputAllowed && !guestInputRevoked)
+                    else if (!inputRevoked && connection.InputAllowed &&
+                        (packet == new Packet("guest-input-revoked-v2") && target.Mode == SessionMode.Guest ||
+                         packet == new Packet("work-input-revoked-v2") && connection.WorkInputRevoke))
                     {
-                        guestInputRevoked = true;
+                        inputRevoked = true;
                         _ = Dispatcher.BeginInvoke(() =>
                         {
                             if (!ReferenceEquals(session, cancellation) || cancellation.IsCancellationRequested) return;
                             inputAuthorized = false;
+                            adminUpgradeAvailable = false;
+                            sessionToolbar?.SetAdminDowngrade(null);
                             richHeld.ReleaseAll();
                             heldInputs.ReleaseAll();
                             CloseTextInput();

@@ -68,7 +68,7 @@ internal static class VideoHostSession
         var dataTicket = fileRoot is null ? null : new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15));
         var clipboardTicket=SessionCapabilities.RichClipboard(features)?new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15)):null;
         var audioTicket=features.Contains(SessionCapabilities.SystemAudio)?new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15)):null;
-        await Wire.Write(control, new Packet("approved-v2", Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features, DataTicket: dataTicket?.Value,FileResume:resumeFiles,FileScope:fileScope,InputVersion:hello.InputVersion,ClipboardTicket:clipboardTicket?.Value,DisplayVersion:displayVersion,DisplayState:displays?.Switch.Snapshot,AudioTicket:audioTicket?.Value,VideoVersion:video is null?0:VideoSettingsProtocol.Version,VideoSettings:video?.Current, Mode:hello.Mode, InputAllowed:hello.Mode is null ? null : access.InputAllowed, QuicPort:datagrams?.Port ?? 0, QuicTicket:quicTicket?.Value, AdminUpgrade:upgradeAvailable ? true : null, QuicRecovery: hello.QuicRecovery), stop);
+        await Wire.Write(control, new Packet("approved-v2", Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features, DataTicket: dataTicket?.Value,FileResume:resumeFiles,FileScope:fileScope,InputVersion:hello.InputVersion,ClipboardTicket:clipboardTicket?.Value,DisplayVersion:displayVersion,DisplayState:displays?.Switch.Snapshot,AudioTicket:audioTicket?.Value,VideoVersion:video is null?0:VideoSettingsProtocol.Version,VideoSettings:video?.Current, Mode:hello.Mode, InputAllowed:hello.Mode is null ? null : access.InputAllowed, QuicPort:datagrams?.Port ?? 0, QuicTicket:quicTicket?.Value, AdminUpgrade:upgradeAvailable ? true : null, QuicRecovery: hello.QuicRecovery, WorkInputRevoke: shellSessionId is not null ? hello.WorkInputRevoke : null), stop);
         using var attach = CancellationTokenSource.CreateLinkedTokenSource(stop); attach.CancelAfter(TimeSpan.FromSeconds(15));
         int quicBudget = 0;
         if (datagrams is not null)
@@ -386,7 +386,7 @@ internal static class VideoHostSession
             gate.RevokeInput();
             try { inputDesktop?.ReleaseAll(); }
             catch (IOException error) { HostSessionLog.Write($"input_cleanup_deferred error_type={error.GetType().Name}"); }
-            await WriteControl(new("guest-input-revoked-v2"));
+            await WriteControl(new(hello.Mode == SessionMode.Work ? "work-input-revoked-v2" : "guest-input-revoked-v2"));
         }
         Task inputRevocation = NotifyInputRevoked();
         // Routes are Admin, paused, Work, or waiting for Viewer activation.
@@ -599,9 +599,15 @@ internal static class VideoHostSession
                     })) throw new AuthenticationException("Input authorization revoked");
                     continue;
                 }
-                if (!gate.AcceptControl(packet, adminTransition: elevated is not null, adminRequest: upgradeAvailable)) throw new InvalidDataException("Unauthorized control event");
+                if (!gate.AcceptControl(packet, adminTransition: elevated is not null, adminRequest: upgradeAvailable,
+                    discardRevokedAdminRequest: hello.WorkInputRevoke == true)) throw new InvalidDataException("Unauthorized control event");
                 if (packet.Kind == "admin-input-request-v2")
                 {
+                    if (inputRevoked.IsCancellationRequested)
+                    {
+                        await WriteControl(new("admin-input-denied-v2", Text: "retry-disabled"));
+                        continue;
+                    }
                     lock (routeLock)
                     {
                         if (adminRoute != 2 || elevated is not null)

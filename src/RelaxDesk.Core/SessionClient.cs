@@ -84,6 +84,8 @@ public sealed class SessionClient : IDisposable
     public SessionMode? RequestedMode { get; init; }
     public Func<ECDsa>? OpenWorkDeviceKey { get; init; }
     public bool InputAllowed { get; private set; }
+    public bool RequestWorkInputRevoke { get; init; }
+    public bool WorkInputRevoke { get; private set; }
     public bool RequestPointerCompression { get; init; }
     public bool RequestQuicRecovery { get; init; }
     public bool SupportsQuicRecovery { get; private set; }
@@ -187,7 +189,7 @@ public sealed class SessionClient : IDisposable
         if(!DisplayProtocol.Supported(RequestedDisplayVersion)||RequestedDisplayVersion!=0&&RequestedInputVersion!=InputProtocol.Version)throw new InvalidDataException("Unsupported requested display version");
         using var workDeviceKey = RequestedMode is null or SessionMode.Work ? OpenWorkDeviceKey?.Invoke() : null;
         bool requestResume=RequestFileResume&&requestedFeatures.Contains(SessionCapabilities.FileTransfer);
-        await Wire.Write(Control, new Packet(approvalOnly ? "request-v2" : "hello-v2", Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], PointerBrotli: RequestPointerCompression ? true : null, Features: requestedFeatures.Length == 0 ? null : requestedFeatures,FileResume:requestResume,InputVersion:RequestedInputVersion,DisplayVersion:RequestedDisplayVersion,VideoVersion:RequestedVideoVersion, Mode:RequestedMode, Network:requestedNetwork, DeviceKey: workDeviceKey is null ? null : WorkDeviceIdentity.Export(workDeviceKey), AdminUpgrade: RequestAdminUpgrade && RequestedMode == SessionMode.Work ? true : null, QuicRecovery: requestQuicRecovery ? true : null), ct);
+        await Wire.Write(Control, new Packet(approvalOnly ? "request-v2" : "hello-v2", Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], PointerBrotli: RequestPointerCompression ? true : null, WorkInputRevoke: RequestWorkInputRevoke && RequestedMode == SessionMode.Work ? true : null, Features: requestedFeatures.Length == 0 ? null : requestedFeatures,FileResume:requestResume,InputVersion:RequestedInputVersion,DisplayVersion:RequestedDisplayVersion,VideoVersion:RequestedVideoVersion, Mode:RequestedMode, Network:requestedNetwork, DeviceKey: workDeviceKey is null ? null : WorkDeviceIdentity.Export(workDeviceKey), AdminUpgrade: RequestAdminUpgrade && RequestedMode == SessionMode.Work ? true : null, QuicRecovery: requestQuicRecovery ? true : null), ct);
         PhaseChanged?.Invoke(ConnectionPhase.AwaitingApproval);
         var approval = await Wire.Read(Control, ct);
         if (approval.Kind == "work-device-challenge-v2")
@@ -214,6 +216,10 @@ public sealed class SessionClient : IDisposable
         if (approval.AdminUpgrade is not null && (approval.AdminUpgrade != true || !RequestAdminUpgrade || RequestedMode != SessionMode.Work || approval.InputVersion != InputProtocol.Version))
             throw new AuthenticationException("Unrequested administrator transition");
         AdminUpgrade = approval.AdminUpgrade == true;
+        if (approval.WorkInputRevoke is not null &&
+            (approval.WorkInputRevoke != true || !RequestWorkInputRevoke || approval.Mode != SessionMode.Work))
+            throw new AuthenticationException("Unrequested Work input revocation capability");
+        WorkInputRevoke = approval.WorkInputRevoke == true;
         InputAllowed = approval.InputAllowed ?? true;
         InputVersion=approval.InputVersion;
         if(!DisplayProtocol.Supported(approval.DisplayVersion)||approval.DisplayVersion!=0&&(approval.DisplayVersion>RequestedDisplayVersion||InputVersion!=InputProtocol.Version)||approval.DisplayId is not null||approval.DisplayGeneration!=0||approval.DisplayVersion==0&&approval.DisplayState is not null||approval.DisplayVersion!=0&&approval.DisplayState is null)throw new AuthenticationException("Unrequested or invalid display negotiation");

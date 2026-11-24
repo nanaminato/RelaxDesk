@@ -11,8 +11,8 @@ internal sealed class ShellBridge : IDisposable
     Session? current;
     public ShellBridge(CancellationTokenSource stop)
     { this.stop = stop; _ = Task.Run(ReadCommands); }
-    public static void Emit(string type, string? address = null, int port = 0, string[]? features = null, string? sessionId = null, SessionMode? mode = null, string? deviceFingerprint = null, string? requestId = null, string? desktopReason = null)
-        => Console.WriteLine("RD_EVENT " + JsonSerializer.Serialize(new { type, address, port, features, sessionId, mode = mode?.ToString(), deviceFingerprint, requestId, desktopReason, version = BuildIdentity.Version }));
+    public static void Emit(string type, string? address = null, int port = 0, string[]? features = null, string? sessionId = null, SessionMode? mode = null, string? deviceFingerprint = null, string? requestId = null, string? desktopReason = null, bool workInputRevoke = false)
+        => Console.WriteLine("RD_EVENT " + JsonSerializer.Serialize(new { type, address, port, features, sessionId, mode = mode?.ToString(), deviceFingerprint, requestId, desktopReason, workInputRevoke, version = BuildIdentity.Version }));
     public Session Begin()
     {
         lock (sync)
@@ -49,6 +49,10 @@ internal sealed class ShellBridge : IDisposable
                         case "REVOKE_AUDIO":scope.Audio.Cancel();break;
                         case "REVOKE_ADMIN_INPUT": if (scope.Mode is SessionMode.Admin or SessionMode.Work) scope.AdminInput.Cancel(); break;
                         case "REVOKE_GUEST_INPUT": if (scope.Mode == SessionMode.Guest && scope.GuestInput) scope.Input.Cancel(); break;
+                        case "REVOKE_WORK_INPUT":
+                            if (scope.WorkInputRevoke && scope.Consent.Decision.IsCompletedSuccessfully && scope.Consent.Decision.Result != ConsentDecision.Deny)
+                            { scope.Input.Cancel(); scope.AdminInput.Cancel(); }
+                            break;
                         default:
                             if (!scope.Requested || scope.Consent.Decision.IsCompleted) break;
                             bool input = scope.Mode == SessionMode.Guest && parts[0].EndsWith("_INPUT", StringComparison.Ordinal);
@@ -76,6 +80,7 @@ internal sealed class ShellBridge : IDisposable
         internal SessionMode? Mode;
         public bool AdminConfirmed { get; internal set; }
         public bool GuestInput { get; internal set; }
+        public bool WorkInputRevoke { get; private set; }
         bool disposed;
         ConsentRequest? pendingAdmin;
         public string Id => Consent.Id;
@@ -87,14 +92,15 @@ internal sealed class ShellBridge : IDisposable
         public CancellationToken InputRevoked => Input.Token;
         internal Session(ShellBridge owner, CancellationToken stop)
         { this.owner = owner; Lifetime = CancellationTokenSource.CreateLinkedTokenSource(stop); }
-        public Task<ConsentDecision> Request(string endpoint, string[] features, SessionMode? mode, string? deviceFingerprint, CancellationToken cancellation)
+        public Task<ConsentDecision> Request(string endpoint, string[] features, SessionMode? mode, string? deviceFingerprint, CancellationToken cancellation, bool workInputRevoke = false)
         {
             lock (owner.sync)
             {
                 if (disposed || Requested) throw new InvalidOperationException("Consent request is no longer available");
                 Requested = true;
                 Mode = mode;
-                Emit("approval-request", endpoint, features: features, sessionId: Id, mode: mode, deviceFingerprint: deviceFingerprint);
+                WorkInputRevoke = workInputRevoke && mode == SessionMode.Work;
+                Emit("approval-request", endpoint, features: features, sessionId: Id, mode: mode, deviceFingerprint: deviceFingerprint, workInputRevoke: WorkInputRevoke);
                 return Consent.Decision.WaitAsync(cancellation);
             }
         }

@@ -5,7 +5,7 @@
 | Mode | Host decision | Input | Optional features |
 | --- | --- | --- | --- |
 | Guest | Fresh local consent | Off by default. Host can grant it separately and revoke it during the session. | Clipboard, scoped files and audio use the existing independent local grants. |
-| Work | Fresh local consent | Ordinary-desktop input | Existing independent grants and shared display scope |
+| Work | Fresh local consent | Ordinary-desktop input. With a compatible Viewer, HostShell can revoke it without ending video. | Existing independent grants and shared display scope |
 | Admin | Initial HostShell approval, independent confirmation, local UAC and worker readiness | High-integrity input on the approved Default desktop | Existing independent grants |
 
 HostShell can permit all modes, Guest and Work, Guest only, or Work only. The CLI
@@ -31,6 +31,12 @@ independent of the input grant so display readiness and switching still work in
 view-only sessions.
 
 Host input authorization takes place before injection under the session gate.
+
+The optional `WorkInputRevoke` flag is offered by an explicit Work client and
+echoed by HostShell. After `work-input-revoked-v2`, the session remains Work
+with video and independently granted features. Keyboard, mouse and Admin
+upgrade are disabled for that session. Old peers can still connect and are
+managed through the existing disconnect action.
 Revocation serializes with an in-flight injection, releases the tracked inputs,
 and notifies the Viewer over the authenticated control channel. Subsequent
 structurally valid inputs from the previously authorized Guest are discarded

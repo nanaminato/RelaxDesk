@@ -52,7 +52,8 @@ internal static class HostConnection
             throw new AuthenticationException("Invalid pointer compression request");
         if (hello.AdminUpgrade is not null && (hello.AdminUpgrade != true || hello.Mode != SessionMode.Work || hello.InputVersion != InputProtocol.Version))
             throw new AuthenticationException("Invalid administrator transition request");
-        if (hello.InputAllowed is not null || hello.Kind == "hello-v1" && hello.Mode is not null)
+        if (hello.InputAllowed is not null || hello.Kind == "hello-v1" && hello.Mode is not null ||
+            hello.WorkInputRevoke is not null && (hello.WorkInputRevoke != true || hello.Mode != SessionMode.Work))
             throw new AuthenticationException("Invalid session access negotiation");
         if (shell is null && hello.Mode == SessionMode.Guest)
             Console.WriteLine("Guest defaults to view only. Append _INPUT to an approval command to allow ordinary input.");
@@ -65,7 +66,7 @@ internal static class HostConnection
             ? await VerifyWorkDevice(tls, cert, hello.DeviceKey, stop) : null;
         string? approval = (SessionAccess.Available(hello.Mode) || adminEligible) && (!guestOnly || hello.Mode == SessionMode.Guest) &&
             (!workOnly || hello.Mode is null or SessionMode.Work)
-            ? await RequestConsent(client, shell, requestedFeatures, hello.Mode, deviceFingerprint, stop)
+            ? await RequestConsent(client, shell, requestedFeatures, hello.Mode, deviceFingerprint, hello.WorkInputRevoke == true, stop)
             : null;
         bool guestInput = approval?.EndsWith("_INPUT", StringComparison.Ordinal) == true && hello.Mode == SessionMode.Guest;
         if (guestInput) approval = approval![..^6];
@@ -186,7 +187,7 @@ internal static class HostConnection
     }
 
     static async Task<string?> RequestConsent(TcpClient client, ShellBridge.Session? shell, string[] features, SessionMode? mode,
-        string? deviceFingerprint, CancellationToken stop)
+        string? deviceFingerprint, bool workInputRevoke, CancellationToken stop)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop);
         deadline.CancelAfter(TimeSpan.FromSeconds(60));
@@ -194,7 +195,7 @@ internal static class HostConnection
         Task<string?> decision = shell is null ? Console.In.ReadLineAsync(deadline.Token).AsTask() : ReadShell();
         async Task<string?> ReadShell()
         {
-            var decision = await shell!.Request(client.Client.RemoteEndPoint?.ToString() ?? "unknown", features, mode, deviceFingerprint, deadline.Token);
+            var decision = await shell!.Request(client.Client.RemoteEndPoint?.ToString() ?? "unknown", features, mode, deviceFingerprint, deadline.Token, workInputRevoke);
             return AudioConsent.Command(decision) + (shell.GuestInput ? "_INPUT" : "");
         }
         async Task WatchPeer()

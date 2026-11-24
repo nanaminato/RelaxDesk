@@ -15,6 +15,7 @@ public record Packet(string Kind, long Sequence = 0, int Width = 0, int Height =
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] bool? PointerBrotli=null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] bool? QuicRecovery=null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] SessionEndReason? EndReason=null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] bool? WorkInputRevoke=null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? VideoFallbackReason=null)
 {
     public override string ToString() => $"Packet kind={Kind} sequence={Sequence} (payload redacted)";
@@ -93,20 +94,20 @@ public sealed class AccessGate
     {
         lock (sync)
         {
-            if(!inputAllowed||inputRevoked&&!discardRevoked||p.Mode is not null||p.InputAllowed is not null||p.AdminUpgrade is not null||p.PointerBrotli is not null||p.Network is not null||p.QuicPort!=0||p.QuicTicket is not null||p.QuicSend is not null||p.DeviceKey is not null||p.QueryVideoQueue is not null||p.VideoQueue is not null||!VideoSettingsProtocol.Empty(p))return false;
+            if(!inputAllowed||inputRevoked&&!discardRevoked||p.Mode is not null||p.InputAllowed is not null||p.AdminUpgrade is not null||p.WorkInputRevoke is not null||p.PointerBrotli is not null||p.Network is not null||p.QuicPort!=0||p.QuicTicket is not null||p.QuicSend is not null||p.DeviceKey is not null||p.QueryVideoQueue is not null||p.VideoQueue is not null||!VideoSettingsProtocol.Empty(p))return false;
             if(p.Kind=="input-v2"){if(!approved||inputVersion!=InputProtocol.Version||p.Sequence<=sequence||!InputProtocol.ValidPacket(p,displayVersion!=0))return false;sequence=p.Sequence;return true;}
             if(p.Input is not null||p.InputVersion!=0||p.ClipboardTicket is not null||p.AudioTicket is not null||!DisplayProtocol.Empty(p)||displayVersion!=0)return false;
             if (!approved || p.Sequence <= sequence || p.Kind != "input" || p.Code < 0 || p.Code > 259 || p.X < 0 || p.X > 65535 || p.Y < 0 || p.Y > 65535) return false;
             sequence = p.Sequence; return true;
         }
     }
-    public bool AcceptControl(Packet p, bool adminTransition = false, bool adminRequest = false)
+    public bool AcceptControl(Packet p, bool adminTransition = false, bool adminRequest = false, bool discardRevokedAdminRequest = false)
     {
         lock (sync)
         {
             if (p.VideoQueue is not null || p.QueryVideoQueue is not null &&
                 p != new Packet("ping-v2", p.Sequence, QueryVideoQueue: true)) return false;
-            if(p.Mode is not null||p.InputAllowed is not null||p.AdminUpgrade is not null||p.PointerBrotli is not null||p.Network is not null||p.QuicPort!=0||p.QuicTicket is not null||p.QuicSend is not null||p.DeviceKey is not null)return false;
+            if(p.Mode is not null||p.InputAllowed is not null||p.AdminUpgrade is not null||p.WorkInputRevoke is not null||p.PointerBrotli is not null||p.Network is not null||p.QuicPort!=0||p.QuicTicket is not null||p.QuicSend is not null||p.DeviceKey is not null)return false;
             if(p.Kind=="video-settings-v2"){if(!approved||videoVersion!=VideoSettingsProtocol.Version||p.Sequence<=sequence||!VideoSettingsProtocol.ValidCommand(p))return false;sequence=p.Sequence;return true;}
             if(!VideoSettingsProtocol.Empty(p))return false;
             if (p.Kind is "input" or "input-v2") return Accept(p);
@@ -115,7 +116,7 @@ public sealed class AccessGate
             if(p.Input is not null||p.InputVersion!=0||p.ClipboardTicket is not null||p.AudioTicket is not null||!DisplayProtocol.Empty(p))return false;
             if (p.Kind == "admin-input-request-v2")
             {
-                if (!approved || !adminRequest || !inputAllowed || inputRevoked || inputVersion != InputProtocol.Version ||
+                if (!approved || !adminRequest || !inputAllowed || inputRevoked && !discardRevokedAdminRequest || inputVersion != InputProtocol.Version ||
                     p.Sequence <= sequence || !ValidStop(p)) return false;
                 sequence = p.Sequence;
                 return true;

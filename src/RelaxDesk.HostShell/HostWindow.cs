@@ -27,7 +27,7 @@ internal sealed partial class HostWindow:Window
     readonly Button revokeAdminInput = new() { Content = "退出管理员模式", Visibility = Visibility.Collapsed };
     readonly Border adminRequest;
     string? displayedAdminRequestId;
-    readonly Button revokeGuestInput = new() { Content = "停止访客键鼠", Visibility = Visibility.Collapsed };
+    readonly Button revokeGuestInput = new() { Content = "停止键鼠控制", Visibility = Visibility.Collapsed };
     string activeMode = "Work";
     bool activeInput;
     readonly Button revokeClipboard=new(){Content="停止剪贴板同步",Visibility=Visibility.Collapsed};
@@ -74,7 +74,7 @@ internal sealed partial class HostWindow:Window
         if(addresses.Length>1){var options=new WrapPanel();foreach(string address in addresses){var pick=new Button{Content=address,Padding=new(10,5,10,5),FontSize=12};pick.Click+=(_,_)=>{if(!Host.Running&&!RestartPending)ip.Text=address;};options.Children.Add(pick);}settings.Children.Add(options);}
         settings.Children.Add(Text("允许的会话模式", 12));settings.Children.Add(allowedModes);AddDisplaySettings(settings);AddFileSettings(settings);AddServiceSettings(settings);AddRecoverySettings(settings);BuildWorkTrust(settings);
         var actions=new WrapPanel();start.Style=(Style)Resources["PrimaryButton"];stop.Style=(Style)Resources["DangerButton"];
-        actions.Children.Add(start);actions.Children.Add(stop);actions.Children.Add(disconnectSession);disconnectSession.Click+=async(_,_)=>await DisconnectSession();actions.Children.Add(revokeAdminInput);revokeAdminInput.Click+=async(_,_)=>await Host.RevokeAdminInput(displayedSessionId);actions.Children.Add(revokeGuestInput);revokeGuestInput.Click+=async(_,_)=>await StopGuestInput();actions.Children.Add(revokeClipboard);revokeClipboard.Click+=async(_,_)=>await StopClipboard();var copy=new Button{Content="复制地址"};copy.Click+=(_,_)=>Clipboard.SetText(ip.Text+":"+port.Text);actions.Children.Add(copy);settings.Children.Add(actions);color.Margin=new(4,12,0,0);color.TextWrapping=TextWrapping.Wrap;settings.Children.Add(color);var settingsCard=Card(settings);
+        actions.Children.Add(start);actions.Children.Add(stop);actions.Children.Add(disconnectSession);disconnectSession.Click+=async(_,_)=>await DisconnectSession();actions.Children.Add(revokeAdminInput);revokeAdminInput.Click+=async(_,_)=>await Host.RevokeAdminInput(displayedSessionId);actions.Children.Add(revokeGuestInput);revokeGuestInput.Click+=async(_,_)=>await StopSessionInput();actions.Children.Add(revokeClipboard);revokeClipboard.Click+=async(_,_)=>await StopClipboard();var copy=new Button{Content="复制地址"};copy.Click+=(_,_)=>Clipboard.SetText(ip.Text+":"+port.Text);actions.Children.Add(copy);settings.Children.Add(actions);color.Margin=new(4,12,0,0);color.TextWrapping=TextWrapping.Wrap;settings.Children.Add(color);var settingsCard=Card(settings);
         var consent=new StackPanel();consent.Children.Add(Text("有人请求连接",19,true));peer.FontSize=16;peer.Margin=new(0,10,0,8);consent.Children.Add(peer);consent.Children.Add(consentAccess);var decision=new StackPanel{Orientation=Orientation.Horizontal,Margin=new(0,14,0,0)};allow.Style=(Style)Resources["PrimaryButton"];deny.Style=(Style)Resources["DangerButton"];decision.Children.Add(allow);decision.Children.Add(deny);consent.Children.Add(decision);request.Child=consent;request.Background=Brush("#EAF2FF");request.CornerRadius=new(12);request.Padding=new(22);request.Margin=new(0,0,0,16);content.Children.Add(request);content.Children.Add(settingsCard);
         consent.Children.Insert(3,clipboardPermission);consent.Children.Insert(4,filesPermission);consent.Children.Insert(5,filesScopeLabel);actions.Children.Add(revokeFiles);consent.Children.Insert(6,audioPermission);consent.Children.Insert(7,guestInputPermission);consent.Children.Insert(8,rememberWorkDevice);actions.Children.Add(revokeAudio);revokeAudio.Click+=async(_,_)=>await StopAudio();
         content.Children.Add(new Expander{Header="诊断与日志",Content=logs,Margin=new(0,4,0,0)});
@@ -92,14 +92,17 @@ internal sealed partial class HostWindow:Window
     internal bool ClipboardAllowed { get => clipboardPermission.IsChecked == true; set => clipboardPermission.IsChecked = value; }
     internal string ClipboardRequestDescription=>clipboardPermission.Content is TextBlock label?label.Text:clipboardPermission.Content.ToString()??"";
     internal async Task StopClipboard(){string? id=displayedSessionId;if(id is null)return;await Host.RevokeClipboard(id);if(displayedSessionId!=id)return;revokeClipboard.Visibility=Visibility.Collapsed;detail.Text="已停止剪贴板同步；重新开启需要新的连接授权。";}
-    async Task StopGuestInput()
+    bool workInputRevoke;
+    internal async Task StopSessionInput()
     {
         if (displayedSessionId is not {} id) return;
-        await Host.RevokeGuestInput(id);
+        if (activeMode == "Work" && workInputRevoke) await Host.RevokeWorkInput(id);
+        else if (activeMode == "Guest") await Host.RevokeGuestInput(id);
+        else return;
         if (id != displayedSessionId) return;
         activeInput = false;
         revokeGuestInput.Visibility = Visibility.Collapsed;
-        detail.Text = "访客的键鼠权限已撤销。";
+        detail.Text = "键鼠权限已撤销，仍在共享画面。";
     }
 
     internal string Status=>state.Text;
@@ -119,7 +122,7 @@ internal sealed partial class HostWindow:Window
         if (accepted && activeMode == "Admin")
             accepted = MessageBox.Show(this, "允许这个连接操作管理员权限窗口？接下来还需在本机确认 Windows UAC。",
                 "确认管理员输入", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes;
-        bool clipboard=accepted&&clipboardPermission.IsChecked==true;bool files=accepted&&filesPermission.IsChecked==true&&selectedFileRoot is not null;bool audio=accepted&&audioPermission.IsChecked==true;var remember=CaptureWorkTrust(accepted,clipboard,files,audio);activeInput=accepted&&(activeMode is "Work" or "Admin"||guestInputPermission.IsChecked==true);await Host.Decide(accepted,clipboard,files,id,audio,activeMode=="Guest"&&activeInput,activeMode=="Admin"&&accepted);if(displayedSessionId!=id)return;revokeGuestInput.Visibility=activeMode=="Guest"&&activeInput?Visibility.Visible:Visibility.Collapsed;revokeAudio.Visibility=audio?Visibility.Visible:Visibility.Collapsed;revokeClipboard.Visibility=clipboard?Visibility.Visible:Visibility.Collapsed;revokeFiles.Visibility=files?Visibility.Visible:Visibility.Collapsed;request.Visibility=Visibility.Collapsed;if(remember is not null)await SaveWorkTrust(remember);}
+        bool clipboard=accepted&&clipboardPermission.IsChecked==true;bool files=accepted&&filesPermission.IsChecked==true&&selectedFileRoot is not null;bool audio=accepted&&audioPermission.IsChecked==true;var remember=CaptureWorkTrust(accepted,clipboard,files,audio);activeInput=accepted&&(activeMode is "Work" or "Admin"||guestInputPermission.IsChecked==true);await Host.Decide(accepted,clipboard,files,id,audio,activeMode=="Guest"&&activeInput,activeMode=="Admin"&&accepted);if(displayedSessionId!=id)return;revokeGuestInput.Visibility=activeInput&&(activeMode=="Guest"||workInputRevoke)?Visibility.Visible:Visibility.Collapsed;revokeAudio.Visibility=audio?Visibility.Visible:Visibility.Collapsed;revokeClipboard.Visibility=clipboard?Visibility.Visible:Visibility.Collapsed;revokeFiles.Visibility=files?Visibility.Visible:Visibility.Collapsed;request.Visibility=Visibility.Collapsed;if(remember is not null)await SaveWorkTrust(remember);}
     internal async Task StopSharing(){ClearNextWork();CancelRecovery();stop.IsEnabled=false;try{await Host.Stop();}catch(Exception e){detail.Text=e.Message;}}
     internal Task DisconnectSession()=>displayedSessionId is {} id?Host.Disconnect(id):Task.CompletedTask;
     internal bool AdminRequestVisible => adminRequest.Visibility == Visibility.Visible;
@@ -166,7 +169,7 @@ internal sealed partial class HostWindow:Window
                     _ => DesktopUnavailableNotice
                 };
                 break;
-            case "approval-request":desktopNotice=null;displayedSessionId=change.SessionId;disconnectSession.Visibility=Visibility.Visible;activeMode = change.Mode ?? "Work"; activeInput = false;
+            case "approval-request":desktopNotice=null;workInputRevoke=change.WorkInputRevoke;displayedSessionId=change.SessionId;disconnectSession.Visibility=Visibility.Visible;activeMode = change.Mode ?? "Work"; activeInput = false;
                 peer.Text = $"请求来源  {value} · {activeMode}";
                 peer.TextWrapping = TextWrapping.Wrap;
                 if (change.DeviceFingerprint is { Length: 64 } device && device.All(char.IsAsciiHexDigit))
@@ -178,8 +181,8 @@ internal sealed partial class HostWindow:Window
                 request.Visibility=Visibility.Visible;allow.IsEnabled=deny.IsEnabled=true;clipboardPermission.IsChecked=false;clipboardPermission.Content=new TextBlock{Text="允许双向剪贴板："+SessionCapabilities.ClipboardDescription(change.Features??[])+"（读取/替换两端新复制的内容）",TextWrapping=TextWrapping.Wrap};clipboardPermission.Visibility=(change.Features??[]).Any(SessionCapabilities.IsClipboard)?Visibility.Visible:Visibility.Collapsed;ShowFileRequest((change.Features??[]).Contains(SessionCapabilities.FileTransfer));ShowAudioRequest(change.Features);ApplyWorkTrust(change);state.Text="等待你的授权";detail.Text="还未共享桌面或开放输入。";if(ConsumeNextWork())_ = Decide(true);break;
             case "admin-starting":state.Text="等待本机 UAC";detail.Text="请在本机确认 Windows 提权请求。";revokeAdminInput.Content="取消管理员授权";revokeAdminInput.Visibility=Visibility.Visible;break;
             case "admin-awaiting-viewer":state.Text="等待 Viewer 确认";detail.Text="管理员输入代理已启动，正在等待 Viewer 确认。";revokeAdminInput.Content="取消管理员授权";revokeAdminInput.Visibility=Visibility.Visible;break;
-            case "admin-ready":adminDeploymentUnavailable=false;activeMode="Admin";state.Text="正在共享 · Admin";detail.Text="管理员输入代理已连接。断开会话会撤销输入。";revokeAdminInput.Content="退出管理员模式";revokeAdminInput.Visibility=Visibility.Visible;break;
-            case "admin-revoked":activeMode="Work";state.Text="正在共享 · Work";detail.Text="管理员键鼠权限已撤销。";revokeAdminInput.Visibility=Visibility.Collapsed;break;
+            case "admin-ready":revokeGuestInput.Visibility=Visibility.Collapsed;adminDeploymentUnavailable=false;activeMode="Admin";state.Text="正在共享 · Admin";detail.Text="管理员输入代理已连接。断开会话会撤销输入。";revokeAdminInput.Content="退出管理员模式";revokeAdminInput.Visibility=Visibility.Visible;break;
+            case "admin-revoked":revokeGuestInput.Visibility=workInputRevoke&&activeInput?Visibility.Visible:Visibility.Collapsed;activeMode="Work";state.Text="正在共享 · Work";detail.Text="管理员键鼠权限已撤销。";revokeAdminInput.Visibility=Visibility.Collapsed;break;
             case "admin-denied":activeMode="Work";state.Text="正在共享 · Work";detail.Text="本次管理员申请未获授权。";revokeAdminInput.Visibility=Visibility.Collapsed;break;
             case "admin-deployment-unavailable":adminDeploymentUnavailable=true;detail.Text=AdminDeploymentNotice;break;
             case "approved":state.Text="正在建立共享";detail.Text="已允许本次连接，正在准备屏幕。";request.Visibility=Visibility.Collapsed;break;

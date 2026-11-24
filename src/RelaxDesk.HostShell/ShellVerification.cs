@@ -146,10 +146,16 @@ internal static class ShellVerification
                     if(window.Host.Snapshot().Any(l=>l.StartsWith("backend=")||l.StartsWith("media frames=")))throw new IOException("Denied session started capture/media");
                 }
                 // Same process accepts another independently approved session after denial.
-                using(var next=new SessionClient())
+                using(var next=new SessionClient { RequestedMode = SessionMode.Work, RequestWorkInputRevoke = true })
                 {
                     var connecting=next.ConnectByApproval("127.0.0.1",port,timeout.Token);await Until(()=>window.RequestVisible);
-                    await window.Decide(true);await connecting;_=await MediaProtocol.Read(next.Media,timeout.Token);
+                    await window.Decide(true);await connecting;var firstFrame=await MediaProtocol.Read(next.Media,timeout.Token);
+                    if (!next.WorkInputRevoke) throw new IOException("Missing negotiated Work input revocation");
+                    await window.StopSessionInput();
+                    if (await Wire.Read(next.Control,timeout.Token) != new Packet("work-input-revoked-v2"))
+                        throw new IOException("Work input revocation did not reach the Viewer");
+                    if ((await MediaProtocol.Read(next.Media,timeout.Token)).Sequence <= firstFrame.Sequence)
+                        throw new IOException("Work video stalled after input revocation");
                     await window.DisconnectSession();await Until(()=>window.Status=="等待连接");
                     if(!window.Host.Running)throw new IOException("Disconnect ended shared listener");
                 }

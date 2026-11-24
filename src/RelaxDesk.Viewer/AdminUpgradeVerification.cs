@@ -139,6 +139,18 @@ public sealed partial class ViewerWindow
                             if (freshMenu.Visibility == Visibility.Visible || connection.IsCompleted)
                                 throw new IOException("A request after revocation did not stay in Work");
                             Console.WriteLine("PASS request after administrator revocation denied without creating a local approval");
+                            await Send($"REVOKE_WORK_INPUT {newId}");
+                            await Until(() => !viewer.inputAuthorized);
+                            int framesAfterWorkRevoke = viewer.smokeFrames;
+                            await Until(() => viewer.smokeFrames > framesAfterWorkRevoke);
+                            if (viewer.activeMode != SessionMode.Work || connection.IsCompleted || freshMenu.Visibility == Visibility.Visible)
+                                throw new IOException("Work input revocation did not preserve view-only sharing");
+                            viewer.adminUpgradeAvailable = true;
+                            viewer.RequestAdminUpgrade();
+                            await Until(() => Volatile.Read(ref viewer.adminUpgradePending) == 0);
+                            if (viewer.inputAuthorized || connection.IsCompleted || freshMenu.Visibility == Visibility.Visible)
+                                throw new IOException("An in-flight administrator request re-enabled revoked Work input");
+                            Console.WriteLine("PASS Work input revoked in place with continued video and no Admin request action");
                             break;
                         }
                         if (attempt == 0) menu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
