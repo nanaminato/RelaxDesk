@@ -138,6 +138,13 @@ a frame. A real headless repeat passed with 541 updates after the first
 frame and 96 control heartbeats in 25.26 s. The allocation result does not
 measure native API time or establish a frame-rate gain.
 
+An isolated Release A/B microbenchmark exercised native-renderer metadata
+conversion with a repeated 4 KiB cursor shape and 128 changing positions.
+Over three 100,000-frame samples, median time per conversion was 7.622 µs
+before caching and 0.523 µs with the Viewer cache. Both versions produced
+the same sample checksums. The sample excludes shape changes, rendering and
+network processing, so it does not establish a whole-session CPU savings.
+
 A repeat at revision `a6d51e7` measured the synthetic single-frame workload
 and the active console separately. The 25.6 s WPF idle fixture received one
 frame, dropped none, and completed five control heartbeats. Mean Host and
