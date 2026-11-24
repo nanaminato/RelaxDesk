@@ -54,6 +54,34 @@ public static class WindowsSessionContracts
             await returning.ResumeWhenAvailable(() => ++desktopReads == 1 ? active with { InputDesktop = null } : active, returnDeadline.Token);
         }
         Check(desktopReads == 2 && !returning.IsPaused);
+        _ = returning.Begin(active);
+        returning.CaptureParked();
+        using (var connectionClosed = new CancellationTokenSource())
+        {
+            try
+            {
+                await returning.ResumeWhenAvailable(() =>
+                {
+                    connectionClosed.Cancel();
+                    return active;
+                }, connectionClosed.Token);
+                throw new IOException("A desktop returned after disconnect resumed capture");
+            }
+            catch (OperationCanceledException) when (connectionClosed.IsCancellationRequested) { Check(returning.IsPaused); }
+        }
+        foreach (var (snapshot, reason) in new[]
+        {
+            (active with { Locked = true }, "session-locked"),
+            (active with { SessionId = 2 }, "physical-console-session-changed")
+        })
+        {
+            try
+            {
+                await returning.ResumeWhenAvailable(() => snapshot, CancellationToken.None);
+                throw new IOException("Unexpected desktop state resumed capture");
+            }
+            catch (WindowsSessionUnavailableException error) { Check(error.Reason == reason && returning.IsPaused); }
+        }
         active = active with { ConsoleSessionId = 1 };
         _ = pause.Begin(active);
         try { pause.Check(active with { ConsoleSessionId = uint.MaxValue }); throw new Exception("Pause allowed a detached console"); }

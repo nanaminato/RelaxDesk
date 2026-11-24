@@ -65,6 +65,7 @@ public sealed class DesktopElevationPause(TimeProvider? clock = null)
             Check(current);
             if (current.Denial is null)
             {
+                cancellation.ThrowIfCancellationRequested();
                 Resume(current);
                 return;
             }
