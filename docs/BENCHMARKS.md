@@ -71,6 +71,13 @@ The [live Viewer statistics window](LIVE-STATISTICS.md) exposes existing source/
 
 ### Real desktop loopback on RTX 5060 Ti
 
+At `81cf0b2`, `desktop-gpu-auto-recovery` deliberately failed the first UDP
+attachment and delivered 318 TCP frames followed by five UDP frames on the
+same session. D3D11 submitted 323 frames with zero full-frame readbacks. The
+Viewer measured control RTT P95 of 3.79 ms from three heartbeats. This
+exercises network-path recovery with a real DXGI source and hardware H.264
+on loopback. Capture-device loss and physical input were outside this run.
+
 The `desktop-gpu-udp` fixture captured the 2560 × 1440 console with DXGI and
 used hardware H.264, QUIC UDP, and D3D11 Viewer submission. In 25.7 seconds it
 received and submitted 540 frames, with zero full-frame readback and no
