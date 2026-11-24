@@ -71,6 +71,12 @@ The [live Viewer statistics window](LIVE-STATISTICS.md) exposes existing source/
 
 ### Real desktop loopback on RTX 5060 Ti
 
+The benchmark machine reported Windows edition `Core` (Home), version
+25H2, build 26200. The session probe ran in active console session 1 on
+the visible `Default` thread and input desktops. The environment supports
+single-machine Home observations. No second Home machine, physical input,
+or display scanout was verified by that probe.
+
 To sample per-process Windows GPU engine counters during the timed UDP
 desktop run, use `scripts/benchmark-renderers.ps1 -ArtifactsDirectory
 build/<artifacts> -OutputDirectory build/<new-output> -Modes desktop-gpu-udp`
