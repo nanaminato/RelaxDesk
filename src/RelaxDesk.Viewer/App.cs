@@ -50,6 +50,7 @@ public sealed class App : Application
             else if(args is ["--statistics-contracts",var fallbackStatisticsHost,var fallbackStatisticsFixtures,"oversized"])ViewerWindow.VerifyStatistics(app,fallbackStatisticsHost,fallbackStatisticsFixtures,oversized:true);
             else if(args is ["--statistics-contracts",var legacyStatisticsHost,var legacyStatisticsFixtures,"legacy-auto"])ViewerWindow.VerifyStatistics(app,legacyStatisticsHost,legacyStatisticsFixtures,legacyAuto:true);
             else if(args is ["--statistics-contracts",var tcpOnlyStatisticsHost,var tcpOnlyStatisticsFixtures,"host-without-udp"])ViewerWindow.VerifyStatistics(app,tcpOnlyStatisticsHost,tcpOnlyStatisticsFixtures,hostWithoutUdp:true);
+            else if(args is ["--statistics-contracts",var missingUdpHost,var missingUdpFixtures,"viewer-without-udp"])ViewerWindow.VerifyStatistics(app,missingUdpHost,missingUdpFixtures,viewerWithoutUdp:true);
             else if (args is ["--admin-upgrade-contracts", var adminHost]) ViewerWindow.VerifyAdminUpgrade(app, adminHost);
             else if (args is ["--admin-lifecycle-contracts", var lifecycleHost]) ViewerWindow.VerifyAdminUpgrade(app, lifecycleHost, activate: true);
             else if (args is ["--admin-worker-loss-contracts", var workerLossHost]) ViewerWindow.VerifyAdminUpgrade(app, workerLossHost, activate: true, workerLoss: true);
@@ -190,13 +191,16 @@ public sealed partial class ViewerWindow : Window
         while (outgoing.Reader.TryRead(out _)) { }
         int quicAttempts = 0, recoveryTcpFrames = 0, recoveryUdpFrames = 0;
         bool autoRecoveryTest = smoke?.AutoRecoveryTest == true;
+        bool canOfferUdp = target.Network != NetworkMode.Tcp &&
+            (smoke is null || smoke.RequireUdp || autoRecoveryTest) &&
+            WindowsQuicDatagrams.ReadTlsProvider() is not null;
         IQuicDatagrams OpenQuic(IPEndPoint endpoint, X509Certificate2 certificate)
         {
             if (autoRecoveryTest && Interlocked.Increment(ref quicAttempts) == 1)
                 throw new IOException("Injected initial UDP connection failure");
             return WindowsQuicDatagrams.Connect(endpoint, certificate);
         }
-        using var connection = new SessionClient { RequestedFeatures = target.Features,RequestedMode=target.Mode,RequestAdminUpgrade=true,RequestPointerCompression=true,RequestQuicRecovery=smoke is null || autoRecoveryTest,Network=target.Network,OpenWorkDeviceKey=target.IdentifyWorkDevice ? WindowsWorkDeviceKey.Open : null,ConnectQuic=smoke is null || smoke.RequireUdp || autoRecoveryTest ? OpenQuic : null,RequestedDisplayVersion=target.DisplayVersion,RequestedVideoVersion=VideoSettingsProtocol.Version }; using var abort = cancellation.Token.Register(connection.Dispose);
+        using var connection = new SessionClient { RequestedFeatures = target.Features,RequestedMode=target.Mode,RequestAdminUpgrade=true,RequestPointerCompression=true,RequestQuicRecovery=smoke is null || autoRecoveryTest,Network=target.Network,OpenWorkDeviceKey=target.IdentifyWorkDevice ? WindowsWorkDeviceKey.Open : null,ConnectQuic=canOfferUdp ? OpenQuic : null,RequestedDisplayVersion=target.DisplayVersion,RequestedVideoVersion=VideoSettingsProtocol.Version }; using var abort = cancellation.Token.Register(connection.Dispose);
         string attemptStage = "connect";
         connection.PhaseChanged+=phase=>{attemptStage=phase switch { ConnectionPhase.Authenticating=>"authenticating",ConnectionPhase.AwaitingApproval=>"awaiting-approval",ConnectionPhase.Negotiating=>"negotiating",ConnectionPhase.Connected=>"session-setup",_=>"connect" };if(ReferenceEquals(session,cancellation)&&!cancellation.IsCancellationRequested)SetConnectionPhase(phase);};
         ClipboardSynchronizer? clipboard = null;

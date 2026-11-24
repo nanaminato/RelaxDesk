@@ -9,7 +9,7 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
-    public static void VerifyStatistics(Application app,string hostApplication,string fixtures,bool udp=false,bool oversized=false,bool legacyAuto=false,bool hostWithoutUdp=false)
+    public static void VerifyStatistics(Application app,string hostApplication,string fixtures,bool udp=false,bool oversized=false,bool legacyAuto=false,bool hostWithoutUdp=false,bool viewerWithoutUdp=false)
     {
         if (SessionStatisticsWindow.FallbackDescription(null) != "" ||
             SessionStatisticsWindow.FallbackDescription("udp-attach-failed") == SessionStatisticsWindow.FallbackDescription("future-reason"))
@@ -26,7 +26,7 @@ public sealed partial class ViewerWindow
             return await host.StandardOutput.ReadToEndAsync(timeout.Token);
         });
         var window=new ViewerWindow{ShowActivated=false};window.host.Text="127.0.0.1";window.port.Text=number.ToString();window.fingerprint.Text=pin;window.token.Password=token;window.pinnedConnection.IsChecked=true;window.gpuRendering.IsChecked=false;Task? running=null;
-        window.networkMode.SelectedIndex = oversized || legacyAuto || hostWithoutUdp ? 0 : udp ? 2 : 1;
+        window.networkMode.SelectedIndex = oversized || legacyAuto || hostWithoutUdp || viewerWithoutUdp ? 0 : udp ? 2 : 1;
         async Task Until(Func<bool> condition){while(!condition())await Task.Delay(20,timeout.Token);}
         window.Loaded+=async(_,_)=>
         {
@@ -63,6 +63,12 @@ public sealed partial class ViewerWindow
                     Console.WriteLine(legacyAuto
                         ? "PASS current WPF Auto Viewer uses TCP and reports that the legacy Host did not offer UDP"
                         : "PASS WPF Auto Viewer shows that the Host did not offer UDP while TCP video continues");
+                }
+                if (viewerWithoutUdp)
+                {
+                    if (snapshot.Fallback != "udp-local-unavailable" || !panel.DisplayText.Contains("本机 UDP 不可用"))
+                        throw new IOException("Missing local MsQuic did not select TCP before UDP negotiation");
+                    Console.WriteLine("PASS WPF Auto selected TCP and reported the missing local UDP runtime");
                 }
                 panel.UpdateLayout();await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Render);var content=(FrameworkElement)panel.Content;var bitmap=new RenderTargetBitmap((int)content.ActualWidth,(int)content.ActualHeight,96,96,System.Windows.Media.PixelFormats.Pbgra32);bitmap.Render(content);byte[] pixels=new byte[bitmap.PixelWidth*bitmap.PixelHeight*4];bitmap.CopyPixels(pixels,bitmap.PixelWidth*4,0);if(!pixels.Where((_,index)=>index%4==3).Any(value=>value>0)||!pixels.Where((_,index)=>index%4==0).Any(value=>value>0&&value<250))throw new IOException("Statistics rendered no readable content");var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));using(var output=File.Create(Path.Combine(root,"statistics.png")))png.Save(output);
                 panel.Close();await panel.Completion;int stopped=snapshots;await Task.Delay(1100,timeout.Token);if(snapshots!=stopped||window.statisticsWindow is not null)throw new IOException("Closed panel continued sampling");
