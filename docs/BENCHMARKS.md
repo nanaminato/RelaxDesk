@@ -84,6 +84,16 @@ run, all with dirty rectangles and only one full-screen rectangle. The sample
 is a desktop activity observation, with static-idle performance, physical
 input-to-photon timing and matched two-device MSTSC comparison still open.
 
+At `ff6f4da`, the headless loopback fixture again observed an active 2560 × 1440
+SDR desktop. In 25.28 s it received 542 updates after the first frame and
+completed 96 control heartbeats. The Host reported 21.28 FPS, 3.605 Mbit/s
+of media send accounting, 0.44% CPU, zero queued-frame drops and no CPU pixel
+uploads to the encoder. Capture and hardware H.264 encode P95 were 2.31 ms
+and 5.77 ms. Of 543 DXGI frames, one had a full-screen dirty rectangle
+and none had move rectangles. GPU utilization was unavailable. This run
+used TCP/TLS loopback without rendering or input, so it provides an active
+desktop baseline and leaves true static-idle and physical latency unmeasured.
+
 A repeat at revision `a6d51e7` measured the synthetic single-frame workload
 and the active console separately. The 25.6 s WPF idle fixture received one
 frame, dropped none, and completed five control heartbeats. Mean Host and
