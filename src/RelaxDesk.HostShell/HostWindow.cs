@@ -179,7 +179,12 @@ internal sealed partial class HostWindow:Window
                 guestInputPermission.Visibility = guest ? Visibility.Visible : Visibility.Collapsed;
                 consentAccess.Text = activeMode == "Admin" ? "对方请求操作管理员权限窗口，需要另行确认。" : guest ? "允许后共享画面。可单独允许键鼠操作。" : "允许后共享画面，并允许普通桌面的键鼠操作。";
                 request.Visibility=Visibility.Visible;allow.IsEnabled=deny.IsEnabled=true;clipboardPermission.IsChecked=false;clipboardPermission.Content=new TextBlock{Text="允许双向剪贴板："+SessionCapabilities.ClipboardDescription(change.Features??[])+"（读取/替换两端新复制的内容）",TextWrapping=TextWrapping.Wrap};clipboardPermission.Visibility=(change.Features??[]).Any(SessionCapabilities.IsClipboard)?Visibility.Visible:Visibility.Collapsed;ShowFileRequest((change.Features??[]).Contains(SessionCapabilities.FileTransfer));ShowAudioRequest(change.Features);ApplyWorkTrust(change);state.Text="等待你的授权";detail.Text="还未共享桌面或开放输入。";if(ConsumeNextWork())_ = Decide(true);break;
-            case "admin-starting":state.Text="等待本机 UAC";detail.Text="请在本机确认 Windows 提权请求。";revokeAdminInput.Content="取消管理员授权";revokeAdminInput.Visibility=Visibility.Visible;break;
+            case "admin-starting":
+                state.Text = activeMode == "Work" ? "正在共享 · Work" : "正在准备管理员输入";
+                detail.Text = "正在检查并启动管理员输入代理。如果 Windows 显示 UAC 提示，请在本机确认。";
+                revokeAdminInput.Content = "取消管理员授权";
+                revokeAdminInput.Visibility = Visibility.Visible;
+                break;
             case "admin-awaiting-viewer":state.Text="等待 Viewer 确认";detail.Text="管理员输入代理已启动，正在等待 Viewer 确认。";revokeAdminInput.Content="取消管理员授权";revokeAdminInput.Visibility=Visibility.Visible;break;
             case "admin-ready":revokeGuestInput.Visibility=Visibility.Collapsed;adminDeploymentUnavailable=false;activeMode="Admin";state.Text="正在共享 · Admin";detail.Text="管理员输入代理已连接。断开会话会撤销输入。";revokeAdminInput.Content="退出管理员模式";revokeAdminInput.Visibility=Visibility.Visible;break;
             case "admin-revoked":revokeGuestInput.Visibility=workInputRevoke&&activeInput?Visibility.Visible:Visibility.Collapsed;activeMode="Work";state.Text="正在共享 · Work";detail.Text="管理员键鼠权限已撤销。";revokeAdminInput.Visibility=Visibility.Collapsed;break;
