@@ -11,7 +11,7 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
-    internal static void VerifyAdminUpgrade(Application app, string hostApplication, bool activate = false, bool workerLoss = false, bool realWorker = false, bool cancelElevation = false)
+    internal static void VerifyAdminUpgrade(Application app, string hostApplication, bool activate = false, bool workerLoss = false, bool realWorker = false, bool cancelElevation = false, bool physicalLock = false)
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
@@ -28,10 +28,11 @@ public sealed partial class ViewerWindow
         string backend = realWorker ? "dxgi" : workerLoss ? "test-admin-worker-loss" : activate ? "test-admin-lifecycle" : "test-displays";
         foreach (var arg in new[] { "--shell", "127.0.0.1", port.ToString(), backend }) start.ArgumentList.Add(arg);
         using var process = Process.Start(start) ?? throw new IOException("Could not start Host");
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(realWorker ? 90 : 25));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(physicalLock ? 120 : realWorker ? 90 : 25));
         var ct = timeout.Token;
         int released = 0;
         bool observedUacCancellation = false;
+        bool observedNativeCleanup = false;
 
         async Task<JsonElement> Event(string kind, string? unexpected = null, string? unexpectedLog = null)
         {
@@ -40,6 +41,8 @@ public sealed partial class ViewerWindow
                 if (line.StartsWith("test_admin_input_released", StringComparison.Ordinal)) released++;
                 if (cancelElevation && line.StartsWith("admin_uac_cancelled native_error=1223 ", StringComparison.Ordinal))
                     observedUacCancellation = true;
+                if (physicalLock && line.StartsWith("session_cleanup native_live_resources=0 ", StringComparison.Ordinal))
+                    observedNativeCleanup = true;
                 if (unexpectedLog is not null && line.StartsWith(unexpectedLog, StringComparison.Ordinal))
                     throw new IOException($"Host emitted unexpected input callback {unexpectedLog}");
                 if (!line.StartsWith("RD_EVENT ", StringComparison.Ordinal)) continue;
@@ -137,6 +140,20 @@ public sealed partial class ViewerWindow
                         await Until(() => viewer.activeMode == SessionMode.Admin && viewer.inputAuthorized && viewer.displaySession?.Ready == true);
                         if (viewer.Toolbar?.EndpointText.StartsWith("Admin · ", StringComparison.Ordinal) != true)
                             throw new IOException("Toolbar did not show the granted Admin mode");
+                        if (physicalLock)
+                        {
+                            Console.WriteLine("READY Admin is active. Lock this Windows console, wait at least two seconds, then unlock locally.");
+                            await connection.WaitAsync(ct);
+                            await Event("session-ended", unexpected: "approval-request");
+                            if (viewer.inputAuthorized || !observedNativeCleanup || !viewer.status.Text.StartsWith("Host 已锁屏", StringComparison.Ordinal))
+                                throw new IOException("Physical lock did not close Admin with the WindowsLocked notice and clean resources");
+                            await Send("STOP");
+                            await process.WaitForExitAsync(ct);
+                            if (process.ExitCode != 0) throw new IOException("Host did not exit cleanly");
+                            Console.WriteLine("PASS physical Windows lock ended Admin and Viewer did not retry; Host native resources zero");
+                            app.Shutdown();
+                            return;
+                        }
                         if (realWorker)
                         {
                             menu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));

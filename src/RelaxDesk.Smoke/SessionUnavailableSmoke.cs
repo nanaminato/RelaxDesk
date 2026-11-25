@@ -21,7 +21,9 @@ internal static class SessionUnavailableSmoke
     {
         var reservation=new TcpListener(IPAddress.Loopback,0);reservation.Start();int port=((IPEndPoint)reservation.LocalEndpoint).Port;reservation.Stop();
         using var host=Process.Start(ChildProcess.Create(application,"127.0.0.1",port.ToString(),backend))??throw new IOException("Host launch failed");
-        using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(physicalLock ? 90 : 20));using var client=new SessionClient();Task<string>? logs=null;Task? media=null, heartbeats=null;int frames=0;
+        using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(physicalLock ? 90 : 20));
+        using var client=new SessionClient { RequestedMode = physicalLock ? SessionMode.Work : null };
+        Task<string>? logs=null;Task? media=null, heartbeats=null;int frames=0;
         try
         {
             string pin=(await host.StandardOutput.ReadLineAsync(deadline.Token)??"").Split(": ")[1];
@@ -32,6 +34,7 @@ internal static class SessionUnavailableSmoke
             media=Task.Run(async()=>{try{while(true){_=await MediaProtocol.Read(client.Media,deadline.Token);Interlocked.Increment(ref frames);}}catch(EndOfStreamException){}catch(IOException){}},deadline.Token);
             if (physicalLock)
             {
+                if (!client.InputAllowed) throw new IOException("Work input was not authorized before lock");
                 while (Volatile.Read(ref frames) == 0) await Task.Delay(25, deadline.Token);
                 Console.WriteLine("READY Lock this Windows console, wait at least two seconds, then unlock locally.");
                 heartbeats = SendHeartbeats();
@@ -59,7 +62,7 @@ internal static class SessionUnavailableSmoke
                 throw new IOException("Host did not report desktop transition expiry");
             string scenario = expectPause ? " after desktop pause expiry" : "";
             Console.WriteLine(physicalLock
-                ? $"PASS actual Windows lock ended the Host/TLS grant: frames={frames}, terminal WindowsLocked, no auto retry, native resources zero"
+                ? $"PASS actual Windows lock ended the Work Host/TLS grant: frames={frames}, terminal WindowsLocked, no auto retry, native resources zero"
                 : $"PASS actual Host/TLS synthetic {expectedReason}{scenario}: frames={frames}, terminal notice, no auto retry, native resources zero; no real desktop transition or SendInput");
         }
         finally

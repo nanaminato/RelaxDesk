@@ -62,6 +62,7 @@ public sealed class App : Application
             else if (args is ["--admin-lifecycle-contracts", var lifecycleHost]) ViewerWindow.VerifyAdminUpgrade(app, lifecycleHost, activate: true);
             else if (args is ["--admin-real-worker-contracts", var realWorkerHost]) ViewerWindow.VerifyAdminUpgrade(app, realWorkerHost, activate: true, realWorker: true);
             else if (args is ["--admin-uac-cancel-contracts", var cancelUacHost]) ViewerWindow.VerifyAdminUpgrade(app, cancelUacHost, activate: true, realWorker: true, cancelElevation: true);
+            else if (args is ["--admin-physical-lock-contracts", var lockedAdminHost]) ViewerWindow.VerifyAdminUpgrade(app, lockedAdminHost, activate: true, realWorker: true, physicalLock: true);
             else if (args is ["--admin-worker-loss-contracts", var workerLossHost]) ViewerWindow.VerifyAdminUpgrade(app, workerLossHost, activate: true, workerLoss: true);
             else if(args is ["--video-settings-contracts",var settingsHost,var settingsMode])ViewerWindow.VerifyVideoSettings(app,settingsHost,settingsMode);
             else if(args is ["--display-legacy-session-contracts",var legacyDisplayHost])ViewerWindow.VerifyDisplaySession(app,legacyDisplayHost,false,true);
