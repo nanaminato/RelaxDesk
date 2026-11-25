@@ -418,12 +418,20 @@ internal static class VideoHostSession
                             if (elevated is not null)
                             {
                                 var device = (displays?.Active ?? displaySelection)?.Device;
-                                if (device is not null && device != elevatedDisplay)
+                                try
                                 {
-                                    elevated.SelectDisplay(device, session.Token).GetAwaiter().GetResult();
-                                    elevatedDisplay = device;
+                                    if (device is not null && device != elevatedDisplay)
+                                    {
+                                        elevated.SelectDisplay(device, session.Token).GetAwaiter().GetResult();
+                                        elevatedDisplay = device;
+                                    }
+                                    elevated.Send(packet.Input ?? throw new InvalidDataException("Administrator input requires rich input"), session.Token).GetAwaiter().GetResult();
                                 }
-                                elevated.Send(packet.Input ?? throw new InvalidDataException("Administrator input requires rich input"), session.Token).GetAwaiter().GetResult();
+                                catch (Exception error) when (!session.IsCancellationRequested && error is IOException or ObjectDisposedException or OperationCanceledException)
+                                {
+                                    failures.Record("admin-input", "input-forward", 0, error);
+                                    throw;
+                                }
                                 if (!elevatedInputForwarded)
                                 {
                                     elevatedInputForwarded = true;
@@ -629,7 +637,10 @@ internal static class VideoHostSession
             }
             finally { await elevated.DisposeAsync(); }
         }
-        if (stop.IsCancellationRequested || failure?.Error is WindowsSessionUnavailableException)
+        bool inputWorkerFailed = failure?.Worker == "admin-input";
+        if (inputWorkerFailed && shellSessionId is not null)
+            ShellBridge.Emit("admin-worker-lost", sessionId: shellSessionId);
+        if (stop.IsCancellationRequested || failure?.Error is WindowsSessionUnavailableException || inputWorkerFailed)
         {
             // Bounded terminal notice distinguishes local stop from network loss.
             using var terminal = new CancellationTokenSource(TimeSpan.FromSeconds(1));
@@ -644,7 +655,7 @@ internal static class VideoHostSession
                         "physical-console-session-changed" => SessionEndReason.WindowsSessionChanged,
                         "input-desktop-unavailable" or "input-desktop-unsupported" or "thread-desktop-unsupported" or
                             "expected-desktop-transition-expired" => SessionEndReason.WindowsDesktopUnavailable,
-                        null => (SessionEndReason?)null,
+                        null => inputWorkerFailed ? SessionEndReason.InputWorkerUnavailable : (SessionEndReason?)null,
                         _ => SessionEndReason.WindowsSessionUnavailable
                     };
                     await Wire.Write(control, new("session-ended-v2", Text: "host-ended", EndReason: reason), terminal.Token);
@@ -660,7 +671,7 @@ internal static class VideoHostSession
             try { await Task.WhenAll(observedInput, observedSender, observedProducer, observedClipboard,observedSession,observedAdmin,observedTcpFallback,networkQuality,quicRecovery,simulatedTransition); } catch (Exception) { /* Causal failure is reported above; join all workers. */ }
             try { await fileWorker; } catch (Exception error) { HostSessionLog.Write($"file_worker_shutdown error_type={error.GetType().Name} hresult=0x{error.HResult:X8}"); }
             await audioWorker;
-            if(fileResumes is not null&&(stop.IsCancellationRequested||failure?.Error is WindowsSessionUnavailableException||Volatile.Read(ref explicitFileRevocation)!=0))await fileResumes.Clear();
+            if(fileResumes is not null&&(stop.IsCancellationRequested||inputWorkerFailed||failure?.Error is WindowsSessionUnavailableException||Volatile.Read(ref explicitFileRevocation)!=0))await fileResumes.Clear();
             gate.Revoke(); try{inputDesktop?.ReleaseAll();}catch(IOException error){HostSessionLog.Write($"input_cleanup_deferred error_type={error.GetType().Name}");}
             try
             {

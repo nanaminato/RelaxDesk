@@ -72,6 +72,7 @@ public sealed partial class ViewerWindow
                         RemoteSessionEndedException { Reason: SessionEndReason.WindowsLocked } => "Host 已锁屏，本次授权已结束。请在 Host 解锁后重新连接。",
                         RemoteSessionEndedException { Reason: SessionEndReason.WindowsSessionChanged } => "Host 已切换 Windows 会话。重新连接需要本机再次授权。",
                         RemoteSessionEndedException { Reason: SessionEndReason.WindowsDesktopUnavailable } => "Host 的输入桌面已不可用。请回到原用户的普通桌面后重新连接。",
+                        RemoteSessionEndedException { Reason: SessionEndReason.InputWorkerUnavailable } => "Host 的管理员输入组件已断开。请检查 Host 状态后重新连接。",
                         RemoteSessionEndedException { Reason: SessionEndReason.WindowsSessionUnavailable } => "Host 的 Windows 会话已不可用，本次授权已结束。",
                         RemoteSessionEndedException => "Host 已结束本次连接。",
                         System.Security.Authentication.AuthenticationException => "无法验证 Host 身份，已停止连接；请重新核对指纹。",

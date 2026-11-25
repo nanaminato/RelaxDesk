@@ -16,7 +16,7 @@ public sealed class UdpMediaUnavailableException(UdpMediaFailure reason, Excepti
 {
     public UdpMediaFailure Reason { get; } = reason;
 }
-public enum SessionEndReason { WindowsSessionUnavailable = 1, WindowsLocked = 2, WindowsSessionChanged = 3, WindowsDesktopUnavailable = 4 }
+public enum SessionEndReason { WindowsSessionUnavailable = 1, WindowsLocked = 2, WindowsSessionChanged = 3, WindowsDesktopUnavailable = 4, InputWorkerUnavailable = 5 }
 public sealed class RemoteSessionEndedException(SessionEndReason? reason = null) : IOException("Host explicitly ended this session")
 {
     public SessionEndReason? Reason { get; } = reason;

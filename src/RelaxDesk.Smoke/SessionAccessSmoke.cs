@@ -104,6 +104,10 @@ internal static class SessionAccessSmoke
                     await host.StandardInput.WriteLineAsync($"DISCONNECT {id}");
                     await host.StandardInput.FlushAsync();
                 }
+                var terminal = await SessionControl.Read(viewer.Control, timeout.Token);
+                if (!ConnectionRecovery.IsExplicitEnd(terminal) ||
+                    terminal.EndReason != (loseWorker ? SessionEndReason.InputWorkerUnavailable : (SessionEndReason?)null))
+                    throw new IOException("Input worker end did not send the expected terminal reason");
                 await ReadEvent("session-ended");
                 if (!inputRouted || !inputReleased || workerFailed != loseWorker)
                     throw new IOException("Input worker routing, failure or release was not observed");

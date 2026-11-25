@@ -128,7 +128,7 @@ internal sealed partial class HostWindow:Window
     {
         if(change.Generation!=0&&change.Generation!=Host.Generation)return;
         string kind=change.Kind;string? value=change.Address;
-        if ((kind is "admin-starting" or "admin-ready" or "admin-deployment-unavailable" or "admin-start-failed" or
+        if ((kind is "admin-starting" or "admin-ready" or "admin-deployment-unavailable" or "admin-start-failed" or "admin-worker-lost" or
                 "ordinary-input-blocked" or "ordinary-input-restored") &&
             (displayedSessionId is null || change.SessionId != displayedSessionId)) return;
         switch(kind){
@@ -176,6 +176,10 @@ internal sealed partial class HostWindow:Window
             case "admin-start-failed":
                 state.Text = "完整远程控制不可用";
                 detail.Text = adminStartupNotice = "管理员输入代理未能就绪。请检查本机授权和系统服务，然后重新连接。";
+                break;
+            case "admin-worker-lost":
+                state.Text = "管理员输入组件已断开";
+                detail.Text = adminStartupNotice = "本次远程控制已结束。请检查输入组件状态后重新连接。";
                 break;
             case "ordinary-input-blocked" when activeInput && !fullControlRequest:
                 detail.Text = "Windows 暂时拒绝键鼠操作，画面仍在共享。请将焦点切回普通权限窗口。";
