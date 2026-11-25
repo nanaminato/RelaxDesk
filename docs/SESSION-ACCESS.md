@@ -45,8 +45,9 @@ a Guest that never received a grant is a protocol violation. Re-enabling
 Guest input requires a fresh approval.
 
 The coordinator refuses real sharing if its effective process token is
-elevated, above medium integrity, or has UIAccess, or if it is impersonating
-when consent completes. The guard also applies to legacy connections. A
+elevated, above medium integrity, or has UIAccess, or if it is impersonating.
+The guard runs before opening the listener and again when consent completes.
+It also applies to legacy connections. A
 per-input desktop check remains in the Windows input path. Windows can reject
 input directed at a higher-integrity window via UIPI.
 

@@ -25,7 +25,7 @@ try
     await ElevatedInputWorker.Run(pipe, grant, () => new WindowsDisplaySelection(display), CancellationToken.None);
     return 0;
 }
-catch (Exception error) when (error is IOException or SecurityException or
+catch (Exception error) when (error is IOException or SecurityException or UnauthorizedAccessException or
     System.ComponentModel.Win32Exception or ArgumentException or InvalidDataException or OperationCanceledException)
 {
     return 3;
