@@ -31,12 +31,15 @@ public sealed partial class ViewerWindow
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(realWorker ? 90 : 25));
         var ct = timeout.Token;
         int released = 0;
+        bool observedUacCancellation = false;
 
         async Task<JsonElement> Event(string kind, string? unexpected = null, string? unexpectedLog = null)
         {
             while (await process.StandardOutput.ReadLineAsync(ct) is { } line)
             {
                 if (line.StartsWith("test_admin_input_released", StringComparison.Ordinal)) released++;
+                if (cancelElevation && line.StartsWith("admin_uac_cancelled native_error=1223 ", StringComparison.Ordinal))
+                    observedUacCancellation = true;
                 if (unexpectedLog is not null && line.StartsWith(unexpectedLog, StringComparison.Ordinal))
                     throw new IOException($"Host emitted unexpected input callback {unexpectedLog}");
                 if (!line.StartsWith("RD_EVENT ", StringComparison.Ordinal)) continue;
@@ -106,6 +109,8 @@ public sealed partial class ViewerWindow
                         {
                             await Event("admin-starting", unexpected: "admin-denied");
                             await Event("admin-denied", unexpected: "admin-ready");
+                            if (!observedUacCancellation)
+                                throw new IOException("Host denied the request without observing Windows UAC cancellation");
                             await Until(() => viewer.activeMode == SessionMode.Work && viewer.inputAuthorized && viewer.displaySession?.Ready == true);
                             if (connection.IsCompleted || viewer.Toolbar?.EndpointText.StartsWith("Work · ", StringComparison.Ordinal) != true)
                                 throw new IOException("UAC cancellation did not restore Work on the existing connection");

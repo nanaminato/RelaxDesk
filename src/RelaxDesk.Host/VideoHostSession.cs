@@ -451,7 +451,10 @@ internal static class VideoHostSession
                 catch (Exception error) when (!session.IsCancellationRequested && error is (IOException or OperationCanceledException or System.Security.SecurityException or System.ComponentModel.Win32Exception or UnauthorizedAccessException))
                 {
                     deploymentUnavailable = error is AdminInputDeploymentException;
-                    HostSessionLog.Write($"admin_start_failed type={error.GetType().Name}");
+                    if (error is OperationCanceledException { InnerException: System.ComponentModel.Win32Exception { NativeErrorCode: 1223 } })
+                        HostSessionLog.Write("admin_uac_cancelled native_error=1223");
+                    else
+                        HostSessionLog.Write($"admin_start_failed type={error.GetType().Name}");
                 }
                 try { await desktopPause.ResumeWhenAvailable(ReadDesktop, session.Token); }
                 catch { if (worker is not null) await worker.DisposeAsync(); throw; }
