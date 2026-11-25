@@ -117,8 +117,33 @@ internal static class ShellVerification
                 }
                 await window.StopSharing();
                 await window.Host.Finished;
-                window.SelectAllowedModesForVerification("访客、工作和管理员");
                 Console.WriteLine("PASS WPF Host Work-only settings reject Guest and allow separately approved Work without administrator upgrade");
+                window.SelectAllowedModesForVerification("访客和工作");
+                port = Port();
+                await window.StartSharing("127.0.0.1", port, "test-displays");
+                await Until(() => window.Status == "等待连接");
+                using (var work = new SessionClient { RequestedMode = SessionMode.Work, RequestAdminUpgrade = true })
+                {
+                    var connecting = work.ConnectByApproval("127.0.0.1", port, timeout.Token);
+                    await Until(() => window.RequestVisible);
+                    await window.Decide(true);
+                    await connecting;
+                    if (work.AdminUpgrade || !work.InputAllowed) throw new IOException("Disabling Admin affected the ordinary Work grant");
+                }
+                await Until(() => window.Status == "等待连接");
+                using (var guest = new SessionClient { RequestedMode = SessionMode.Guest })
+                {
+                    var connecting = guest.ConnectByApproval("127.0.0.1", port, timeout.Token);
+                    await Until(() => window.RequestVisible);
+                    await window.Decide(true);
+                    await connecting;
+                    if (guest.AdminUpgrade || guest.InputAllowed || (await guest.Video.Read(timeout.Token)).Data.Length == 0)
+                        throw new IOException("Disabling Admin changed the default Guest view-only grant");
+                }
+                await window.StopSharing();
+                await window.Host.Finished;
+                Console.WriteLine("PASS WPF no-Admin policy permits ordinary Work and Guest viewing without negotiating administrator upgrade");
+                window.SelectAllowedModesForVerification("访客、工作和管理员");
                 port = Port();
                 await window.StartSharing("127.0.0.1", port, "test-displays");
                 await Until(() => window.Status == "等待连接");
