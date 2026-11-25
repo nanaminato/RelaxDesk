@@ -156,6 +156,7 @@ try {
     }
     Confirm ($sessionEnd.Contains('PASS actual Host/TLS synthetic WindowsDesktopUnavailable after desktop pause expiry')) 'Packaged Host desktop pause expiry evidence missing'
     $inputLifecycle = Invoke-App 'packaged-full-control-input' $SmokeApplication @($hostExe, '--session-access')
+    Confirm ($inputLifecycle.Contains('PASS one full-control approval enables clipboard, scoped files, audio and display selection over TLS')) 'Packaged whole-connection feature negotiation evidence missing'
     Confirm ($inputLifecycle.Contains('PASS full-control disconnect releases input and requires fresh consent') -and
         $inputLifecycle.Contains('PASS full-control worker loss releases input and requires fresh consent')) 'Packaged full-control input cleanup or fresh consent evidence missing'
     $deviceTrust = Invoke-App 'packaged-device-trust' $shellExe @('--device-trust-contracts',$hostExe,(Join-Path $output 'device-trust-fixtures'))

@@ -35,12 +35,13 @@ internal static class VideoHostSession
             throw new AuthenticationException("Synthetic video testing is loopback-only");
         if(!synthetic)WindowsSessionAccess.EnsureAllowed();
         var displaySelection=synthetic?null:new WindowsDisplaySelection(selectedDisplay);
-        var displays=hello.DisplayVersion!=0&&(!synthetic||backend is "test-displays" or "test-topology" or "test-topology-init-race")?new HostDisplaySession(displaySelection,synthetic?selectedDisplay:null,hello.DisplayVersion,backend=="test-topology"):null;
+        bool fullControlFixture = backend == "test-full-control";
+        var displays=hello.DisplayVersion!=0&&(!synthetic||fullControlFixture||backend is "test-displays" or "test-topology" or "test-topology-init-race")?new HostDisplaySession(displaySelection,synthetic?selectedDisplay:null,hello.DisplayVersion,backend=="test-topology"):null;
         int displayVersion=displays?.Version??0;
         var features = SessionCapabilities.ValidateGrant(hello.Features, grantedFeatures);
         var video=hello.VideoVersion==VideoSettingsProtocol.Version?new HostVideoSettings():null;
-        if(audioRevoked.IsCancellationRequested||synthetic&&backend is not ("test-audio" or "test-audio-failure"))features=features.Where(feature=>feature!=SessionCapabilities.SystemAudio).ToArray();
-        if (synthetic && backend is not ("test-clipboard" or "test-clipboard-failure" or "test-clipboard-rich" or "test-clipboard-rich-failure" or "test-clipboard-files")) features = features.Where(feature=>!SessionCapabilities.IsClipboard(feature)).ToArray();
+        if(audioRevoked.IsCancellationRequested||synthetic&&!fullControlFixture&&backend is not ("test-audio" or "test-audio-failure"))features=features.Where(feature=>feature!=SessionCapabilities.SystemAudio).ToArray();
+        if (synthetic && !fullControlFixture && backend is not ("test-clipboard" or "test-clipboard-failure" or "test-clipboard-rich" or "test-clipboard-rich-failure" or "test-clipboard-files")) features = features.Where(feature=>!SessionCapabilities.IsClipboard(feature)).ToArray();
         if (clipboardRevoked.IsCancellationRequested) features = features.Where(feature=>!SessionCapabilities.IsClipboard(feature)).ToArray();
         if (filesRevoked.IsCancellationRequested) features = features.Where(feature=>feature is not (SessionCapabilities.FileTransfer or SessionCapabilities.ClipboardFiles)).ToArray();
         var fileRoot = features.Contains(SessionCapabilities.FileTransfer) && selectedFileRoot is not null ? new WindowsFileRoot(selectedFileRoot) : null;

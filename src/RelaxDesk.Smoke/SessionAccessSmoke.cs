@@ -10,6 +10,7 @@ internal static class SessionAccessSmoke
     public static async Task Run(string hostPath)
     {
         await Verify(hostPath, proveDevice: true, denied: false);
+        await Verify(hostPath, proveDevice: true, denied: false, allFeatures: true);
         await Verify(hostPath, proveDevice: false, denied: true, production: true);
         await Verify(hostPath, proveDevice: true, denied: true, production: true);
         await Verify(hostPath, proveDevice: true, denied: false, workerLoss: false);
@@ -19,7 +20,7 @@ internal static class SessionAccessSmoke
         Console.WriteLine("PASS production TLS and shell approval: full-control denial before and after device verification");
     }
 
-    static async Task Verify(string hostPath, bool proveDevice, bool denied, bool production = false, bool? workerLoss = null)
+    static async Task Verify(string hostPath, bool proveDevice, bool denied, bool production = false, bool? workerLoss = null, bool allFeatures = false)
     {
         var reservation = new TcpListener(IPAddress.Loopback, 0);
         reservation.Start();
@@ -29,15 +30,21 @@ internal static class SessionAccessSmoke
         {
             true => "test-admin-worker-loss",
             false => "test-admin-lifecycle",
-            null => production ? "dxgi" : "test-displays"
+            null => production ? "dxgi" : allFeatures ? "test-full-control" : "test-displays"
         };
-        using var host = Process.Start(ChildProcess.Create(hostPath, ["--shell", "127.0.0.1", port.ToString(), backend]))
+        string? fileRoot = allFeatures ? Directory.CreateTempSubdirectory("RelaxDesk-full-control-").FullName : null;
+        string[] features = allFeatures ? [SessionCapabilities.ClipboardText, SessionCapabilities.ClipboardImage,
+            SessionCapabilities.ClipboardHtml, SessionCapabilities.ClipboardFiles, SessionCapabilities.FileTransfer,
+            SessionCapabilities.SystemAudio] : [];
+        string[] hostOptions = fileRoot is null ? ["--shell"] : ["--shell", "--file-root", fileRoot];
+        using var host = Process.Start(ChildProcess.Create(hostPath, [..hostOptions, "127.0.0.1", port.ToString(), backend]))
             ?? throw new IOException("Host launch failed");
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(18));
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         using var viewer = new SessionClient
         {
             RequestedDisplayVersion = DisplayProtocol.Version,
+            RequestedFeatures = features,
             OpenDeviceKey = proveDevice ? () => ECDsa.Create(key.ExportParameters(true)) : null
         };
         bool inputRouted = false, inputReleased = false, workerFailed = false;
@@ -76,6 +83,15 @@ internal static class SessionAccessSmoke
             await connect;
             var frame = await viewer.Video.Read(timeout.Token);
             if (frame.Data.Length == 0) throw new IOException("No media delivered");
+
+            if (allFeatures)
+            {
+                if (!viewer.Features.ToHashSet().SetEquals(features) || viewer.Data is null || viewer.ClipboardData is null ||
+                    viewer.AudioData is null || viewer.DisplayState is null)
+                    throw new IOException("Whole approval did not enable the offered features and display selection");
+                Console.WriteLine("PASS one full-control approval enables clipboard, scoped files, audio and display selection over TLS");
+                return;
+            }
 
             if (workerLoss is { } loseWorker)
             {
@@ -123,6 +139,7 @@ internal static class SessionAccessSmoke
         {
             if (!host.HasExited) host.Kill(true);
             await host.WaitForExitAsync();
+            if (fileRoot is not null) Directory.Delete(fileRoot);
         }
 
         async Task<JsonElement> ReadEvent(string kind)
