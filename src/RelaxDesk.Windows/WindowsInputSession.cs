@@ -112,17 +112,22 @@ public sealed class WindowsInputSession : IDisposable
     {
         lock (inputSync)
         {
+            if (releaseBeforeNextInput)
+            {
+                try { ReleaseAll(); }
+                catch (InputRejectedException) { return false; }
+                releaseBeforeNextInput = false;
+            }
             try
             {
-                if (releaseBeforeNextInput) ReleaseAll();
-                releaseBeforeNextInput = false;
                 Inject(input);
                 return true;
             }
             catch (InputRejectedException)
             {
                 // Never replay a partially accepted command. Only retry releases.
-                releaseBeforeNextInput = true;
+                try { ReleaseAll(); }
+                catch (InputRejectedException) { releaseBeforeNextInput = true; }
                 return false;
             }
         }

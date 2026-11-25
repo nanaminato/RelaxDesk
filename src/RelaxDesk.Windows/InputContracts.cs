@@ -38,19 +38,19 @@ public static class InputContracts
             accepted=0;try{session.Inject(new("key",VirtualKey:65));throw new InvalidOperationException("Zero accepted");}catch(IOException){Check(session.HeldCount==0);}
         }
         sends.Clear();
+        var acceptedCounts = new Queue<uint>(new uint[] { 1, 1, 1, 0, 0, 1, 1 });
         using (var ordinary = new WindowsInputSession(batch =>
         {
             sends.Add(batch);
-            return (uint)Math.Min(accepted, batch.Length);
+            return acceptedCounts.TryDequeue(out uint limit) ? limit : (uint)batch.Length;
         }, () => { }, () => geometry))
         {
-            accepted = 1;
-            Check(!ordinary.TryInjectOrdinary(new("text", Text: "a")) && ordinary.HeldCount == 1);
-            accepted = 0;
-            Check(!ordinary.TryInjectOrdinary(new("key", VirtualKey: 66)) && sends.Count == 2 && WindowsInputPlan.IsUp(sends[1][0]));
-            accepted = 2;
+            Check(!ordinary.TryInjectOrdinary(new("text", Text: "a")) && ordinary.HeldCount == 0);
+            Check(sends.Count == 2 && WindowsInputPlan.IsUp(sends[1][0]));
+            Check(!ordinary.TryInjectOrdinary(new("text", Text: "b")) && ordinary.HeldCount == 1);
+            Check(!ordinary.TryInjectOrdinary(new("key", VirtualKey: 66)) && sends.Count == 5 && WindowsInputPlan.IsUp(sends[4][0]));
             Check(ordinary.TryInjectOrdinary(new("key", VirtualKey: 67)) && ordinary.HeldCount == 1);
-            Check(sends.Count == 4 && WindowsInputPlan.IsUp(sends[2][0]) && sends[3][0].Value.Keyboard.Key == 67);
+            Check(sends.Count == 7 && WindowsInputPlan.IsUp(sends[5][0]) && sends[6][0].Value.Keyboard.Key == 67);
         }
         bool permitted=false;using(var session=new WindowsInputSession(_=>throw new InvalidOperationException("Desktop guard bypassed"),()=>{if(!permitted)throw new IOException("Desktop unavailable");},()=>geometry))
         {try{session.Inject(new("key",VirtualKey:65));throw new InvalidOperationException("Guard bypassed");}catch(IOException){Check(session.HeldCount==0);}}
