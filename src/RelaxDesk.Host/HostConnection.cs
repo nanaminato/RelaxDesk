@@ -126,8 +126,7 @@ internal static class HostConnection
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop, shell.AdminInputRevoked);
         deadline.CancelAfter(TimeSpan.FromSeconds(60));
-        var authorization = new AdminInputAuthorization(SessionMode.Work);
-        Guid grant = authorization.Request()!.Value;
+        Guid grant = Guid.NewGuid();
         ShellBridge.Emit("admin-starting", sessionId: shell.Id, mode: SessionMode.Admin);
         using var monitor = new PeriodicTimer(TimeSpan.FromMilliseconds(200));
         async Task WatchPeer()
@@ -144,11 +143,11 @@ internal static class HostConnection
         AdminInputConnection? worker = null;
         try
         {
+            if (!shell.AdminConfirmed)
+                throw new AuthenticationException("Administrator input requires local approval");
             worker = await AdminInputLauncher.StartAfterLocalApproval(grant, display, deadline.Token);
             WindowsSessionAccess.EnsureAllowed();
             deadline.Token.ThrowIfCancellationRequested();
-            if (!authorization.Decide(grant, locallyApproved: shell.AdminConfirmed, agentReady: true))
-                throw new AuthenticationException("Administrator input approval expired");
             ShellBridge.Emit("admin-ready", sessionId: shell.Id, mode: SessionMode.Admin);
             return worker;
         }

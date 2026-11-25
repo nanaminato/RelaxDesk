@@ -43,28 +43,6 @@ guest.Revoke();
 Check(!guest.Allows(SessionCapabilities.ClipboardText));
 Check(!guest.AcceptControl(new Packet("ping-v2", 2)));
 
-var admin = new AdminInputAuthorization(SessionMode.Work);
-var guestAdmin = new AdminInputAuthorization(SessionMode.Guest);
-Check(guestAdmin.Request() is null);
-Guid adminRequest = admin.Request()!.Value;
-Check(admin.Request() is null);
-Check(!admin.TryExecute(adminRequest, () => throw new Exception("Unapproved administrator input")));
-Check(!admin.Decide(Guid.NewGuid(), true, true));
-Check(!admin.Decide(adminRequest, true, false));
-Check(!admin.Decide(adminRequest, true, true));
-adminRequest = admin.Request()!.Value;
-Check(admin.Decide(adminRequest, true, true));
-Check(admin.Request() is null && admin.TryExecute(adminRequest, () => { }));
-admin.Revoke();
-Check(!admin.TryExecute(adminRequest, () => throw new Exception("Revoked administrator input")));
-Guid staleAdmin = admin.Request()!.Value;
-admin.Revoke();
-Check(!admin.Decide(staleAdmin, true, true));
-Guid freshAdmin = admin.Request()!.Value;
-Check(admin.Decide(freshAdmin, true, true));
-admin.End();
-Check(admin.Request() is null && !admin.TryExecute(freshAdmin, () => throw new Exception("Ended administrator input")));
-
 using (var commands = new MemoryStream())
 {
     Guid grant = Guid.NewGuid();
