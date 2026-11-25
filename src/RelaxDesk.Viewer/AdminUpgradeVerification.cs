@@ -96,6 +96,11 @@ public sealed partial class ViewerWindow
                         if (requestId is null || requestId == prior || request.GetProperty("sessionId").GetString() != id)
                             throw new IOException("Invalid fresh admin approval");
                         prior = requestId;
+                        long pendingSequence = viewer.sequence;
+                        viewer.SendPointerMove(200, 100);
+                        viewer.SendRich(new("key", VirtualKey:65));
+                        if (viewer.inputAuthorized || viewer.sequence != pendingSequence || viewer.richHeld.Count != 0)
+                            throw new IOException("Input entered the Viewer queue while local administrator approval was pending");
                         await Send($"ALLOW_ADMIN_INPUT {id} {requestId}");
                         await Event("admin-ready");
                         await Until(() => viewer.activeMode == SessionMode.Admin && viewer.inputAuthorized && viewer.displaySession?.Ready == true);
