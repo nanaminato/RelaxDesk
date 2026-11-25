@@ -39,11 +39,11 @@ internal static class PinnedApprovalChecks
                         await control.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = scenario == "changed" ? changed : original }, timeout.Token);
                         var request = await Wire.Read(control, timeout.Token);
                         if (scenario == "changed") throw new InvalidDataException("Client sent a request to changed Host identity");
-                        if (request.Kind != "request-v2" || request.Text is not { Length: 32 } || !request.Text.All(char.IsAsciiHexDigit) || request.Text == previousNonce) throw new InvalidDataException("Fresh consent nonce missing");
+                        if (request.Kind != FullControlProtocol.Request || request.Text is not { Length: 32 } || !request.Text.All(char.IsAsciiHexDigit) || request.Text == previousNonce) throw new InvalidDataException("Fresh consent nonce missing");
                         previousNonce = request.Text;
                         if (scenario == "denied") { await Wire.Write(control, new("denied-v2"), timeout.Token); return; }
                         var ticket = new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(5));
-                        await Wire.Write(control, new("approved-v2", Text: ticket.Value, Capabilities: ["deflate"]), timeout.Token);
+                        await Wire.Write(control, new(FullControlProtocol.Approved, Text: ticket.Value, Capabilities: ["deflate"]), timeout.Token);
                         using var mediaSocket = await listener.AcceptTcpClientAsync(timeout.Token);
                         using var media = new SslStream(mediaSocket.GetStream());
                         await media.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = original }, timeout.Token);

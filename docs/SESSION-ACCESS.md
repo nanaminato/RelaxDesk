@@ -7,6 +7,8 @@ proves its device identity over TLS before the Host displays the local approval
 prompt. Approval enables the offered features within Host configuration. The
 production listener accepts only the full-control handshake. Media and auxiliary
 channel framing use their respective protocol versions.
+Synthetic loopback fixtures use the same handshake and can exercise mocked
+feature selections without launching the elevated input worker.
 
 
 ## Current session behavior

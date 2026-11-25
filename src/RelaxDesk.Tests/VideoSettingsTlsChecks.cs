@@ -18,7 +18,7 @@ internal static class VideoSettingsTlsChecks
             {
                 async Task<SslStream> Accept(){var socket=await listener.AcceptTcpClientAsync(timeout.Token);var tls=new SslStream(socket.GetStream());await tls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions{ServerCertificate=cert},timeout.Token);return tls;}
                 using var control=await Accept();var hello=await Wire.Read(control,timeout.Token);if(hello.VideoVersion!=requested||hello.VideoSettings is not null)throw new IOException("Video request changed");
-                var ticket=new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(8));await Wire.Write(control,new("approved-v2",Text:ticket.Value,Capabilities:["deflate"],VideoVersion:version,VideoSettings:state),timeout.Token);
+                var ticket=new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(8));await Wire.Write(control,new(FullControlProtocol.Approved,Text:ticket.Value,Capabilities:["deflate"],VideoVersion:version,VideoSettings:state),timeout.Token);
                 if(!success)return;
                 using var media=await Accept();var attach=await Wire.Read(media,timeout.Token);if(!ticket.Consume(attach.Text,DateTimeOffset.UtcNow))throw new IOException("Media binding failed");await Wire.Write(media,new("media-approved-v2"),timeout.Token);
                 await MediaProtocol.Write(media,new(MediaCodec.DeflateBgra,1,100,1,1,true,false,0,0,[],[1],VideoGeneration:version==0?0:1),timeout.Token);

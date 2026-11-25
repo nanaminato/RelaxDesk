@@ -19,8 +19,8 @@ internal static class ApprovalTlsChecks
             using var control = new SslStream(controlSocket.GetStream());
             await control.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = first }, timeout.Token);
             var request = await Wire.Read(control, timeout.Token);
-            if (request.Kind != "request-v2" || request.Text is not { Length: 32 } || !request.Text.All(char.IsAsciiHexDigit)) throw new IOException("Invalid IP approval hello");
-            await Wire.Write(control, new Packet("approved-v2", Text: new string('A',64), Capabilities: ["h264"]), timeout.Token);
+            if (request.Kind != FullControlProtocol.Request || request.Text is not { Length: 32 } || !request.Text.All(char.IsAsciiHexDigit)) throw new IOException("Invalid IP approval hello");
+            await Wire.Write(control, new Packet(FullControlProtocol.Approved, Text: new string('A',64), Capabilities: ["h264"]), timeout.Token);
             using var mediaSocket = await listener.AcceptTcpClientAsync(timeout.Token);
             using var media = new SslStream(mediaSocket.GetStream());
             try { await media.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = second }, timeout.Token); await Wire.Read(media, timeout.Token); }
@@ -61,7 +61,7 @@ internal static class ApprovalTlsChecks
                 throw new IOException("Invalid device proof");
             await Wire.Write(control, new(FullControlProtocol.InputUnavailable), ct);
         });
-        using var client = new SessionClient { FullControl = true, OpenDeviceKey = () => ECDsa.Create(ECCurve.NamedCurves.nistP256) };
+        using var client = new SessionClient { OpenDeviceKey = () => ECDsa.Create(ECCurve.NamedCurves.nistP256) };
         try
         {
             await client.ConnectByApproval("127.0.0.1", ((IPEndPoint)listener.LocalEndpoint).Port, ct);

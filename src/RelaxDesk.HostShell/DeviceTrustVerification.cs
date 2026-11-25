@@ -29,7 +29,6 @@ internal sealed partial class HostWindow
             }
             SessionClient Viewer(params string[] features) => new()
             {
-                FullControl = true,
                 OpenDeviceKey = () => ECDsa.Create(key.ExportParameters(true)),
                 RequestedFeatures = features
             };

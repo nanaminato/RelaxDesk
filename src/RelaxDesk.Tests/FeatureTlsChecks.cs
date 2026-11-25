@@ -28,7 +28,7 @@ internal static class FeatureTlsChecks
                 if (!(hello.Features ?? []).SequenceEqual(requested)) throw new IOException("Client feature request changed");
                 var ticket = new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(5));
                 var fileTicket = granted?.Contains(SessionCapabilities.FileTransfer) == true ? new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(5)) : null;
-                await Wire.Write(tls, new("approved-v2", Text: ticket.Value, Capabilities: ["h264"], Features: granted, DataTicket: fileTicket?.Value), timeout.Token);
+                await Wire.Write(tls, new(FullControlProtocol.Approved, Text: ticket.Value, Capabilities: ["h264"], Features: granted, DataTicket: fileTicket?.Value), timeout.Token);
                 if (!accept) return;
                 using var mediaSocket = await listener.AcceptTcpClientAsync(timeout.Token); using var media = new SslStream(mediaSocket.GetStream());
                 await media.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = cert }, timeout.Token);

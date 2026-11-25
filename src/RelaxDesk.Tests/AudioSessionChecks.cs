@@ -56,7 +56,7 @@ internal static class AudioSessionChecks
                 var mediaTicket=new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(8));var audioTicket=new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(8));
                 var files=new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(8));var clip=new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(8));
                 string? ticket=mode is "missing" or "omitted"?null:mode=="malformed"?"bad":mode=="reused"?mediaTicket.Value:audioTicket.Value;
-                await Wire.Write(control,new("approved-v2",Text:mediaTicket.Value,Capabilities:["deflate"],Features:grant,AudioTicket:ticket,DataTicket:mode=="combined"?files.Value:null,ClipboardTicket:mode=="combined"?clip.Value:null),deadline.Token);
+                await Wire.Write(control,new(FullControlProtocol.Approved,Text:mediaTicket.Value,Capabilities:["deflate"],Features:grant,AudioTicket:ticket,DataTicket:mode=="combined"?files.Value:null,ClipboardTicket:mode=="combined"?clip.Value:null),deadline.Token);
                 if(reject)return;
                 using var media=await Accept();var binding=await Wire.Read(media,deadline.Token);
                 if(!mediaTicket.Consume(binding.Text,DateTimeOffset.UtcNow))throw new IOException("Media binding changed");await Wire.Write(media,new("media-approved-v2"),deadline.Token);

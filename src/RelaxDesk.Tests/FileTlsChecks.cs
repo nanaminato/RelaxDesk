@@ -16,7 +16,7 @@ internal static class FileTlsChecks
             using var controlSocket = await listener.AcceptTcpClientAsync(timeout.Token); using var control = new SslStream(controlSocket.GetStream());
             await control.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = first }, timeout.Token);
             _ = await Wire.Read(control, timeout.Token);
-            await Wire.Write(control, new("approved-v2", Text: new string('A',64), Capabilities:["h264"], Features:[SessionCapabilities.FileTransfer], DataTicket:new string('B',64)), timeout.Token);
+            await Wire.Write(control, new(FullControlProtocol.Approved, Text: new string('A',64), Capabilities:["h264"], Features:[SessionCapabilities.FileTransfer], DataTicket:new string('B',64)), timeout.Token);
             using var mediaSocket = await listener.AcceptTcpClientAsync(timeout.Token); using var media = new SslStream(mediaSocket.GetStream());
             await media.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = first }, timeout.Token);
             _ = await Wire.Read(media, timeout.Token); await Wire.Write(media, new("media-approved-v2"), timeout.Token);

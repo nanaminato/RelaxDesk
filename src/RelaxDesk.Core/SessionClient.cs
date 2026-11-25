@@ -81,7 +81,6 @@ public sealed class SessionClient : IDisposable
     public SslStream? ClipboardData{get;private set;}
     public SslStream? Data { get; private set; }
     public string[] Capabilities { get; private set; } = [];
-    public bool FullControl { get; init; }
     public Func<ECDsa>? OpenDeviceKey { get; init; }
     public bool RequestPointerCompression { get; init; }
     public bool RequestQuicRecovery { get; init; }
@@ -183,34 +182,29 @@ public sealed class SessionClient : IDisposable
         if(RequestedInputVersion is not (0 or InputProtocol.Version))throw new InvalidDataException("Unsupported requested input version");
         if(!DisplayProtocol.Supported(RequestedDisplayVersion)||RequestedDisplayVersion!=0&&RequestedInputVersion!=InputProtocol.Version)throw new InvalidDataException("Unsupported requested display version");
         using var deviceKey = OpenDeviceKey?.Invoke();
-        if (FullControl && deviceKey is null) throw new AuthenticationException("Full control requires a device identity");
-        string requestKind = FullControl
-            ? approvalOnly ? FullControlProtocol.Request : FullControlProtocol.PinnedRequest
-            : approvalOnly ? "request-v2" : "hello-v2";
         bool requestResume=RequestFileResume&&requestedFeatures.Contains(SessionCapabilities.FileTransfer);
-        await Wire.Write(Control, new Packet(requestKind, Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], PointerBrotli: RequestPointerCompression ? true : null, Features: requestedFeatures.Length == 0 ? null : requestedFeatures,FileResume:requestResume,InputVersion:RequestedInputVersion,DisplayVersion:RequestedDisplayVersion,VideoVersion:RequestedVideoVersion, Network:requestedNetwork, DeviceKey: deviceKey is null ? null : DeviceIdentity.Export(deviceKey), QuicRecovery: requestQuicRecovery ? true : null), ct);
+        await Wire.Write(Control, new Packet(approvalOnly ? FullControlProtocol.Request : FullControlProtocol.PinnedRequest, Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], PointerBrotli: RequestPointerCompression ? true : null, Features: requestedFeatures.Length == 0 ? null : requestedFeatures,FileResume:requestResume,InputVersion:RequestedInputVersion,DisplayVersion:RequestedDisplayVersion,VideoVersion:RequestedVideoVersion, Network:requestedNetwork, DeviceKey: deviceKey is null ? null : DeviceIdentity.Export(deviceKey), QuicRecovery: requestQuicRecovery ? true : null), ct);
         PhaseChanged?.Invoke(ConnectionPhase.AwaitingApproval);
         var approval = await Wire.Read(Control, ct);
-        string challengeKind = FullControl ? FullControlProtocol.DeviceChallenge : "work-device-challenge-v2";
-        bool deviceChallenged = approval.Kind == challengeKind;
+        bool deviceChallenged = approval.Kind == FullControlProtocol.DeviceChallenge;
         if (deviceChallenged)
         {
             if (deviceKey is null ||
                 approval.Data is not { Length: 32 } challenge ||
-                approval != new Packet(challengeKind, Data: challenge))
+                approval != new Packet(FullControlProtocol.DeviceChallenge, Data: challenge))
                 throw new AuthenticationException("Invalid device challenge");
             using var proofDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
             proofDeadline.CancelAfter(TimeSpan.FromSeconds(5));
             var signature = DeviceIdentity.Sign(deviceKey, challenge, VerifiedFingerprint);
-            await Wire.Write(Control, new(FullControl ? FullControlProtocol.DeviceProof : "work-device-proof-v2", Data: signature), proofDeadline.Token);
+            await Wire.Write(Control, new(FullControlProtocol.DeviceProof, Data: signature), proofDeadline.Token);
             approval = await Wire.Read(Control, ct);
         }
         if (approval == new Packet("denied-v2")) throw new HostConsentRejectedException();
-        if (FullControl && approval == new Packet(FullControlProtocol.InputUnavailable))
+        if (approval == new Packet(FullControlProtocol.InputUnavailable))
             throw new FullControlInputUnavailableException();
-        if (approval.Kind != (FullControl ? FullControlProtocol.Approved : "approved-v2") || approval.Text is null || approval.Capabilities is not { Length: > 0 }) throw new AuthenticationException("Host approval/capabilities missing");
+        if (approval.Kind != FullControlProtocol.Approved || approval.Text is null || approval.Capabilities is not { Length: > 0 }) throw new AuthenticationException("Host approval/capabilities missing");
         if(approval.Input is not null||approval.InputVersion is not (0 or InputProtocol.Version)||approval.InputVersion!=0&&approval.InputVersion!=RequestedInputVersion)throw new AuthenticationException("Unrequested/invalid input version");
-        if (FullControl && (!deviceChallenged || approval.InputVersion != InputProtocol.Version))
+        if (deviceKey is not null && (!deviceChallenged || approval.InputVersion != InputProtocol.Version))
             throw new AuthenticationException("Incomplete full-control handshake");
         InputVersion=approval.InputVersion;
         if(!DisplayProtocol.Supported(approval.DisplayVersion)||approval.DisplayVersion!=0&&(approval.DisplayVersion>RequestedDisplayVersion||InputVersion!=InputProtocol.Version)||approval.DisplayId is not null||approval.DisplayGeneration!=0||approval.DisplayVersion==0&&approval.DisplayState is not null||approval.DisplayVersion!=0&&approval.DisplayState is null)throw new AuthenticationException("Unrequested or invalid display negotiation");

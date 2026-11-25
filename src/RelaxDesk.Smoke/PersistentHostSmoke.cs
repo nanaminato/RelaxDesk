@@ -55,7 +55,7 @@ internal static class PersistentHostSmoke
                 await bad.ConnectAsync(IPAddress.Loopback, port, timeout.Token);
                 using var tls = new SslStream(bad.GetStream(), false, (_, _, _, _) => true);
                 await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = "RelaxDesk" }, timeout.Token);
-                await Wire.Write(tls, new("request-v2", Text: "invalid", Capabilities: ["h264"]), timeout.Token);
+                await Wire.Write(tls, new(FullControlProtocol.Request, Text: "invalid", Capabilities: ["h264"]), timeout.Token);
                 try { await Wire.Read(tls, timeout.Token); throw new IOException("Malformed request accepted"); } catch (EndOfStreamException) { }
             }
             await Until("listening");

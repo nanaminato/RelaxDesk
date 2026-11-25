@@ -35,7 +35,7 @@ internal static class SecuritySmoke
                 return;
             }
             using var control = await Open(controlSocket, fingerprint);
-            await Wire.Write(control, new Packet("hello-v2", Text: token, Capabilities: ["h264"], Features: root is null ? null : [SessionCapabilities.FileTransfer]), timeout.Token);
+            await Wire.Write(control, new Packet(FullControlProtocol.PinnedRequest, Text: token, Capabilities: ["h264"], Features: root is null ? null : [SessionCapabilities.FileTransfer]), timeout.Token);
             string prompt = await process.StandardOutput.ReadLineAsync(timeout.Token) ?? throw new IOException("No approval prompt");
             if (!prompt.Contains("APPROVE")) throw new IOException("Missing consent");
             if(root is not null && !(await process.StandardOutput.ReadLineAsync(timeout.Token)??"").Contains("APPROVE_FILES"))throw new IOException("Missing file consent");
@@ -48,7 +48,7 @@ internal static class SecuritySmoke
                 Console.WriteLine("PASS v2 host denial exposes no media"); return;
             }
             var approval = await Wire.Read(control, timeout.Token);
-            if (approval.Kind != "approved-v2") throw new IOException("Not approved");
+            if (approval.Kind != FullControlProtocol.Approved) throw new IOException("Not approved");
             using var mediaSocket = new TcpClient(); using var media = await Open(mediaSocket, fingerprint);
             if (root is not null)
             {

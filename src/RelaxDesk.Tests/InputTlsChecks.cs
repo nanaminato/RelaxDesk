@@ -20,7 +20,7 @@ static class InputTlsChecks
                 var hello=await Wire.Read(control,deadline.Token);
                 if(hello.InputVersion!=requested)throw new IOException("Input request changed");
                 var ticket=new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(5));
-                await Wire.Write(control,new("approved-v2",Text:ticket.Value,Capabilities:["deflate"],InputVersion:granted),deadline.Token);
+                await Wire.Write(control,new(FullControlProtocol.Approved,Text:ticket.Value,Capabilities:["deflate"],InputVersion:granted),deadline.Token);
                 if(!accepted)return;
                 using var mediaSocket=await listener.AcceptTcpClientAsync(deadline.Token);using var media=new SslStream(mediaSocket.GetStream());
                 await media.AuthenticateAsServerAsync(new SslServerAuthenticationOptions{ServerCertificate=cert},deadline.Token);

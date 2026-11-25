@@ -9,14 +9,15 @@ internal static class SessionAccessSmoke
 {
     public static async Task Run(string hostPath)
     {
-        await Verify(hostPath, fullControl: true, denied: false, proveDevice: true);
-        await Verify(hostPath, fullControl: true, denied: true, proveDevice: true, production: true);
+        await Verify(hostPath, proveDevice: true, denied: false);
+        await Verify(hostPath, proveDevice: false, denied: true, production: true);
+        await Verify(hostPath, proveDevice: true, denied: true, production: true);
         Console.WriteLine("PASS verified device proof over production TLS; local approval still required");
         Console.WriteLine("PASS retired in-session elevation request terminates the connection");
         Console.WriteLine("PASS production TLS and shell approval: full-control denial before and after device verification");
     }
 
-    static async Task Verify(string hostPath, bool fullControl, bool denied, bool proveDevice = false, bool production = false)
+    static async Task Verify(string hostPath, bool proveDevice, bool denied, bool production = false)
     {
         var reservation = new TcpListener(IPAddress.Loopback, 0);
         reservation.Start();
@@ -29,7 +30,6 @@ internal static class SessionAccessSmoke
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         using var viewer = new SessionClient
         {
-            FullControl = fullControl,
             RequestedDisplayVersion = DisplayProtocol.Version,
             OpenDeviceKey = proveDevice ? () => ECDsa.Create(key.ExportParameters(true)) : null
         };
@@ -39,25 +39,25 @@ internal static class SessionAccessSmoke
             Task connect = viewer.ConnectByApproval("127.0.0.1", port, timeout.Token);
             if (denied)
             {
-                if (fullControl)
+                if (proveDevice)
                 {
                     var adminRequest = await ReadEvent("approval-request");
                     if (!adminRequest.GetProperty("fullControl").GetBoolean())
-                        throw new IOException("Administrator approval event omitted its mode");
+                        throw new IOException("Approval event omitted full-control status");
                     if (connect.IsCompleted || adminRequest.GetProperty("deviceFingerprint").GetString() != DeviceIdentity.Fingerprint(key))
                         throw new IOException("Full-control request did not verify the device before local approval");
                     string? session = adminRequest.GetProperty("sessionId").GetString();
                     await host.StandardInput.WriteLineAsync($"DENY {session}");
                     await host.StandardInput.FlushAsync();
                 }
-                try { await connect; throw new IOException("Forbidden mode advanced"); }
-                catch (HostConsentRejectedException) when (fullControl || !production) { }
+                try { await connect; throw new IOException("Unauthorized connection advanced"); }
+                catch (HostConsentRejectedException) { }
                 return;
             }
 
             JsonElement request = await ReadEvent("approval-request");
-            if (request.GetProperty("fullControl").GetBoolean() != fullControl)
-                throw new IOException("Incorrect mode displayed for approval");
+            if (!request.GetProperty("fullControl").GetBoolean())
+                throw new IOException("Approval event omitted full-control status");
             if (proveDevice && (connect.IsCompleted ||
                 request.GetProperty("deviceFingerprint").GetString() != DeviceIdentity.Fingerprint(key)))
                 throw new IOException("Device fingerprint missing or skipped local approval");

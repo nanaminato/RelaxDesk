@@ -26,7 +26,7 @@ internal static class DisplayTlsChecks
                 if(mode=="topology-ok")state=initial with{Displays=[initial.Displays[0] with{Identity=new string('A',64)}]};
                 if(mode=="topology-unavailable")state=initial with{Selected="",Allowed=[],Unavailable=true};
                 if(mode is "missing-state" or "omitted" or "legacy" or "topology-omitted")state=null;
-                await Wire.Write(control,new("approved-v2",Text:ticket.Value,Capabilities:["deflate"],InputVersion:2,DisplayVersion:grant,DisplayState:state,DisplayId:mode=="extra-id"?"one":null),deadline.Token);
+                await Wire.Write(control,new(FullControlProtocol.Approved,Text:ticket.Value,Capabilities:["deflate"],InputVersion:2,DisplayVersion:grant,DisplayState:state,DisplayId:mode=="extra-id"?"one":null),deadline.Token);
                 if(!accepted)return;
                 using var mediaSocket=await listener.AcceptTcpClientAsync(deadline.Token);using var media=new SslStream(mediaSocket.GetStream());
                 await media.AuthenticateAsServerAsync(new SslServerAuthenticationOptions{ServerCertificate=cert},deadline.Token);

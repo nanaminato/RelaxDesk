@@ -25,7 +25,7 @@ internal static class ResumeTlsChecks
                 {
                     var hello = await Wire.Read(control, deadline.Token);
                     if (hello.FileResume != (mode != "opted-out") || hello.FileScope is not null) throw new InvalidDataException("Resume offer invalid");
-                    await Wire.Write(control, new("approved-v2", Text: new string('A', 64), Capabilities: ["deflate"], Features: mode == "no-file-grant" ? null : [SessionCapabilities.FileTransfer],
+                    await Wire.Write(control, new(FullControlProtocol.Approved, Text: new string('A', 64), Capabilities: ["deflate"], Features: mode == "no-file-grant" ? null : [SessionCapabilities.FileTransfer],
                         DataTicket: mode == "no-file-grant" ? null : new string('B', 64), FileResume: mode is not ("legacy" or "scope-without-resume"), FileScope: mode == "legacy" ? null : mode == "bad-scope" ? "bad" : scope), deadline.Token);
                     if (!accepted) return;
                     var (mediaSocket, media) = await Open(); using (mediaSocket) using (media)

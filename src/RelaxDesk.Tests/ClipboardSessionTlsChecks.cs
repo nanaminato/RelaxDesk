@@ -24,7 +24,7 @@ static class ClipboardSessionTlsChecks
                 if(!(hello.Features??[]).SequenceEqual(requested))throw new IOException("Clipboard feature request changed");
                 var mediaTicket=new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(5));var fileTicket=new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(5));var clipTicket=new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(5));
                 string? value=mode is "missing" or "old-peer"?null:mode=="malformed"?"bad":mode=="reused"?mediaTicket.Value:clipTicket.Value;
-                await Wire.Write(control,new("approved-v2",Text:mediaTicket.Value,Capabilities:["deflate"],Features:granted.Length==0?null:granted,DataTicket:mode=="files-and-rich"?fileTicket.Value:null,ClipboardTicket:value),timeout.Token);
+                await Wire.Write(control,new(FullControlProtocol.Approved,Text:mediaTicket.Value,Capabilities:["deflate"],Features:granted.Length==0?null:granted,DataTicket:mode=="files-and-rich"?fileTicket.Value:null,ClipboardTicket:value),timeout.Token);
                 if(!expected&&mode is not ("changed-pin" or "bad-ack"))return;
                 using var media=await Accept(cert);var binding=await Wire.Read(media,timeout.Token);if(!mediaTicket.Consume(binding.Text,DateTimeOffset.UtcNow))throw new IOException("Media ticket changed");await Wire.Write(media,new("media-approved-v2"),timeout.Token);
                 if(mode=="files-and-rich")
