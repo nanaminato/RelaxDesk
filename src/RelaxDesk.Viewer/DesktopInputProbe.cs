@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Threading;
 using RelaxDesk.Windows;
 
 namespace RelaxDesk.Viewer;
@@ -14,13 +15,14 @@ internal sealed class DesktopInputProbe : Window
     internal DesktopInputProbeResult Result => new(token.Elevated, token.IntegrityRid, keyDowns, keyUps, buttonDowns, buttonUps);
     internal Button Target { get; }
 
-    public DesktopInputProbe(WindowsInputToken token)
+    public DesktopInputProbe(WindowsInputToken token, bool finishOnKey = false)
     {
         this.token = token;
         Title = $"RelaxDesk 输入验收 · {(token.Elevated ? "管理员" : "普通")} · 0x{token.IntegrityRid:X4}";
         Width = 470;
         Height = 220;
-        ShowActivated = false;
+        ShowActivated = finishOnKey;
+        Topmost = finishOnKey;
 
         var counts = new TextBlock { Margin = new Thickness(0, 12, 0, 0) };
         void UpdateCounts() => counts.Text = $"F8 按下／释放 {keyDowns}／{keyUps} · 鼠标左键 {buttonDowns}／{buttonUps}";
@@ -41,6 +43,7 @@ internal sealed class DesktopInputProbe : Window
             keyUps++;
             UpdateCounts();
             input.Handled = true;
+            if (finishOnKey && keyDowns == 1 && keyUps == 1) Close();
         };
 
         var panel = new StackPanel { Margin = new Thickness(20) };
@@ -49,6 +52,14 @@ internal sealed class DesktopInputProbe : Window
         panel.Children.Add(counts);
         Content = panel;
         UpdateCounts();
+        if (finishOnKey)
+        {
+            Activated += (_, _) => Keyboard.Focus(Target);
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(90) };
+            timer.Tick += (_, _) => Close();
+            Closed += (_, _) => timer.Stop();
+            timer.Start();
+        }
     }
 }
 

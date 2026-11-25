@@ -38,12 +38,20 @@ public sealed class App : Application
         try
         {
             var app = new App();
-            if (args is ["--desktop-input-probe"])
+            if (args is ["--desktop-input-probe"] or ["--elevated-key-probe"])
             {
                 WindowsSessionAccess.EnsureAllowed();
-                var probe = new DesktopInputProbe(WindowsInputPrivilege.ReadProcessToken());
+                bool keyProbe = args[0] == "--elevated-key-probe";
+                if (keyProbe) WindowsInputPrivilege.EnsureElevatedProcess();
+                var probe = new DesktopInputProbe(WindowsInputPrivilege.ReadProcessToken(), finishOnKey: keyProbe);
                 app.Run(probe);
                 Console.WriteLine(JsonSerializer.Serialize(probe.Result));
+                if (keyProbe) Environment.ExitCode = probe.Result switch
+                {
+                    { KeyDowns: 1, KeyUps: 1 } => 0,
+                    { KeyDowns: 0, KeyUps: 0 } => 1,
+                    _ => 2
+                };
             }
             else if(args is ["--error-details-contracts",var errorFixtures])ViewerWindow.VerifyErrorDetails(app,errorFixtures);
             else if(args is ["--office-text-quality", "software" or "hardware"])OfficeTextQuality.Run(args[1] == "hardware");
@@ -63,6 +71,7 @@ public sealed class App : Application
             else if (args is ["--admin-real-worker-contracts", var realWorkerHost]) ViewerWindow.VerifyAdminUpgrade(app, realWorkerHost, activate: true, realWorker: true);
             else if (args is ["--admin-uac-cancel-contracts", var cancelUacHost]) ViewerWindow.VerifyAdminUpgrade(app, cancelUacHost, activate: true, realWorker: true, cancelElevation: true);
             else if (args is ["--admin-physical-lock-contracts", var lockedAdminHost]) ViewerWindow.VerifyAdminUpgrade(app, lockedAdminHost, activate: true, realWorker: true, physicalLock: true);
+            else if (args is ["--admin-physical-key-contracts", var keyAdminHost]) ViewerWindow.VerifyAdminUpgrade(app, keyAdminHost, activate: true, realWorker: true, physicalKey: true);
             else if (args is ["--admin-worker-loss-contracts", var workerLossHost]) ViewerWindow.VerifyAdminUpgrade(app, workerLossHost, activate: true, workerLoss: true);
             else if(args is ["--video-settings-contracts",var settingsHost,var settingsMode])ViewerWindow.VerifyVideoSettings(app,settingsHost,settingsMode);
             else if(args is ["--display-legacy-session-contracts",var legacyDisplayHost])ViewerWindow.VerifyDisplaySession(app,legacyDisplayHost,false,true);

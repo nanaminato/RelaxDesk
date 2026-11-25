@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -12,7 +13,10 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
-    internal static void VerifyAdminUpgrade(Application app, string hostApplication, bool activate = false, bool workerLoss = false, bool realWorker = false, bool cancelElevation = false, bool physicalLock = false)
+    [DllImport("user32.dll")] static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(nint window, out uint processId);
+
+    internal static void VerifyAdminUpgrade(Application app, string hostApplication, bool activate = false, bool workerLoss = false, bool realWorker = false, bool cancelElevation = false, bool physicalLock = false, bool physicalKey = false)
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
@@ -29,7 +33,7 @@ public sealed partial class ViewerWindow
         string backend = realWorker ? "dxgi" : workerLoss ? "test-admin-worker-loss" : activate ? "test-admin-lifecycle" : "test-displays";
         foreach (var arg in new[] { "--shell", "127.0.0.1", port.ToString(), backend }) start.ArgumentList.Add(arg);
         using var process = Process.Start(start) ?? throw new IOException("Could not start Host");
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(physicalLock ? 120 : realWorker ? 90 : 25));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(physicalLock || physicalKey ? 120 : realWorker ? 90 : 25));
         var ct = timeout.Token;
         int released = 0;
         bool observedUacCancellation = false;
@@ -81,8 +85,31 @@ public sealed partial class ViewerWindow
         viewer.Loaded += async (_, _) =>
         {
             Task? connection = null;
+            Process? keyProbe = null;
+            bool ProbeForeground() => keyProbe is { HasExited: false } &&
+                GetWindowThreadProcessId(GetForegroundWindow(), out uint activePid) != 0 && activePid == (uint)keyProbe.Id;
+            void SendProbeKey()
+            {
+                if (!ProbeForeground()) throw new IOException("The owned elevated input probe is no longer the foreground window");
+                if (connection is null || connection.IsCompleted || viewer.displaySession is not { Ready: true } display)
+                    throw new IOException("A ready display session is required for the elevated probe");
+                long generation = display.Generation;
+                var key = new RemoteInput("key", VirtualKey: 0x77);
+                if (!viewer.outgoing.TryWrite(InputProtocol.Encode(key, ++viewer.sequence, generation)) ||
+                    !viewer.outgoing.TryWrite(InputProtocol.Encode(key with { Up = true }, ++viewer.sequence, generation)))
+                    throw new IOException("Could not queue the bounded F8 probe input");
+            }
             try
             {
+                if (physicalKey)
+                {
+                    string executable = Environment.ProcessPath ?? throw new IOException("Viewer executable was not resolved");
+                    if (!Path.GetFileName(executable).Equals("RelaxDesk.Viewer.exe", StringComparison.OrdinalIgnoreCase))
+                        throw new IOException("Run the physical key test through the Viewer EXE");
+                    var launchProbe = new ProcessStartInfo(executable) { UseShellExecute = true, Verb = "runas" };
+                    launchProbe.ArgumentList.Add("--elevated-key-probe");
+                    keyProbe = await Task.Run(() => Process.Start(launchProbe), ct) ?? throw new IOException("Elevated input probe did not start");
+                }
                 await Event("listening");
                 connection = viewer.ConnectVideo();
                 var initial = await Event("approval-request");
@@ -92,6 +119,17 @@ public sealed partial class ViewerWindow
                 await Until(() => viewer.smokeFrames > 0);
                 var menu = viewer.sessionToolbar?.AdminModeAction ?? throw new IOException("Administrator action missing");
                 if (menu.Visibility != Visibility.Visible || !viewer.inputAuthorized) throw new IOException("Work controls are incorrect");
+                if (keyProbe is not null)
+                {
+                    Console.WriteLine("READY Focus the RelaxDesk administrator input probe without pressing F8.");
+                    await Until(() => keyProbe.HasExited || connection.IsCompleted || ProbeForeground() && viewer.displaySession?.Ready == true);
+                    SendProbeKey();
+                    Console.WriteLine("Work sent the bounded F8 probe to the foreground test window");
+                    await Task.Delay(1000, ct);
+                    if (!ProbeForeground() || connection.IsCompleted)
+                        throw new IOException("The Work input check did not retain the foreground probe and connection");
+                    Console.WriteLine("PASS the elevated probe stayed open after Work sent F8");
+                }
                 if (activate)
                 {
                     string? prior = null;
@@ -111,6 +149,17 @@ public sealed partial class ViewerWindow
                         await Send($"ALLOW_ADMIN_INPUT {id} {requestId}");
                         if (realWorker)
                         {
+                            if (keyProbe is not null)
+                            {
+                                Console.WriteLine("READY Admin is active. Focus the same elevated input probe without pressing F8.");
+                                await Until(() => keyProbe.HasExited || ProbeForeground());
+                                SendProbeKey();
+                                Console.WriteLine("Admin sent the bounded F8 probe to the foreground test window");
+                                await keyProbe.WaitForExitAsync(ct);
+                                if (keyProbe.ExitCode != 0)
+                                    throw new IOException($"Elevated probe did not receive a balanced F8 press and release (probe exit {keyProbe.ExitCode})");
+                                Console.WriteLine("PASS F8 reached the elevated window only in Admin; target received one press and one release");
+                            }
                             await Event("admin-starting", unexpected: "admin-denied");
                             bool IsPaused() => viewer.Toolbar?.EndpointText.StartsWith("Work · Host 正在准备管理员输入 · ", StringComparison.Ordinal) == true;
                             await Until(IsPaused);
@@ -300,6 +349,7 @@ public sealed partial class ViewerWindow
                 if (connection is not null) try { await connection.WaitAsync(TimeSpan.FromSeconds(3)); } catch { }
                 app.Shutdown(1);
             }
+            finally { keyProbe?.Dispose(); }
         };
         try { app.Run(viewer); }
         finally { if (!process.HasExited) process.Kill(true); }
