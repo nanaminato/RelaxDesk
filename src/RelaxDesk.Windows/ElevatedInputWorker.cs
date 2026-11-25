@@ -11,10 +11,15 @@ public static class ElevatedInputWorker
         WindowsInputPrivilege.EnsureElevatedProcess();
         WindowsSessionAccess.EnsureAllowed();
         var selection = display();
-        using var input = new WindowsInputSession(selection);
+        using var input = new WindowsInputSession(() => selection);
         using var readyDeadline = CancellationTokenSource.CreateLinkedTokenSource(revocation);
         readyDeadline.CancelAfter(TimeSpan.FromSeconds(2));
-        await Wire.Write(channel, new("admin-input-ready", Origin: grant.ToString("N")), readyDeadline.Token);
-        await AdminInputChannel.Run(channel, grant, input.Inject, input.ReleaseAll, revocation);
+        await Wire.Write(channel, new(AdminInputChannel.Ready, Origin: grant.ToString("N")), readyDeadline.Token);
+        await AdminInputChannel.Run(channel, grant, input.Inject, input.ReleaseAll, revocation, device =>
+        {
+            var next = selection.Select(device);
+            next.EnsureCurrent();
+            selection = next;
+        });
     }
 }

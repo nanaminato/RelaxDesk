@@ -51,7 +51,7 @@ internal static class SessionBrokerSmoke
             var serverHandle = wrongServer.SafePipeHandle;
             var accepting = AdminInputConnection.Accept(wrongServer, mismatchedGrant, Environment.ProcessId, wrongDeadline.Token);
             using var peer = await LocalAgentPipe.ConnectAdmin(mismatchedGrant, wrongDeadline.Token);
-            await Wire.Write(peer, new("admin-input-ready", Origin: grant.ToString("N")), wrongDeadline.Token);
+            await Wire.Write(peer, new(AdminInputChannel.Ready, Origin: grant.ToString("N")), wrongDeadline.Token);
             bool rejected = false;
             try { await using var unexpected = await accepting; }
             catch (SecurityException) { rejected = true; }
@@ -64,16 +64,20 @@ internal static class SessionBrokerSmoke
         {
             var accepting = AdminInputConnection.Accept(adminServer, liveGrant, Environment.ProcessId, adminTimeout.Token);
             using var peer = await LocalAgentPipe.ConnectAdmin(liveGrant, adminTimeout.Token);
-            await Wire.Write(peer, new("admin-input-ready", Origin: liveGrant.ToString("N")), adminTimeout.Token);
+            await Wire.Write(peer, new(AdminInputChannel.Ready, Origin: liveGrant.ToString("N")), adminTimeout.Token);
             await using var connection = await accepting;
+            await connection.Release(adminTimeout.Token);
+            await connection.SelectDisplay("all", adminTimeout.Token);
             await connection.Send(new("move"), adminTimeout.Token);
+            Check(await Wire.Read(peer, adminTimeout.Token) == new Packet("admin-input-release", 1, Origin: liveGrant.ToString("N")));
+            Check(await Wire.Read(peer, adminTimeout.Token) == new Packet("admin-input-display", 2, Text: "all", Origin: liveGrant.ToString("N")));
             var command = await Wire.Read(peer, adminTimeout.Token);
-            Check(command == new Packet("admin-input", 1, Origin: liveGrant.ToString("N"), Input: new("move")));
-            Check(await Wire.Read(peer, adminTimeout.Token) == new Packet("admin-input-heartbeat", 2, Origin: liveGrant.ToString("N")));
+            Check(command == new Packet("admin-input", 3, Origin: liveGrant.ToString("N"), Input: new("move")));
+            Check(await Wire.Read(peer, adminTimeout.Token) == new Packet("admin-input-heartbeat", 4, Origin: liveGrant.ToString("N")));
             var closing = connection.End(adminTimeout.Token);
             string binding = liveGrant.ToString("N");
             var endRequest = await Wire.Read(peer, adminTimeout.Token);
-            Check(endRequest == new Packet("admin-input-end", endRequest.Sequence, Origin: binding) && endRequest.Sequence >= 3);
+            Check(endRequest == new Packet("admin-input-end", endRequest.Sequence, Origin: binding) && endRequest.Sequence >= 5);
             Check(!closing.IsCompleted);
             bool lateInputRejected = false;
             try { await connection.Send(new("move"), adminTimeout.Token); }
@@ -92,7 +96,7 @@ internal static class SessionBrokerSmoke
             var accepting = AdminInputConnection.Accept(silentServer, silentGrant, Environment.ProcessId, testDeadline.Token);
             using var peer = await LocalAgentPipe.ConnectAdmin(silentGrant, testDeadline.Token);
             string binding = silentGrant.ToString("N");
-            await Wire.Write(peer, new("admin-input-ready", Origin: binding), testDeadline.Token);
+            await Wire.Write(peer, new(AdminInputChannel.Ready, Origin: binding), testDeadline.Token);
             await using var connection = await accepting;
             var revoking = connection.End(testDeadline.Token);
             Check(await Wire.Read(peer, testDeadline.Token) == new Packet("admin-input-end", 1, Origin: binding));
@@ -111,7 +115,7 @@ internal static class SessionBrokerSmoke
             string binding = badReleaseGrant.ToString("N");
             var accepting = AdminInputConnection.Accept(server, badReleaseGrant, Environment.ProcessId, releaseDeadline.Token);
             using var peer = await LocalAgentPipe.ConnectAdmin(badReleaseGrant, releaseDeadline.Token);
-            await Wire.Write(peer, new("admin-input-ready", Origin: binding), releaseDeadline.Token);
+            await Wire.Write(peer, new(AdminInputChannel.Ready, Origin: binding), releaseDeadline.Token);
             await using var connection = await accepting;
             var revoking = connection.End(releaseDeadline.Token);
             var end = await Wire.Read(peer, releaseDeadline.Token);
@@ -129,7 +133,7 @@ internal static class SessionBrokerSmoke
             var accepting = AdminInputConnection.Accept(lostServer, lostWorkerGrant, Environment.ProcessId, lostDeadline.Token);
             using (var peer = await LocalAgentPipe.ConnectAdmin(lostWorkerGrant, lostDeadline.Token))
             {
-                await Wire.Write(peer, new("admin-input-ready", Origin: lostWorkerGrant.ToString("N")), lostDeadline.Token);
+                await Wire.Write(peer, new(AdminInputChannel.Ready, Origin: lostWorkerGrant.ToString("N")), lostDeadline.Token);
                 await using var connected = await accepting;
                 peer.Dispose();
                 bool disconnected = false;

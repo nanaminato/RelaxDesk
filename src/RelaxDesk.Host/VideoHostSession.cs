@@ -36,7 +36,7 @@ internal static class VideoHostSession
             throw new AuthenticationException("Synthetic video testing is loopback-only");
         if(!synthetic)WindowsSessionAccess.EnsureAllowed();
         var displaySelection=synthetic?null:new WindowsDisplaySelection(selectedDisplay);
-        var displays=elevated is null&&hello.DisplayVersion!=0&&(!synthetic||backend is "test-displays" or "test-admin-lifecycle" or "test-admin-worker-loss" or "test-topology" or "test-topology-init-race")?new HostDisplaySession(displaySelection,synthetic?selectedDisplay:null,hello.DisplayVersion,backend=="test-topology"):null;
+        var displays=hello.DisplayVersion!=0&&(!synthetic||backend is "test-displays" or "test-topology" or "test-topology-init-race")?new HostDisplaySession(displaySelection,synthetic?selectedDisplay:null,hello.DisplayVersion,backend=="test-topology"):null;
         int displayVersion=displays?.Version??0;
         var features = SessionCapabilities.ValidateGrant(hello.Features, grantedFeatures);
         var video=hello.VideoVersion==VideoSettingsProtocol.Version?new HostVideoSettings():null;
@@ -378,7 +378,13 @@ internal static class VideoHostSession
         }
         var failures = new FirstSessionFailure();
         if(displaySelection is not null)HostSessionLog.Write($"capture_display device={displaySelection.Device} x={displaySelection.Bounds.X} y={displaySelection.Bounds.Y} width={displaySelection.Bounds.Width} height={displaySelection.Bounds.Height} compatibility_gdi={displaySelection.RequiresGdi}");
-        using var inputDesktop = synthetic || !access.InputAllowed ? null : new WindowsInputSession(()=>displays?.Active??displaySelection!);
+        using var inputDesktop = synthetic || elevated is not null || !access.InputAllowed ? null : new WindowsInputSession(()=>displays?.Active??displaySelection!);
+        string? elevatedDisplay = displaySelection?.Device;
+        void ReleaseDisplayInput()
+        {
+            if (elevated is not null) elevated.Release(session.Token).GetAwaiter().GetResult();
+            else inputDesktop?.ReleaseAll();
+        }
         using var revokeInput = CancellationTokenSource.CreateLinkedTokenSource(inputRevoked, session.Token);
         using var revokeInputRegistration = inputRevoked.Register(gate.RevokeInput);
         async Task NotifyInputRevoked()
@@ -424,6 +430,12 @@ internal static class VideoHostSession
                             }
                             if (elevated is not null)
                             {
+                                var device = (displays?.Active ?? displaySelection!).Device;
+                                if (device != elevatedDisplay)
+                                {
+                                    elevated.SelectDisplay(device, session.Token).GetAwaiter().GetResult();
+                                    elevatedDisplay = device;
+                                }
                                 elevated.Send(packet.Input ?? throw new InvalidDataException("Administrator input requires rich input"), session.Token).GetAwaiter().GetResult();
                                 if (!elevatedInputForwarded)
                                 {
@@ -446,8 +458,8 @@ internal static class VideoHostSession
                             }
                         }
                         try{if(displays is null)Inject();else if(!displays.Switch.TryInput(packet.DisplayGeneration,Inject)&&Interlocked.Increment(ref ignoredDisplayInputs)==1)HostSessionLog.Write("display_input_ignored reason=stale-or-switching");}
-                        catch(DisplayTopologyChangedException changed)when(displays?.TopologyEnabled==true){displays.Observe(changed.Displays,()=>inputDesktop?.ReleaseAll());}
-                        catch(DisplayMetadataUnavailableException)when(displays?.TopologyEnabled==true){displays.MetadataUnavailable(()=>inputDesktop?.ReleaseAll());}
+                        catch(DisplayTopologyChangedException changed)when(displays?.TopologyEnabled==true){displays.Observe(changed.Displays,ReleaseDisplayInput);}
+                        catch(DisplayMetadataUnavailableException)when(displays?.TopologyEnabled==true){displays.MetadataUnavailable(ReleaseDisplayInput);}
                     })) throw new AuthenticationException("Input authorization revoked");
                     continue;
                 }
@@ -455,7 +467,7 @@ internal static class VideoHostSession
                 if(packet.Kind=="video-settings-v2")video!.Request(packet.VideoSettings!);
                 else if (packet.Kind == "display-select-v2")
                 {
-                    displays!.Request(packet.DisplayId!, packet.DisplayGeneration, () => inputDesktop?.ReleaseAll());
+                    displays!.Request(packet.DisplayId!, packet.DisplayGeneration, ReleaseDisplayInput);
                 }
                 else if(packet.Kind=="display-configured-v2")displays!.Switch.ConfirmConfiguration(packet.DisplayGeneration);
                 else if(packet.Kind=="display-ready-v2")displays!.Switch.Confirm(packet.DisplayGeneration);
@@ -487,7 +499,7 @@ internal static class VideoHostSession
             }
         }, session.Token);
         var producer = Task.Factory.StartNew(() => Produce(queue, backend, capabilities, () => Interlocked.Exchange(ref forceKeyFrame, 0) != 0,
-            (stage, frames, error) => { if (!session.IsCancellationRequested) failures.Record("capture-encode", stage, frames, error); }, session.Token,displaySelection,displays,(state,topology)=>WriteControl(new(topology?"display-topology-v2":"display-state-v2",DisplayState:state)).GetAwaiter().GetResult(),()=>inputDesktop?.ReleaseAll(),audioTicket is not null,video,state=>WriteControl(new("video-settings-state-v2",VideoVersion:VideoSettingsProtocol.Version,VideoSettings:state)).GetAwaiter().GetResult(),
+            (stage, frames, error) => { if (!session.IsCancellationRequested) failures.Record("capture-encode", stage, frames, error); }, session.Token,displaySelection,displays,(state,topology)=>WriteControl(new(topology?"display-topology-v2":"display-state-v2",DisplayState:state)).GetAwaiter().GetResult(),ReleaseDisplayInput,audioTicket is not null,video,state=>WriteControl(new("video-settings-state-v2",VideoVersion:VideoSettingsProtocol.Version,VideoSettings:state)).GetAwaiter().GetResult(),
                 ceiling => (Volatile.Read(ref activeRecovered)?.Adaptation ??
                     (Volatile.Read(ref fallbackRequested) == 0 ? adaptation : null))?.Target(ceiling) ?? ceiling,desktopPause,hello.PointerBrotli == true),
             session.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);

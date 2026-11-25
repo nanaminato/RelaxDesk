@@ -37,7 +37,7 @@ public sealed class AdminInputConnection : IAsyncDisposable
             await server.WaitForConnectionAsync(deadline.Token);
             LocalAgentPipe.AuthenticateAdminWorker(server, workerPid);
             var ready = await Wire.Read(server, deadline.Token, 2048);
-            if (ready != new Packet("admin-input-ready", Origin: grant.ToString("N")))
+            if (ready != new Packet(AdminInputChannel.Ready, Origin: grant.ToString("N")))
                 throw new SecurityException("Administrator worker readiness rejected");
             deadline.Token.ThrowIfCancellationRequested();
             return new(server, grant);
@@ -54,6 +54,14 @@ public sealed class AdminInputConnection : IAsyncDisposable
         if (!InputProtocol.Valid(input)) throw new InvalidDataException("Invalid administrator input command");
         return Write("admin-input", input, cancellation);
     }
+
+    public Task SelectDisplay(string display, CancellationToken cancellation)
+    {
+        if (!AdminInputChannel.ValidDisplay(display)) throw new InvalidDataException("Invalid administrator input display");
+        return Write("admin-input-display", null, cancellation, display);
+    }
+
+    public Task Release(CancellationToken cancellation) => Write("admin-input-release", null, cancellation);
 
     public async Task End(CancellationToken cancellation)
     {
@@ -79,7 +87,7 @@ public sealed class AdminInputConnection : IAsyncDisposable
         finally { Close(); }
     }
 
-    async Task Write(string kind, RemoteInput? input, CancellationToken cancellation)
+    async Task Write(string kind, RemoteInput? input, CancellationToken cancellation, string? text = null)
     {
         stoppingHeartbeat.Token.ThrowIfCancellationRequested();
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(closed.Token, cancellation);
@@ -91,7 +99,7 @@ public sealed class AdminInputConnection : IAsyncDisposable
             deadline.Token.ThrowIfCancellationRequested();
             try
             {
-                await Wire.Write(pipe, new(kind, checked(++sequence), Origin: binding, Input: input), deadline.Token);
+                await Wire.Write(pipe, new(kind, checked(++sequence), Text: text, Origin: binding, Input: input), deadline.Token);
             }
             catch
             {

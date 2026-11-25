@@ -276,16 +276,14 @@ pipe, and invokes the Windows shell `runas` verb after local approval. The
 worker disables managed startup hooks. Cancellation closes the rendezvous so
 a worker that starts after revocation cannot acquire the grant. A mock shell
 launch verifies argument binding and cleanup after local UAC cancellation.
-The initial Admin flow completes local UAC before attaching media and starting
-the active-session desktop watcher. It uses the monitor scope selected on the
-Host. Disconnect or worker failure ends the grant. During a live Admin session,
-the Host or Viewer can revoke elevated input and return to Work. The Host
-drops input while the worker releases held keys and buttons and acknowledges
-shutdown, then resumes ordinary input after the Viewer confirms the change.
-The existing media and control attachments are retained during a successful
-transition. Automatic reconnect after Admin requests Work with fresh consent.
-The live Work-to-Admin implementation uses the bounded desktop pause described
-below. Its real UAC and elevated-window acceptance remains pending.
+Full-control connections complete local UAC before attaching media and starting
+the active-session desktop watcher. Disconnect or worker failure ends the grant.
+The Host uses the existing display-generation barrier and sends ordered release
+and display-selection commands on the authenticated input pipe. The worker
+validates the requested monitor against its initial local display catalog and
+checks the current geometry before injecting input. A topology change that
+invalidates the worker's catalog requires a fresh connection. Host and worker
+must both support the updated pipe readiness record.
 [Windows shell elevation](https://learn.microsoft.com/en-us/windows/win32/shell/launch)
 
 The datagram video frame channel now fragments existing media records into
