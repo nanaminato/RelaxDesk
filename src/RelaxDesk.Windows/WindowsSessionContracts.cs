@@ -83,6 +83,9 @@ public static class WindowsSessionContracts
             catch (WindowsSessionUnavailableException error) { Check(error.Reason == reason && returning.IsPaused); }
         }
         active = active with { ConsoleSessionId = 1 };
+        Check((active with { ConsoleSessionId = 2, ConnectionState = 4 }).SessionChangeFrom(active) == "physical-console-session-changed");
+        Check((active with { Locked = true }).SessionChangeFrom(active) is null);
+        Check((active with { SessionId = null }).SessionChangeFrom(active) == "session-query-failed");
         _ = pause.Begin(active);
         try { pause.Check(active with { ConsoleSessionId = uint.MaxValue }); throw new Exception("Pause allowed a detached console"); }
         catch (WindowsSessionUnavailableException error) { Check(error.Reason == "physical-console-session-changed"); }

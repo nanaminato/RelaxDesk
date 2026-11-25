@@ -12,6 +12,10 @@ public sealed record WindowsSessionSnapshot(uint? SessionId, int? ConnectionStat
         ThreadDesktop != "Default" ? "thread-desktop-unsupported" : InputDesktop is null ? "input-desktop-unavailable" :
         InputDesktop != "Default" ? "input-desktop-unsupported" : null;
     public void EnsureAllowed() { if (Denial is {} reason) throw new WindowsSessionUnavailableException(reason); }
+
+    public string? SessionChangeFrom(WindowsSessionSnapshot original) => SessionId is null ? "session-query-failed" :
+        SessionId != original.SessionId || original.ConsoleSessionId == original.SessionId && ConsoleSessionId != original.ConsoleSessionId
+            ? "physical-console-session-changed" : null;
 }
 
 public sealed class WindowsSessionUnavailableException(string reason) : IOException(
@@ -85,23 +89,14 @@ public static class WindowsSessionAccess
     {
         var delay=interval??TimeSpan.FromMilliseconds(250);
         if(delay<=TimeSpan.Zero)throw new ArgumentOutOfRangeException(nameof(interval));
-        uint? originalSession = null;
-        uint? originalConsole = null;
-        bool first = true;
+        WindowsSessionSnapshot? original = null;
         while (true)
         {
             ct.ThrowIfCancellationRequested();
             var snapshot = (read ?? Read)();
-            if (snapshot.SessionId is null)
-                throw new WindowsSessionUnavailableException("session-query-failed");
-            if (first)
-            {
-                originalSession = snapshot.SessionId;
-                if (snapshot.ConsoleSessionId == snapshot.SessionId) originalConsole = snapshot.ConsoleSessionId;
-                first = false;
-            }
-            else if (snapshot.SessionId != originalSession || originalConsole is not null && snapshot.ConsoleSessionId != originalConsole)
-                throw new WindowsSessionUnavailableException("physical-console-session-changed");
+            original ??= snapshot;
+            if (snapshot.SessionChangeFrom(original) is { } change)
+                throw new WindowsSessionUnavailableException(change);
             if (authorize is null) snapshot.EnsureAllowed();
             else authorize(snapshot);
             await Task.Delay(delay, ct);

@@ -33,7 +33,8 @@ internal static class VideoHostSession
         bool synthetic = backend.StartsWith("test-", StringComparison.Ordinal);
         if (synthetic && !IPAddress.IsLoopback(((IPEndPoint)controlSocket.Client.LocalEndPoint!).Address))
             throw new AuthenticationException("Synthetic video testing is loopback-only");
-        if(!synthetic)WindowsSessionAccess.EnsureAllowed();
+        var originalDesktop = synthetic ? null : WindowsSessionAccess.Read();
+        originalDesktop?.EnsureAllowed();
         var displaySelection=synthetic?null:new WindowsDisplaySelection(selectedDisplay);
         bool fullControlFixture = backend == "test-full-control";
         var displays=hello.DisplayVersion!=0&&(!synthetic||fullControlFixture||backend is "test-displays" or "test-topology" or "test-topology-init-race")?new HostDisplaySession(displaySelection,synthetic?selectedDisplay:null,hello.DisplayVersion,backend=="test-topology"):null;
@@ -623,6 +624,14 @@ internal static class VideoHostSession
         Task first = await Task.WhenAny(observedInput, observedSender, observedProducer, observedClipboard,observedSession,observedAdmin,observedTcpFallback,networkQuality,quicRecovery,simulatedTransition);
         string worker = failures.First?.Worker ?? (first == observedInput ? "control-read" : first == observedSender ? "media-send" : "capture-encode");
         var failure = failures.First;
+        bool inputWorkerFailed = failure?.Worker == "admin-input";
+        string? desktopEnd = (failure?.Error as WindowsSessionUnavailableException)?.Reason;
+        if (inputWorkerFailed && desktopEnd is null && originalDesktop is not null)
+        {
+            // The worker checks the same Windows session and can disconnect before the Host watcher ticks.
+            var currentDesktop = WindowsSessionAccess.Read();
+            desktopEnd = currentDesktop.SessionChangeFrom(originalDesktop) ?? currentDesktop.Denial;
+        }
         HostSessionLog.Write($"session_end worker={worker} stage={failure?.Stage ?? "shutdown"} completed_frames={failure?.CompletedFrames ?? 0} state={first.Status} error_type={failure?.Error.GetType().Name ?? "none"} hresult=0x{failure?.Error.HResult ?? 0:X8} reason={failure?.Error.Message ?? "worker completed/cancelled"}");
         // Stop file I/O before closing the shared grants so transport loss can
         // suspend a resumable transfer instead of looking like a file denial.
@@ -637,10 +646,9 @@ internal static class VideoHostSession
             }
             finally { await elevated.DisposeAsync(); }
         }
-        bool inputWorkerFailed = failure?.Worker == "admin-input";
-        if (inputWorkerFailed && shellSessionId is not null)
+        if (inputWorkerFailed && desktopEnd is null && shellSessionId is not null)
             ShellBridge.Emit("admin-worker-lost", sessionId: shellSessionId);
-        if (stop.IsCancellationRequested || failure?.Error is WindowsSessionUnavailableException || inputWorkerFailed)
+        if (stop.IsCancellationRequested || desktopEnd is not null || inputWorkerFailed)
         {
             // Bounded terminal notice distinguishes local stop from network loss.
             using var terminal = new CancellationTokenSource(TimeSpan.FromSeconds(1));
@@ -649,7 +657,7 @@ internal static class VideoHostSession
                 await controlWrite.WaitAsync(terminal.Token);
                 try
                 {
-                    var reason = (failure?.Error as WindowsSessionUnavailableException)?.Reason switch
+                    var reason = desktopEnd switch
                     {
                         "session-locked" => SessionEndReason.WindowsLocked,
                         "physical-console-session-changed" => SessionEndReason.WindowsSessionChanged,
@@ -665,7 +673,13 @@ internal static class VideoHostSession
             catch (Exception error) when (error is IOException or OperationCanceledException or ObjectDisposedException) { }
         }
         session.Cancel(); controlSocket.Close(); mediaSocket?.Close(); dataSocket?.Close(); clipboardSocket?.Close();audioSocket?.Close();richClipboard?.Stop(); queue.Complete();
-        try { if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure.Error).Throw(); await first; }
+        try
+        {
+            if (desktopEnd is not null && failure?.Error is not WindowsSessionUnavailableException)
+                throw new WindowsSessionUnavailableException(desktopEnd);
+            if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure.Error).Throw();
+            await first;
+        }
         finally
         {
             try { await Task.WhenAll(observedInput, observedSender, observedProducer, observedClipboard,observedSession,observedAdmin,observedTcpFallback,networkQuality,quicRecovery,simulatedTransition); } catch (Exception) { /* Causal failure is reported above; join all workers. */ }
