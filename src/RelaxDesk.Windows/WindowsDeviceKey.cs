@@ -2,8 +2,9 @@ using System.Security.Cryptography;
 
 namespace RelaxDesk.Windows;
 
-public static class WindowsWorkDeviceKey
+public static class WindowsDeviceKey
 {
+    // Keep the existing CNG key so previously enrolled fingerprints stay stable.
     const string Name = "RelaxDesk.WorkIdentity.v1";
 
     public static ECDsa Open()

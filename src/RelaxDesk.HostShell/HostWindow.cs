@@ -124,7 +124,7 @@ internal sealed partial class HostWindow:Window
             accepted = MessageBox.Show(this, "允许这个连接操作管理员权限窗口？接下来还需在本机确认 Windows UAC。",
                 "确认管理员输入", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes;
         bool clipboard=accepted&&clipboardPermission.IsChecked==true;bool files=accepted&&filesPermission.IsChecked==true&&selectedFileRoot is not null;bool audio=accepted&&audioPermission.IsChecked==true;var remember=CaptureWorkTrust(accepted,clipboard,files,audio);activeInput=accepted&&(activeMode is "Work" or "Admin"||guestInputPermission.IsChecked==true);await Host.Decide(accepted,clipboard,files,id,audio,activeMode=="Guest"&&activeInput,activeMode=="Admin"&&accepted);if(displayedSessionId!=id)return;revokeGuestInput.Visibility=activeInput&&(activeMode=="Guest"||workInputRevoke)?Visibility.Visible:Visibility.Collapsed;revokeAudio.Visibility=audio?Visibility.Visible:Visibility.Collapsed;revokeClipboard.Visibility=clipboard?Visibility.Visible:Visibility.Collapsed;revokeFiles.Visibility=files?Visibility.Visible:Visibility.Collapsed;request.Visibility=Visibility.Collapsed;if(remember is not null)await SaveWorkTrust(remember);}
-    internal async Task StopSharing(){ClearNextWork();CancelRecovery();stop.IsEnabled=false;try{await Host.Stop();}catch(Exception e){detail.Text=e.Message;}}
+    internal async Task StopSharing(){CancelRecovery();stop.IsEnabled=false;try{await Host.Stop();}catch(Exception e){detail.Text=e.Message;}}
     internal Task DisconnectSession()=>displayedSessionId is {} id?Host.Disconnect(id):Task.CompletedTask;
     internal bool AdminRequestVisible => adminRequest.Visibility == Visibility.Visible;
 
@@ -148,7 +148,6 @@ internal sealed partial class HostWindow:Window
         if ((kind is "admin-starting" or "admin-awaiting-viewer" or "admin-ready" or "admin-revoked" or "admin-denied" or "admin-deployment-unavailable" or
                 "ordinary-input-blocked" or "ordinary-input-restored") &&
             (displayedSessionId is null || change.SessionId != displayedSessionId)) return;
-        if (kind is "ended" or "stopped" or "desktop-unavailable") ClearNextWork();
         if (kind is "listening" or "approval-request" or "session-ended" or "ended" or "stopped") CloseAdminRequest();
         switch(kind){
             case "admin-approval-request" when activeMode == "Work" && displayedSessionId is not null &&
@@ -183,7 +182,7 @@ internal sealed partial class HostWindow:Window
                 guestInputPermission.IsChecked = false;
                 guestInputPermission.Visibility = guest ? Visibility.Visible : Visibility.Collapsed;
                 consentAccess.Text = activeMode == "Admin" ? "对方请求操作管理员权限窗口，需要另行确认。" : guest ? "允许后共享画面。可单独允许键鼠操作。" : "允许后共享画面，并允许普通桌面的键鼠操作。";
-                request.Visibility=Visibility.Visible;allow.IsEnabled=deny.IsEnabled=true;clipboardPermission.IsChecked=false;clipboardPermission.Content=new TextBlock{Text="允许双向剪贴板："+SessionCapabilities.ClipboardDescription(change.Features??[])+"（读取/替换两端新复制的内容）",TextWrapping=TextWrapping.Wrap};clipboardPermission.Visibility=(change.Features??[]).Any(SessionCapabilities.IsClipboard)?Visibility.Visible:Visibility.Collapsed;ShowFileRequest((change.Features??[]).Contains(SessionCapabilities.FileTransfer));ShowAudioRequest(change.Features);ApplyWorkTrust(change);state.Text="等待你的授权";detail.Text="还未共享桌面或开放输入。";if(ConsumeNextWork())_ = Decide(true);break;
+                request.Visibility=Visibility.Visible;allow.IsEnabled=deny.IsEnabled=true;clipboardPermission.IsChecked=false;clipboardPermission.Content=new TextBlock{Text="允许双向剪贴板："+SessionCapabilities.ClipboardDescription(change.Features??[])+"（读取/替换两端新复制的内容）",TextWrapping=TextWrapping.Wrap};clipboardPermission.Visibility=(change.Features??[]).Any(SessionCapabilities.IsClipboard)?Visibility.Visible:Visibility.Collapsed;ShowFileRequest((change.Features??[]).Contains(SessionCapabilities.FileTransfer));ShowAudioRequest(change.Features);ApplyWorkTrust(change);state.Text="等待你的授权";detail.Text="还未共享桌面或开放输入。";break;
             case "admin-starting":
                 state.Text = activeMode == "Work" ? "正在共享 · Work" : "正在准备管理员输入";
                 detail.Text = "正在检查并启动管理员输入代理。如果 Windows 显示 UAC 提示，请在本机确认。";

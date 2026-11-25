@@ -97,13 +97,10 @@ mode. The elevated worker retains its strict failure and revocation path.
    input or session authorization. Sign-in and lock also have their own
    desktop lifecycle. Validate those paths independently from UAC consent.
    [How UAC works](https://learn.microsoft.com/en-us/windows/security/application-security/application-control/user-account-control/how-it-works)
-4. Work device grants use authenticated keys and a revocable Host list.
-   While sharing from an eligible desktop, the operator can separately
-   preapprove the next Work connection for one selected device within 15 minutes.
-   The grant is held in memory and permits viewing and ordinary keyboard/mouse
-   input. The operator can cancel it, and it ends on use, sharing stop, device
-   revocation or observed desktop loss. Boot-time and pre-sign-in access
-   remain unimplemented.
+4. Work device records use authenticated keys and a revocable Host list.
+   Saved records prefill eligible feature selections. Every connection requires
+   a fresh Host decision, including connections from saved devices. The existing
+   Viewer key and proof format preserve device fingerprints.
 
 ## Transport milestones
 

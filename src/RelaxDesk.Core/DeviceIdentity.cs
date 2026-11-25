@@ -5,7 +5,7 @@ namespace RelaxDesk.Core;
 // Device identity is proof of possession, separate from local permission
 // to share. The signature is restricted to this TLS server certificate and
 // a fresh challenge for the current connection.
-public static class WorkDeviceIdentity
+public static class DeviceIdentity
 {
     const string P256 = "1.2.840.10045.3.1.7";
 
@@ -13,7 +13,7 @@ public static class WorkDeviceIdentity
 
     public static ECDsa Import(string publicKey)
     {
-        if (publicKey.Length is < 1 or > 160) throw new CryptographicException("Invalid Work device public key");
+        if (publicKey.Length is < 1 or > 160) throw new CryptographicException("Invalid device public key");
         byte[] bytes = Convert.FromBase64String(publicKey);
         var key = ECDsa.Create();
         try
@@ -21,7 +21,7 @@ public static class WorkDeviceIdentity
             key.ImportSubjectPublicKeyInfo(bytes, out int consumed);
             if (consumed != bytes.Length || key.ExportParameters(false).Curve.Oid.Value != P256 ||
                 !key.ExportSubjectPublicKeyInfo().AsSpan().SequenceEqual(bytes) || Export(key) != publicKey)
-                throw new CryptographicException("Invalid Work device public key");
+                throw new CryptographicException("Invalid device public key");
             return key;
         }
         catch { key.Dispose(); throw; }
@@ -40,7 +40,8 @@ public static class WorkDeviceIdentity
     static byte[] Transcript(byte[] challenge, string tlsFingerprint)
     {
         if (challenge.Length != 32 || tlsFingerprint.Length != 64 || !tlsFingerprint.All(char.IsAsciiHexDigit))
-            throw new CryptographicException("Invalid Work device challenge");
+            throw new CryptographicException("Invalid device challenge");
+        // Keep the existing transcript domain for the v2 wire protocol.
         ReadOnlySpan<byte> domain = "RelaxDesk Work device proof v1\0"u8;
         byte[] bytes = new byte[domain.Length + 64];
         domain.CopyTo(bytes);

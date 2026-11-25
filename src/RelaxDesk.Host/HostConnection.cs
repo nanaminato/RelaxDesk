@@ -63,7 +63,7 @@ internal static class HostConnection
         if (hello.DeviceKey is not null && (hello.Kind == "hello-v1" || hello.Mode is not (null or SessionMode.Work)))
             throw new AuthenticationException("Device identity is restricted to Work sessions");
         string? deviceFingerprint = hello.DeviceKey is not null && !guestOnly
-            ? await VerifyWorkDevice(tls, cert, hello.DeviceKey, stop) : null;
+            ? await VerifyDeviceIdentity(tls, cert, hello.DeviceKey, stop) : null;
         string? approval = (SessionAccess.Available(hello.Mode) || adminEligible) && (!guestOnly || hello.Mode == SessionMode.Guest) &&
             (!workOnly || hello.Mode is null or SessionMode.Work)
             ? await RequestConsent(client, shell, requestedFeatures, hello.Mode, deviceFingerprint, hello.WorkInputRevoke == true, stop)
@@ -167,23 +167,23 @@ internal static class HostConnection
         finally { deadline.Cancel(); await peer; }
     }
 
-    static async Task<string> VerifyWorkDevice(SslStream tls, X509Certificate2 certificate, string publicKey, CancellationToken stop)
+    static async Task<string> VerifyDeviceIdentity(SslStream tls, X509Certificate2 certificate, string publicKey, CancellationToken stop)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop);
         deadline.CancelAfter(TimeSpan.FromSeconds(5));
         try
         {
-            using var key = WorkDeviceIdentity.Import(publicKey);
+            using var key = DeviceIdentity.Import(publicKey);
             byte[] challenge = RandomNumberGenerator.GetBytes(32);
             await Wire.Write(tls, new("work-device-challenge-v2", Data: challenge), deadline.Token);
             var proof = await Wire.Read(tls, deadline.Token, 2048);
             if (proof.Data is not { Length: 64 } signature || proof != new Packet("work-device-proof-v2", Data: signature) ||
-                !WorkDeviceIdentity.Verify(key, challenge, certificate.GetCertHashString(HashAlgorithmName.SHA256), signature))
-                throw new AuthenticationException("Work device proof rejected");
-            return WorkDeviceIdentity.Fingerprint(key);
+                !DeviceIdentity.Verify(key, challenge, certificate.GetCertHashString(HashAlgorithmName.SHA256), signature))
+                throw new AuthenticationException("Device proof rejected");
+            return DeviceIdentity.Fingerprint(key);
         }
         catch (Exception error) when (error is CryptographicException or FormatException)
-        { throw new AuthenticationException("Invalid Work device credentials", error); }
+        { throw new AuthenticationException("Invalid device credentials", error); }
     }
 
     static async Task<string?> RequestConsent(TcpClient client, ShellBridge.Session? shell, string[] features, SessionMode? mode,

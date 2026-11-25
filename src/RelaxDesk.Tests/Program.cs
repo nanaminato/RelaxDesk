@@ -125,19 +125,19 @@ adminRequestGate.RevokeInput();
 Check(!adminRequestGate.AcceptControl(adminRequestPacket with { Sequence = 2 }, adminRequest: true));
 
 using (var device = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256))
-using (var publicDevice = WorkDeviceIdentity.Import(WorkDeviceIdentity.Export(device)))
+using (var publicDevice = DeviceIdentity.Import(DeviceIdentity.Export(device)))
 using (var unrelated = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256))
 {
     byte[] challenge = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
     byte[] newChallenge = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
     string serverPin = new('A', 64);
-    var signature = WorkDeviceIdentity.Sign(device, challenge, serverPin);
-    Check(WorkDeviceIdentity.Fingerprint(device) == WorkDeviceIdentity.Fingerprint(publicDevice));
-    Check(WorkDeviceIdentity.Verify(publicDevice, challenge, serverPin, signature));
-    Check(!WorkDeviceIdentity.Verify(publicDevice, newChallenge, serverPin, signature));
-    Check(!WorkDeviceIdentity.Verify(publicDevice, challenge, new string('B', 64), signature));
-    Check(!WorkDeviceIdentity.Verify(unrelated, challenge, serverPin, signature));
-    Check(!modeGate.AcceptControl(new Packet("ping-v2", 3, DeviceKey: WorkDeviceIdentity.Export(device))));
+    var signature = DeviceIdentity.Sign(device, challenge, serverPin);
+    Check(DeviceIdentity.Fingerprint(device) == DeviceIdentity.Fingerprint(publicDevice));
+    Check(DeviceIdentity.Verify(publicDevice, challenge, serverPin, signature));
+    Check(!DeviceIdentity.Verify(publicDevice, newChallenge, serverPin, signature));
+    Check(!DeviceIdentity.Verify(publicDevice, challenge, new string('B', 64), signature));
+    Check(!DeviceIdentity.Verify(unrelated, challenge, serverPin, signature));
+    Check(!modeGate.AcceptControl(new Packet("ping-v2", 3, DeviceKey: DeviceIdentity.Export(device))));
 }
 count += await InputChecks.Run();
 count += await MediaChecks.Run();

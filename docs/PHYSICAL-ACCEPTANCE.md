@@ -38,7 +38,7 @@ up counts and token elevation and integrity values on redirected standard output
 | --- | --- | --- |
 | Host start / approve / deny | No capture or input before explicit approval; fresh approvals each Host launch | Pending |
 | Guest / Work / Admin boundaries | In each mode, record approved input and optional capabilities. Verify Guest and Work cannot control an elevated window, including when an operator attempts to launch the Host elevated. | Pending |
-| Work device trust | Verify the displayed device identity, use a separately approved one-use Work connection, then revoke the device and verify fresh local approval is required. | Pending |
+| Work device trust | Verify the displayed device identity, reconnect from the saved device and confirm that local approval is required. Revoke the device during an active connection and check that the session ends. | Pending |
 | Admin activation and revocation | Test an elevated CMD, PowerShell, environment settings, Registry Editor and Computer Management. Record Host-side approval, worker startup, Viewer exit, Host revoke, worker loss and held-input release. | Pending |
 | Real desktop visibility | Distinguishable changing content visible on Viewer; record capture/decode/Present logs separately | Pending |
 | Ordinary keyboard | Notepad/IDE typing, F1-F24 where application supports, navigation/numpad/OEM, left/right modifiers, repeat/long hold | Pending |

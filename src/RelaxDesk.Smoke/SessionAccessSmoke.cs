@@ -47,7 +47,7 @@ internal static class SessionAccessSmoke
             RequestedMode = mode,
             RequestAdminUpgrade = requestUpgrade,
             RequestedDisplayVersion = DisplayProtocol.Version,
-            OpenWorkDeviceKey = proveDevice ? () => ECDsa.Create(key.ExportParameters(true)) : null
+            OpenDeviceKey = proveDevice ? () => ECDsa.Create(key.ExportParameters(true)) : null
         };
         int routedInputs = 0, elevatedInputs = 0, workerReleases = 0;
         try
@@ -74,7 +74,7 @@ internal static class SessionAccessSmoke
             if (request.GetProperty("mode").GetString() != mode?.ToString())
                 throw new IOException("Incorrect mode displayed for approval");
             if (proveDevice && (connect.IsCompleted ||
-                request.GetProperty("deviceFingerprint").GetString() != WorkDeviceIdentity.Fingerprint(key)))
+                request.GetProperty("deviceFingerprint").GetString() != DeviceIdentity.Fingerprint(key)))
                 throw new IOException("Work device fingerprint missing or skipped local approval");
             string? id = request.GetProperty("sessionId").GetString();
             string command = mode == SessionMode.Guest && grantInput ? "APPROVE_INPUT" : "APPROVE";

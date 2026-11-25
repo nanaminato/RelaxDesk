@@ -19,7 +19,7 @@ internal sealed partial class HostWindow
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var ct = timeout.Token;
             using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-            string fingerprint = WorkDeviceIdentity.Fingerprint(key);
+            string fingerprint = DeviceIdentity.Fingerprint(key);
 
             async Task WaitFor(Func<bool> ready)
             {
@@ -28,7 +28,7 @@ internal sealed partial class HostWindow
             SessionClient Viewer(params string[] features) => new()
             {
                 RequestedMode = SessionMode.Work,
-                OpenWorkDeviceKey = () => ECDsa.Create(key.ExportParameters(true)),
+                OpenDeviceKey = () => ECDsa.Create(key.ExportParameters(true)),
                 RequestedFeatures = features
             };
 
@@ -64,58 +64,14 @@ internal sealed partial class HostWindow
                 {
                     var pending = viewer.ConnectByApproval("127.0.0.1", port, ct);
                     await WaitFor(() => window.RequestVisible || pending.IsCompleted);
-                    if (pending.IsCompleted) throw new IOException($"Work was preapproved unexpectedly: {reason}");
+                    if (pending.IsCompleted) throw new IOException($"Work consent was skipped: {reason}");
                     await window.Decide(false);
                     try { await pending; throw new IOException("Manual rejection did not stop Work"); }
                     catch (HostConsentRejectedException) { }
                     await WaitFor(() => window.Status == "等待连接");
                 }
 
-                if (!window.ArmNextWork(fingerprint)) throw new IOException("Saved Work device could not be preapproved");
-                using (var wrongDevice = new SessionClient { RequestedMode = SessionMode.Work })
-                    await MustAsk(wrongDevice, "a device without verified identity");
-                using (var guest = new SessionClient { RequestedMode = SessionMode.Guest })
-                    await MustAsk(guest, "Guest mode");
-                using (var administrator = new SessionClient { RequestedMode = SessionMode.Admin })
-                {
-                    try
-                    {
-                        await administrator.ConnectByApproval("127.0.0.1", port, ct);
-                        throw new IOException("Work preapproval admitted Admin");
-                    }
-                    catch (HostConsentRejectedException) { }
-                    await WaitFor(() => window.Status == "等待连接");
-                }
-                if (window.nextWorkFingerprint != fingerprint) throw new IOException("Another device consumed Work preapproval");
-                using (var preapproved = Viewer(SessionCapabilities.ClipboardText))
-                {
-                    await preapproved.ConnectByApproval("127.0.0.1", port, ct);
-                    if (preapproved.Features.Length != 0 || window.nextWorkFingerprint is not null)
-                        throw new IOException("One-use Work preapproval granted optional capabilities or was not consumed");
-                    _ = await preapproved.Video.Read(ct);
-                    await window.DisconnectSession();
-                }
-                await WaitFor(() => window.Status == "等待连接");
-                if (!window.ArmNextWork(fingerprint)) throw new IOException("Could not arm expiration fixture");
-                window.nextWorkStart -= System.Diagnostics.Stopwatch.Frequency * 16 * 60;
-                using (var expired = Viewer()) await MustAsk(expired, "expired grant");
-                if (window.nextWorkFingerprint is not null) throw new IOException("Expired Work grant was retained");
-                if (!window.ArmNextWork(fingerprint)) throw new IOException("Could not arm cancellation fixture");
-                window.cancelNextWork.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
-                using (var cancelled = Viewer()) await MustAsk(cancelled, "cancelled grant");
-                if (!window.ArmNextWork(fingerprint)) throw new IOException("Could not arm session notification fixture");
-                window.NextWorkSessionChanged(window, new Microsoft.Win32.SessionSwitchEventArgs(Microsoft.Win32.SessionSwitchReason.SessionLock));
-                using (var afterLock = Viewer()) await MustAsk(afterLock, "Windows lock notification");
-                if (window.nextWorkFingerprint is not null) throw new IOException("Lock notification retained the grant");
-
-                if (!window.ArmNextWork(fingerprint)) throw new IOException("Could not arm restart fixture");
-                int oldGeneration = window.Host.Generation;
-                await window.StopSharing();
-                await window.Host.Finished;
-                await window.StartSharing("127.0.0.1", port, "test-clipboard");
-                await WaitFor(() => window.Host.Generation > oldGeneration && window.Status == "等待连接");
-                using (var afterRestart = Viewer()) await MustAsk(afterRestart, "prior Host generation");
-                if (window.nextWorkFingerprint is not null) throw new IOException("Host restart retained the one-use grant");
+                using (var remembered = Viewer()) await MustAsk(remembered, "saved device identity");
 
                 using (var expanded = Viewer(SessionCapabilities.ClipboardText, SessionCapabilities.ClipboardImage))
                 {
@@ -133,8 +89,8 @@ internal sealed partial class HostWindow
                 using (File.Open(file, FileMode.Open, FileAccess.Read, FileShare.Read))
                 {
                     await window.RevokeWorkDevice(fingerprint);
-                    if (!window.trustNotice.Text.Contains("未能删除磁盘记录") || window.ArmNextWork(fingerprint))
-                        throw new IOException("Failed storage removal left Work preapproval available");
+                    if (!window.trustNotice.Text.Contains("未能删除磁盘记录"))
+                        throw new IOException("Storage removal failure was not reported");
                     using var afterFailedRevoke = Viewer(SessionCapabilities.ClipboardText);
                     var pending = afterFailedRevoke.ConnectByApproval("127.0.0.1", port, ct);
                     await WaitFor(() => window.RequestVisible);
@@ -185,7 +141,7 @@ internal sealed partial class HostWindow
                 try { await reconnect; throw new IOException("Deny did not stop a revoked Work device"); }
                 catch (HostConsentRejectedException) { }
                 Console.WriteLine("PASS WPF Work device trust: opt-in persistence, exact permission prefill, no capability expansion, live revocation and fresh consent over production TLS");
-                Console.WriteLine("PASS WPF one-use Work preapproval: optional grants excluded, Guest/Admin and wrong device denied, expiry, cancel, session notification and Host restart invalidate the grant");
+                Console.WriteLine("PASS WPF saved Work device requires fresh Host consent");
             }
             catch (Exception error) { Console.Error.WriteLine(error); Environment.ExitCode = 1; }
             finally { await window.StopSharing(); window.Close(); }

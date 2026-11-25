@@ -82,7 +82,7 @@ public sealed class SessionClient : IDisposable
     public SslStream? Data { get; private set; }
     public string[] Capabilities { get; private set; } = [];
     public SessionMode? RequestedMode { get; init; }
-    public Func<ECDsa>? OpenWorkDeviceKey { get; init; }
+    public Func<ECDsa>? OpenDeviceKey { get; init; }
     public bool InputAllowed { get; private set; }
     public bool RequestWorkInputRevoke { get; init; }
     public bool WorkInputRevoke { get; private set; }
@@ -187,20 +187,20 @@ public sealed class SessionClient : IDisposable
         if(!VideoSettingsProtocol.Supported(RequestedVideoVersion))throw new InvalidDataException("Unsupported video version request");
         if(RequestedInputVersion is not (0 or InputProtocol.Version))throw new InvalidDataException("Unsupported requested input version");
         if(!DisplayProtocol.Supported(RequestedDisplayVersion)||RequestedDisplayVersion!=0&&RequestedInputVersion!=InputProtocol.Version)throw new InvalidDataException("Unsupported requested display version");
-        using var workDeviceKey = RequestedMode is null or SessionMode.Work ? OpenWorkDeviceKey?.Invoke() : null;
+        using var deviceKey = RequestedMode is null or SessionMode.Work ? OpenDeviceKey?.Invoke() : null;
         bool requestResume=RequestFileResume&&requestedFeatures.Contains(SessionCapabilities.FileTransfer);
-        await Wire.Write(Control, new Packet(approvalOnly ? "request-v2" : "hello-v2", Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], PointerBrotli: RequestPointerCompression ? true : null, WorkInputRevoke: RequestWorkInputRevoke && RequestedMode == SessionMode.Work ? true : null, Features: requestedFeatures.Length == 0 ? null : requestedFeatures,FileResume:requestResume,InputVersion:RequestedInputVersion,DisplayVersion:RequestedDisplayVersion,VideoVersion:RequestedVideoVersion, Mode:RequestedMode, Network:requestedNetwork, DeviceKey: workDeviceKey is null ? null : WorkDeviceIdentity.Export(workDeviceKey), AdminUpgrade: RequestAdminUpgrade && RequestedMode == SessionMode.Work ? true : null, QuicRecovery: requestQuicRecovery ? true : null), ct);
+        await Wire.Write(Control, new Packet(approvalOnly ? "request-v2" : "hello-v2", Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], PointerBrotli: RequestPointerCompression ? true : null, WorkInputRevoke: RequestWorkInputRevoke && RequestedMode == SessionMode.Work ? true : null, Features: requestedFeatures.Length == 0 ? null : requestedFeatures,FileResume:requestResume,InputVersion:RequestedInputVersion,DisplayVersion:RequestedDisplayVersion,VideoVersion:RequestedVideoVersion, Mode:RequestedMode, Network:requestedNetwork, DeviceKey: deviceKey is null ? null : DeviceIdentity.Export(deviceKey), AdminUpgrade: RequestAdminUpgrade && RequestedMode == SessionMode.Work ? true : null, QuicRecovery: requestQuicRecovery ? true : null), ct);
         PhaseChanged?.Invoke(ConnectionPhase.AwaitingApproval);
         var approval = await Wire.Read(Control, ct);
         if (approval.Kind == "work-device-challenge-v2")
         {
-            if (workDeviceKey is null || RequestedMode is (SessionMode.Guest or SessionMode.Admin) ||
+            if (deviceKey is null || RequestedMode is (SessionMode.Guest or SessionMode.Admin) ||
                 approval.Data is not { Length: 32 } challenge ||
                 approval != new Packet("work-device-challenge-v2", Data: challenge))
-                throw new AuthenticationException("Invalid Work device challenge");
+                throw new AuthenticationException("Invalid device challenge");
             using var proofDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
             proofDeadline.CancelAfter(TimeSpan.FromSeconds(5));
-            var signature = WorkDeviceIdentity.Sign(workDeviceKey, challenge, VerifiedFingerprint);
+            var signature = DeviceIdentity.Sign(deviceKey, challenge, VerifiedFingerprint);
             await Wire.Write(Control, new("work-device-proof-v2", Data: signature), proofDeadline.Token);
             approval = await Wire.Read(Control, ct);
         }
