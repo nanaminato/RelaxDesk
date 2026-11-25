@@ -127,6 +127,20 @@ public static class WindowsSessionContracts
         long allocationStart = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < probeReads; i++) _ = WindowsSessionAccess.Read();
         Console.WriteLine($"session_probe_reads={probeReads} managed_allocation_bytes={GC.GetAllocatedBytesForCurrentThread() - allocationStart}");
+        foreach (var (token, ordinaryAllowed, workerAllowed) in new (WindowsInputToken, bool, bool)[]
+        {
+            (new(false, false, 0x2000), true, false),
+            (new(false, true, 0x2000), false, false),
+            (new(true, false, 0x2000), false, false),
+            (new(false, false, 0x3000), false, false),
+            (new(true, false, 0x3000), false, true),
+            (new(true, true, 0x3000), false, false),
+            (new(true, false, 0x4000), false, false)
+        })
+        {
+            Check(WindowsInputPrivilege.AllowsOrdinaryHost(token) == ordinaryAllowed);
+            Check(WindowsInputPrivilege.AllowsElevatedWorker(token) == workerAllowed);
+        }
         bool ordinary = false;
         try { WindowsInputPrivilege.EnsureOrdinaryProcess(); ordinary = true; }
         catch (IOException) { }

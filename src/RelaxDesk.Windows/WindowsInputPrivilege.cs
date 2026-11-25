@@ -34,17 +34,18 @@ public static class WindowsInputPrivilege
 
     public static void EnsureOrdinaryProcess()
     {
-        var token = ReadProcessToken();
-        if (token.Elevated || token.UiAccess || token.IntegrityRid > 0x2000)
+        if (!AllowsOrdinaryHost(ReadProcessToken()))
             throw new IOException("Start RelaxDesk Host with an ordinary Windows token to share this desktop.");
     }
 
     public static void EnsureElevatedProcess()
     {
-        var token = ReadProcessToken();
-        if (!token.Elevated || token.UiAccess || token.IntegrityRid != 0x3000)
+        if (!AllowsElevatedWorker(ReadProcessToken()))
             throw new IOException("Administrator input requires a high-integrity interactive administrator token.");
     }
+
+    internal static bool AllowsOrdinaryHost(WindowsInputToken token) => !token.Elevated && !token.UiAccess && token.IntegrityRid <= 0x2000;
+    internal static bool AllowsElevatedWorker(WindowsInputToken token) => token.Elevated && !token.UiAccess && token.IntegrityRid == 0x3000;
 
     static int ReadIntegrity(nint buffer)
     {
