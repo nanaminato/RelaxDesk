@@ -121,11 +121,19 @@ internal sealed class AdminInputTask : IAdminInputTaskRegistration
             !string.Equals((string)action.WorkingDirectory, Path.GetDirectoryName(executable), StringComparison.OrdinalIgnoreCase) ||
             (string)action.Arguments != Arguments)
             throw new SecurityException("Unexpected elevated input task action");
-        var actual = new RawSecurityDescriptor((string)task.GetSecurityDescriptor(7));
-        var expected = new RawSecurityDescriptor(SecurityDescriptor(owner));
-        if (!actual.GetSddlForm(AccessControlSections.All & ~AccessControlSections.Audit).Equals(
-            expected.GetSddlForm(AccessControlSections.All & ~AccessControlSections.Audit), StringComparison.Ordinal))
+        if (!HasExpectedPermissions((string)task.GetSecurityDescriptor(7), owner))
             throw new SecurityException("Unexpected elevated input task permissions");
+    }
+
+    internal static bool HasExpectedPermissions(string sddl, string owner)
+    {
+        const AccessControlSections sections = AccessControlSections.Owner | AccessControlSections.Group | AccessControlSections.Access;
+        string actual = new RawSecurityDescriptor(sddl).GetSddlForm(sections);
+        // Task Scheduler expands generic rights to file masks on registration
+        // and can set the auto-inherited flag on the protected DACL.
+        string explicitRules = $"(A;;FA;;;SY)(A;;FA;;;BA)(A;;0x1200a9;;;{owner})";
+        return actual == new RawSecurityDescriptor(SecurityDescriptor(owner)).GetSddlForm(sections) ||
+            actual == "O:BAG:BAD:P" + explicitRules || actual == "O:BAG:BAD:PAI" + explicitRules;
     }
 
     internal static bool HasRegisteredOwner(string taskXml, string owner)

@@ -67,6 +67,10 @@ internal static class ServiceSetupSmoke
         Check(!AdminInputTask.HasRegisteredOwner(taskStart + "<UserId>S-1-5-18</UserId>" + taskEnd, own));
         Check(!AdminInputTask.HasRegisteredOwner(taskStart + userId + "<GroupId>S-1-5-32-544</GroupId>" + taskEnd, own));
         Check(!AdminInputTask.HasRegisteredOwner(taskStart + userId + userId + taskEnd, own));
+        string taskAcl = $"O:BAG:BAD:PAI(A;;FA;;;SY)(A;;FA;;;BA)(A;;0x1200a9;;;{own})";
+        Check(AdminInputTask.HasExpectedPermissions(taskAcl, own));
+        Check(!AdminInputTask.HasExpectedPermissions(taskAcl.Replace("0x1200a9", "FA"), own));
+        Check(!AdminInputTask.HasExpectedPermissions(taskAcl + "(A;;GR;;;WD)", own));
         async Task Reject(Func<Task> action){bool rejected=false;try{await action();}catch(Exception error)when(error is IOException or InvalidDataException or SecurityException or UnauthorizedAccessException or ArgumentException or System.Text.Json.JsonException){rejected=true;}Check(rejected);}
         void RejectPolicy(Action action){bool rejected=false;try{action();}catch(Exception error)when(error is SecurityException or InvalidDataException){rejected=true;}Check(rejected);}
         string serviceFolder=Path.GetDirectoryName(Path.GetFullPath(application))!;
