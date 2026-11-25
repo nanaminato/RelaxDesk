@@ -11,7 +11,7 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
-    internal static void VerifyAdminUpgrade(Application app, string hostApplication, bool activate = false, bool workerLoss = false, bool realWorker = false)
+    internal static void VerifyAdminUpgrade(Application app, string hostApplication, bool activate = false, bool workerLoss = false, bool realWorker = false, bool cancelElevation = false)
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
@@ -102,6 +102,15 @@ public sealed partial class ViewerWindow
                         if (viewer.inputAuthorized || viewer.sequence != pendingSequence || viewer.richHeld.Count != 0)
                             throw new IOException("Input entered the Viewer queue while local administrator approval was pending");
                         await Send($"ALLOW_ADMIN_INPUT {id} {requestId}");
+                        if (cancelElevation)
+                        {
+                            await Event("admin-starting", unexpected: "admin-denied");
+                            await Event("admin-denied", unexpected: "admin-ready");
+                            await Until(() => viewer.activeMode == SessionMode.Work && viewer.inputAuthorized && viewer.displaySession?.Ready == true);
+                            if (connection.IsCompleted || viewer.Toolbar?.EndpointText.StartsWith("Work · ", StringComparison.Ordinal) != true)
+                                throw new IOException("UAC cancellation did not restore Work on the existing connection");
+                            break;
+                        }
                         await Event("admin-ready", unexpected: "admin-denied");
                         await Until(() => viewer.activeMode == SessionMode.Admin && viewer.inputAuthorized && viewer.displaySession?.Ready == true);
                         if (viewer.Toolbar?.EndpointText.StartsWith("Admin · ", StringComparison.Ordinal) != true)
@@ -193,7 +202,9 @@ public sealed partial class ViewerWindow
                     await Send("STOP");
                     await process.WaitForExitAsync(ct);
                     if (process.ExitCode != 0) throw new IOException("Host did not exit cleanly");
-                    Console.WriteLine(realWorker
+                    Console.WriteLine(cancelElevation
+                        ? "PASS UAC cancellation restored Work and video on the same TLS connection"
+                        : realWorker
                         ? "PASS local UAC started the protected administrator worker; Viewer downgrade restored Work and video on the same TLS connection"
                         : workerLoss
                         ? "PASS WPF administrator worker pipe loss: original grant ended, Viewer required fresh approval and restored Work on a new TLS connection"
