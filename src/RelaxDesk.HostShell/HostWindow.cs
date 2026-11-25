@@ -169,6 +169,7 @@ internal sealed partial class HostWindow:Window
                     "physical-console-session-changed" => "Windows 已切换用户会话。请回到原用户桌面后重新连接并授权。",
                     "input-desktop-unavailable" => "Host 无法读取当前输入桌面。请回到普通桌面后重新连接并授权。",
                     "input-desktop-unsupported" or "thread-desktop-unsupported" => "Host 无法控制当前非默认桌面。请回到普通桌面后重新连接并授权。",
+                    "expected-desktop-transition-expired" => "等待 Windows 返回普通桌面已超时。请在本机完成或取消授权后重新连接。",
                     _ => DesktopUnavailableNotice
                 };
                 break;

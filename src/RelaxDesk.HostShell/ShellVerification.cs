@@ -39,6 +39,9 @@ internal sealed partial class HostWindow
         Changed(new("admin-ready", SessionId: current));
         if (state.Text != "会话已结束" || revokeAdminInput.Visibility != Visibility.Collapsed)
             throw new IOException("A delayed administrator event restored ended session controls");
+        Changed(new("desktop-unavailable", DesktopReason: "expected-desktop-transition-expired"));
+        if (DesktopStatusNotice?.Contains("已超时") != true)
+            throw new IOException("The expired desktop transition had no actionable notice");
         RestartEnabled = true;
         restartBudget = new();
         Changed(new("desktop-unavailable", DesktopReason: "host-input-token-denied"));
