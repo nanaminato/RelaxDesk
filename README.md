@@ -1,6 +1,6 @@
 # RelaxDesk
 
-HDR washout correction: [capture format policy and physical validation](docs/HDR-CAPTURE.md). RGB10 is no longer negotiated or assumed to be PQ from monitor HDR state; FP16 scRGB remains the precision path. Physical reproduction of the reported appearance remains pending.
+HDR capture uses an explicit FP16 Windows Graphics Capture frame pool on HDR monitors. [Capture policy and physical gray-ramp results](docs/HDR-CAPTURE.md).
 
 Latest requested delivery now has [independent Host and Viewer EXE installers](docs/EXE-INSTALLERS.md), with current-user desktop/Start Menu shortcuts and separate Apps uninstall entries. Actual final installers pass 46 lifecycle checks including both installed WPF launches, payload hashes and independent removal; no manual unzip/CMD is needed. Portable ZIPs remain available. Real Home/service-UAC/hardware acceptance is still pending.
 

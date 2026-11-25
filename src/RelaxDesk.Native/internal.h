@@ -55,11 +55,13 @@ struct desktop_converter {
     ComPtr<ID3D11Buffer> constants;
     void convert(gpu& graphics,ID3D11Texture2D* source,ID3D11Texture2D* target,const desktop_color& color);
 };
+struct hdr_capture;
 struct capture_context {
     std::wstring selected_device;
     resource_counter tracked{0};
     runtime lifetime; gpu graphics;
     ComPtr<IDXGIOutputDuplication> duplication;
+    std::shared_ptr<hdr_capture> hdr_session;
     ComPtr<ID3D11Texture2D> texture, staging;
     std::vector<RECT> dirty; std::vector<DXGI_OUTDUPL_MOVE_RECT> moves; std::vector<uint8_t> pointer;
     DXGI_OUTDUPL_POINTER_SHAPE_INFO shape{};
@@ -76,6 +78,8 @@ struct capture_context {
     DXGI_FORMAT source_format=DXGI_FORMAT_UNKNOWN;
     ULONGLONG color_checked=0;
     void refresh_color();
+    void start_hdr_capture();
+    void acquire_hdr(uint32_t timeout,rd_frame& result);
     bool accept_surface(const DXGI_OUTDUPL_FRAME_INFO& info,IDXGIResource* resource);
     void initialize(); void acquire(uint32_t timeout, rd_frame& info);
 };

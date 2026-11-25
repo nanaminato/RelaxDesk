@@ -90,5 +90,10 @@ int main(int argc,char** argv){
     if(argc==2&&!strcmp(argv[1],"--gdi"))return gdi_test();
     void* capture=nullptr;HRESULT hr=rd_capture_create(&capture);printf("DXGI create HRESULT=0x%08lx operation=%s\n",hr,rd_last_error());if(FAILED(hr))return 2;
     rd_frame frame{};for(int i=0;i<20;++i){hr=rd_capture_next(capture,100,&frame);if(hr!=S_FALSE)break;}
-    printf("DXGI acquire HRESULT=0x%08lx %ux%u dirty=%u move=%u pointer_bytes=%u operation=%s\n",hr,frame.width,frame.height,frame.dirty_count,frame.move_count,frame.pointer_bytes,rd_last_error());rd_capture_destroy(capture);return hr==S_OK?0:3;
+    printf("DXGI acquire HRESULT=0x%08lx %ux%u dirty=%u move=%u pointer_bytes=%u operation=%s\n",hr,frame.width,frame.height,frame.dirty_count,frame.move_count,frame.pointer_bytes,rd_last_error());
+    if(hr==S_OK){
+        const char* color=nullptr;
+        if(SUCCEEDED(rd_capture_color_status(capture,&color)))printf("%s\n",color);
+    }
+    rd_capture_destroy(capture);return hr==S_OK?0:3;
 }

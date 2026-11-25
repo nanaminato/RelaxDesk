@@ -1,5 +1,32 @@
 # HDR capture correction
 
+## HDR monitor capture
+
+On the NVIDIA GeForce RTX 5060 Ti test desktop, Desktop Duplication returned
+BGRA8 (format 87) even though HDR was active and FP16 was advertised. With
+Windows SDR white at 240 nits, a physical SDR gray ramp sampled from the old
+capture was `33, 59, 109, 210, 255, 255` for source values
+`16, 32, 64, 128, 192, 255`. The brightest two patches clipped together
+before RelaxDesk could apply its GPU tone mapper.
+
+For a selected, unrotated HDR monitor, the Host now requests an explicit
+FP16 Windows Graphics Capture frame pool. It maps the resulting linear scRGB
+through the existing SDR-white normalization and highlight shoulder before
+encoding. The same physical ramp read `16, 32, 64, 128, 192, 243` after
+conversion. Readback was used only to measure the test. Production conversion
+stays on the GPU. The Windows capture border and cursor behavior apply to
+this HDR path. SDR still uses Desktop Duplication. GDI remains the compatibility
+path for rotated monitors and all-displays capture.
+
+Run `RelaxDesk.NativeProbe.exe` from the local console with HDR on to check the
+capture path. The expected report includes `capture_api: Windows.Graphics.Capture`,
+`source_format: 10` and `transform: scRGB-to-SDR`. The gray-ramp measurement
+covers capture and tone mapping on one physical monitor. Viewer appearance,
+live HDR toggling during a remote session, and dual-PC latency need separate
+validation.
+
+## Previous RGB10 correction
+
 The reported symptom is a washed-out desktop with HDR enabled. A screenshot
 alone does not identify the source texture format or prove the physical cause.
 This correction removes a concrete unsafe assumption in the capture path:
@@ -30,7 +57,7 @@ dotnet build RelaxDesk.sln -c Release --artifacts-path E:/RelaxDesk/build/hdr-ma
 dotnet ./build/hdr-managed/bin/RelaxDesk.Tests/release/RelaxDesk.Tests.dll
 ```
 
-## Physical acceptance still required
+## Additional physical acceptance
 
 On the reported Host, use the new native DLL with the Host build. Capture the
 same Windows settings window, gray ramp, dark text and colored highlights with

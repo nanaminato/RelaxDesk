@@ -14,7 +14,7 @@ void gpu::create(IDXGIAdapter* adapter) {
     if(SUCCEEDED(commands.As(&multithread)))multithread->SetMultithreadProtected(TRUE);
 }
 void capture_context::initialize() {
-    duplication.Reset();texture.Reset();staging.Reset();converter.reset();color_output.Reset();graphics={};
+    hdr_session.reset();duplication.Reset();texture.Reset();staging.Reset();converter.reset();color_output.Reset();graphics={};
     dirty.clear();moves.clear();pointer.clear();shape={};pointer_position={};
     duplication_desc={};format_negotiated=false;last_desktop_time=0;previous_protected_mask=false;last_copy_pixels=0;
     source_format=DXGI_FORMAT_UNKNOWN;color={};color_checked=0;
@@ -27,11 +27,11 @@ void capture_context::initialize() {
             if(selected_device.empty()?(desc.DesktopCoordinates.left!=0||desc.DesktopCoordinates.top!=0):selected_device!=desc.DeviceName)continue;
             if(desc.Rotation!=DXGI_MODE_ROTATION_IDENTITY)check(DXGI_ERROR_UNSUPPORTED,"rotated output unsupported");
             output=desc;candidate.As(&color_output);refresh_color();
-            graphics.create(adapter.Get());ComPtr<IDXGIOutput5> output5;
+            graphics.create(adapter.Get());
+            if(color.hdr){start_hdr_capture();return;}
+            ComPtr<IDXGIOutput5> output5;
             HRESULT newer=candidate.As(&output5);
             if(SUCCEEDED(newer)){
-                // Keep HDR/scRGB precision until our GPU tone mapper, rather
-                // than asking DXGI to clip it into an eight-bit SDR surface.
                 newer=output5->DuplicateOutput1(graphics.device.Get(),0,static_cast<UINT>(std::size(desktop_formats)),desktop_formats,&duplication);
                 if(SUCCEEDED(newer))format_negotiated=true;
             }
@@ -100,7 +100,12 @@ bool capture_context::accept_surface(const DXGI_OUTDUPL_FRAME_INFO& info,IDXGIRe
     source_format=desc.Format;last_desktop_time=info.LastPresentTime.QuadPart;previous_protected_mask=info.ProtectedContentMaskedOut!=FALSE;return true;
 }
 void capture_context::acquire(uint32_t timeout,rd_frame& result) {
-    lifetime.verify();if(!duplication)initialize();
+    lifetime.verify();if(!duplication&&!hdr_session)initialize();
+    if(color_output&&GetTickCount64()-color_checked>=1000){
+        bool was_hdr=color.hdr;refresh_color();
+        if(was_hdr!=color.hdr)check(DXGI_ERROR_ACCESS_LOST,"display HDR mode changed; recreate capture and encoder");
+    }
+    if(hdr_session){acquire_hdr(timeout,result);return;}
     DXGI_OUTDUPL_FRAME_INFO info{};ComPtr<IDXGIResource> resource;
     HRESULT hr=duplication->AcquireNextFrame(timeout,&info,&resource);
     if(hr==DXGI_ERROR_WAIT_TIMEOUT)throw failure{S_FALSE};

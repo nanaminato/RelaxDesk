@@ -81,5 +81,5 @@ void capture_context::refresh_color(){
 RD int32_t rd_capture_color_status(void* context,const char** json){if(!context||!json)return E_INVALIDARG;static thread_local std::string text;return guarded([&]{
     auto& c=*static_cast<capture_context*>(context);c.lifetime.verify();std::ostringstream s;
     const char* transform=c.source_format==DXGI_FORMAT_R16G16B16A16_FLOAT?"scRGB-to-SDR":"SDR";
-    s<<"{\"source_format\":"<<c.source_format<<",\"output_format\":87,\"hdr_active\":"<<(c.color.hdr?"true":"false")<<",\"sdr_white_nits\":"<<c.color.white_nits<<",\"white_level_known\":"<<(c.color.white_known?"true":"false")<<",\"transform\":\""<<transform<<"\"}";text=s.str();*json=text.c_str();
+    s<<"{\"source_format\":"<<c.source_format<<",\"output_format\":87,\"hdr_active\":"<<(c.color.hdr?"true":"false")<<",\"sdr_white_nits\":"<<c.color.white_nits<<",\"white_level_known\":"<<(c.color.white_known?"true":"false")<<",\"capture_api\":\""<<(c.hdr_session?"Windows.Graphics.Capture":"DesktopDuplication")<<"\",\"transform\":\""<<transform<<"\"}";text=s.str();*json=text.c_str();
 });}
