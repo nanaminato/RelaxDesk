@@ -123,14 +123,24 @@ internal static class SessionBrokerSmoke
         using (var replacement = LocalAgentPipe.CreateAdminServer(lostWorkerGrant, own))
             Check(!replacement.IsConnected);
         string fixtureExecutable = Path.GetFullPath(application);
-        try
+        foreach (Exception failure in new Exception[]
         {
-            _ = await AdminInputLauncher.Start(Guid.NewGuid(), "all", own,
-                _ => throw new SecurityException("Missing protected deployment"),
-                _ => throw new InvalidOperationException("Missing deployment reached a process launch"), CancellationToken.None);
-            throw new IOException("Missing administrator deployment was accepted");
+            new SecurityException("Missing protected deployment"),
+            new UnauthorizedAccessException("Protected deployment is unreadable")
+        })
+        {
+            var deniedGrant = Guid.NewGuid();
+            try
+            {
+                _ = await AdminInputLauncher.Start(deniedGrant, "all", own,
+                    _ => throw failure,
+                    _ => throw new InvalidOperationException("Unavailable deployment reached a process launch"), CancellationToken.None);
+                throw new IOException("Unavailable administrator deployment was accepted");
+            }
+            catch (AdminInputDeploymentException error) { Check(ReferenceEquals(error.InnerException, failure)); }
+            using var deniedPipe = LocalAgentPipe.CreateAdminServer(deniedGrant, own);
+            Check(!deniedPipe.IsConnected);
         }
-        catch (AdminInputDeploymentException error) { Check(error.InnerException is SecurityException); }
         bool intercepted = false;
         try
         {
