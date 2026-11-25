@@ -7,7 +7,9 @@ import argparse
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("root", nargs="?", default="benchmarks/latest-renderers")
-parser.add_argument("--modes", nargs="+", choices=("deflate", "software", "hardware-cpu", "gpu"), default=("deflate", "software", "hardware-cpu", "gpu"))
+fixed_frame_modes = ("deflate", "software", "hardware-cpu", "gpu")
+timed_modes = ("desktop-gpu-udp", "cpu-idle-long")
+parser.add_argument("--modes", nargs="+", choices=fixed_frame_modes + timed_modes, default=fixed_frame_modes)
 arguments = parser.parse_args()
 if len(set(arguments.modes)) != len(arguments.modes):
     parser.error("modes must be distinct")

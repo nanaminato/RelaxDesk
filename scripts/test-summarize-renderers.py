@@ -10,23 +10,30 @@ SCRIPT = pathlib.Path(__file__).with_name("summarize-renderers.py")
 
 
 class SummaryContracts(unittest.TestCase):
-    def collect(self, processes, samples, expect_success=True, completion=True):
+    def collect(self, processes, samples, expect_success=True, completion=True, mode="deflate"):
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
-            folder = root / "deflate"
+            folder = root / mode
             folder.mkdir()
             (folder / "video.txt").write_text("PASS WPF fps=30 decode_p50_ms=1 decode_p95_ms=2 full_frame_readback_bytes=0 dropped=0 received_frames=60\nmedia encode_p50_ms=1 encode_p95_ms=2\nencode_stages frames=60\n", encoding="utf-8")
             (folder / "processes.json").write_text(json.dumps(processes), encoding="utf-8")
             (folder / "resources.json").write_text(json.dumps(samples), encoding="utf-8")
             if completion is not None:
                 (folder / "result.json").write_text(json.dumps({"Status": "PASS" if completion else "FAIL", "ExitCode": 0 if completion else 1}), encoding="utf-8")
-            result = subprocess.run([sys.executable, str(SCRIPT), str(root), "--modes", "deflate"], capture_output=True, text=True, timeout=10)
+            result = subprocess.run([sys.executable, str(SCRIPT), str(root), "--modes", mode], capture_output=True, text=True, timeout=10)
             if not expect_success:
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse((root / "summary.json").exists())
                 return None
             self.assertEqual(result.returncode, 0, result.stderr)
-            return json.loads((root / "summary.json").read_text())["deflate"]["resources"]
+            return json.loads((root / "summary.json").read_text())[mode]["resources"]
+
+    def test_timed_modes_use_the_same_evidence_checks(self):
+        for mode in ("desktop-gpu-udp", "cpu-idle-long"):
+            with self.subTest(mode=mode):
+                processes = [{"Role": "host", "ProcessId": 1}]
+                self.assertEqual(self.collect(processes, [], mode=mode)["host"]["samples"], 0)
+                self.collect(processes, [], expect_success=False, completion=False, mode=mode)
 
     def test_empty_samples_are_unknown(self):
         result = self.collect([{"Role": "host", "ProcessId": 1}, {"Role": "viewer", "ProcessId": 2}], [])

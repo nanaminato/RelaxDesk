@@ -86,6 +86,14 @@ VideoDecode engine averaged 0.92% across 12 samples and peaked at 1%. Two
 polls timed out. Percentages describe individual Windows engine instances
 on an active desktop and cannot be summed into total GPU utilization.
 
+The same timed probe at `12a1f90` ran at 20.99 FPS with no full-frame readback.
+The collector recorded 14 samples per role. Average process CPU was 0.33% for
+the Host and 0.63% for the Viewer, normalized across logical processors. Peak
+working sets were 129 MiB and 210 MiB. The reported Host VideoEncode and Viewer
+VideoDecode engine peaks were 8% and 2%, with timeouts in GPU polling. To
+generate a summary from that capture, run `python scripts/summarize-renderers.py
+<output-directory> --modes desktop-gpu-udp`.
+
 At `81cf0b2`, `desktop-gpu-auto-recovery` deliberately failed the first UDP
 attachment and delivered 318 TCP frames followed by five UDP frames on the
 same session. D3D11 submitted 323 frames with zero full-frame readbacks. The
