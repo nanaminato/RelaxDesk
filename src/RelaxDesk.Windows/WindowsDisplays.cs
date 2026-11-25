@@ -37,14 +37,16 @@ public sealed class WindowsDisplaySelection
     public DisplayBounds VirtualDesktop {get;}
     public bool RequiresGdi {get;}
     readonly DisplayInfo[] snapshot;
-    readonly Dictionary<string, DisplayInfo> geometryById;
+    readonly Dictionary<string, (DisplayInfo Geometry, uint Bit)> geometryById;
     public DisplayInfo[] Topology=>snapshot.ToArray();
     public WindowsDisplaySelection Select(string device)=>new(snapshot,device);
     public WindowsDisplaySelection(string? device):this(WindowsDisplays.Enumerate(),device){}
     public WindowsDisplaySelection(DisplayInfo[] displays,string? device)
     {
         snapshot=DisplayTopology.Validate(displays);Bounds=DisplayTopology.Select(snapshot,device);
-        geometryById = snapshot.ToDictionary(display => display.Id, WithoutHdr, StringComparer.OrdinalIgnoreCase);
+        geometryById = new(snapshot.Length, StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < snapshot.Length; i++)
+            geometryById.Add(snapshot[i].Id, (WithoutHdr(snapshot[i]), 1u << i));
         Device=device=="all"?"all":device is null?snapshot.Single(d=>d.Primary).Id:snapshot.Single(d=>d.Id.Equals(device,StringComparison.OrdinalIgnoreCase)).Id;
         VirtualDesktop=DisplayTopology.Union(snapshot);
         RequiresGdi=Device=="all"||snapshot.Single(d=>d.Id.Equals(Device,StringComparison.OrdinalIgnoreCase)).Rotation!=0;
@@ -56,19 +58,24 @@ public sealed class WindowsDisplaySelection
     }
     internal void EnsureCurrent(DisplayInfo[] now)
     {
-        DisplayTopology.Validate(now,true);
-        if (now.Length == geometryById.Count)
+        if (MatchesApproved(now)) return;
+        var validated = DisplayTopology.Validate(now, true);
+        throw new DisplayTopologyChangedException(validated.Select(WithoutHdr).ToArray());
+    }
+
+    bool MatchesApproved(DisplayInfo[]? displays)
+    {
+        if (displays is null || displays.Length != geometryById.Count) return false;
+        // The approved topology is validated and limited to 32 displays. A
+        // matching record for each distinct ID inherits those same invariants.
+        uint seen = 0;
+        foreach (var display in displays)
         {
-            bool matches = true;
-            foreach (var display in now)
-            {
-                if (geometryById.TryGetValue(display.Id, out var expected) && expected == WithoutHdr(display)) continue;
-                matches = false;
-                break;
-            }
-            if (matches) return;
+            if (display?.Id is not { } id || !geometryById.TryGetValue(id, out var expected) ||
+                (seen & expected.Bit) != 0 || expected.Geometry != WithoutHdr(display)) return false;
+            seen |= expected.Bit;
         }
-        throw new DisplayTopologyChangedException(now.Select(WithoutHdr).ToArray());
+        return true;
     }
     static DisplayInfo WithoutHdr(DisplayInfo display) => display.Hdr is null ? display : display with { Hdr = null };
 }

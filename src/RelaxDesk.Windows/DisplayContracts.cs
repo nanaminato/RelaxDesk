@@ -35,8 +35,13 @@ public static class DisplayContracts
         }
         long previousBytes = MeasureGeometryAllocations(PreviousGeometryCheck);
         long currentBytes = MeasureGeometryAllocations(() => selected.EnsureCurrent(current));
-        Check(currentBytes < previousBytes);
+        Check(previousBytes > 0 && currentBytes == 0);
         Console.WriteLine($"PASS 1024 synthetic two-display geometry checks: previous_allocated_bytes={previousBytes}, current_allocated_bytes={currentBytes}");
+        foreach (DisplayInfo[] invalid in new DisplayInfo[][] { [primary, primary], [primary, null!] })
+        {
+            try { selected.EnsureCurrent(invalid); throw new IOException("Invalid topology accepted"); }
+            catch (InvalidDataException) { Check(true); }
+        }
         foreach(var changed in new[]{new[]{primary},new[]{primary,left with{Bounds=left.Bounds with{X=-1200}}},new[]{primary,left with{DpiX=192}},new[]{primary,left with{Rotation=270}},new[]{primary,left with{Identity=new string('a',64)}},new[]{primary,left with{Id="SCREEN-2"}}})
         {try{selected.EnsureCurrent(changed);throw new InvalidOperationException("Changed display accepted");}catch(IOException){Check(true);}}
         var geometry=selected.InputGeometry;

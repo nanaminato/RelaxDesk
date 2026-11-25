@@ -250,8 +250,10 @@ provides a capture-only activity sample and leaves the static baseline open.
 
 In 1,024 geometry checks on an already enumerated two-display fixture, the
 cached display lookup reduced managed allocations from 1,409,024 to 401,408
-bytes. The comparison includes topology validation on both paths and excludes
-Windows display enumeration, capture and input delivery.
+bytes. Comparing exactly against the approved records and checking for duplicate
+IDs reduced that further to zero on the matching path. Mismatched records still
+undergo full topology validation before rejection. The comparison excludes Windows
+display enumeration, capture and input delivery.
 
 On 2026-11-25 the ordinary Windows console process successfully attached
 DXGI duplication to the RTX 5060 Ti at 2560 × 1440. The fixed-budget WPF
