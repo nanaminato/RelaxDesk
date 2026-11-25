@@ -273,6 +273,10 @@ transport recovery. Two control heartbeats arrived and tracked native resources
 returned to zero. Application media traffic averaged 4.142 Mbit/s during this
 run.
 
+The probe now records each frame's transport when its read completes, before
+decode and submission. A repeat run submitted 103 TCP and 108 UDP frames with
+no full-frame readback and measured 4.687 seconds between the first submissions.
+
 SDR BGRA capture can copy small dirty rectangles and move destinations from
 the current DXGI surface into the retained GPU texture. The WARP contract
 copied two pixels of a 4×4 surface and matched the full reference. It also

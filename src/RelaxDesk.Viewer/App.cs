@@ -215,7 +215,7 @@ public sealed partial class ViewerWindow : Window
         ClipboardSynchronizer? clipboard = null;
         Task? fileVerification = null;
         Task? clipboardVerification=null;
-        var decoded = new LatestQueue<DecodedMedia>(1); var cpu = new CpuBitmapRenderer(image);
+        var decoded = new LatestQueue<(DecodedMedia Frame, string? Transport)>(1); var cpu = new CpuBitmapRenderer(image);
         var metrics = new PipelineMetrics(); long readbackBytes = 0, gpuFrames = 0, cpuFrames = 0, skipped = 0; int resizeCount = 0, simulatedLosses = 0, keyframeRequests = 0, rendererGenerations = 0, idleRepaints = 0;
         var roundTrip=new ControlRoundTrip();
         ulong hiddenPresents = 0, occludedPresents = 0, busyPresents = 0, lastHidden = 0, lastOccluded = 0, lastBusy = 0;
@@ -236,7 +236,7 @@ public sealed partial class ViewerWindow : Window
         long heartbeatReplies = 0;
         var pacing = Stopwatch.StartNew(); double last = 0;
         System.Windows.Threading.DispatcherTimer? heartbeat = null;
-        void Presented(bool gpu, MediaFrame frame, double decodeMs,ViewportOptions? drawnViewport=null)
+        void Presented(bool gpu, MediaFrame frame, double decodeMs,ViewportOptions? drawnViewport=null,string? transport=null)
         {
             if (gpu) Interlocked.Increment(ref gpuFrames); else Interlocked.Increment(ref cpuFrames);
             metrics.Frame(0); double now = pacing.Elapsed.TotalMilliseconds; if (last > 0) metrics.Add("frame_interval", now - last); last = now;
@@ -257,11 +257,11 @@ public sealed partial class ViewerWindow : Window
                 VideoSettingsPresented(frame);
                 if (autoRecoveryTest)
                 {
-                    if (connection.Video.TransportName == "TCP/TLS")
+                    if (transport == "TCP/TLS")
                     {
                         if (recoveryTcpFrames++ == 0) firstRecoveryTcpFrame = Stopwatch.GetTimestamp();
                     }
-                    else if (connection.Video.TransportName == "UDP")
+                    else if (transport == "UDP")
                     {
                         if (recoveryUdpFrames++ == 0 && recoveryTcpFrames > 0)
                             recoveryFrameIntervalMs = Stopwatch.GetElapsedTime(firstRecoveryTcpFrame).TotalMilliseconds;
@@ -280,13 +280,14 @@ public sealed partial class ViewerWindow : Window
             if (cancellation.IsCancellationRequested) return;
             try
             {
-            if (!decoded.TryRead(out var frame) || frame is null) return;
+            if (!decoded.TryRead(out var submission)) return;
+            var frame = submission.Frame;
             if(displaySession is not null&&!displaySession.AcceptFrame(frame.Frame))return;
             if(!AcceptVideoFrame(frame.Frame)){Interlocked.Increment(ref skipped);return;}
             InjectPipelineFault("cpu-submit");
             metrics.Add("render_submit", cpu.Submit(frame));if(!viewportInputReady)ApplyViewport(); metrics.Add("decode", frame.DecodeMilliseconds);
             metrics.Add("readback", frame.Timing.ReadbackMs); metrics.Add("decode_to_render_submit", Stopwatch.GetElapsedTime(frame.DecodedAt).TotalMilliseconds);
-            Presented(false, frame.Frame, frame.DecodeMilliseconds);
+            Presented(false, frame.Frame, frame.DecodeMilliseconds, transport: submission.Transport);
             if (budgetComplete && decoded.Depth == 0) cancellation.Cancel();
             }
             catch (Exception error) { Failed("cpu-render", "cpu-submit", error); cancellation.Cancel(); }
@@ -566,6 +567,7 @@ public sealed partial class ViewerWindow : Window
                         if (!pendingRead.IsCompleted) continue;
                         stage = "media-read";
                         var frame = pendingRead.GetAwaiter().GetResult(); ioNotification?.GetAwaiter().GetResult(); pendingRead = null; ioNotification = null;
+                        string? transport = autoRecoveryTest ? connection.Video.TransportName : null;
                         stage = "media-validate";
                         Interlocked.Increment(ref receivedFrames); metrics.Traffic(MediaProtocol.HeaderSize + frame.Metadata.Length + frame.Data.Length);
                         metrics.Add("capture",frame.CaptureMicroseconds/1000d);metrics.Add("encode",frame.EncodeMicroseconds/1000d);
@@ -593,7 +595,7 @@ public sealed partial class ViewerWindow : Window
                                 metrics.Add("decode", surface.DecodeMilliseconds); metrics.Add("gpu_draw_submit", renderer.Timing.DrawMs); metrics.Add("present_call", renderer.Timing.PresentMs);
                                 metrics.Add("readback", surface.Timing.ReadbackMs); Interlocked.Add(ref readbackBytes, checked((long)surface.Timing.ReadbackBytes));
                                 CollectRenderState();
-                                if (shown) Presented(true, frame, surface.DecodeMilliseconds,drawnViewport); else Interlocked.Increment(ref skipped);
+                                if (shown) Presented(true, frame, surface.DecodeMilliseconds,drawnViewport,transport); else Interlocked.Increment(ref skipped);
                                 BudgetReached(); continue;
                             }
                             catch (Exception e) when (e is System.Runtime.InteropServices.ExternalException or NotSupportedException)
@@ -603,7 +605,7 @@ public sealed partial class ViewerWindow : Window
                             }
                         }
                         stage = "cpu-decode"; InjectPipelineFault(stage);
-                        var pixels = decoder.Decode(frame); if (pixels is not null) { Interlocked.Add(ref readbackBytes, checked((long)pixels.Timing.ReadbackBytes)); decoded.Write(pixels); }
+                        var pixels = decoder.Decode(frame); if (pixels is not null) { Interlocked.Add(ref readbackBytes, checked((long)pixels.Timing.ReadbackBytes)); decoded.Write((pixels, transport)); }
                         BudgetReached();
                     }
                 }
