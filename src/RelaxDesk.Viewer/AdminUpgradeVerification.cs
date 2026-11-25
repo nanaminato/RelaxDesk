@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using RelaxDesk.Core;
+using RelaxDesk.Windows;
 
 namespace RelaxDesk.Viewer;
 
@@ -147,10 +148,24 @@ public sealed partial class ViewerWindow
                             await Event("session-ended", unexpected: "approval-request");
                             if (viewer.inputAuthorized || !observedNativeCleanup || !viewer.status.Text.StartsWith("Host 已锁屏", StringComparison.Ordinal))
                                 throw new IOException("Physical lock did not close Admin with the WindowsLocked notice and clean resources");
+                            Console.WriteLine("PASS physical Windows lock ended Admin and Viewer did not retry; Host native resources zero");
+                            while (WindowsSessionAccess.Read().Denial is not null) await Task.Delay(250, ct);
+                            int previousFrames = Volatile.Read(ref viewer.smokeFrames);
+                            connection = viewer.ConnectVideo();
+                            var fresh = await Event("approval-request", unexpected: "admin-ready");
+                            string? freshId = fresh.GetProperty("sessionId").GetString();
+                            if (freshId is null || freshId == id || fresh.GetProperty("mode").GetString() != "Work" ||
+                                viewer.inputAuthorized || Volatile.Read(ref viewer.smokeFrames) != previousFrames)
+                                throw new IOException("Unlock did not require a fresh Work approval before video and input");
+                            await Send($"APPROVE {freshId}");
+                            await Until(() => viewer.activeMode == SessionMode.Work && viewer.inputAuthorized && Volatile.Read(ref viewer.smokeFrames) > previousFrames);
+                            viewer.StopConnection();
+                            await connection.WaitAsync(ct);
+                            await Event("session-ended");
                             await Send("STOP");
                             await process.WaitForExitAsync(ct);
                             if (process.ExitCode != 0) throw new IOException("Host did not exit cleanly");
-                            Console.WriteLine("PASS physical Windows lock ended Admin and Viewer did not retry; Host native resources zero");
+                            Console.WriteLine("PASS physical unlock required fresh approval before starting a new Work grant and video");
                             app.Shutdown();
                             return;
                         }
