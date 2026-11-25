@@ -27,31 +27,25 @@ old mode-scoped records.
 
 The coordinator refuses real sharing if its effective process token is
 elevated, above medium integrity, or has UIAccess, or if it is impersonating.
-The guard runs before opening the listener and again when consent completes.
-It also applies to legacy connections. A
-per-input desktop check remains in the Windows input path. Windows can reject
-input directed at a higher-integrity window via UIPI.
-
-On the v2 ordinary-input route, a partial or rejected Windows input batch
-is discarded. The Host immediately attempts to release any accepted held input
-and retries an incomplete release before injecting the next action. Video and
-reliable control continue while the ordinary desktop remains eligible. HostShell
-reports ordinary input rejection and recovery without changing the session's
-mode. The elevated worker retains its strict failure and revocation path.
+The coordinator checks its token before opening the listener and again after
+consent. The elevated worker checks its own token and Windows desktop before
+reporting readiness. It watches session eligibility throughout the grant and
+rechecks the desktop before injecting input. A rejected command, session loss
+or disconnected worker ends the grant and triggers held-input cleanup.
 [SendInput](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput)
 [Token information](https://learn.microsoft.com/windows/win32/api/securitybaseapi/nf-securitybaseapi-gettokeninformation)
 
 ## Remaining Windows milestones
 
 1. The Elevated Interactive Agent for the Default desktop is implemented.
-   Its protected deployment, session-bound local endpoint, separate Admin
-   approval, revocation and worker-loss behavior have automated coverage.
+   Its protected deployment, session-bound local endpoint, disconnect and
+   worker-loss behavior have automated coverage.
    A repaired installation and a physical UAC consent run are required to
    verify the actual elevated worker and its window input.
 2. Validate standard and high-integrity windows on Windows Home. Check
    environment variables, elevated CMD and PowerShell, Registry Editor and
-   Computer Management. Exercise revoke/exit while keys or buttons are held,
-   agent crash, and reconnect without an inherited Admin grant.
+   Computer Management. Exercise disconnect while keys or buttons are held,
+   agent crash, and fresh approval on reconnect.
 3. Validate UAC secure desktop, lock, sign-in and WTS session switching
    independently. A local UAC transition pauses capture and input, and the
    same session can resume on its original Default desktop. Lock and console
@@ -78,10 +72,6 @@ mode. The elevated worker retains its strict failure and revocation path.
    input or session authorization. Sign-in and lock also have their own
    desktop lifecycle. Validate those paths independently from UAC consent.
    [How UAC works](https://learn.microsoft.com/en-us/windows/security/application-security/application-control/user-account-control/how-it-works)
-4. Work device records use authenticated keys and a revocable Host list.
-   Saved records prefill eligible feature selections. Every connection requires
-   a fresh Host decision, including connections from saved devices. The existing
-   Viewer key and proof format preserve device fingerprints.
 
 ## Transport milestones
 
@@ -175,21 +165,18 @@ builds and tests the non-physical source path. The session access smoke uses
 real Host TLS connections, synthetic frames and non-injecting input callbacks.
 Run `RelaxDesk.Host --input-token-diagnose` from ordinary and elevated
 terminals to check the actual token without injecting input. Expected exit
-codes are 0 and 2, respectively. On a physical Windows Home console, pair two devices and exercise Guest view,
-Guest input grant and revoke, Work input and optional grants, then repeat with
-an elevated Host and confirm the coordinator refuses to open its listener.
-The console and HostShell report that ordinary Windows privileges are required.
-Record UAC,
-lock, sign-in, WTS switching and real window behavior as separate results.
+codes are 0 and 2, respectively. Treat ordinary-window input,
+administrator-window input and UAC secure-desktop behavior as separate
+acceptance cases. The current automated run skips physical acceptance.
 
 | Scope | Verified on the current development branch | Remaining evidence |
 | --- | --- | --- |
-| Guest and Work | Production TLS and WPF tests verified fresh approvals, independent capability grants, revocation, device trust and denial of unapproved Admin. | Real keyboard and mouse on ordinary and elevated windows, including a Host started with an elevated token. |
-| Elevated input | WPF/TLS tests exercised two Admin transitions and revocation through protected, non-injecting test pipes. Real Windows IPC and ordinary-token rejection passed. | Update the existing service installation with local consent, then use the actual elevated worker against high-integrity windows. |
+| Whole-connection approval | TLS and WPF automation verifies device proof, fresh local approval, denial, and device revocation disconnect. | Ordinary and elevated window input on a target Windows console. |
+| Elevated input | Named-pipe tests cover session/PID/image binding, ordered display switching, worker loss and release acknowledgement without injecting input. | Actual elevation, administrator-window input and held-input release on a target Windows console. |
 | Desktop transitions | The Host sent separate terminal reasons for injected lock, session switch and input-desktop loss. WPF displayed the matching messages and stopped reconnecting. A simulated local UAC pause preserved TLS and resumed video. | Local consent, cancel and recovery on the UAC desktop, physical lock/unlock, sign-in and two-user switching. Direct secure-desktop control, remote sign-in and unattended Admin remain unimplemented. |
 | Media | Production QUIC loopback verified repeated TCP/UDP recovery and fallback. A real DXGI, H.264 and D3D11 console loopback switched from TCP to UDP without full-frame readback. | Two-machine LAN and physical input-to-display latency measurements. |
 | File transfer | Scoped TLS transfer, SHA-256 verification and interrupted transfers over 1 GiB passed. A separate 8 MiB transfer retained the same file connection while Auto switched video from TCP to UDP. | Two-machine LAN measurements and physical Explorer drag-and-drop. |
-| Distribution | Source Release builds and package-verifier syntax passed. The package verifier requires packaged WPF Auto recovery, desktop termination and Admin lifecycle evidence. | Generate and verify the final independent Host and Viewer installers after the remaining acceptance work. |
+| Distribution | Source Release builds and package-verifier syntax passed. The package verifier requires packaged WPF Auto recovery, desktop termination and device trust evidence. | Generate and verify the final independent Host and Viewer installers after the remaining acceptance work. |
 
 `RelaxDesk.Host --admin-input-diagnose` checks the ordinary coordinator token,
 interactive desktop and current user's protected worker installation. It exits
@@ -207,9 +194,9 @@ content or attempt to capture, move, or inject input on another desktop.
 
 | Interactive case | Acceptance evidence to collect |
 | --- | --- |
-| Ordinary and elevated windows | Use the same ordinary editor and an elevated command prompt for Guest, Work and approved Admin. Record which windows receive input, then revoke Admin while a key is held and verify the release and return to Work. |
-| UAC consent | From Work request Admin. On the Host separately deny the app request, cancel Windows consent, and approve Windows consent. Record video pause and recovery, control heartbeat continuity, and whether the worker activates only after approval. |
-| Lock and unlock | Lock the Host at the console during Work and Admin. Record whether media and input stop, whether the grant ends, and whether reconnect after unlock requires fresh approval. |
+| Ordinary and elevated windows | Use an ordinary editor and an elevated command prompt during an approved connection. End the connection while a key is held and observe release. |
+| UAC consent | Approve the connection, then separately observe Windows UAC approval and cancellation. Record whether sharing starts only when the worker is ready. |
+| Lock and unlock | Lock during an approved connection. Verify media and input stop and reconnect after unlock requires fresh approval. |
 | Windows sign-in | Start the installed broker before sign-in. Record broker status, absence of a usable interactive grant, then whether signing in enables explicit approval on the new desktop. |
 | Windows session switch | Switch between two signed-in users during streaming. Record the original session ending, worker cleanup and fresh approval for any new session. |
 
@@ -383,25 +370,16 @@ synchronously completed test sink. Native MsQuic send copies and physical
 network performance are outside this measurement.
 
 
-### Work device identity
+### Device identity and trust
 
-The Viewer offers a P-256 public key only when the Work identity checkbox is
-selected. Windows CNG retains its signing key with private-key export disabled.
-The Host challenges the key before displaying the local consent request.
-The signature binds a fresh challenge to the SHA-256 fingerprint of the
-server certificate from this connection. Guest and Admin do not use this
-identity. A verified identity still requires fresh local approval, including
-on reconnect.
+The Viewer offers a P-256 public key backed by a Windows CNG signing key with
+private-key export disabled. Before prompting the operator, the Host verifies
+a signature over a fresh challenge and the TLS server certificate fingerprint.
 
-
-The Host operator may save the verified fingerprint and the current optional
-feature grants while approving Work. The next connection with the same key
-can prefill the exact covered choices. A new clipboard format is unchecked
-unless all requested formats were saved. File prefill also requires the same
-Host-selected directory. The device list can revoke a record and disconnect
-a matching live session. A subsequent request still needs local approval
-with the default unchecked optional grants. The WPF/TLS fixture uses an
-isolated preference file and checks all of these transitions.
+The Host can save the verified fingerprint after approval. The trust store
+contains identity records only, and every new connection still requires the
+operator's decision. Revoking a record ends a matching live session. The
+WPF/TLS fixture covers persistence, fresh approval and revocation.
 
 ### Local desktop transition pause
 
@@ -425,20 +403,3 @@ A different console ID or a detached console terminates the sharing grant,
 including during an expected desktop pause. [Console session ID](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-wtsgetactiveconsolesessionid)
 
 Windows applies a restricted security descriptor to the Winlogon desktop used for protected UAC and sign-in. The broker uses a noninteractive LocalService identity. Windows requires a logged-on user's session and a highly trusted LocalSystem caller with `SE_TCB_NAME` for `WTSQueryUserToken`. The current broker's authorization consists of an authenticated lease for a registered interactive agent. Sharing still requires an eligible Default desktop and the appropriate Host approval. Pre-sign-in input, lock-screen input, and unattended Admin remain outside this authorization path. [Windows desktops](https://learn.microsoft.com/en-us/windows/win32/winstation/desktops) [Interactive services](https://learn.microsoft.com/en-us/windows/win32/services/interactive-services) [WTSQueryUserToken](https://learn.microsoft.com/en-us/windows/win32/api/wtsapi32/nf-wtsapi32-wtsqueryusertoken)
-
-In a negotiated Work session, the Viewer can retry an Admin request after
-denial or after returning to Work. A Host-side revocation disables further
-elevation for that connection. Each attempt requires a fresh local approval.
-Host pauses remote input and releases held keys and buttons before
-showing its local approval panel. Approval starts the desktop pause and the
-Windows UAC launch. A ready worker waits up to five seconds for Viewer
-activation. Denial restores Work. Timeout, revocation, or a display selection
-ends the worker grant before Work input resumes. A display selection during
-worker startup invalidates that pending grant.
-
-The loopback smoke checks verify that mismatched local approvals are ignored,
-that input is discarded while approval is pending, and that Work media and
-control survive denial. A separate synthetic desktop check verifies media
-pause, control heartbeats and a decodable key frame after resume. Real UAC
-launch, administrator-window input and display switching with an active
-elevated worker require interactive Windows acceptance.
