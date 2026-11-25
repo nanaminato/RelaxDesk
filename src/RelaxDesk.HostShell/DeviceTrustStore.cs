@@ -11,12 +11,13 @@ internal sealed class DeviceTrustStore(string file, SemaphoreSlim? operationGate
     readonly SemaphoreSlim operations = operationGate ?? new(1);
 
     internal static DeviceTrustStore CurrentUser() => new(Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RelaxDesk", "full-control-trust.json"));
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RelaxDesk", "password-device-trust.json"));
 
     internal static bool IsFingerprint(string? value) =>
         value is { Length: 64 } && value.All(c => char.IsAsciiDigit(c) || c is >= 'A' and <= 'F');
 
     public Task<string[]> Load() => Run(Read);
+    public Task<string[]> Clear() => Run(() => Write([]));
 
     public Task<string[]> Save(string fingerprint) => Run(() =>
     {

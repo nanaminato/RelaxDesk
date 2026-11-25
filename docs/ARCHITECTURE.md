@@ -110,6 +110,18 @@ Same-device GPU decoder→HwndHost SwapChain and stage instrumentation are imple
 Default Viewer now connects by IP/port with `request-v2` and a fresh 128-bit request nonce. This is a consent request, not an authenticated identity claim. Host validates framing/capabilities and presents the source endpoint; capture/input/media tickets remain unavailable until the operator types APPROVE. The first control TLS certificate is trusted only for this attempt, and its SHA256 pins the separate media TLS channel. One-time media tickets, input access gates and control sequence checks are unchanged. No certificate trust store or system TLS policy is modified. First-contact MITM protection is weaker than preverified fingerprints and this mode is scoped to a trusted LAN. The existing pinned hello-v1/v2 path remains strict and never falls back after a pin/token failure. No accounts/cloud identity or persisted credentials are introduced.
 
 
+## Remote cursor ownership
+
+Viewer cursor ownership follows the presented desktop frame. DXGI pointer shapes
+are composited by the Viewer, WGC carries the pointer in the image, and GDI draws
+the visible Windows cursor at its hotspot before readback. Capture metadata
+reserves pointer type 3 with no shape payload for frames whose pointer is embedded
+or hidden by the Host. Older readers already accept that value with an empty
+shape. A Viewer with no Host pointer indication uses a local arrow. Native video
+suppresses the local cursor only inside the active video viewport, while WPF bitmap
+video applies the cursor to the clipped image. Toolbar and menu HWNDs retain their
+local cursor behavior.
+
 ## 2026-11-23 — HDR normalization and WPF Host shell (0.4.0)
 
 Implemented and compiled: Desktop Duplication requests FP16 scRGB / RGB10 / BGRA / RGBA; GPU shader converts FP16 linear scRGB (1=80nit), HDR10 PQ BT.2020, and SDR typed formats to owned SDR BGRA. Windows DISPLAYCONFIG_SDR_WHITE_LEVEL calibrates reference white; unknown white is explicitly flagged (80nit fallback). A documented hue-preserving max-channel shoulder above 0.8 compresses highlights, followed by sRGB encoding. This is a custom SDR mapping, not a claim of BT.2390 or calibrated HDR reproduction. Production conversion uses one reusable GPU intermediate copy where source SRV binding is unavailable; no full-frame CPU readback is added. Existing decoder GPU display remains unchanged. Eight-bit HDR fallback cannot recover lost precision and is shown as limited. Unsupported formats still produce detailed errors.

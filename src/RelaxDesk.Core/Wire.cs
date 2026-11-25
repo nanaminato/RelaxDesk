@@ -14,7 +14,8 @@ public record Packet(string Kind, long Sequence = 0, int Width = 0, int Height =
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] bool? PointerBrotli=null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] bool? QuicRecovery=null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] SessionEndReason? EndReason=null,
-    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? VideoFallbackReason=null)
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? VideoFallbackReason=null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)] bool ReconnectOnly=false)
 {
     public override string ToString() => $"Packet kind={Kind} sequence={Sequence} (payload redacted)";
 }
@@ -25,6 +26,16 @@ public static class Wire
     public static async Task Write(Stream stream, Packet packet, CancellationToken ct = default)
     {
         byte[] body = JsonSerializer.SerializeToUtf8Bytes(packet);
+        try { await WriteBody(stream, body, ct); }
+        finally
+        {
+            if (packet.Kind == FullControlProtocol.PasswordRequest)
+                System.Security.Cryptography.CryptographicOperations.ZeroMemory(body);
+        }
+    }
+
+    static async Task WriteBody(Stream stream, byte[] body, CancellationToken ct)
+    {
         if (body.Length > Limit) throw new InvalidDataException("Packet too large");
         if (body.Length <= CombinedWriteLimit)
         {
@@ -52,10 +63,20 @@ public static class Wire
         byte[] header = new byte[4]; await stream.ReadExactlyAsync(header, ct);
         int length = BinaryPrimitives.ReadInt32LittleEndian(header);
         if (length < 2 || length > maximumLength) throw new InvalidDataException("Invalid packet length");
-        byte[] body = new byte[length]; await stream.ReadExactlyAsync(body, ct);
-        var packet = JsonSerializer.Deserialize<Packet>(body);
-        if (packet is null || string.IsNullOrWhiteSpace(packet.Kind)) throw new InvalidDataException("Missing packet type");
-        return packet;
+        byte[] body = new byte[length];
+        Packet? packet = null;
+        try
+        {
+            await stream.ReadExactlyAsync(body, ct);
+            packet = JsonSerializer.Deserialize<Packet>(body);
+            if (packet is null || string.IsNullOrWhiteSpace(packet.Kind)) throw new InvalidDataException("Missing packet type");
+            return packet;
+        }
+        finally
+        {
+            if (packet is null || packet.Kind == FullControlProtocol.PasswordRequest)
+                System.Security.Cryptography.CryptographicOperations.ZeroMemory(body);
+        }
     }
 }
 public sealed class AccessGate

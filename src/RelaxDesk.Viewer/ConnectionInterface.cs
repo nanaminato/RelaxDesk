@@ -10,6 +10,7 @@ public sealed partial class ViewerWindow
 {
     readonly ComboBox networkMode = new() { ItemsSource = new[] { "Auto", "TCP", "UDP" }, SelectedIndex = 0 };
     readonly ComboBox fileRateLimit = new() { ItemsSource = new[] { "20 MiB/s（默认）", "4 MiB/s", "1 MiB/s", "256 KiB/s" }, SelectedIndex = 0 };
+    readonly TextBox loginName = new() { MaxLength = 64 };
     string SessionEndpoint => host.Text;
 
     void BuildInterface()
@@ -33,9 +34,11 @@ public sealed partial class ViewerWindow
         image.Focusable = true; BuildViewport();
         var form = new StackPanel();
         form.Children.Add(new TextBlock { Text = "连接到远程电脑", FontSize = 26, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 10) });
-        form.Children.Add(new TextBlock { Text = "输入 IP 和端口，Host 确认授权后进入桌面。意外断开后会有限重试，仍需 Host 重新允许。", Foreground = Brushes.DimGray, TextWrapping = TextWrapping.Wrap });
+        form.Children.Add(new TextBlock { Text = "使用受控端设置的用户名和密码登录。首次连接须批准设备，后续可自动重连。", Foreground = Brushes.DimGray, TextWrapping = TextWrapping.Wrap });
         form.Children.Add(new TextBlock { Text = "远程电脑 IP", Margin = new Thickness(0, 16, 0, 0) }); form.Children.Add(host);
         form.Children.Add(new TextBlock { Text = "端口" }); form.Children.Add(port);
+        form.Children.Add(new TextBlock { Text = "用户名" }); form.Children.Add(loginName);
+        form.Children.Add(new TextBlock { Text = "密码" }); form.Children.Add(token);
         AddConnectionHistory(form);
         requestClipboard.Margin = new Thickness(0, 10, 0, 4); form.Children.Add(requestClipboard);
         form.Children.Add(requestClipboardImage);form.Children.Add(requestClipboardHtml);
@@ -45,15 +48,24 @@ public sealed partial class ViewerWindow
         void Field(string name, FrameworkElement control) { advanced.Children.Add(new TextBlock { Text = name }); advanced.Children.Add(control); }
         Field("媒体传输", networkMode);
         Field("文件传输限速（上传和下载）", fileRateLimit);
-        advanced.Children.Add(pinnedConnection);
-        Field("固定指纹连接信息（可选）", invitation); Field("SHA256 指纹", fingerprint); Field("一次性凭证", token);
+        var resetPin = new Button { Content = "清除当前地址的受控端证书记录" };
+        resetPin.Click += (_, _) =>
+        {
+            if (!System.Net.IPAddress.TryParse(host.Text.Trim(), out var address) ||
+                !int.TryParse(port.Text, out int number) || number is < 1 or > 65535) return;
+            if (MessageBox.Show(this, "清除后，下次登录前需要重新核对受控端证书指纹。", "清除证书记录", MessageBoxButton.OKCancel) != MessageBoxResult.OK) return;
+            try { PasswordLoginSettings.SaveServerPin(new System.Net.IPEndPoint(address, number).ToString(), null); }
+            catch (Exception error) when (error is System.IO.IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            { status.Text = "无法清除证书记录。"; }
+        };
+        advanced.Children.Add(resetPin);
         advanced.Children.Add(gpuRendering);advanced.Children.Add(requestTopology);
         advanced.Children.Add(new TextBlock { Text = "HDR 桌面由 Host 转为 SDR 后传输；屏幕观感仍需真机确认。", TextWrapping = TextWrapping.Wrap, Foreground = Brushes.DimGray, FontSize = 12 });
         gpuRendering.Content = "GPU 显示（不支持时回退）";
         form.Children.Add(new Expander { Header = "手动填写与显示选项", Content = advanced, Margin = new Thickness(0, 4, 0, 12) });
         connect.Content = "连接远程桌面"; connect.Style = (Style)Resources["PrimaryButton"];
         form.Children.Add(connect);
-        form.Children.Add(new TextBlock { Text = "Host 必须明确批准，才会共享画面和输入。默认首次连接信任本次所见证书；请仅在可信局域网使用。", FontSize = 12, Foreground = Brushes.DimGray, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) });
+        form.Children.Add(new TextBlock { Text = "首次连接先核对受控端证书指纹，再发送密码。密码只在本次连接和自动重连期间保留。", FontSize = 12, Foreground = Brushes.DimGray, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) });
         connectionCard.Child = form; connectionCard.Width = 490; connectionCard.Padding = new Thickness(28); connectionCard.Background = Brushes.White; connectionCard.CornerRadius = new CornerRadius(12); connectionCard.VerticalAlignment = VerticalAlignment.Center; connectionCard.HorizontalAlignment = HorizontalAlignment.Center;
         // Scroll when manual settings are expanded on smaller displays.
         var scroll = new ScrollViewer { Content = connectionCard, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalContentAlignment = HorizontalAlignment.Stretch };
@@ -68,6 +80,15 @@ public sealed partial class ViewerWindow
     internal bool ConnectionPanelVisible => connectionOverlay.Visibility == Visibility.Visible;
     internal bool BasicConnectionReady => host.IsVisible && port.IsVisible && pinnedConnection.IsChecked != true;
     internal void SetConnectionText(string text) => invitation.Text = text;
+    Task<bool> ConfirmPasswordServer(string pin, CancellationToken cancellation)
+    {
+        cancellation.ThrowIfCancellationRequested();
+        bool accepted = MessageBox.Show(this,
+            $"请将下方指纹与受控端「登录设置」中的 TLS 指纹核对。\n\n{pin}\n\n仅在完全一致时继续，密码将在确认后发送。",
+            "核对受控端身份", MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK;
+        cancellation.ThrowIfCancellationRequested();
+        return Task.FromResult(accepted);
+    }
     void ApplyInvitation()
     {
         if (string.IsNullOrWhiteSpace(invitation.Text)) return;
@@ -92,6 +113,7 @@ public sealed partial class ViewerWindow
         }
         else
         {
+            localConnectionKeys.Clear();
             sessionToolbar?.Dispose(); sessionToolbar = null;
             if (fullScreen) ToggleFullScreen();
         }

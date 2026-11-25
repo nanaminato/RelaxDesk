@@ -180,7 +180,26 @@ if (!syntheticBackend)
         return;
     }
 }
-using var mediaIdentity = new HostMediaIdentity();
+PasswordVerifier? verifier = syntheticBackend ? null : PasswordLoginSettings.Read();
+if (syntheticBackend && shellMode && Environment.GetEnvironmentVariable("RELAXDESK_TEST_PASSWORD_VERIFIER") is { } fixture)
+{
+    Environment.SetEnvironmentVariable("RELAXDESK_TEST_PASSWORD_VERIFIER", null);
+    verifier = System.Text.Json.JsonSerializer.Deserialize<PasswordVerifier>(fixture) is { IsValid: true } candidate
+        ? candidate : throw new InvalidDataException("Invalid password login test fixture");
+}
+if (!syntheticBackend && verifier is null)
+{
+    Console.Error.WriteLine("请先在受控端设置用户名和密码。");
+    Environment.ExitCode = 2;
+    return;
+}
+if (!syntheticBackend && !shellMode)
+{
+    Console.Error.WriteLine("请从受控端窗口启动密码共享，以便首次授权设备。");
+    Environment.ExitCode = 2;
+    return;
+}
+using var mediaIdentity = new HostMediaIdentity(persistent: !syntheticBackend);
 var cert = mediaIdentity.Certificate;
 bool persistent = shellMode || listenMode || interactiveLaunch;
 var listener = new TcpListener(address, port);
@@ -193,16 +212,17 @@ try
 {
     do
     {
-        string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
-        if (!shellMode) Console.WriteLine($"SHA256 fingerprint: {cert.GetCertHashString(HashAlgorithmName.SHA256)}\nOne-session pairing token: {token}\nConnection code: {new ConnectionInvitation(address.ToString(), port, cert.GetCertHashString(HashAlgorithmName.SHA256), token).Encode()}");
+        string token = syntheticBackend ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : "";
+        if (syntheticBackend && !shellMode) Console.WriteLine($"SHA256 fingerprint: {cert.GetCertHashString(HashAlgorithmName.SHA256)}\nOne-session pairing token: {token}\nConnection code: {new ConnectionInvitation(address.ToString(), port, cert.GetCertHashString(HashAlgorithmName.SHA256), token).Encode()}");
         listener.Start(1);
-        if (shellMode) ShellBridge.Emit("listening", address.ToString(), port);
+        if (shellMode) ShellBridge.Emit("listening", address.ToString(), port,
+            serverFingerprint: verifier is null ? null : cert.GetCertHashString(HashAlgorithmName.SHA256));
         try
         {
             using var client = await listener.AcceptTcpClientAsync(stop.Token); client.NoDelay = true;
             using var diagnosticScope=DiagnosticCorrelation.Begin();
             using var scope = shell?.Begin();
-            try { await HostConnection.Run(listener, client, mediaIdentity, token, backend, selectedFileRoot, scope, scope?.Token ?? stop.Token,fileResumes,selectedDisplay); }
+            try { await HostConnection.Run(listener, client, mediaIdentity, token, backend, selectedFileRoot, scope, scope?.Token ?? stop.Token,fileResumes,selectedDisplay,verifier); }
             finally { if (shellMode) ShellBridge.Emit("session-ended", sessionId: scope!.Id); }
         }
         catch (Exception e) when (e is IOException or AuthenticationException or OperationCanceledException or SocketException or InvalidDataException or System.Runtime.InteropServices.ExternalException or System.Threading.Channels.ChannelClosedException)

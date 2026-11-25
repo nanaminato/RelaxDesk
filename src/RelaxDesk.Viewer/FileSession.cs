@@ -7,7 +7,7 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
-    readonly CheckBox requestFiles = new() { Content = "启用文件传输与短期续传（限 Host 配置的目录）", IsChecked = true };
+    readonly CheckBox requestFiles = new() { Content = "启用文件传输与短期续传", IsChecked = true };
     FileTransferClient? fileClient;
     FileTransferQueue? fileQueue;
     FileTransferWindow? fileWindow;

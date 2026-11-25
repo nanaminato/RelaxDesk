@@ -1,0 +1,36 @@
+<Window x:Class="RelaxDesk.Viewer.SessionStatisticsWindow" x:ClassModifier="internal"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="RelaxDesk · 连接信息" Width="620" MinWidth="460"
+        SizeToContent="Height" ResizeMode="NoResize" ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner" Background="#F1F5FA"
+        FontFamily="Segoe UI, Microsoft YaHei UI" FontSize="14">
+    <StackPanel Margin="18">
+        <Border Background="#17243A" CornerRadius="10" Padding="16,13">
+            <StackPanel>
+                <TextBlock x:Name="EndpointLabel" Foreground="White" FontSize="17" FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="Summary" Foreground="#D6E5FA" Margin="0,4,0,0"
+                           Text="正在读取连接信息…" TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+        <Expander x:Name="Details" Header="详细信息" IsExpanded="True" Margin="0,12,0,0">
+            <Border Background="White" BorderBrush="#D6DFED" BorderThickness="1" CornerRadius="8"
+                    Margin="0,8,0,0">
+                <ScrollViewer x:Name="ReportScroll" VerticalScrollBarVisibility="Auto">
+                    <TextBlock x:Name="ReportText" Text="正在采样…" Foreground="#17243A"
+                               TextWrapping="Wrap" Margin="14" FontSize="13" />
+                </ScrollViewer>
+            </Border>
+        </Expander>
+        <DockPanel Margin="0,12,0,0">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Content="复制详情" Click="CopyDetails" />
+                <Button Content="确定" MinWidth="86" IsDefault="True" IsCancel="True"
+                        Style="{DynamicResource PrimaryButton}" />
+            </StackPanel>
+            <TextBlock x:Name="CopyStatus" Text="Ctrl+C 复制详情" Foreground="#475569"
+                       VerticalAlignment="Center" TextWrapping="Wrap" />
+        </DockPanel>
+    </StackPanel>
+</Window>

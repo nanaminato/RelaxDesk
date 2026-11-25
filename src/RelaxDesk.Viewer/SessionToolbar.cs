@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -12,7 +13,7 @@ namespace RelaxDesk.Viewer;
 // native D3D surface. This window does not activate or reserve desktop pixels.
 internal sealed class SessionToolbar : IDisposable
 {
-    const double MaximumWidth = 650;
+    const double MaximumWidth = 720;
     readonly Window owner, window;
     readonly Action? releaseInput;
     readonly StackPanel controls = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -30,6 +31,9 @@ internal sealed class SessionToolbar : IDisposable
         mediaPath.ToolTip = "Host 帧报告：" + encoding + "；Viewer 实际提交：" + (gpu ? "GPU 显示" : "CPU 兼容显示") + "。显示方式不代表解码器使用硬件；性能以实测为准。";
     }
     readonly Button full;
+    readonly ToggleButton pin = new() { Content = "固定", Focusable = false, Padding = new(10, 6, 10, 6), Margin = new(3) };
+    readonly Button minimize = new() { Content = "最小化", Focusable = false, Padding = new(10, 6, 10, 6), Margin = new(3) };
+    readonly MenuItem remoteKeys = new() { Header = "远程快捷键" };
     readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(100) };
     DateTime keepUntil;
     bool disposed, expanded;
@@ -47,6 +51,9 @@ internal sealed class SessionToolbar : IDisposable
     internal Func<PixelPoint?>? TestPointer;
     public Window Surface => window;
     internal Button FullScreenButton => full;
+    internal ToggleButton PinButton => pin;
+    internal Button MinimizeButton => minimize;
+    internal ItemCollection RemoteKeyItems => remoteKeys.Items;
     internal Button DisconnectButton { get; }
     internal Button FilesButton {get;}
     Action? openFiles;
@@ -70,7 +77,7 @@ internal sealed class SessionToolbar : IDisposable
         var entry=new MenuItem{Header=custom,StaysOpenOnClick=true};zoom.Items.Add(new Separator());zoom.Items.Add(entry);
         apply.Click+=(_,_)=>{if(int.TryParse(value.Text,out int percent)&&percent is >=25 and <=400){ShortcutMenu.IsOpen=false;set(percent);}else value.ToolTip="请输入 25–400 之间的整数百分比";};
     }
-    public void SetRemoteInputReady(bool ready){foreach(var item in ShortcutMenu.Items.OfType<MenuItem>().Where(item=>item.Tag is RemoteShortcut))item.IsEnabled=ready;}
+    public void SetRemoteInputReady(bool ready) => SetRemoteShortcuts(ready);
     public void SetDisplays(DisplaySessionInfo? state,bool ready,Action<string>? select)
     {
         displays.Items.Clear();displays.IsEnabled=state is not null;displays.Header=state is null?"显示器（Host 未开放切换）":state.Unavailable?(state.Allowed.Length>0?"显示器（屏幕断开，可重新选择）":"显示器（等待授权屏幕恢复）"):ready?"显示器":"显示器（等待新画面…）";
@@ -161,9 +168,15 @@ internal sealed class SessionToolbar : IDisposable
         full = new Button { Content = "全屏", Focusable = false, Padding = new(14, 6, 14, 6), Margin = new(3) };
         DisconnectButton = new Button { Content = "断开", Focusable = false, Style = (Style)window.Resources["DangerButton"], Padding = new(14, 6, 14, 6), Margin = new(3) };
         full.Click += (_, _) => { toggle(); Reveal(); };
+        full.ToolTip = "切换全屏和窗口（Ctrl+Alt+Break）";
+        pin.Checked += (_, _) => { pin.Content = "取消固定"; Reveal(); };
+        pin.Unchecked += (_, _) => { pin.Content = "固定"; Reveal(); };
+        pin.ToolTip = "固定连接栏，关闭自动收起";
+        minimize.Click += (_, _) => owner.WindowState = WindowState.Minimized;
+        minimize.ToolTip = "最小化连接端窗口，保持会话";
         DisconnectButton.Click += (_, _) => disconnect();
         FilesButton=new Button{Content="文件",Focusable=false,Padding=new(12,6,12,6),Margin=new(3),IsEnabled=false,ToolTip="上传、下载与任务队列（需Host授权）"};FilesButton.Click+=(_,_)=>openFiles?.Invoke();
-        ShortcutsButton = new Button { Content = "快捷键", Focusable = false, Padding = new(12, 6, 12, 6), Margin = new(3), IsEnabled = shortcut is not null, ToolTip = "发送到远程电脑；仅对已授权会话生效" };
+        ShortcutsButton = new Button { Content = "会话菜单", Focusable = false, Padding = new(12, 6, 12, 6), Margin = new(3), ToolTip = "远程快捷键、显示和连接设置" };
         ShortcutMenu = new ContextMenu();
         textInput.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;openTextInput?.Invoke();};
         foreach (var (label, action) in new[] {
@@ -176,12 +189,13 @@ internal sealed class SessionToolbar : IDisposable
             ("文件资源管理器  Win+E", RemoteShortcut.Explorer), ("显示桌面  Win+D", RemoteShortcut.Desktop),
             ("运行  Win+R", RemoteShortcut.Run) })
         {
-            var item = new MenuItem { Header = label, Tag = action };
+            var item = new MenuItem { Header = label, Tag = action, IsEnabled = shortcut is not null };
             item.Click += (_, _) => { ShortcutMenu.IsOpen = false; shortcut?.Invoke(action); Reveal(); };
-            ShortcutMenu.Items.Add(item);
+            remoteKeys.Items.Add(item);
         }
-        ShortcutMenu.Items.Add(new Separator());
-        ShortcutMenu.Items.Add(new MenuItem { Header = "Ctrl+Alt+End / 安全注意序列：不支持", IsEnabled = false });
+        remoteKeys.Items.Add(new Separator());
+        remoteKeys.Items.Add(new MenuItem { Header = "Ctrl+Alt+End / 安全注意序列：不支持", IsEnabled = false });
+        ShortcutMenu.Items.Add(remoteKeys);
         ShortcutMenu.Items.Add(new Separator()); ShortcutMenu.Items.Add(clipboard);
         ShortcutMenu.Items.Add(textInput);
         ShortcutMenu.Items.Add(fileClipboard);fileClipboard.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;openFileClipboard?.Invoke();};
@@ -191,12 +205,7 @@ internal sealed class SessionToolbar : IDisposable
         ShortcutMenu.Items.Add(statistics);statistics.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;openStatistics?.Invoke();};
         ShortcutMenu.Items.Add(videoSettings);
         clipboard.Click += (_, _) => { ShortcutMenu.IsOpen = false; disableClipboard?.Invoke(); };
-        ShortcutsButton.Click += (_, _) =>
-        {
-            Reveal();
-            ShortcutMenu.PlacementTarget = ShortcutsButton;
-            ShortcutMenu.IsOpen = true;
-        };
+        ShortcutsButton.Click += (_, _) => OpenSessionMenu();
         ShortcutMenu.Closed += (_, _) => keepUntil = DateTime.UtcNow.AddSeconds(1);
         var readings = new StackPanel();
         readings.Children.Add(mediaRate);
@@ -211,7 +220,8 @@ internal sealed class SessionToolbar : IDisposable
         ConnectionInfoButton.Click += (_, _) => openStatistics?.Invoke();
         var identity = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new(14, 0, 12, 0) };
         endpoint.Margin = new(0); identity.Children.Add(endpoint); identity.Children.Add(mediaPath);
-        controls.Children.Add(ConnectionInfoButton); controls.Children.Add(FilesButton); controls.Children.Add(ShortcutsButton); controls.Children.Add(full); controls.Children.Add(DisconnectButton);
+        controls.Children.Add(ConnectionInfoButton); controls.Children.Add(FilesButton); controls.Children.Add(ShortcutsButton);
+        controls.Children.Add(pin); controls.Children.Add(minimize); controls.Children.Add(full); controls.Children.Add(DisconnectButton);
         var bar = new DockPanel();
         DockPanel.SetDock(controls, Dock.Right);
         bar.Children.Add(controls);
@@ -223,8 +233,9 @@ internal sealed class SessionToolbar : IDisposable
     }
     public void SetRemoteShortcuts(bool enabled)
     {
-        foreach (var item in ShortcutMenu.Items.OfType<MenuItem>())
+        foreach (var item in remoteKeys.Items.OfType<MenuItem>())
             if (item.Tag is RemoteShortcut) item.IsEnabled = enabled;
+        remoteKeys.IsEnabled = enabled;
     }
     public void SetEndpoint(string address)
     {
@@ -242,7 +253,18 @@ internal sealed class SessionToolbar : IDisposable
         if (!window.IsVisible) window.Show();
         Reveal(); timer.Start();
     }
-    public void SetFullScreen(bool value) => full.Content = value ? "返回窗口" : "全屏";
+    public void SetFullScreen(bool value)
+    {
+        full.Content = value ? "返回窗口" : "全屏";
+        pin.Visibility = minimize.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+        Reveal();
+    }
+    internal void OpenSessionMenu()
+    {
+        Reveal();
+        ShortcutMenu.PlacementTarget = ShortcutsButton;
+        ShortcutMenu.IsOpen = true;
+    }
     void OwnerChanged(object? sender, EventArgs e) => UpdatePosition();
     void OwnerClosed(object? sender, EventArgs e) => Dispose();
     void Reveal() { if(!expanded)releaseInput?.Invoke();expanded = true; keepUntil = DateTime.UtcNow.AddSeconds(1.5); UpdatePosition(); }
@@ -266,7 +288,8 @@ internal sealed class SessionToolbar : IDisposable
         {
             bool inside = pointer is {} p && p.X >= left && p.X < left + width && p.Y >= top && p.Y < top + height;
             if (inside) { if (!expanded) Reveal(); keepUntil = DateTime.UtcNow.AddSeconds(1); }
-            else if (expanded && DateTime.UtcNow >= keepUntil) expanded = false;
+            else if (expanded && (pin.Visibility != Visibility.Visible || pin.IsChecked != true) &&
+                DateTime.UtcNow >= keepUntil) expanded = false;
         }
         UpdatePosition();
     }

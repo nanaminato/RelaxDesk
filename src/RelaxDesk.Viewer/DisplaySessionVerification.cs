@@ -65,7 +65,7 @@ public sealed partial class ViewerWindow
                 {
                     var item=window.sessionToolbar.DisplaysAction.Items.Cast<MenuItem>().Single(item=>(string)item.Tag==id);
                     item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-                    if(window.sessionToolbar.TextInputAction.IsEnabled||window.sessionToolbar.ShortcutMenu.Items.OfType<MenuItem>().Any(item=>item.Tag is RemoteShortcut&&item.IsEnabled))throw new IOException("Input menu remained enabled while switching");
+                    if(window.sessionToolbar.TextInputAction.IsEnabled||window.sessionToolbar.RemoteKeyItems.OfType<MenuItem>().Any(item=>item.Tag is RemoteShortcut&&item.IsEnabled))throw new IOException("Input menu remained enabled while switching");
                     if(window.displaySession.Ready)throw new IOException("Input not paused for switch");
                     long sequence=window.sequence;window.SendRich(new("key",VirtualKey:65));if(window.sequence!=sequence)throw new IOException("Input queued while display pending");
                     expected++;await Until(()=>window.displaySession.Ready&&window.displaySession.Generation==expected);

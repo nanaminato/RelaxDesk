@@ -7,6 +7,10 @@ namespace RelaxDesk.Windows;
 public static class CaptureMetadataCodec
 {
     const int Header = 64;
+    public static bool UsesHostPointer(ReadOnlySpan<byte> metadata) => metadata.Length >= Header &&
+        (BinaryPrimitives.ReadInt32LittleEndian(metadata[12..]) > 0 ||
+         (BinaryPrimitives.ReadInt32LittleEndian(metadata[12..]) == 0 &&
+          BinaryPrimitives.ReadUInt32LittleEndian(metadata[28..]) == CaptureMetadata.HostManagedPointer));
     public sealed class PointerEncoder
     {
         byte[] previous = [];
@@ -100,7 +104,8 @@ public static class CaptureMetadataCodec
         for (int i = 0; i < f.Length; i++) f[i] = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(i * 4));
         if (f[0] is not (1 or 2) || f[1] < 0 || f[2] < 0 || f[3] < 0 || f[1] % 16 != 0 || f[2] % 24 != 0 ||
             (long)Header + f[1] + f[2] + f[3] != data.Length || f[6] is < 0 or > 1 || f[7] is < 0 or > 4 ||
-            f[8] is < 0 or > 4096 || f[9] is < 0 or > 8192 || f[10] is < 0 or > 32768)
+            f[8] is < 0 or > 4096 || f[9] is < 0 or > 8192 || f[10] is < 0 or > 32768 ||
+            (f[7] == CaptureMetadata.HostManagedPointer && (f[3] != 0 || f[6] != 0)))
             throw new InvalidDataException("Invalid capture metadata fields");
     }
 

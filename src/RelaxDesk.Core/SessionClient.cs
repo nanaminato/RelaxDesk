@@ -149,7 +149,17 @@ public sealed class SessionClient : IDisposable
         if (string.IsNullOrWhiteSpace(fingerprint)) throw new AuthenticationException("Previously verified SHA256 fingerprint required");
         return ConnectInternal(host, port, fingerprint, "", true, ct);
     }
-    async Task ConnectInternal(string host, int port, string fingerprint, string token, bool approvalOnly, CancellationToken ct)
+    public Task ConnectWithPassword(string host, int port, string fingerprint, string userName, string password,
+        Func<string, CancellationToken, Task<bool>> confirmServer, CancellationToken ct, bool reconnectOnly = false)
+    {
+        if (!PasswordVerifier.ValidUserName(userName) || OpenDeviceKey is null)
+            throw new AuthenticationException("Password login requires a user name and a device key");
+        return ConnectInternal(host, port, fingerprint, "", true, ct, userName, password, confirmServer, reconnectOnly);
+    }
+
+    async Task ConnectInternal(string host, int port, string fingerprint, string token, bool approvalOnly, CancellationToken ct,
+        string? userName = null, string? password = null, Func<string, CancellationToken, Task<bool>>? confirmServer = null,
+        bool reconnectOnly = false)
     {
         if (!Enum.IsDefined(Network)) throw new ArgumentOutOfRangeException(nameof(Network));
         if (Network is not (NetworkMode.Auto or NetworkMode.Tcp or NetworkMode.Udp))
@@ -158,6 +168,7 @@ public sealed class SessionClient : IDisposable
         bool requestQuicRecovery = RequestQuicRecovery && requestedNetwork == NetworkMode.Auto;
         if (Network == NetworkMode.Udp && requestedNetwork is null) throw new UdpMediaUnavailableException(UdpMediaFailure.LocalUnavailable);
         string expected = fingerprint.Replace(" ", "").Replace(":", "").ToUpperInvariant();
+        bool confirmFirstContact = userName is not null && expected.Length == 0;
         if ((!approvalOnly || expected.Length != 0) && (expected.Length != 64 || !expected.All(Uri.IsHexDigit))) throw new AuthenticationException("Trusted SHA256 fingerprint required");
         async Task<SslStream> Open(TcpClient socket, bool firstContact = false,CancellationToken? deadline=null)
         {
@@ -176,6 +187,8 @@ public sealed class SessionClient : IDisposable
         }
         PhaseChanged?.Invoke(ConnectionPhase.Connecting);
         Control = await Open(control, approvalOnly);
+        if (confirmFirstContact && !await confirmServer!(expected, ct))
+            throw new AuthenticationException("Server certificate was not confirmed");
         VerifiedFingerprint = expected;
         var requestedFeatures = SessionCapabilities.Validate(RequestedFeatures);
         if(!VideoSettingsProtocol.Supported(RequestedVideoVersion))throw new InvalidDataException("Unsupported video version request");
@@ -183,9 +196,20 @@ public sealed class SessionClient : IDisposable
         if(!DisplayProtocol.Supported(RequestedDisplayVersion)||RequestedDisplayVersion!=0&&RequestedInputVersion!=InputProtocol.Version)throw new InvalidDataException("Unsupported requested display version");
         using var deviceKey = OpenDeviceKey?.Invoke();
         bool requestResume=RequestFileResume&&requestedFeatures.Contains(SessionCapabilities.FileTransfer);
-        await Wire.Write(Control, new Packet(approvalOnly ? FullControlProtocol.Request : FullControlProtocol.PinnedRequest, Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], PointerBrotli: RequestPointerCompression ? true : null, Features: requestedFeatures.Length == 0 ? null : requestedFeatures,FileResume:requestResume,InputVersion:RequestedInputVersion,DisplayVersion:RequestedDisplayVersion,VideoVersion:RequestedVideoVersion, Network:requestedNetwork, DeviceKey: deviceKey is null ? null : DeviceIdentity.Export(deviceKey), QuicRecovery: requestQuicRecovery ? true : null), ct);
+        byte[]? secret = userName is null ? null : PasswordVerifier.EncodePassword(password!);
+        try
+        {
+            await Wire.Write(Control, new Packet(userName is not null ? FullControlProtocol.PasswordRequest : approvalOnly ? FullControlProtocol.Request : FullControlProtocol.PinnedRequest,
+                Data: secret, Text: userName ?? (approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token), ReconnectOnly: reconnectOnly,
+                Capabilities: ["h264", "deflate"], PointerBrotli: RequestPointerCompression ? true : null,
+                Features: requestedFeatures.Length == 0 ? null : requestedFeatures, FileResume:requestResume,InputVersion:RequestedInputVersion,
+                DisplayVersion:RequestedDisplayVersion,VideoVersion:RequestedVideoVersion, Network:requestedNetwork,
+                DeviceKey: deviceKey is null ? null : DeviceIdentity.Export(deviceKey), QuicRecovery: requestQuicRecovery ? true : null), ct);
+        }
+        finally { if (secret is not null) CryptographicOperations.ZeroMemory(secret); }
         PhaseChanged?.Invoke(ConnectionPhase.AwaitingApproval);
         var approval = await Wire.Read(Control, ct);
+        if (approval == new Packet(FullControlProtocol.PasswordRejected)) throw new PasswordLoginRejectedException();
         bool deviceChallenged = approval.Kind == FullControlProtocol.DeviceChallenge;
         if (deviceChallenged)
         {

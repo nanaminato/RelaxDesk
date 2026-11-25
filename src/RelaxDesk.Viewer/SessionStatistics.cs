@@ -1,18 +1,25 @@
 using System.IO;
 using System.Windows;
-using System.Windows.Controls;
+using System.Windows.Input;
+using System.Runtime.InteropServices;
+using Microsoft.Win32;
 using RelaxDesk.Core;
 namespace RelaxDesk.Viewer;
 
 internal sealed record ViewerStatistics(PipelineSnapshot Pipeline,long Received,long GpuFrames,long CpuFrames,long ReadbackBytes,int RendererGenerations,string Transport = "TCP/TLS", string? Fallback = null, VideoNetworkStatistics? Network = null, VideoQueueStatistics? HostQueue = null, int ControlDepth = 0, long CoalescedMoves = 0, int TransportRevision = 0, long DroppedPointerMoves = 0);
 internal readonly record struct ToolbarStatistics(PipelineCounters Counters, string Transport, int TransportRevision, double ControlRtt);
+internal sealed record ViewerConnectionDetails(string Endpoint, DateTimeOffset ConnectedAt, string ActivityId,
+    string Login, int InputVersion, int DisplayVersion, int VideoVersion, string[] Features);
 
-internal sealed class SessionStatisticsWindow:Window
+internal sealed partial class SessionStatisticsWindow:Window
 {
-    readonly TextBlock text=new(){Text="正在采样…",Foreground=System.Windows.Media.Brushes.Black,TextWrapping=TextWrapping.Wrap,Margin=new(18),FontSize=13,FontFamily=new("Consolas, Microsoft YaHei UI")};
     readonly CancellationTokenSource lifetime=new();readonly Func<ViewerStatistics> source;
+    readonly ViewerConnectionDetails connection;
+    readonly Func<double> latestRtt;
+    readonly string localOs = LocalOsDescription();
     public Task Completion{get;private set;}=Task.CompletedTask;
-    internal string DisplayText=>text.Text;
+    internal string DisplayText=>ReportText.Text;
+    internal bool DetailsExpanded { get => Details.IsExpanded; set => Details.IsExpanded = value; }
     internal int Updates{get;private set;}
     internal static string FallbackDescription(string? reason) => reason switch
     {
@@ -28,11 +35,41 @@ internal sealed class SessionStatisticsWindow:Window
         "udp-host-send-interrupted" => "（Host UDP 发送中断后回退）",
         _ => "（已回退到 TCP，原因未识别）"
     };
-    public SessionStatisticsWindow(Window owner,Func<ViewerStatistics> source)
+    public SessionStatisticsWindow(Window owner,Func<ViewerStatistics> source,ViewerConnectionDetails connection, Func<double> latestRtt)
     {
-        Owner=owner;this.source=source;Title="连接统计";Width=470;Height=570;MinWidth=360;MinHeight=350;ShowInTaskbar=false;ShowActivated=false;WindowStyle=WindowStyle.ToolWindow;
-        Background=System.Windows.Media.Brushes.White;Content=new ScrollViewer{Content=text,Background=System.Windows.Media.Brushes.White,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};
+        InitializeComponent();
+        Owner=owner;this.source=source;this.connection=connection;this.latestRtt=latestRtt;
+        RelaxDesk.Ui.ModernTheme.Apply(this);
+        EndpointLabel.Text = connection.Endpoint;
+        ReportScroll.MaxHeight = Math.Clamp(owner.ActualHeight - 190, 190, 460);
+        CommandBindings.Add(new CommandBinding(ApplicationCommands.Copy, (_, _) => CopyReport()));
         Loaded+=(_,_)=>Completion=Refresh();Closed+=(_,_)=>{lifetime.Cancel();_=Completion.ContinueWith(_=>lifetime.Dispose(),TaskScheduler.Default);};
+    }
+
+    void CopyDetails(object sender, RoutedEventArgs e) => CopyReport();
+
+    void CopyReport()
+    {
+        try { Clipboard.SetText(DisplayText); CopyStatus.Text = "已复制连接详情"; }
+        catch (ExternalException) { CopyStatus.Text = "剪贴板正忙，请重试"; }
+    }
+
+    static string LocalOsDescription()
+    {
+        string architecture = RuntimeInformation.OSArchitecture.ToString().ToLowerInvariant();
+        string build = Environment.OSVersion.Version.ToString();
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
+            string edition = key?.GetValue("EditionID") as string switch { "Core" => "Home", "CoreSingleLanguage" => "Home Single Language", { } value => value, _ => "" };
+            string release = key?.GetValue("DisplayVersion") as string ?? "";
+            string product = key?.GetValue("InstallationType") as string == "Client"
+                ? (Environment.OSVersion.Version.Build >= 22000 ? "Windows 11" : "Windows 10")
+                : key?.GetValue("ProductName") as string ?? "Windows";
+            return $"{product} {edition} {release} {architecture}（{build}）";
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        { return $"Windows {architecture}（{build}）"; }
     }
     async Task Refresh()
     {

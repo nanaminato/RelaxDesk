@@ -71,13 +71,33 @@ internal sealed partial class HostWindow
 
     void ApplyDeviceTrust(HostEvent requestEvent)
     {
-        activeDeviceFingerprint = requestEvent.FullControl && DeviceTrustStore.IsFingerprint(requestEvent.DeviceFingerprint)
+        activeDeviceFingerprint = (requestEvent.FullControl || requestEvent.PasswordLogin) && DeviceTrustStore.IsFingerprint(requestEvent.DeviceFingerprint)
             ? requestEvent.DeviceFingerprint : null;
         rememberDevice.IsChecked = false;
-        bool known = trustLoaded && !trustBusy && activeDeviceFingerprint is { } fingerprint &&
-            !revokedDuringRun.Contains(fingerprint) && trusted.Contains(fingerprint);
-        rememberDevice.Visibility = activeDeviceFingerprint is not null && !known ? Visibility.Visible : Visibility.Collapsed;
-        if (known) peer.Text += Environment.NewLine + "已信任此设备，请确认本次连接。";
+        bool known = activeDeviceFingerprint is { } fingerprint && KnownDevice(fingerprint);
+        rememberDevice.Visibility = !requestEvent.PasswordLogin && activeDeviceFingerprint is not null && !known ? Visibility.Visible : Visibility.Collapsed;
+        if (known && !requestEvent.PasswordLogin) peer.Text += Environment.NewLine + "已信任此设备，请确认本次连接。";
+    }
+
+    bool KnownDevice(string fingerprint) => trustLoaded && !trustBusy &&
+        !revokedDuringRun.Contains(fingerprint) && trusted.Contains(fingerprint);
+
+    static RelaxDesk.Windows.PasswordLoginSettings.DeviceGrant ReadDeviceGrant(string fingerprint)
+    {
+        try { return RelaxDesk.Windows.PasswordLoginSettings.ReadDeviceGrant(fingerprint); }
+        catch (Exception error) when (IsTrustStorageError(error) || error is System.Security.SecurityException)
+        { return new([], false, null); }
+    }
+
+    void UpdateSavedGrant(Func<RelaxDesk.Windows.PasswordLoginSettings.DeviceGrant, RelaxDesk.Windows.PasswordLoginSettings.DeviceGrant> update)
+    {
+        if (!passwordLoginRequest || activeDeviceFingerprint is not { } fingerprint || loginVerifierForTests is not null) return;
+        try { RelaxDesk.Windows.PasswordLoginSettings.SaveDeviceGrant(fingerprint, update(ReadDeviceGrant(fingerprint))); }
+        catch (Exception error) when (IsTrustStorageError(error) || error is System.Security.SecurityException)
+        {
+            revokedDuringRun.Add(fingerprint);
+            trustNotice.Text = "本次权限已停止，但无法保存撤销。请在受信任设备列表撤销该设备。";
+        }
     }
 
     string? CaptureDeviceTrust(bool accepted) =>

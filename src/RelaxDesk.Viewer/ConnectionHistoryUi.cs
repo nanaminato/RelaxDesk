@@ -10,7 +10,7 @@ public sealed partial class ViewerWindow
     readonly ComboBox recentConnections=new(){MinHeight=30};
     readonly CheckBox rememberConnections=new(){Content="本次运行记录已授权连接（仅 IP 和端口）",IsChecked=true};
     readonly Button clearConnections=new(){Content="清空历史"};
-    readonly TextBlock historyNotice=new(){Text="不保存指纹、令牌或权限；选择后仍需手动连接与 Host 授权。",TextWrapping=TextWrapping.Wrap,FontSize=11};
+    readonly TextBlock historyNotice=new(){Text="连接历史仅保存 IP 和端口。选择后请输入用户名和密码。",TextWrapping=TextWrapping.Wrap,FontSize=11};
     readonly Expander connectionHistoryPanel=new(){Header="最近连接 · 仅 IP/端口",Margin=new(0,8,0,0)};
     ConnectionHistoryStore? historyStore;
     readonly CancellationTokenSource historyLifetime=new();
@@ -24,7 +24,7 @@ public sealed partial class ViewerWindow
         {
             if(connectionRun is not null||recentConnections.SelectedItem is not ConnectionEndpoint endpoint)return;
             host.Text=endpoint.Address;port.Text=endpoint.Port.ToString();token.Clear();fingerprint.Clear();invitation.Clear();
-            historyNotice.Text=pinnedConnection.IsChecked==true?"已填写地址；固定指纹模式需重新填写指纹与凭证。":"已填写地址；仍需手动连接、重新选择可选功能并由 Host 授权。";
+            historyNotice.Text="已填写地址。请输入用户名和密码。";
         };
         Loaded+=(_,_)=>HistoryOperation=LoadConnectionHistory();
         clearConnections.Click+=(_,_)=>HistoryOperation=ClearConnectionHistory();

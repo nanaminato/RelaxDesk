@@ -4,7 +4,7 @@ using System.Net;
 using System.Text.Json;
 namespace RelaxDesk.HostShell;
 
-internal sealed record HostEvent(string Kind, string? Address = null, string? SessionId = null, string[]? Features = null,int? ExitCode=null,int Generation=0,bool FullControl=false,string? DeviceFingerprint=null,string? RequestId=null,string? DesktopReason=null);
+internal sealed record HostEvent(string Kind, string? Address = null, string? SessionId = null, string[]? Features = null,int? ExitCode=null,int Generation=0,bool FullControl=false,string? DeviceFingerprint=null,string? RequestId=null,string? DesktopReason=null, string? ServerFingerprint=null, bool PasswordLogin=false, bool ReconnectOnly=false);
 
 internal sealed class HostProcess
 {
@@ -26,7 +26,7 @@ internal sealed class HostProcess
     public readonly List<string> Lines = [];
     public string[] Snapshot(){lock(Lines)return Lines.ToArray();}
     public Task Finished => completion ?? Task.CompletedTask;
-    public async Task Start(string application,string ip,int port,string backend="dxgi",string? fileRoot=null,string? display=null)
+    public async Task Start(string application,string ip,int port,string backend="dxgi",string? fileRoot=null,string? display=null,RelaxDesk.Core.PasswordVerifier? testVerifier=null)
     {
         if(Running) throw new InvalidOperationException("共享已在运行");
         if(!IPAddress.TryParse(ip,out var address)||address.Equals(IPAddress.Any)||address.Equals(IPAddress.IPv6Any)||port is <1 or >65535)throw new ArgumentException("请选择有效的本机 IP 和端口");
@@ -34,6 +34,8 @@ internal sealed class HostProcess
         var start=new ProcessStartInfo(Path.GetExtension(application).Equals(".exe",StringComparison.OrdinalIgnoreCase)?application:"dotnet") {UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true};
         if(!application.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))start.ArgumentList.Add(application);
         start.ArgumentList.Add("--shell");
+        if (testVerifier is not null && backend.StartsWith("test-", StringComparison.Ordinal))
+            start.Environment["RELAXDESK_TEST_PASSWORD_VERIFIER"] = JsonSerializer.Serialize(testVerifier);
         fileRootConfigured=!string.IsNullOrWhiteSpace(fileRoot);
         if(fileRootConfigured){start.ArgumentList.Add("--file-root");start.ArgumentList.Add(Path.GetFullPath(fileRoot!));}
         if(display is not null){start.ArgumentList.Add("--display");start.ArgumentList.Add(display);}
@@ -66,7 +68,10 @@ internal sealed class HostProcess
                     }
                     Pending=type=="approval-request";
                     if(type is "session-ended" or "listening") {SessionId=null;ClipboardRequested=FilesRequested=AudioRequested=false;}
-                    if(type!="ended")Emit(new(type,address,id,features,FullControl:data.RootElement.TryGetProperty("fullControl",out var fullControl)&&fullControl.ValueKind==JsonValueKind.True,DeviceFingerprint:data.RootElement.TryGetProperty("deviceFingerprint",out var device)?device.GetString():null,RequestId:data.RootElement.TryGetProperty("requestId",out var request)?request.GetString():null,DesktopReason:data.RootElement.TryGetProperty("desktopReason",out var desktop)?desktop.GetString():null));continue;
+                    if(type!="ended")Emit(new(type,address,id,features,FullControl:data.RootElement.TryGetProperty("fullControl",out var fullControl)&&fullControl.ValueKind==JsonValueKind.True,DeviceFingerprint:data.RootElement.TryGetProperty("deviceFingerprint",out var device)?device.GetString():null,RequestId:data.RootElement.TryGetProperty("requestId",out var request)?request.GetString():null,DesktopReason:data.RootElement.TryGetProperty("desktopReason",out var desktop)?desktop.GetString():null,
+                        ServerFingerprint:data.RootElement.TryGetProperty("serverFingerprint",out var server)?server.GetString():null,
+                        PasswordLogin:data.RootElement.TryGetProperty("passwordLogin",out var login)&&login.ValueKind==JsonValueKind.True,
+                        ReconnectOnly:data.RootElement.TryGetProperty("reconnectOnly",out var reconnect)&&reconnect.ValueKind==JsonValueKind.True));continue;
                 }
                 lock(Lines){if(Lines.Count>=200)Lines.RemoveAt(0);Lines.Add(line);}
                 Diagnostic?.Invoke(line);

@@ -29,6 +29,12 @@ public static class WindowsContracts
         }
         var metadata = new CaptureMetadata(123, 1, new byte[16], new byte[24], 0, 0, true, 2, 1, 1, 4, 0, 0, [10, 20, 30, 255]);
         var roundtrip = CaptureMetadataCodec.Decode(CaptureMetadataCodec.Encode(metadata));
+        var embedded = metadata with { PointerType = CaptureMetadata.HostManagedPointer, PointerVisible = false, PointerShape = [] };
+        var embeddedWire = CaptureMetadataCodec.Encode(embedded);
+        Check(CaptureMetadataCodec.UsesHostPointer(embeddedWire) && CaptureMetadataCodec.Decode(embeddedWire).UsesHostPointer);
+        var legacyWire = CaptureMetadataCodec.Encode(embedded with { PointerType = 0 });
+        Check(!CaptureMetadataCodec.UsesHostPointer(legacyWire) && !CaptureMetadataCodec.Decode(legacyWire).UsesHostPointer);
+        Check(CaptureMetadataCodec.UsesHostPointer(CaptureMetadataCodec.Encode(metadata)));
         Check(roundtrip.Timestamp == 123 && roundtrip.DirtyRectangles.Length == 16 && roundtrip.MoveRectangles.Length == 24 && roundtrip.PointerShape.SequenceEqual(metadata.PointerShape));
         var largerPointer = metadata with { PointerWidth = 32, PointerHeight = 32, PointerPitch = 128, PointerShape = new byte[4096] };
         var pointerEncoder = new CaptureMetadataCodec.PointerEncoder();

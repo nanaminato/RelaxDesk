@@ -1,5 +1,17 @@
 # Live Viewer statistics
 
+The Windows session keeps the video across the client area. In full screen,
+hover the top-center tab to open the connection bar. Pin keeps it visible,
+minimize keeps the session connected, and return restores windowed mode.
+The Viewer handles Ctrl+Alt+Home locally to open the session menu and
+Ctrl+Alt+Break (or Pause) locally to toggle full screen. Remote shortcuts
+are grouped under the session menu and require input authorization.
+
+The connection bar and Windows keyboard bindings are WPF presentation code.
+Connection negotiation and consent, media framing/readers, and remote-input
+messages remain in RelaxDesk.Core for clients with their own display and
+gesture controls.
+
 After a v2 connection is authorized, move the pointer to the top-center tab in either windowed or full-screen mode. The floating bar shows submitted FPS, application video receive rate, media transport and the latest control RTT. Rates use roughly one-second intervals, and the bar shows a dash until it has a complete sample on the current transport. RTT comes from the existing heartbeat and includes queueing. The bar reads lightweight counters without collecting process information or computing percentiles.
 
 Click the readings or use the floating toolbar menu → Connection Statistics to open the read-only detailed window. Closing the window stops detailed sampling. Disconnect clears both displays, and reconnect starts a new sample. Legacy v1 and local preview leave this entry disabled. Opening the window releases locally held remote input.

@@ -9,9 +9,9 @@ namespace RelaxDesk.HostShell;
 internal sealed partial class HostWindow
 {
     string? selectedFileRoot;
-    readonly TextBox fileRootLabel = new() { Text = "未选择目录（默认不开放文件访问）", IsReadOnly = true, Margin = new(0, 4, 0, 0) };
-    readonly Button chooseFileRoot = new() { Content = "选择文件共享目录…" }, clearFileRoot = new() { Content = "清除" };
-    readonly CheckBox filesPermission = new() { Content = "允许在选定目录内上传、下载、列出文件及短期续传", IsChecked = false, Visibility = Visibility.Collapsed, Margin = new(0, 8, 0, 0) };
+    readonly TextBox fileRootLabel = new() { Text = "使用 RelaxDesk 默认传输目录", IsReadOnly = true, Margin = new(0, 4, 0, 0) };
+    readonly Button chooseFileRoot = new() { Content = "更改传输目录…" }, clearFileRoot = new() { Content = "恢复默认" };
+    readonly CheckBox filesPermission = new() { Content = "允许文件传输及文件剪贴板", IsChecked = false, Visibility = Visibility.Collapsed, Margin = new(0, 8, 0, 0) };
     readonly Button revokeFiles = new() { Content = "停止文件传输", Visibility = Visibility.Collapsed };
     readonly TextBlock filesScopeLabel = new() { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.SlateGray, Margin = new(22, 4, 0, 0), Visibility = Visibility.Collapsed, FontSize = 12 };
     internal bool FilesChoiceVisible => filesPermission.Visibility == Visibility.Visible;
@@ -19,17 +19,39 @@ internal sealed partial class HostWindow
     internal bool FilesAllowed { get => filesPermission.IsChecked == true; set => filesPermission.IsChecked = value; }
     void AddFileSettings(StackPanel settings)
     {
-        settings.Children.Add(new TextBlock { Text = "可选文件共享目录", FontWeight = FontWeights.SemiBold, Margin = new(0, 14, 0, 0) });
+        settings.Children.Add(new TextBlock { Text = "文件传输", FontWeight = FontWeights.SemiBold, Margin = new(0, 14, 0, 0) });
         settings.Children.Add(fileRootLabel);
-        settings.Children.Add(new TextBlock { Text = "仅开放你选择的普通本地目录，收到请求后仍需单独允许。续传有效期5分钟；中断文件可能保持占用，到期或停止共享时清理。链接、云占位符及网络目录不支持。", TextWrapping = TextWrapping.Wrap, Foreground = Brushes.SlateGray, FontSize = 12 });
-        var actions = new WrapPanel(); actions.Children.Add(chooseFileRoot); actions.Children.Add(clearFileRoot); settings.Children.Add(actions);
+        settings.Children.Add(new TextBlock { Text = "首次设备授权时可允许文件传输。默认使用独立传输目录，可用文件剪贴板复制粘贴，无需提前选择目录。", TextWrapping = TextWrapping.Wrap, Foreground = Brushes.SlateGray, FontSize = 12 });
+        var openRoot = new Button { Content = "打开传输目录" };
+        var actions = new WrapPanel(); actions.Children.Add(openRoot); actions.Children.Add(chooseFileRoot); actions.Children.Add(clearFileRoot); settings.Children.Add(actions);
+        openRoot.Click += (_, _) =>
+        {
+            EnsureDefaultFileRoot();
+            if (selectedFileRoot is not { } directory) return;
+            try { _ = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(directory) { UseShellExecute = true }); }
+            catch (System.ComponentModel.Win32Exception) { fileRootLabel.Text = "无法打开传输目录。"; }
+        };
         chooseFileRoot.Click += async (_, _) =>
         {
             var dialog = new OpenFolderDialog { Title = "选择允许上传和下载的本地目录", Multiselect = false };
             if (dialog.ShowDialog(this) == true) { try { await SelectFileRoot(dialog.FolderName); } catch (Exception error) { detail.Text = "无法使用此目录：" + error.Message; } }
         };
-        clearFileRoot.Click += (_, _) => { if (Host.Running||RestartPending) return; selectedFileRoot = null; fileRootLabel.Text = "未选择目录（默认不开放文件访问）"; };
+        clearFileRoot.Click += (_, _) => { if (Host.Running||RestartPending) return; selectedFileRoot = null; fileRootLabel.Text = "使用 RelaxDesk 默认传输目录"; };
         revokeFiles.Click += async (_, _) => await StopFiles();
+    }
+    void EnsureDefaultFileRoot()
+    {
+        if (selectedFileRoot is not null) return;
+        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RelaxDesk", "Transfers");
+        try
+        {
+            Directory.CreateDirectory(path);
+            _ = new RelaxDesk.Windows.WindowsFileRoot(path);
+            selectedFileRoot = path;
+            fileRootLabel.Text = path;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        { fileRootLabel.Text = "默认传输目录不可用。桌面共享仍可使用。"; }
     }
     internal async Task SelectFileRoot(string directory)
     {
@@ -47,7 +69,7 @@ internal sealed partial class HostWindow
     void ShowFileRequest(bool requested)
     {
         filesPermission.IsChecked = false; filesPermission.IsEnabled = selectedFileRoot is not null;
-        filesPermission.Content = selectedFileRoot is null ? "文件访问未开放（请停止共享后先选择目录）" : "允许在选定目录内上传、下载、列出文件及短期续传";
+        filesPermission.Content = selectedFileRoot is null ? "传输目录不可用" : "允许文件传输（文件复制粘贴另需勾选剪贴板）";
         filesPermission.Visibility = requested ? Visibility.Visible : Visibility.Collapsed;
         filesScopeLabel.Text = selectedFileRoot is null ? "本次未开放任何文件目录。" : "仅此目录及其子目录：" + selectedFileRoot;
         filesScopeLabel.Visibility = filesPermission.Visibility;
@@ -56,6 +78,7 @@ internal sealed partial class HostWindow
     {
         string? id=displayedSessionId;if(id is null)return;
         await Host.RevokeFiles(id);if(displayedSessionId!=id)return;revokeFiles.Visibility = Visibility.Collapsed;
-        detail.Text = "已停止文件传输；重新开启需要重新连接并授权。";
+        UpdateSavedGrant(grant => grant with { FileRoot = null });
+        detail.Text = "已撤销此设备的文件传输权限。";
     }
 }

@@ -3,7 +3,13 @@ namespace RelaxDesk.Windows;
 
 public record CaptureMetadata(long Timestamp, uint Accumulated, byte[] DirtyRectangles, byte[] MoveRectangles,
     int PointerX, int PointerY, bool PointerVisible, uint PointerType, uint PointerWidth, uint PointerHeight,
-    uint PointerPitch, int HotspotX, int HotspotY, byte[] PointerShape);
+    uint PointerPitch, int HotspotX, int HotspotY, byte[] PointerShape)
+{
+    // DXGI defines shape types 1, 2 and 4. Existing metadata readers already
+    // accept 3 and ignore the shape when its payload is empty.
+    public const uint HostManagedPointer = 3;
+    public bool UsesHostPointer => PointerType == HostManagedPointer || PointerShape.Length != 0;
+}
 
 // A GPU frame is borrowed until the backend's next Capture/Dispose. Re-query
 // CachedFrame to revalidate an unchanged owned image after timeout. Encode synchronously.
@@ -22,8 +28,8 @@ public sealed class GdiCaptureBackend : ICaptureBackend
     readonly Desktop desktop;
     public GdiCaptureBackend(WindowsDisplaySelection? selection=null)=>desktop=new(selection);
     public string Name => "gdi";
-    public CapturedFrame Capture(int timeoutMilliseconds = 100) => new(desktop.Width, desktop.Height, desktop.Capture(),
-        new(Stopwatch.GetTimestamp(), 1, [], [], 0, 0, false, 0, 0, 0, 0, 0, 0, []));
+    public CapturedFrame Capture(int timeoutMilliseconds = 100) => new(desktop.Width, desktop.Height, desktop.Capture(includePointer: true),
+        new(Stopwatch.GetTimestamp(), 1, [], [], 0, 0, false, CaptureMetadata.HostManagedPointer, 0, 0, 0, 0, 0, []));
     public byte[] ReadPixels(CapturedFrame frame) => frame.Bgra ?? throw new InvalidOperationException("No GDI pixels");
     public void Dispose() => desktop.Dispose();
 }
@@ -67,7 +73,7 @@ public sealed class DxgiCaptureBackend : ICaptureBackend
         byte[] shape = Blob(2, pointerShape);
         if (reusePointerShape) pointerShape = shape;
         var metadata = new CaptureMetadata(info.Timestamp, info.Accumulated, Blob(0), Blob(1), info.PointerX, info.PointerY,
-            info.PointerVisible != 0, info.PointerType, info.PointerWidth, info.PointerHeight, info.PointerPitch,
+            info.PointerVisible != 0 && shape.Length != 0, shape.Length == 0 ? CaptureMetadata.HostManagedPointer : info.PointerType, info.PointerWidth, info.PointerHeight, info.PointerPitch,
             info.HotspotX, info.HotspotY, shape);
         ulong copyPixels = 0;
         if (captureCopyMetricsAvailable)

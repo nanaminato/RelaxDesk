@@ -17,6 +17,11 @@ public sealed class Desktop : IDisposable
     [DllImport("gdi32.dll")] static extern bool DeleteDC(nint dc);
     [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
     [DllImport("user32.dll")] static extern nint SetThreadDpiAwarenessContext(nint context);
+    [DllImport("user32.dll")] static extern bool GetCursorInfo(ref CursorInfo info);
+    [DllImport("user32.dll")] static extern bool GetIconInfo(nint cursor, out IconInfo info);
+    [DllImport("user32.dll")] static extern bool DrawIconEx(nint dc, int x, int y, nint cursor, int width, int height, uint step, nint brush, uint flags);
+    [StructLayout(LayoutKind.Sequential)] struct CursorInfo { public int Size; public uint Flags; public nint Cursor; public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] struct IconInfo { public int IsIcon, HotspotX, HotspotY; public nint Mask, Color; }
     [StructLayout(LayoutKind.Sequential)] struct Info { public uint Size; public int Width, Height; public ushort Planes, Bits; public uint Compression, ImageSize; public int X, Y; public uint Used, Important, Color; }
     public int Width { get; }
     public int Height { get; }
@@ -32,13 +37,13 @@ public sealed class Desktop : IDisposable
 
     }
     internal static void EnsureInteractiveDesktop()=>WindowsSessionAccess.EnsureAllowed();
-    public byte[] Capture()
+    public byte[] Capture(bool includePointer = false)
     {
         nint previousDpi=SetThreadDpiAwarenessContext(-4);
         if(previousDpi==0)throw new IOException("Per-monitor capture DPI context unavailable");
-        try{return CapturePhysical();}finally{SetThreadDpiAwarenessContext(previousDpi);}
+        try{return CapturePhysical(includePointer);}finally{SetThreadDpiAwarenessContext(previousDpi);}
     }
-    byte[] CapturePhysical()
+    byte[] CapturePhysical(bool includePointer)
     {
         EnsureInteractiveDesktop();
         selection?.EnsureCurrent();
@@ -59,6 +64,7 @@ public sealed class Desktop : IDisposable
                 if (!BitBlt(memory, 0, 0, Width, Height, screen, originX, originY, 0x00CC0020))
                     throw new IOException($"BitBlt failed: CAPTUREBLT Win32 {first}; SRCCOPY Win32 {Marshal.GetLastWin32Error()}");
             }
+            if (includePointer) DrawPointer(memory);
             byte[] pixels = new byte[checked(Width * Height * 4)];
             var info = new Info { Size = 40, Width = Width, Height = -Height, Planes = 1, Bits = 32 };
             if (SelectObject(memory, previous) != bitmap) throw new IOException("Capture bitmap deselection failed");
@@ -72,6 +78,22 @@ public sealed class Desktop : IDisposable
             if (bitmap != 0) DeleteObject(bitmap);
             if (memory != 0) DeleteDC(memory);
             if (screen != 0) ReleaseDC(0, screen);
+        }
+    }
+    void DrawPointer(nint memory)
+    {
+        var cursor = new CursorInfo { Size = Marshal.SizeOf<CursorInfo>() };
+        if (!GetCursorInfo(ref cursor) || cursor.Flags != 1 || cursor.Cursor == 0 ||
+            !GetIconInfo(cursor.Cursor, out var icon)) return;
+        try
+        {
+            DrawIconEx(memory, cursor.X - originX - icon.HotspotX, cursor.Y - originY - icon.HotspotY,
+                cursor.Cursor, 0, 0, 0, 0, 3);
+        }
+        finally
+        {
+            if (icon.Mask != 0) DeleteObject(icon.Mask);
+            if (icon.Color != 0) DeleteObject(icon.Color);
         }
     }
     static void ValidateHandle(nint value, uint type, string operation)

@@ -10,7 +10,7 @@ public sealed partial class ViewerWindow
     CancellationTokenSource? connectionRun;
     ConnectionPhase connectionPhase;
     int connectionGeneration;
-    sealed record ConnectionTarget(string Host, int Port, bool Strict, string Pin, string Token, string[] Features, bool FullScreen = false,int DisplayVersion=DisplayProtocol.TopologyVersion,NetworkMode Network=NetworkMode.Auto,bool FullControl=false)
+    sealed record ConnectionTarget(string Host, int Port, bool Strict, string Pin, string Token, string[] Features, bool FullScreen = false,int DisplayVersion=DisplayProtocol.TopologyVersion,NetworkMode Network=NetworkMode.Auto,bool FullControl=false,string? UserName=null)
     { public override string ToString() => "ConnectionTarget [credentials redacted]"; }
     sealed record AttemptResult(Exception? Error, bool Established, string Pin, string[] Features, bool FullScreen, bool Stable);
     void StopConnection() { connectionRun?.Cancel(); session?.Cancel(); }
@@ -22,7 +22,7 @@ public sealed partial class ViewerWindow
         {
             ConnectionPhase.Connecting => "正在连接远程电脑…",
             ConnectionPhase.Authenticating => "正在验证加密连接…",
-            ConnectionPhase.AwaitingApproval => "等待 Host 允许本次连接…",
+            ConnectionPhase.AwaitingApproval => "验证设备，首次连接需受控端审批…",
             ConnectionPhase.Negotiating => "正在建立已授权的桌面通道…",
             ConnectionPhase.Connected => "已获授权，正在接收桌面…",
             ConnectionPhase.Disconnected => "已断开连接",
@@ -36,6 +36,17 @@ public sealed partial class ViewerWindow
         if (!IPAddress.TryParse(host.Text.Trim(), out var address) || address.Equals(IPAddress.Any) || address.Equals(IPAddress.IPv6Any) || !int.TryParse(port.Text, out int number) || number is < 1 or > 65535)
         { status.Text = "请输入有效的远程 IP 和端口。"; ShowConnectionError(new FormatException("Invalid endpoint"), "configuration"); return; }
         var target = new ConnectionTarget(address.ToString(), number, pinnedConnection.IsChecked == true, fingerprint.Text, token.Password, RequestedFeatures(), fullScreen,requestTopology.IsChecked==true?DisplayProtocol.TopologyVersion:DisplayProtocol.Version,networkMode.SelectedIndex switch { 1 => NetworkMode.Tcp, 2 => NetworkMode.Udp, _ => NetworkMode.Auto }, fullControl);
+        if (!App.VerificationMode || !IPAddress.IsLoopback(address) || loginName.Text.Length != 0)
+        {
+            string name = loginName.Text.Trim();
+            if (!PasswordVerifier.ValidUserName(name) || target.Token.Length is < 12 or > 128)
+            {
+                status.Text = "请输入有效的用户名和密码。";
+                return;
+            }
+            target = target with { UserName = name, Pin = RelaxDesk.Windows.PasswordLoginSettings.ReadServerPin(new IPEndPoint(address, number).ToString()) ?? "", FullControl = true };
+            token.Clear();
+        }
         if (smoke?.RequireUdp == true) target = target with { Network = NetworkMode.Udp };
         using var lifetime = new CancellationTokenSource(); connectionRun = lifetime;
         connectionEnded = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -51,7 +62,7 @@ public sealed partial class ViewerWindow
                 if (result.Established)
                 {
                     approvedPin = result.Pin;
-                    target = target with { Token = "", Pin = approvedPin, Features = result.Features, FullScreen = result.FullScreen };
+                    target = target with { Token = target.UserName is null ? "" : target.Token, Pin = approvedPin, Features = result.Features, FullScreen = result.FullScreen };
                     // Briefly successful handshakes must not permit endless reconnect loops.
                     if (result.Stable) { retry = 0; outage = null; }
                 }
@@ -65,6 +76,7 @@ public sealed partial class ViewerWindow
                     status.Text = result.Error switch
                     {
                         HostConsentRejectedException => "Host 已拒绝本次连接，已停止自动重连。",
+                        PasswordLoginRejectedException => "用户名或密码错误，或受控端版本不支持密码登录。",
                         FullControlInputUnavailableException => "Host 的完整远程控制暂不可用。请在 Host 检查管理员输入组件后重新连接。",
                         UdpMediaUnavailableException { Reason: UdpMediaFailure.LocalUnavailable } => "本机无法使用 UDP 媒体。请选择 Auto 或 TCP 后重试。",
                         UdpMediaUnavailableException { Reason: UdpMediaFailure.HostUnavailable } => "Host 未提供 UDP 媒体。请选择 Auto 或 TCP 后重试。",
@@ -91,7 +103,7 @@ public sealed partial class ViewerWindow
                 { SetConnectionPhase(ConnectionPhase.Failed); status.Text = "自动重连已超时，请检查网络后手动连接。"; break; }
                 recoveryBudget.CancelAfter(remaining);
                 SetConnectionPhase(ConnectionPhase.Reconnecting);
-                status.Text = $"连接意外中断，{delay.Value.TotalSeconds:F1} 秒后重试（{retry}/{ConnectionRecovery.MaximumRetries}）；仍需 Host 重新允许。";
+                status.Text = $"连接意外中断，{delay.Value.TotalSeconds:F1} 秒后自动重连（{retry}/{ConnectionRecovery.MaximumRetries}）。";
                 ViewerSessionLog.Record("reconnect-wait");
                 await Task.Delay(delay.Value, recoveryBudget.Token);
             }

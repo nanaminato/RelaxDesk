@@ -9,6 +9,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using RelaxDesk.Core;
 using RelaxDesk.Session;
+using RelaxDesk.Windows;
 namespace RelaxDesk.HostShell;
 
 internal sealed partial class HostWindow:Window
@@ -34,6 +35,7 @@ internal sealed partial class HostWindow:Window
     internal Func<AdminWorkerDeployment>? InputDeploymentForVerification { get; set; }
     string? adminStartupNotice;
     string[] fullControlFeatures = [];
+    string[] requestedClipboardFormats = [];
     const string AdminDeploymentNotice = "完整远程控制不可用。要修复代理，请结束共享，在「服务设置」中选择「安装／更新／修复（管理员）」。";
     const string DesktopUnavailableNotice="不支持当前会话或安全桌面控制。请回到原用户的普通桌面后重新连接并授权；Host 继续等待连接。";
     string? displayedSessionId;
@@ -59,6 +61,7 @@ internal sealed partial class HostWindow:Window
         AddFileSettings(sharingSettings);
         AddRecoverySettings(sharingSettings);
         AddWindowButton(Navigation, "共享设置", sharingSettings);
+        AddLoginSettings(Navigation);
         var devices = new StackPanel();
         BuildDeviceTrust(devices);
         AddWindowButton(Navigation, "受信任的设备", devices);
@@ -96,19 +99,23 @@ internal sealed partial class HostWindow:Window
     internal bool ClipboardChoiceVisible => clipboardPermission.Visibility == Visibility.Visible;
     internal bool ClipboardAllowed { get => clipboardPermission.IsChecked == true; set => clipboardPermission.IsChecked = value; }
     internal string ClipboardRequestDescription=>clipboardPermission.Content is TextBlock label?label.Text:clipboardPermission.Content.ToString()??"";
-    internal async Task StopClipboard(){string? id=displayedSessionId;if(id is null)return;await Host.RevokeClipboard(id);if(displayedSessionId!=id)return;revokeClipboard.Visibility=Visibility.Collapsed;detail.Text="已停止剪贴板同步；重新开启需要新的连接授权。";}
+    internal async Task StopClipboard(){string? id=displayedSessionId;if(id is null)return;await Host.RevokeClipboard(id);if(displayedSessionId!=id)return;UpdateSavedGrant(grant=>grant with{ClipboardFormats=[]});revokeClipboard.Visibility=Visibility.Collapsed;detail.Text="已撤销此设备的剪贴板权限。";}
     internal string Status=>state.Text;
     internal string? DesktopStatusNotice => detail.Text == desktopNotice ? desktopNotice : null;
     internal bool AdminDeploymentNoticeVisible => detail.Text == AdminDeploymentNotice;
     string ListeningDetail => desktopNotice ?? (adminDeploymentUnavailable ? AdminDeploymentNotice : adminStartupNotice ?? $"Viewer 可连接 {ip.Text}:{port.Text}，收到请求后由你确认。");
     internal async Task StartSharing(string? address=null,int? number=null,string backend="dxgi",bool recovering=false)
     {
-        if(ServiceSetupBusy || checkingInputDeployment || Host.Running)return;
+        if(ServiceSetupBusy || savingLogin || checkingInputDeployment || Host.Running)return;
         if(!recovering){if(RestartPending)return;restartBudget=new();restartBackend=backend;desktopNotice=null;hostTokenDenied=false;}
         if(ServiceRequired&&!ServiceReady){state.Text="服务协调不可用";detail.Text="请先连接已授权的系统服务；没有开始共享。";UpdateServiceControls();return;}
-        if (!backend.StartsWith("test-", StringComparison.Ordinal) && !await CheckInputDeployment()) return;
+        if (InputDeploymentForVerification is not null && !await CheckInputDeployment()) return;
         if (closing || ServiceSetupBusy || ServiceRequired && !ServiceReady) return;
-        try{if(address is not null)ip.Text=address;if(number.HasValue)port.Text=number.Value.ToString();if(!int.TryParse(port.Text,out int selected))throw new ArgumentException("端口应为 1–65535");ip.IsEnabled=port.IsEnabled=start.IsEnabled=false;SetFileConfigurationEnabled(false);SetDisplayConfigurationEnabled(false);stop.IsEnabled=true;state.Text="正在启动";await Host.Start(application,ip.Text.Trim(),selected,backend,selectedFileRoot,SelectedDisplay);}
+        try{if(!backend.StartsWith("test-", StringComparison.Ordinal)){
+                if(PasswordLoginSettings.Read() is null) throw new IOException("请先在「登录设置」保存用户名和密码。");
+                EnsureDefaultFileRoot();
+            }
+            if(address is not null)ip.Text=address;if(number.HasValue)port.Text=number.Value.ToString();if(!int.TryParse(port.Text,out int selected))throw new ArgumentException("端口应为 1–65535");ip.IsEnabled=port.IsEnabled=start.IsEnabled=false;SetFileConfigurationEnabled(false);SetDisplayConfigurationEnabled(false);stop.IsEnabled=true;state.Text="正在启动";await Host.Start(application,ip.Text.Trim(),selected,backend,selectedFileRoot,SelectedDisplay,loginVerifierForTests);}
         catch(Exception e){state.Text="无法开始共享";detail.Text=e.Message;ip.IsEnabled=port.IsEnabled=start.IsEnabled=true;SetFileConfigurationEnabled(true);SetDisplayConfigurationEnabled(true);stop.IsEnabled=false;}
         finally{UpdateServiceControls();}
     }
@@ -148,8 +155,36 @@ internal sealed partial class HostWindow:Window
         catch (Exception error) when (error is IOException or System.Security.SecurityException or System.Runtime.InteropServices.COMException or InvalidDataException)
         { return AdminWorkerDeployment.RepairRequired; }
     }
-    internal async Task Decide(bool accepted){string? id=displayedSessionId;if(id is null)return;allow.IsEnabled=deny.IsEnabled=false;
-        bool legacyFeatures=accepted&&!fullControlRequest;bool clipboard=legacyFeatures&&clipboardPermission.IsChecked==true;bool files=legacyFeatures&&filesPermission.IsChecked==true&&selectedFileRoot is not null;bool audio=legacyFeatures&&audioPermission.IsChecked==true;var remember=CaptureDeviceTrust(accepted);activeInput=accepted;await Host.Decide(accepted,clipboard,files,id,audio);if(displayedSessionId!=id)return;var enabled = accepted && fullControlRequest ? fullControlFeatures : [];revokeAudio.Visibility=audio||enabled.Contains(SessionCapabilities.SystemAudio)?Visibility.Visible:Visibility.Collapsed;revokeClipboard.Visibility=clipboard||enabled.Any(SessionCapabilities.IsClipboard)?Visibility.Visible:Visibility.Collapsed;revokeFiles.Visibility=files||enabled.Contains(SessionCapabilities.FileTransfer)?Visibility.Visible:Visibility.Collapsed;request.Visibility=Visibility.Collapsed;if(remember is not null)await SaveDeviceTrust(remember);}
+    internal async Task Decide(bool accepted)
+    {
+        string? id = displayedSessionId;
+        if (id is null) return;
+        allow.IsEnabled = deny.IsEnabled = false;
+        bool clipboard = accepted && !fullControlRequest && clipboardPermission.IsChecked == true;
+        bool files = accepted && !fullControlRequest && filesPermission.IsChecked == true && selectedFileRoot is not null;
+        bool audio = accepted && !fullControlRequest && audioPermission.IsChecked == true;
+        if (accepted && passwordLoginRequest && activeDeviceFingerprint is { } fingerprint && !KnownDevice(fingerprint))
+        {
+            try
+            {
+                if (loginVerifierForTests is null)
+                    PasswordLoginSettings.SaveDeviceGrant(fingerprint, new(clipboard ? requestedClipboardFormats : [], audio, files ? selectedFileRoot : null));
+                await SaveDeviceTrust(fingerprint);
+            }
+            catch (Exception error) when (IsTrustStorageError(error) || error is System.Security.SecurityException)
+            { trustNotice.Text = "本次可连接，设备授权保存失败。"; }
+            if (displayedSessionId != id || revokedDuringRun.Contains(fingerprint)) return;
+        }
+        activeInput = accepted;
+        await Host.Decide(accepted, clipboard, files, id, audio);
+        if (displayedSessionId != id) return;
+        var enabled = accepted && fullControlRequest ? fullControlFeatures : [];
+        revokeAudio.Visibility = audio || enabled.Contains(SessionCapabilities.SystemAudio) ? Visibility.Visible : Visibility.Collapsed;
+        revokeClipboard.Visibility = clipboard || enabled.Any(SessionCapabilities.IsClipboard) ? Visibility.Visible : Visibility.Collapsed;
+        revokeFiles.Visibility = files || enabled.Contains(SessionCapabilities.FileTransfer) ? Visibility.Visible : Visibility.Collapsed;
+        request.Visibility = Visibility.Collapsed;
+        if (CaptureDeviceTrust(accepted) is { } remember) await SaveDeviceTrust(remember);
+    }
     internal async Task StopSharing(){CancelRecovery();stop.IsEnabled=false;try{await Host.Stop();}catch(Exception e){detail.Text=e.Message;}}
     internal Task DisconnectSession()=>displayedSessionId is {} id?Host.Disconnect(id):Task.CompletedTask;
     void Changed(HostEvent change)
@@ -160,7 +195,7 @@ internal sealed partial class HostWindow:Window
                 "ordinary-input-blocked" or "ordinary-input-restored") &&
             (displayedSessionId is null || change.SessionId != displayedSessionId)) return;
         switch(kind){
-            case "listening":revokeAudio.Visibility=Visibility.Collapsed;request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=revokeFiles.Visibility=disconnectSession.Visibility=Visibility.Collapsed;displayedSessionId=null;state.Text="等待连接";detail.Text=ListeningDetail;break;
+            case "listening":revokeAudio.Visibility=Visibility.Collapsed;request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=revokeFiles.Visibility=disconnectSession.Visibility=Visibility.Collapsed;displayedSessionId=null;state.Text="等待连接";detail.Text=ListeningDetail;if(change.ServerFingerprint is {} serverPin)loginFingerprint.Text=serverPin;break;
             case "desktop-unavailable":
                 if (change.DesktopReason == "host-input-token-denied") hostTokenDenied = true;
                 detail.Text = desktopNotice = change.DesktopReason switch
@@ -187,7 +222,8 @@ internal sealed partial class HostWindow:Window
                 state.Text = "等待你的授权";
                 detail.Text = "请在本机安全输入窗口核对设备指纹并确认。";
                 break;
-            case "approval-request":desktopNotice=null;displayedSessionId=change.SessionId;disconnectSession.Visibility=Visibility.Visible;fullControlRequest = change.FullControl; activeInput = nativeApproval = false;
+            case "approval-request":desktopNotice=null;displayedSessionId=change.SessionId;disconnectSession.Visibility=Visibility.Visible;fullControlRequest = change.FullControl;passwordLoginRequest=change.PasswordLogin; activeInput = nativeApproval = false;
+                requestedClipboardFormats = (change.Features ?? []).Where(SessionCapabilities.IsClipboard).ToArray();
                 peer.Text = $"请求来源  {value}";
                 peer.TextWrapping = TextWrapping.Wrap;
                 if (change.DeviceFingerprint is { Length: 64 } device && device.All(char.IsAsciiHexDigit))
@@ -206,7 +242,27 @@ internal sealed partial class HostWindow:Window
                     if (fullControlFeatures.Contains(SessionCapabilities.SystemAudio))
                         consentAccess.Text += "\n共享系统声音。";
                 }
-                state.Text="等待你的授权";detail.Text="还未共享桌面或开放输入。";break;
+                if (passwordLoginRequest && activeDeviceFingerprint is { } approvedDevice && KnownDevice(approvedDevice))
+                {
+                    request.Visibility = Visibility.Collapsed;
+                    var grant = ReadDeviceGrant(approvedDevice);
+                    clipboardPermission.IsChecked = Host.ClipboardRequested &&
+                        grant.ClipboardFormats is { } formats && requestedClipboardFormats.All(formats.Contains);
+                    filesPermission.IsChecked = selectedFileRoot is not null && grant.FileRoot == selectedFileRoot && Host.FilesRequested;
+                    audioPermission.IsChecked = grant.Audio && Host.AudioRequested;
+                    _ = Decide(true);
+                }
+                else if (change.ReconnectOnly)
+                {
+                    request.Visibility = Visibility.Collapsed;
+                    _ = Decide(false);
+                }
+                else
+                {
+                    if (passwordLoginRequest) consentAccess.Text += "\n允许后，此设备以后可凭正确密码无人值守连接。可在「受信任的设备」撤销。";
+                    state.Text="等待你的授权";detail.Text="还未共享桌面或开放输入。";
+                }
+                break;
             case "admin-starting":
                 adminStartupNotice = null;
                 state.Text = "等待本机批准";

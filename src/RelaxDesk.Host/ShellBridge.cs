@@ -11,8 +11,8 @@ internal sealed class ShellBridge : IDisposable
     Session? current;
     public ShellBridge(CancellationTokenSource stop)
     { this.stop = stop; _ = Task.Run(ReadCommands); }
-    public static void Emit(string type, string? address = null, int port = 0, string[]? features = null, string? sessionId = null, bool fullControl = false, string? deviceFingerprint = null, string? requestId = null, string? desktopReason = null)
-        => Console.WriteLine("RD_EVENT " + JsonSerializer.Serialize(new { type, address, port, features, sessionId, fullControl, deviceFingerprint, requestId, desktopReason, version = BuildIdentity.Version }));
+    public static void Emit(string type, string? address = null, int port = 0, string[]? features = null, string? sessionId = null, bool fullControl = false, string? deviceFingerprint = null, string? requestId = null, string? desktopReason = null, string? serverFingerprint = null, bool passwordLogin = false, bool reconnectOnly = false)
+        => Console.WriteLine("RD_EVENT " + JsonSerializer.Serialize(new { type, address, port, features, sessionId, fullControl, deviceFingerprint, requestId, desktopReason, serverFingerprint, passwordLogin, reconnectOnly, version = BuildIdentity.Version }));
     public Session Begin()
     {
         lock (sync)
@@ -69,13 +69,13 @@ internal sealed class ShellBridge : IDisposable
         public CancellationToken AudioRevoked=>Audio.Token;
         internal Session(ShellBridge owner, CancellationToken stop)
         { this.owner = owner; Lifetime = CancellationTokenSource.CreateLinkedTokenSource(stop); }
-        public Task<ConsentDecision> Request(string endpoint, string[] features, bool fullControl, string? deviceFingerprint, CancellationToken cancellation)
+        public Task<ConsentDecision> Request(string endpoint, string[] features, bool fullControl, string? deviceFingerprint, CancellationToken cancellation, bool passwordLogin = false, bool reconnectOnly = false)
         {
             lock (owner.sync)
             {
                 if (disposed || Requested) throw new InvalidOperationException("Consent request is no longer available");
                 Requested = true;
-                Emit("approval-request", endpoint, features: features, sessionId: Id, fullControl: fullControl, deviceFingerprint: deviceFingerprint);
+                Emit("approval-request", endpoint, features: features, sessionId: Id, fullControl: fullControl, deviceFingerprint: deviceFingerprint, passwordLogin: passwordLogin, reconnectOnly: reconnectOnly);
                 return Consent.Decision.WaitAsync(cancellation);
             }
         }

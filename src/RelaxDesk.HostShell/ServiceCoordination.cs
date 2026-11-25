@@ -32,7 +32,8 @@ internal sealed partial class HostWindow
     {
         useService.IsEnabled=!Host.Running&&!serviceConnecting&&!serviceCleaning&&!closing&&!ServiceSetupBusy;
         connectService.IsEnabled=ServiceRequired&&!Host.Running&&!serviceConnecting&&!serviceCleaning&&!ServiceReady&&!closing&&!ServiceSetupBusy;
-        start.IsEnabled=!Host.Running&&!checkingInputDeployment&&!serviceConnecting&&!serviceCleaning&&!closing&&!ServiceSetupBusy&&(!ServiceRequired||ServiceReady);
+        start.IsEnabled=!Host.Running&&!savingLogin&&!checkingInputDeployment&&!serviceConnecting&&!serviceCleaning&&!closing&&!ServiceSetupBusy&&(!ServiceRequired||ServiceReady);
+        saveLogin.IsEnabled=!Host.Running&&!savingLogin&&!RestartPending&&!closing;
         UpdateServiceSetupControls();
         UpdateRecoveryControls();
     }

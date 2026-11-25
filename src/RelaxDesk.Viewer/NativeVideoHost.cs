@@ -16,6 +16,8 @@ public sealed class NativeVideoHost : HwndHost
     public Action? RenderInvalidated;
     sealed record VideoSize(int Width,int Height);
     VideoSize? videoSize;
+    volatile bool hostPointer;
+    static readonly nint arrowCursor = LoadCursor(0, 32512);
     ViewportOptions viewport=new();
     public void SetViewport(ViewportOptions options){if(!options.Valid)throw new ArgumentException("Invalid viewport");Volatile.Write(ref viewport,options);RenderInvalidated?.Invoke();}
     nint previousIme;
@@ -28,6 +30,10 @@ public sealed class NativeVideoHost : HwndHost
     [DllImport("user32.dll")] static extern nint GetFocus();
     [DllImport("user32.dll")] static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] static extern nint GetAncestor(nint hwnd, uint flags);
+    [DllImport("user32.dll", EntryPoint = "LoadCursorW")] static extern nint LoadCursor(nint instance, nint id);
+    [DllImport("user32.dll")] static extern nint SetCursor(nint cursor);
+    [DllImport("user32.dll")] static extern bool GetCursorPos(out Point point);
+    [DllImport("user32.dll")] static extern nint WindowFromPoint(Point point);
     [DllImport("imm32.dll")] static extern nint ImmAssociateContext(nint hwnd, nint context);
     [DllImport("imm32.dll")] static extern uint ImmGetVirtualKey(nint hwnd);
     public void SetVideoSize(int width, int height) { Volatile.Write(ref videoSize,new(width,height)); }
@@ -66,6 +72,25 @@ public sealed class NativeVideoHost : HwndHost
     readonly HashSet<int> pointerButtons=[];
     [StructLayout(LayoutKind.Sequential)] struct Point { public int X,Y; }
     [DllImport("user32.dll")] static extern bool ScreenToClient(nint hwnd,ref Point point);
+    internal void SetHostPointer(bool value)
+    {
+        if (hostPointer == value) return;
+        hostPointer = value;
+        _ = Dispatcher.BeginInvoke(() =>
+        {
+            nint child = Handle;
+            if (child != 0 && GetCursorPos(out var point) && WindowFromPoint(point) == child)
+                UpdateCursor(child, point);
+        });
+    }
+
+    void UpdateCursor(nint hwnd, Point point)
+    {
+        bool showHost = hostPointer && GetForegroundWindow() == GetAncestor(hwnd, 2) &&
+            ScreenToClient(hwnd, ref point) && GetClientRect(hwnd, out var bounds) &&
+            TryPosition(point.X, point.Y, bounds.Right, bounds.Bottom, false, out _, out _);
+        SetCursor(showHost ? 0 : arrowCursor);
+    }
     bool SendRichPosition(nint hwnd,nint packed,bool dragging,bool screen=false,bool standaloneMove=false)
     {
         var point=new Point{X=(short)((long)packed&65535),Y=(short)((long)packed>>16)};
@@ -155,6 +180,12 @@ public sealed class NativeVideoHost : HwndHost
                 }
             }
             finally{DragFinish(wParam);}handled=true;return 0;
+        }
+        if (message == 0x20 && wParam == hwnd && (ushort)(long)lParam == 1 && GetCursorPos(out var cursor))
+        {
+            UpdateCursor(hwnd, cursor);
+            handled = true;
+            return 1;
         }
         const int MouseMove = 0x200, LeftDown = 0x201, LeftUp = 0x202, RightDown = 0x204, RightUp = 0x205, Wheel = 0x20A;
         if (message == 0x8) { keyboardOwned = false; InputFocusLost?.Invoke(); }

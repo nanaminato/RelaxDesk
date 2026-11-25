@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
+using System.Windows.Input;
 
 namespace RelaxDesk.Viewer;
 
@@ -32,7 +33,8 @@ internal static class ToolbarVerification
                 child = new NativeVideoHost(); window.AddToolbarTestSurface(child); window.UpdateLayout();
                 if (child.Handle == 0 || !window.DesktopFillsClient) throw new Exception("Native surface or full-client layout missing");
                 var bar = window.Toolbar ?? throw new Exception("Toolbar missing");
-                if (bar.ShortcutsButton.IsEnabled) throw new Exception("Offline preview exposed remote shortcuts");
+                if (bar.RemoteKeyItems.OfType<MenuItem>().Any(item => item.Tag is RelaxDesk.Core.RemoteShortcut && item.IsEnabled))
+                    throw new Exception("Offline preview exposed remote shortcuts");
                 if(bar.FilesButton.IsEnabled)throw new Exception("Offline preview exposed file access");
                 Point client = ((FrameworkElement)window.Content).PointToScreen(new Point(20, 200));
                 SessionToolbar.PixelPoint? pointer = new() { X = (int)client.X, Y = (int)client.Y };
@@ -51,8 +53,28 @@ internal static class ToolbarVerification
                     throw new Exception($"Toolbar is missing or behind its native video surface at ({point.X}, {point.Y}); hit={hit:X}, toolbar={toolbarHwnd:X}, owner={ownerHwnd:X}, native={child.Handle:X}");
                 if (hit != toolbarHwnd && !IsChild(toolbarHwnd, hit))
                     Console.WriteLine("Toolbar owned HWND order verified; another window occluded the screen hit-test");
-                bar.FullScreenButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(200);
+                var chord = ModifierKeys.Control | ModifierKeys.Alt;
+                var breakDown = new MSG { hwnd = child.Handle, message = 0x100, wParam = 0x03 };
+                if (!window.HandleConnectionKeys(breakDown, chord) ||
+                    !window.HandleConnectionKeys(new MSG { hwnd = child.Handle, message = 0x100, wParam = 0x03, lParam = 1 << 30 }, chord) ||
+                    !window.HandleConnectionKeys(new MSG { hwnd = child.Handle, message = 0x101, wParam = 0x03 }, ModifierKeys.None))
+                    throw new Exception("Fullscreen shortcut did not consume its press, repeat and release");
+                await Task.Delay(200);
                 if (window.WindowStyle != WindowStyle.None || (string)bar.FullScreenButton.Content != "返回窗口") throw new Exception("Fullscreen action failed");
+                if (!window.HandleConnectionKeys(new MSG { hwnd = ownerHwnd, message = 0x104, wParam = 0x24 }, chord) ||
+                    !bar.ShortcutMenu.IsOpen) throw new Exception("Connection-bar shortcut did not open the local menu");
+                bar.ShortcutMenu.IsOpen = false;
+                pointer = null;
+                bar.PinButton.IsChecked = true;
+                await Task.Delay(1750);
+                if (!bar.Expanded || !bar.PinButton.IsVisible || !bar.MinimizeButton.IsVisible) throw new Exception("Pinned fullscreen toolbar contracted");
+                bar.MinimizeButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                await Task.Delay(250);
+                if (window.WindowState != WindowState.Minimized || bar.Surface.IsVisible) throw new Exception("Fullscreen minimize failed");
+                window.WindowState = WindowState.Maximized; window.Activate(); await Task.Delay(250);
+                bar.PinButton.IsChecked = false;
+                await Task.Delay(1750);
+                if (bar.Expanded) throw new Exception("Unpinned fullscreen toolbar did not contract");
                 bar.FullScreenButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(200);
                 if (window.WindowStyle != WindowStyle.SingleBorderWindow) throw new Exception("Return-to-window action failed");
                 window.WindowState = WindowState.Minimized; await Task.Delay(250);
@@ -88,13 +110,13 @@ internal static class ToolbarVerification
                     if (!testBar.ShortcutMenu.IsOpen || !testBar.Expanded || !testBar.Surface.IsVisible ||
                         releaseRequests != 1 || shortcuts.Count != 0)
                         throw new Exception("Fullscreen shortcut menu did not stay open independently of remote actions");
-                    foreach (var item in testBar.ShortcutMenu.Items.OfType<MenuItem>().Where(item => item.IsEnabled))
+                    foreach (var item in testBar.RemoteKeyItems.OfType<MenuItem>().Where(item => item.IsEnabled))
                         item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
                     if (!shortcuts.SequenceEqual(Enum.GetValues<RelaxDesk.Core.RemoteShortcut>())) throw new Exception("Shortcut menu misrouted/duplicated an action");
                     await Task.Delay(1800);
                     if (testBar.Expanded) throw new Exception("Toolbar did not contract after the menu closed");
                     bar.FullScreenButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                    if (testBar.ShortcutMenu.Items.OfType<MenuItem>().Single(item=>item.Header.ToString()!.Contains("Ctrl+Alt+End")).IsEnabled) throw new Exception("Secure attention sequence must be unavailable");
+                    if (testBar.RemoteKeyItems.OfType<MenuItem>().Single(item=>item.Header.ToString()!.Contains("Ctrl+Alt+End")).IsEnabled) throw new Exception("Secure attention sequence must be unavailable");
                     int stopped = 0; testBar.SetClipboard(true, () => stopped++);
                     if (!testBar.ClipboardAction.IsEnabled) throw new Exception("Granted clipboard stop action unavailable");
                     testBar.ClipboardAction.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));

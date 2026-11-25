@@ -11,7 +11,8 @@ namespace RelaxDesk.Host;
 internal static class HostConnection
 {
     public static async Task Run(TcpListener listener, TcpClient client, HostMediaIdentity identity, string token,
-        string backend, string? selectedFileRoot, ShellBridge.Session? shell, CancellationToken stop,FileTransferResumeStore? fileResumes=null,string? selectedDisplay=null)
+        string backend, string? selectedFileRoot, ShellBridge.Session? shell, CancellationToken stop,FileTransferResumeStore? fileResumes=null,string? selectedDisplay=null,
+        PasswordVerifier? verifier = null)
     {
         var cert = identity.Certificate;
         bool synthetic = backend.StartsWith("test-", StringComparison.Ordinal);
@@ -22,9 +23,26 @@ internal static class HostConnection
             auth.CancelAfter(TimeSpan.FromSeconds(30));
             await tls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = cert, EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, auth.Token);
             hello = await Wire.Read(tls, auth.Token, 16 * 1024);
-            if (!FullControlProtocol.IsRequest(hello.Kind))
+            if (verifier is not null)
+            {
+                bool allowed;
+                try
+                {
+                    allowed = hello.Kind == FullControlProtocol.PasswordRequest &&
+                        hello.InputVersion == InputProtocol.Version && hello.DeviceKey is not null &&
+                        verifier.Verify(hello.Text, hello.Data);
+                }
+                finally { if (hello.Data is not null) CryptographicOperations.ZeroMemory(hello.Data); }
+                if (!allowed)
+                {
+                    await Wire.Write(tls, new(FullControlProtocol.PasswordRejected), auth.Token);
+                    return;
+                }
+                hello = hello with { Data = null, Text = null };
+            }
+            else if (!synthetic || !FullControlProtocol.IsRequest(hello.Kind))
                 throw new AuthenticationException("Invalid connection request");
-            if (hello.Kind == FullControlProtocol.Request)
+            else if (hello.Kind == FullControlProtocol.Request)
             {
                 if (hello.Text is not { Length: 32 } || !hello.Text.All(char.IsAsciiHexDigit) || hello.Capabilities is not { Length: > 0 and <= 2 } || hello.Capabilities.Any(c => c is not ("h264" or "deflate"))) throw new AuthenticationException("Invalid consent request");
                 if (shell is null) Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests a desktop session via IP/port approval. First-contact identity is not independently verified. Type APPROVE only if you expect this connection:");
@@ -52,11 +70,20 @@ internal static class HostConnection
         bool canVerifyDevice = hello.InputVersion == InputProtocol.Version && (shell is not null || synthetic);
         string? deviceFingerprint = canVerifyDevice && hello.DeviceKey is not null
             ? await VerifyDeviceIdentity(tls, cert, hello.DeviceKey, stop) : null;
-        bool authorizedHandshake = deviceFingerprint is not null || synthetic && hello.DeviceKey is null;
-        string? approval = synthetic && authorizedHandshake
-            ? await RequestConsent(client, shell, requestedFeatures, deviceFingerprint is not null, deviceFingerprint, stop)
+        bool authorizedHandshake = deviceFingerprint is not null || verifier is null && synthetic && hello.DeviceKey is null;
+        if (verifier is not null && authorizedHandshake)
+        {
+            if (!synthetic)
+            {
+                WindowsInputPrivilege.EnsureOrdinaryProcess();
+                WindowsSessionAccess.EnsureAllowed();
+                selectedDisplay = new WindowsDisplaySelection(selectedDisplay).Device;
+            }
+        }
+        string? approval = authorizedHandshake
+            ? await RequestConsent(client, shell, requestedFeatures, verifier is null && deviceFingerprint is not null, deviceFingerprint, stop, verifier is not null, verifier is not null && hello.ReconnectOnly)
             : null;
-        if (!authorizedHandshake || synthetic && (approval is null || AudioConsent.Parse(approval) is null or ConsentDecision.Deny))
+        if (!authorizedHandshake || approval is null || AudioConsent.Parse(approval) is null or ConsentDecision.Deny)
         {
             if (shell is not null) ShellBridge.Emit("denied", sessionId: shell.Id);
             using var denied = CancellationTokenSource.CreateLinkedTokenSource(stop);
@@ -64,79 +91,22 @@ internal static class HostConnection
             await Wire.Write(tls, new("denied-v2"), denied.Token);
             return;
         }
-        if (!backend.StartsWith("test-", StringComparison.Ordinal))
-        {
-            WindowsInputPrivilege.EnsureOrdinaryProcess();
-            WindowsSessionAccess.EnsureAllowed();
-        }
-        if (!synthetic)
-        {
-            selectedDisplay = new WindowsDisplaySelection(selectedDisplay).Device;
-            ShellBridge.Emit("native-approval-request", address: client.Client.RemoteEndPoint?.ToString(),
-                sessionId: shell!.Id, fullControl: true, deviceFingerprint: deviceFingerprint,
-                features: SessionCapabilities.ForFullControl(requestedFeatures, selectedFileRoot is not null));
-        }
-        await using var elevated = !synthetic ? await StartAdmin(client, tls, shell!, selectedDisplay!, deviceFingerprint!, stop) :
-            deviceFingerprint is not null && backend is ("test-admin-lifecycle" or "test-admin-worker-loss")
+        await using var elevated = synthetic && deviceFingerprint is not null && backend is ("test-admin-lifecycle" or "test-admin-worker-loss")
                 ? await AdminInputFixture.Start(backend == "test-admin-worker-loss", stop) : null;
-        if (!synthetic && elevated is null) return;
         if (shell is not null) ShellBridge.Emit("approved", sessionId: shell.Id);
-        var availableFeatures = deviceFingerprint is not null
+        var availableFeatures = verifier is null && deviceFingerprint is not null
             ? SessionCapabilities.ForFullControl(requestedFeatures, selectedFileRoot is not null)
-            : FixtureFeatures(requestedFeatures, selectedFileRoot is not null,
-                approval ?? throw new InvalidOperationException("Missing fixture approval"));
+            : GrantedFeatures(requestedFeatures, selectedFileRoot is not null, approval);
         await VideoHostSession.Run(listener, client, tls, identity, hello, backend, stop,
             availableFeatures, shell?.ClipboardRevoked ?? default, selectedFileRoot, shell?.FilesRevoked ?? default,fileResumes,selectedDisplay,shell?.AudioRevoked??default,elevated,shell?.Id);
     }
 
-    static string[] FixtureFeatures(string[] requested, bool fileScope, string approval)
+    static string[] GrantedFeatures(string[] requested, bool fileScope, string approval)
     {
         string decision = AudioConsent.Base(approval);
+        bool filesAllowed = fileScope && decision is "APPROVE_FILES" or "APPROVE_ALL";
         return SessionCapabilities.Grant(requested, decision is "APPROVE_CLIPBOARD" or "APPROVE_ALL",
-            fileScope && decision is "APPROVE_FILES" or "APPROVE_ALL", AudioConsent.AllowsAudio(approval));
-    }
-
-    static async Task<AdminInputConnection?> StartAdmin(TcpClient client, SslStream tls,
-        ShellBridge.Session shell, string display, string fingerprint, CancellationToken stop)
-    {
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop);
-        deadline.CancelAfter(TimeSpan.FromSeconds(60));
-        Guid grant = Guid.NewGuid();
-        ShellBridge.Emit("admin-starting", sessionId: shell.Id);
-        using var monitor = new PeriodicTimer(TimeSpan.FromMilliseconds(200));
-        async Task WatchPeer()
-        {
-            try
-            {
-                while (await monitor.WaitForNextTickAsync(deadline.Token))
-                    if (client.Client.Poll(0, SelectMode.SelectRead)) { deadline.Cancel(); return; }
-            }
-            catch (OperationCanceledException) when (deadline.IsCancellationRequested) { }
-            catch (SocketException) { deadline.Cancel(); }
-        }
-        Task peer = WatchPeer();
-        AdminInputConnection? worker = null;
-        try
-        {
-            worker = await AdminInputLauncher.StartScheduled(grant, display, fingerprint, deadline.Token);
-            WindowsSessionAccess.EnsureAllowed();
-            deadline.Token.ThrowIfCancellationRequested();
-            ShellBridge.Emit("admin-ready", sessionId: shell.Id);
-            return worker;
-        }
-        catch (Exception error) when (error is IOException or System.Security.SecurityException or
-            System.ComponentModel.Win32Exception or AuthenticationException or OperationCanceledException or UnauthorizedAccessException or InvalidDataException)
-        {
-            if (worker is not null) await worker.DisposeAsync();
-            HostSessionLog.Write($"admin_start_failed type={error.GetType().Name}");
-            bool denied = error is AdminInputConsentDeniedException;
-            ShellBridge.Emit(denied ? "denied" : error is AdminInputDeploymentException ? "admin-deployment-unavailable" : "admin-start-failed", sessionId: shell.Id);
-            using var reply = CancellationTokenSource.CreateLinkedTokenSource(stop);
-            reply.CancelAfter(TimeSpan.FromSeconds(2));
-            await Wire.Write(tls, new(denied ? "denied-v2" : FullControlProtocol.InputUnavailable), reply.Token);
-            return null;
-        }
-        finally { deadline.Cancel(); await peer; }
+            filesAllowed, AudioConsent.AllowsAudio(approval));
     }
 
     static async Task<string> VerifyDeviceIdentity(SslStream tls, X509Certificate2 certificate, string publicKey, CancellationToken stop)
@@ -159,7 +129,7 @@ internal static class HostConnection
     }
 
     static async Task<string?> RequestConsent(TcpClient client, ShellBridge.Session? shell, string[] features, bool fullControl,
-        string? deviceFingerprint, CancellationToken stop)
+        string? deviceFingerprint, CancellationToken stop, bool passwordLogin = false, bool reconnectOnly = false)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop);
         deadline.CancelAfter(TimeSpan.FromSeconds(60));
@@ -167,7 +137,7 @@ internal static class HostConnection
         Task<string?> decision = shell is null ? Console.In.ReadLineAsync(deadline.Token).AsTask() : ReadShell();
         async Task<string?> ReadShell()
         {
-            var decision = await shell!.Request(client.Client.RemoteEndPoint?.ToString() ?? "unknown", features, fullControl, deviceFingerprint, deadline.Token);
+            var decision = await shell!.Request(client.Client.RemoteEndPoint?.ToString() ?? "unknown", features, fullControl, deviceFingerprint, deadline.Token, passwordLogin, reconnectOnly);
             return AudioConsent.Command(decision);
         }
         async Task WatchPeer()

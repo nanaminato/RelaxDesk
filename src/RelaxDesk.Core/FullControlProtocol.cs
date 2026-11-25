@@ -2,6 +2,8 @@ namespace RelaxDesk.Core;
 
 public static class FullControlProtocol
 {
+    public const string PasswordRequest = "password-login-v4";
+    public const string PasswordRejected = "password-rejected-v4";
     public const string Request = "full-control-request-v3";
     public const string PinnedRequest = "full-control-hello-v3";
     public const string Approved = "full-control-approved-v3";

@@ -127,7 +127,7 @@ public sealed partial class ViewerWindow : Window
         {
             try
             {
-                ApplyInvitation();
+                if (App.VerificationMode) ApplyInvitation();
                 await ConnectVideo(fullControl: true);
             }
             catch (Exception error) { status.Text = error.Message; ShowConnectionError(error, "configuration"); }
@@ -314,7 +314,18 @@ public sealed partial class ViewerWindow : Window
                 connecting.CancelAfter(TimeSpan.FromSeconds(75));
                 try
                 {
-            if(previousPin is not null)await connection.ConnectByPinnedApproval(target.Host,target.Port,previousPin,connecting.Token);
+            if (target.UserName is not null)
+            {
+                await connection.ConnectWithPassword(target.Host, target.Port, previousPin ?? target.Pin,
+                    target.UserName, target.Token, ConfirmPasswordServer, connecting.Token, reconnectOnly: previousPin is not null);
+                if (previousPin is null && target.Pin.Length == 0)
+                {
+                    try { PasswordLoginSettings.SaveServerPin(new IPEndPoint(IPAddress.Parse(target.Host), target.Port).ToString(), connection.VerifiedFingerprint); }
+                    catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+                    { ViewerSessionLog.Record("server-pin-save-failed", error); }
+                }
+            }
+            else if(previousPin is not null)await connection.ConnectByPinnedApproval(target.Host,target.Port,previousPin,connecting.Token);
             else if(target.Strict)await connection.Connect(target.Host,target.Port,target.Pin,target.Token,connecting.Token);
             else await connection.ConnectByApproval(target.Host,target.Port,connecting.Token);
                 }
@@ -543,7 +554,12 @@ public sealed partial class ViewerWindow : Window
                                 metrics.Add("decode", surface.DecodeMilliseconds); metrics.Add("gpu_draw_submit", renderer.Timing.DrawMs); metrics.Add("present_call", renderer.Timing.PresentMs);
                                 metrics.Add("readback", surface.Timing.ReadbackMs); Interlocked.Add(ref readbackBytes, checked((long)surface.Timing.ReadbackBytes));
                                 CollectRenderState();
-                                if (shown) Presented(true, frame, surface.DecodeMilliseconds,drawnViewport,transport); else Interlocked.Increment(ref skipped);
+                                if (shown)
+                                {
+                                    nativeView.SetHostPointer(CaptureMetadataCodec.UsesHostPointer(frame.Metadata));
+                                    Presented(true, frame, surface.DecodeMilliseconds,drawnViewport,transport);
+                                }
+                                else Interlocked.Increment(ref skipped);
                                 BudgetReached(); continue;
                             }
                             catch (Exception e) when (e is System.Runtime.InteropServices.ExternalException or NotSupportedException)
