@@ -55,7 +55,7 @@ public sealed partial class ViewerWindow
                 if(sinks.Count!=4||window.sessionPermissions?.Allows(Core.SessionCapabilities.SystemAudio)==true)throw new IOException("Audio recovery budget replenished");
                 frames=window.smokeFrames;await Until(()=>window.smokeFrames>frames);window.StopConnection();await running;
                 if(!sinks.All(sink=>sink.Disposed))throw new IOException("Audio sink teardown incomplete");
-                Console.WriteLine("PASS actual WPF Viewer/Host/TLS audio: default-off request, independent grant/toolbar, PCM volume, mute flush/no stale replay, three default-device replacements and exhaustion isolate audio, video survives and STA sinks dispose; synthetic endpoint only");
+                Console.WriteLine("PASS actual WPF Viewer/Host/TLS audio: default-on playback setting, audio attachment/toolbar, PCM volume, mute flush/no stale replay, three default-device replacements and exhaustion isolate audio, video survives and STA sinks dispose; synthetic endpoint only");
                 window.Close();app.Shutdown();
             }
             catch(Exception e){Console.Error.WriteLine(e);Environment.ExitCode=1;window.StopConnection();if(running is not null)try{await running;}catch{}window.Close();app.Shutdown(1);}
