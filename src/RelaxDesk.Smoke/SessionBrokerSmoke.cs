@@ -95,6 +95,13 @@ internal static class SessionBrokerSmoke
             Check(await peer.ReadAsync(end, adminTimeout.Token) == 0);
         }
         Guid launchGrant = Guid.NewGuid();
+        var launchRequest = new AdminInputLaunchRequest(launchGrant, Environment.ProcessId, own, "all");
+        Check(AdminInputLaunchRequest.Parse(launchRequest.Arguments()) == launchRequest);
+        var arguments = launchRequest.Arguments();
+        Check(AdminInputLaunchRequest.Parse([arguments[0], "+" + arguments[1], own, "all"]) is null);
+        Check(AdminInputLaunchRequest.Parse([arguments[0], arguments[1], "S-1-5-18", "all"]) is null);
+        Check(AdminInputLaunchRequest.Parse([arguments[0], arguments[1], own, "all\n"]) is null);
+        Check(AdminInputLaunchRequest.Parse([..arguments, "extra"]) is null);
         Guid silentGrant = Guid.NewGuid();
         using (var silentServer = LocalAgentPipe.CreateAdminServer(silentGrant, own))
         using (var testDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(8)))

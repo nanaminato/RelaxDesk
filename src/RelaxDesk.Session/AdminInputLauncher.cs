@@ -21,13 +21,14 @@ public static class AdminInputLauncher
         Func<string, string> resolve, Func<ProcessStartInfo, Process?> launch, CancellationToken cancellation)
     {
         cancellation.ThrowIfCancellationRequested();
-        owner = LocalAgentPipe.CanonicalUser(owner);
+        var request = new AdminInputLaunchRequest(grant, Environment.ProcessId, owner, display);
+        owner = request.Owner;
         string executable;
         try { executable = resolve(owner); }
         catch (Exception error) when (error is IOException or System.Security.SecurityException or UnauthorizedAccessException or InvalidDataException)
         { throw new AdminInputDeploymentException(error); }
         cancellation.ThrowIfCancellationRequested();
-        var start = CreateStartInfo(executable, grant, owner, display);
+        var start = CreateStartInfo(executable, request);
         var server = LocalAgentPipe.CreateAdminServer(grant, owner);
         try
         {
@@ -71,11 +72,8 @@ public static class AdminInputLauncher
         }
     }
 
-    static ProcessStartInfo CreateStartInfo(string executable, Guid grant, string owner, string display)
+    static ProcessStartInfo CreateStartInfo(string executable, AdminInputLaunchRequest request)
     {
-        if (grant == Guid.Empty || display.Length is < 1 or > 256 || display.Any(char.IsControl))
-            throw new ArgumentException("Invalid administrator input grant or display");
-
         var start = new ProcessStartInfo(executable)
         {
             UseShellExecute = true,
@@ -83,10 +81,7 @@ public static class AdminInputLauncher
             WorkingDirectory = Path.GetDirectoryName(executable)!,
             WindowStyle = ProcessWindowStyle.Hidden
         };
-        start.ArgumentList.Add(grant.ToString("N"));
-        start.ArgumentList.Add(Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        start.ArgumentList.Add(owner);
-        start.ArgumentList.Add(display);
+        foreach (string argument in request.Arguments()) start.ArgumentList.Add(argument);
         return start;
     }
 }

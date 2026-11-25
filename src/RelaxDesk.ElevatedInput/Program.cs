@@ -3,26 +3,23 @@ using RelaxDesk.Core;
 using RelaxDesk.Session;
 using RelaxDesk.Windows;
 
-if (args is not [var grantText, var pidText, var owner, var display] ||
-    !Guid.TryParseExact(grantText, "N", out Guid grant) || grant == Guid.Empty ||
-    !int.TryParse(pidText, out int coordinator) || coordinator <= 0 ||
-    display.Length is < 1 or > 256)
-    return 2;
+var request = AdminInputLaunchRequest.Parse(args);
+if (request is null) return 2;
 
 try { WindowsInputPrivilege.EnsureElevatedProcess(); }
 catch (IOException) { return 4; }
 
 try
 {
-    string installed = ServiceDeploymentTrust.ResolveElevatedInput(owner);
+    string installed = ServiceDeploymentTrust.ResolveElevatedInput(request.Owner);
     if (!string.Equals(Environment.ProcessPath, installed, StringComparison.OrdinalIgnoreCase))
         return 3;
     using var startup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-    using var pipe = await LocalAgentPipe.ConnectAdmin(grant, startup.Token);
-    LocalAgentPipe.AuthenticateAdminCoordinator(pipe, coordinator, owner);
+    using var pipe = await LocalAgentPipe.ConnectAdmin(request.Grant, startup.Token);
+    LocalAgentPipe.AuthenticateAdminCoordinator(pipe, request.CoordinatorPid, request.Owner);
     // Readiness comes from the worker after it checks the administrator token
     // and the interactive desktop.
-    await ElevatedInputWorker.Run(pipe, grant, () => new WindowsDisplaySelection(display), CancellationToken.None);
+    await ElevatedInputWorker.Run(pipe, request.Grant, () => new WindowsDisplaySelection(request.Display), CancellationToken.None);
     return 0;
 }
 catch (Exception error) when (error is IOException or SecurityException or UnauthorizedAccessException or
