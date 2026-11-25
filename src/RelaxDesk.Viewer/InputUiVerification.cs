@@ -59,6 +59,7 @@ public sealed partial class ViewerWindow
                 dialog.Editor.Text="unsent";dialog.Close();Check(dialog.Editor.Text.Length==0&&texts.Count==1);dialog=null;
                 window.OpenTextInput();Check(window.textInput is not null);window.textInput!.Editor.Text="do not replay";
                 window.ResetInputState();Check(window.textInput is null&&!window.inputAuthorized);
+                Check(KeyboardFocusVerification.RejectsBackgroundPointer(window));
                 var probe = new DesktopInputProbe(new(false, false, 0x2000)) { Owner = window };
                 try
                 {

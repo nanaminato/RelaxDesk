@@ -16,6 +16,27 @@ internal static class KeyboardFocusVerification
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(nint hwnd);
     [DllImport("imm32.dll")] static extern nint ImmGetContext(nint hwnd);
     [DllImport("imm32.dll")] static extern bool ImmReleaseContext(nint hwnd, nint context);
+    internal static bool RejectsBackgroundPointer(Window owner)
+    {
+        using var viewport = new NativeVideoHost();
+        viewport.SetVideoSize(320, 200);
+        int forwarded = 0;
+        viewport.Input = (_, _, _, _) => forwarded++;
+        viewport.PointerMove = (_, _) => forwarded++;
+        var window = new Window { Owner = owner, ShowActivated = false, Width = 400, Height = 260, Content = viewport };
+        try
+        {
+            window.Show();
+            window.UpdateLayout();
+            if (viewport.Handle == 0 || GetForegroundWindow() == new WindowInteropHelper(window).Handle) return false;
+            nint point = (100 << 16) | 100;
+            foreach (int message in new[] { 0x200, 0x201, 0x202, 0x20A })
+                SendMessage(viewport.Handle, message, 0, point);
+            return forwarded == 0;
+        }
+        finally { window.Close(); }
+    }
+
     public static void Run(Application app)
     {
         nint previousForeground = GetForegroundWindow(); int checks = 0;

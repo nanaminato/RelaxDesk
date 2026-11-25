@@ -162,6 +162,11 @@ public sealed class NativeVideoHost : HwndHost
         if (message == 0x215) { pointerButtons.Clear();InputCaptureLost?.Invoke(); }
         if (message is 0x5 or 0xF or 0x18 or 0x2E0) RenderInvalidated?.Invoke();
         if(RichInput is not null&&RouteRichPointer(hwnd,message,wParam,lParam)){handled=true;return message is 0x20B or 0x20C or 0x20D?1:0;}
+        if (message is >= MouseMove and <= 0x20E && GetForegroundWindow() != GetAncestor(hwnd, 2))
+        {
+            handled = true;
+            return 0;
+        }
         if (message == MouseMove)
         {
             SendLegacyPosition(hwnd,lParam,GetCapture()==hwnd,standaloneMove:true);
