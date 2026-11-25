@@ -285,6 +285,11 @@ run.
 The probe now records each frame's transport when its read completes, before
 decode and submission. A repeat run submitted 103 TCP and 108 UDP frames with
 no full-frame readback and measured 4.687 seconds between the first submissions.
+Use `-Modes desktop-gpu-auto-recovery` with `scripts/benchmark-renderers.ps1`
+to collect resource samples in the same run. The renderer summarizer accepts
+the same mode and includes the first-TCP-to-first-UDP submission interval.
+A collected run reported 4.705 seconds, seven resource samples per role and
+VideoEncode/VideoDecode engine peaks of 8% and 2% respectively.
 
 SDR BGRA capture can copy small dirty rectangles and move destinations from
 the current DXGI surface into the retained GPU texture. The WARP contract

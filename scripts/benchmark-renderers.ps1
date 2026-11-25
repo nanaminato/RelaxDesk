@@ -1,5 +1,5 @@
 param([int]$Frames = 120, [string]$OutputDirectory = 'benchmarks/latest-renderers', [string]$PackageRoot = '', [string]$ArtifactsDirectory = '',
-      [ValidateSet('deflate','software','hardware-cpu','gpu','desktop-gpu-udp','cpu-idle-long')][string[]]$Modes = @('deflate','software','hardware-cpu','gpu'))
+      [ValidateSet('deflate','software','hardware-cpu','gpu','desktop-gpu-udp','desktop-gpu-auto-recovery','cpu-idle-long')][string[]]$Modes = @('deflate','software','hardware-cpu','gpu'))
 $ErrorActionPreference = 'Stop'
 Import-Module "$PSScriptRoot/RelaxDesk.Benchmark.psm1" -Force
 if ($ArtifactsDirectory -and $PackageRoot) { throw 'Choose an artifacts directory or a package root' }
@@ -28,7 +28,7 @@ Write-BenchmarkManifest -Output $output -Frames $Frames -Modes $Modes -Applicati
 foreach ($mode in $Modes) {
     $directory = Join-Path $output $mode
     [IO.Directory]::CreateDirectory($directory) | Out-Null
-    $timedSample = $mode -in @('desktop-gpu-udp','cpu-idle-long')
+    $timedSample = $mode -in @('desktop-gpu-udp','desktop-gpu-auto-recovery','cpu-idle-long')
     $arguments = if ($timedSample) { @($smokeDll,$hostDll,'--wpf',$viewerDll,$mode) }
         else { @($smokeDll,$hostDll,'--wpf-budget',$viewerDll,$mode,"$Frames") }
     $executable = 'dotnet'

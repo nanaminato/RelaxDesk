@@ -12,7 +12,7 @@ internal static class WpfSmoke
         bool desktopRecovery = mode == "desktop-gpu-auto-recovery";
         bool autoRecovery = mode == "auto-recovery-cpu" || desktopRecovery;
         bool desktopSample = mode is "desktop-gpu-sample" or "desktop-gpu-udp";
-        if (fixedBudget && (desktopSample || mode == "cpu-idle-long"))
+        if (fixedBudget && (desktopSample || autoRecovery || mode == "cpu-idle-long"))
             throw new ArgumentException($"Use --wpf for timed mode '{mode}'; --wpf-budget stops at a fixed frame count.");
         string backend = mode == "approval-fallback-cpu" ? "test-runtime-fallback" : mode is "deflate" or "gpu-fallback" ? "test-deflate" : mode == "software" ? "test-software" : (mode == "desktop-gpu" || desktopSample || desktopRecovery) ? "dxgi" : mode == "gpu-resolution" ? "test-resolution" : mode is "gpu-idle" or "cpu-idle-long" ? "test-idle" : "test-hardware";
         bool gpu = mode.StartsWith("gpu", StringComparison.Ordinal) || mode == "desktop-gpu" || desktopSample || desktopRecovery;

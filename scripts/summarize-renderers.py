@@ -8,7 +8,7 @@ import argparse
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("root", nargs="?", default="benchmarks/latest-renderers")
 fixed_frame_modes = ("deflate", "software", "hardware-cpu", "gpu")
-timed_modes = ("desktop-gpu-udp", "cpu-idle-long")
+timed_modes = ("desktop-gpu-udp", "desktop-gpu-auto-recovery", "cpu-idle-long")
 parser.add_argument("--modes", nargs="+", choices=fixed_frame_modes + timed_modes, default=fixed_frame_modes)
 arguments = parser.parse_args()
 if len(set(arguments.modes)) != len(arguments.modes):
@@ -62,6 +62,9 @@ for mode in arguments.modes:
             "sampling_errors": list({row["GpuError"] for row in own if row.get("GpuError")}),
         }
     result[mode] = {"viewer": values("PASS WPF"), "host": values("media "), "encoder": values("encode_stages "), "resources": resources, "terminal_result": "PASS_EXIT_0" if completion else "LEGACY_EXIT_NOT_RECORDED"}
+    if mode == "desktop-gpu-auto-recovery":
+        timing = values("auto_recovery_first_tcp_to_first_udp_frame_ms=")
+        result[mode]["viewer"].update(timing)
 
 destination = root / "summary.json"
 destination.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

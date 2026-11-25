@@ -16,6 +16,9 @@ class SummaryContracts(unittest.TestCase):
             folder = root / mode
             folder.mkdir()
             (folder / "video.txt").write_text("PASS WPF fps=30 decode_p50_ms=1 decode_p95_ms=2 full_frame_readback_bytes=0 dropped=0 received_frames=60\nmedia encode_p50_ms=1 encode_p95_ms=2\nencode_stages frames=60\n", encoding="utf-8")
+            if mode == "desktop-gpu-auto-recovery":
+                with (folder / "video.txt").open("a", encoding="utf-8") as log:
+                    log.write("auto_recovery_first_tcp_to_first_udp_frame_ms=4000\n")
             (folder / "processes.json").write_text(json.dumps(processes), encoding="utf-8")
             (folder / "resources.json").write_text(json.dumps(samples), encoding="utf-8")
             if completion is not None:
@@ -26,10 +29,13 @@ class SummaryContracts(unittest.TestCase):
                 self.assertFalse((root / "summary.json").exists())
                 return None
             self.assertEqual(result.returncode, 0, result.stderr)
-            return json.loads((root / "summary.json").read_text())[mode]["resources"]
+            summary = json.loads((root / "summary.json").read_text())[mode]
+            if mode == "desktop-gpu-auto-recovery":
+                self.assertEqual(summary["viewer"]["auto_recovery_first_tcp_to_first_udp_frame_ms"], 4000)
+            return summary["resources"]
 
     def test_timed_modes_use_the_same_evidence_checks(self):
-        for mode in ("desktop-gpu-udp", "cpu-idle-long"):
+        for mode in ("desktop-gpu-udp", "desktop-gpu-auto-recovery", "cpu-idle-long"):
             with self.subTest(mode=mode):
                 processes = [{"Role": "host", "ProcessId": 1}]
                 self.assertEqual(self.collect(processes, [], mode=mode)["host"]["samples"], 0)
