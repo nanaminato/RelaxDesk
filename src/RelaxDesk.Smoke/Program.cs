@@ -47,6 +47,13 @@ if (args is ["--file-root-contracts", var fileFixture]) { await RelaxDesk.Window
 if (args is [var fileHost, var fileMode, var fileOutput] && fileMode is "--file-transfer" or "--file-denied") { await FileTransferSmoke.Run(fileHost, fileOutput, fileMode=="--file-transfer"); return; }
 if (args is [var udpFileHost, "--file-transfer-udp", var udpFileOutput]) { await FileTransferSmoke.Run(udpFileHost, udpFileOutput, udp: true); return; }
 if (args is [var autoFileHost, "--file-transfer-auto", var autoFileOutput]) { await FileTransferSmoke.Run(autoFileHost, autoFileOutput, autoRecovery: true); return; }
+if (args is [var soakFileHost, "--file-transfer-auto-soak", var soakFileOutput, var soakRounds])
+{
+    if (!int.TryParse(soakRounds, out int rounds) || rounds is < 2 or > 8)
+        throw new ArgumentException("Choose 2–8 mixed-load download rounds");
+    await FileTransferSmoke.Run(soakFileHost, soakFileOutput, autoRecovery: true, downloadRounds: rounds);
+    return;
+}
 if(args is [var dataHost,"--reject-data",var dataFixtures]){string root=Path.Combine(Path.GetFullPath(dataFixtures),"rejected-data-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);await SecuritySmoke.Run(dataHost,"--reject-data",root);return;}
 if (args is [var clipboardHost, var clipboardMode] && clipboardMode is "--clipboard-text" or "--clipboard-denied" or "--clipboard-unnegotiated" or "--clipboard-failure") { await ClipboardSmoke.Run(clipboardHost, clipboardMode); return; }
 if (args is [var quicHost, "--quic-production"]) { await ProductionQuicSmoke.Run(quicHost); return; }

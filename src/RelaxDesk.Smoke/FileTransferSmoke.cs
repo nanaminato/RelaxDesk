@@ -8,7 +8,7 @@ using RelaxDesk.Windows;
 
 internal static class FileTransferSmoke
 {
-    public static async Task Run(string hostPath, string outputDirectory, bool grant = true, bool udp = false, bool autoRecovery = false)
+    public static async Task Run(string hostPath, string outputDirectory, bool grant = true, bool udp = false, bool autoRecovery = false, int downloadRounds = 1)
     {
         string fixture = Path.Combine(Path.GetFullPath(outputDirectory), "tls-" + Guid.NewGuid().ToString("N"));
         string hostRoot = Path.Combine(fixture, "host"), viewerRoot = Path.Combine(fixture, "viewer");
@@ -17,7 +17,8 @@ internal static class FileTransferSmoke
         var reservation = new TcpListener(IPAddress.Loopback, 0); reservation.Start(); int port = ((IPEndPoint)reservation.LocalEndpoint).Port; reservation.Stop();
         bool exerciseAudio = autoRecovery && grant;
         using var host = Process.Start(ChildProcess.Create(hostPath, "--file-root", hostRoot, "127.0.0.1", port.ToString(), exerciseAudio ? "test-audio" : "test-hardware")) ?? throw new IOException("Host launch failed");
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(autoRecovery ? 90 : 45));
+        // Each extra round shares the shaped link with independently paced audio and video.
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(autoRecovery ? 90 + 110 * (downloadRounds - 1) : 45));
         UdpLossRelay? relay = null;
         int quicAttempts = 0;
         const int SharedDownstreamBytesPerSecond = 512 * 1024;
@@ -179,9 +180,24 @@ internal static class FileTransferSmoke
                     Console.WriteLine($"PASS shared downstream cap={SharedDownstreamBytesPerSecond} B/s: active download video_transport={client.Video.TransportName}, video_forwarded_bytes={videoBytes}, file_tls_bytes={fileBytes}");
                     if (exerciseAudio) Console.WriteLine($"PASS shared downstream included TLS audio: audio_tls_bytes={audioBytes}");
                 }
-                if (!SHA256.HashData(File.ReadAllBytes(Path.Combine(viewerRoot, "下载/内容.bin"))).SequenceEqual(SHA256.HashData(payload))) throw new IOException("Transferred file hash mismatch");
+                byte[] expectedHash = SHA256.HashData(payload);
+                if (!SHA256.HashData(File.ReadAllBytes(Path.Combine(viewerRoot, "下载/内容.bin"))).SequenceEqual(expectedHash)) throw new IOException("Transferred file hash mismatch");
                 if (autoRecovery) Console.WriteLine("PASS Auto switched from TCP to UDP during the same download, file SHA-256 verified and TLS control kept alive");
                 if (exerciseAudio) Console.WriteLine("PASS independently approved TLS audio advanced during the download and TCP-to-UDP video recovery");
+                for (int round = 2; round <= downloadRounds; round++)
+                {
+                    string destination = $"下载/round-{round}.bin";
+                    int previousUdp = Volatile.Read(ref udpDecoded), previousControl = rtt.Count;
+                    long previousAudio = Interlocked.Read(ref audioWhileVideoOnUdp);
+                    await files.Download("中文/日本語/data.bin", length => local.CreateUpload(destination, length, false), timeout.Token);
+                    if (!SHA256.HashData(File.ReadAllBytes(Path.Combine(viewerRoot, destination))).SequenceEqual(expectedHash) ||
+                        Volatile.Read(ref udpDecoded) <= previousUdp || rtt.Count <= previousControl ||
+                        Interlocked.Read(ref audioWhileVideoOnUdp) <= previousAudio || client.Video.TransportName != "UDP")
+                        throw new IOException($"Mixed-load round {round} lost file integrity or media/control progress");
+                    Console.WriteLine($"PASS mixed-load download round {round}/{downloadRounds}: file SHA-256, UDP decode, TLS audio and control advanced");
+                }
+                if (downloadRounds > 1)
+                    Console.WriteLine($"PASS {downloadRounds} mixed-load downloads on one session in {downloadClock.Elapsed.TotalSeconds:F1} seconds");
                 using (var empty = new MemoryStream()) await files.Upload("empty.txt", empty, false, timeout.Token);
                 await files.Download("empty.txt", length=>local.CreateUpload("empty.txt",length,false), timeout.Token);
                 if (new FileInfo(Path.Combine(viewerRoot,"empty.txt")).Length!=0)throw new IOException("Empty file transfer failed");

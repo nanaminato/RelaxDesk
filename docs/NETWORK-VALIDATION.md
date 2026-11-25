@@ -35,3 +35,9 @@ For the Windows source regression with synthetic media and no foreground input, 
 The script builds the native library and passes that build's path to MSBuild. Use `-SkipBuild` only with matching managed and native output. During validation of `6396f11`, the existing default native output produced `Host did not offer UDP media`. Rebuilding the managed outputs against the QUIC-capable native library used for the role-package validation resolved the failure. The rerun exited 0, observed three reordered UDP pairs with 8/20 ms delay pulses under the 512 KiB/s cap, and verified a file's SHA-256 after a TCP-to-UDP transition on the original TLS control connection. The CPU-rendered WPF recovery case received 101 TCP frames and 108 UDP frames with zero live native resources after cleanup.
 
 Dual-PC Home LAN, physical NIC disconnect/reconnect, long-duration mixed I/O, physical input-to-photon and matched MSTSC measurements remain separate acceptance items. [Physical acceptance](PHYSICAL-ACCEPTANCE.md)
+
+For a multi-round loopback run outside the default suite, use
+`dotnet <Smoke.dll> <Host.dll> --file-transfer-auto-soak <fixtures> 3`.
+The optional soak command accepts two to eight rounds. Each round downloads
+about 5 MiB on the same session, checks SHA-256 and requires UDP decode, TLS
+audio and TLS control to advance before the round completes.
