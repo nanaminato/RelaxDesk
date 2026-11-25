@@ -130,6 +130,17 @@ public sealed partial class ViewerWindow
                 if (probe.ExitCode != 0)
                     throw new IOException($"Elevated probe did not receive a balanced input press and release (probe exit {probe.ExitCode})");
             }
+            async Task CheckOrdinaryProbe(Process probe, string mode)
+            {
+                Console.WriteLine(physicalMouse ? "READY Move the pointer onto the elevated probe button without clicking." : "READY Focus the RelaxDesk administrator input probe without pressing F8.");
+                await Until(() => probe.HasExited || connection!.IsCompleted || viewer.displaySession?.Ready == true && ProbeReady());
+                SendProbeInput();
+                Console.WriteLine($"{mode} sent bounded input to the foreground test window");
+                await Task.Delay(1000, ct);
+                if (!ProbeForeground() || connection!.IsCompleted)
+                    throw new IOException($"The {mode} input check did not retain the foreground probe and connection");
+                Console.WriteLine($"PASS the elevated probe stayed open after {mode} sent input");
+            }
             try
             {
                 if (physicalKey || physicalMouse)
@@ -142,25 +153,35 @@ public sealed partial class ViewerWindow
                     keyProbe = await Task.Run(() => Process.Start(launchProbe), ct) ?? throw new IOException("Elevated input probe did not start");
                 }
                 await Event("listening");
+                if (physicalKey && keyProbe is not null)
+                {
+                    viewer.requestedMode.SelectedIndex = 1;
+                    connection = viewer.ConnectVideo();
+                    var guest = await Event("approval-request");
+                    string? guestId = guest.GetProperty("sessionId").GetString();
+                    if (guestId is null || guest.GetProperty("mode").GetString() != "Guest")
+                        throw new IOException("Host did not report Guest approval");
+                    await Send($"APPROVE_INPUT {guestId}");
+                    await Until(() => viewer.activeMode == SessionMode.Guest && viewer.inputAuthorized && viewer.smokeFrames > 0);
+                    if (viewer.sessionToolbar?.AdminModeAction.Visibility != Visibility.Collapsed)
+                        throw new IOException("Guest offered an administrator mode action");
+                    await CheckOrdinaryProbe(keyProbe, "Guest");
+                    viewer.StopConnection();
+                    await connection.WaitAsync(ct);
+                    await Event("session-ended", unexpected: "admin-ready");
+                    viewer.requestedMode.SelectedIndex = 0;
+                }
+                int beforeWork = Volatile.Read(ref viewer.smokeFrames);
                 connection = viewer.ConnectVideo();
                 var initial = await Event("approval-request");
                 if (initial.GetProperty("mode").GetString() != "Work") throw new IOException("Default Viewer did not request Work");
                 string? id = initial.GetProperty("sessionId").GetString();
                 await Send($"APPROVE {id}");
-                await Until(() => viewer.smokeFrames > 0);
+                await Until(() => Volatile.Read(ref viewer.smokeFrames) > beforeWork);
                 var menu = viewer.sessionToolbar?.AdminModeAction ?? throw new IOException("Administrator action missing");
                 if (menu.Visibility != Visibility.Visible || !viewer.inputAuthorized) throw new IOException("Work controls are incorrect");
                 if (keyProbe is not null)
-                {
-                    Console.WriteLine(physicalMouse ? "READY Move the pointer onto the elevated probe button without clicking." : "READY Focus the RelaxDesk administrator input probe without pressing F8.");
-                    await Until(() => keyProbe.HasExited || connection.IsCompleted || viewer.displaySession?.Ready == true && ProbeReady());
-                    SendProbeInput();
-                    Console.WriteLine("Work sent bounded input to the foreground test window");
-                    await Task.Delay(1000, ct);
-                    if (!ProbeForeground() || connection.IsCompleted)
-                        throw new IOException("The Work input check did not retain the foreground probe and connection");
-                    Console.WriteLine("PASS the elevated probe stayed open after Work sent input");
-                }
+                    await CheckOrdinaryProbe(keyProbe, "Work");
                 if (activate)
                 {
                     string? prior = null;
