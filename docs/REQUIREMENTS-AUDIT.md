@@ -4,7 +4,7 @@
 
 The table below distinguishes current evidence from the historical unified
 delivery audit that follows. The latest complete source run uses commit
-`f4faf54` on `codex/dxgi-media-pipeline`. The candidate ZIP check uses `ed21ca0`.
+`f4faf54` on `codex/dxgi-media-pipeline`. The candidate ZIP check uses `58514fc`.
 
 | Area | Verified evidence | Open items |
 | --- | --- | --- |
@@ -12,7 +12,13 @@ delivery audit that follows. The latest complete source run uses commit
 | Windows privilege | Ordinary tokens reject elevated-worker startup. Isolated tests cover protected deployment ACLs, identity, lifetime and rollback. Simulated desktop transitions distinguish lock, session switch and unreadable desktop. | The existing machine Broker directory is unreadable to the ordinary owner session. Actual repair, UAC consent and cancellation, lock/unlock and user switching are pending. Secure-desktop remote input, remote sign-in and unattended Admin authorization are unimplemented. |
 | Transport | Production QUIC loopback covers bounded shaping, injected drops and reordering, adaptive bitrate, TCP fallback and UDP recovery with continuous TLS. Historical TCP peers interoperate in both directions. | Dual-PC Home LAN, adapter changes and long-duration mixed workloads. Selective retransmission and FEC are evaluated without deployment. |
 | Media and office resources | Independent EXEs exercised real DXGI, hardware H.264, QUIC and D3D11 on Windows 11 Home. Single-machine Auto recovery took 4.70 s between first TCP and first UDP frames. File resume verified both directions above 1 GiB and synthetic audio tests verified revocation and failure isolation. | True static desktop, physical input-to-photon, visible/audio acceptance, matched MSTSC comparison and Windows 10 Home validation. |
-| Delivery | `build/office-f4faf54-results/result.json` passes 92 source cases, including desktop pause expiry, protected ACL contracts, broker restart and concurrent audio, video and file transfer during Auto recovery. `build/roles-ed21ca0-verify/result.json` passes 54 candidate ZIP assertions with machine preflight skipped. `build/installer-check-ed21ca0/compile-check.json` covers both Inno Setup templates in check-only mode. | Final independent EXE installers and current-user install, update and uninstall on a clean test account. The current account already has a Host installation. |
+| Delivery | `build/office-f4faf54-results/result.json` passes 92 source cases. `build/roles-58514fc-validation/result.json` passes 60 assertions against the independent candidate ZIPs with machine preflight skipped. `build/installer-58514fc-compile-only/compile-check.json` verifies both Inno Setup recipes against those same payloads. | Final independent EXE installers and current-user install, update and uninstall on a clean test account. The current account already has a Host installation. |
+
+The `58514fc` candidate EXEs also passed the 2560 × 1440 console DXGI and
+D3D11 Auto recovery probe. The Viewer submitted 102 TCP frames and 108 UDP
+frames with zero full-frame readbacks and zero remaining native resources.
+The first TCP-to-first UDP submission interval was 4.692 seconds. Raw output
+is in `build/roles-58514fc-desktop-auto.log`.
 
 At `8c0cfe9`, `scripts/test-user-setup.ps1` passed 82 checks using real files, an isolated HKCU key and fixture shortcut directories. Its payload EXEs are placeholder files. The 46 actual Inno Setup lifecycle checks documented in [EXE installers](EXE-INSTALLERS.md#历史交付及证据) apply to the earlier `7e51e95` installer release.
 
