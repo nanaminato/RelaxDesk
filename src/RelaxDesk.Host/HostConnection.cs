@@ -90,8 +90,11 @@ internal static class HostConnection
         if (shell is not null) ShellBridge.Emit("approved", sessionId: shell.Id);
         if (hello.Kind is "hello-v2" or "request-v2")
         {
+            var availableFeatures = administrator
+                ? SessionCapabilities.ForFullControl(requestedFeatures, selectedFileRoot is not null)
+                : SessionCapabilities.Grant(requestedFeatures, AudioConsent.Base(approval) is "APPROVE_CLIPBOARD" or "APPROVE_ALL", selectedFileRoot is not null && AudioConsent.Base(approval) is "APPROVE_FILES" or "APPROVE_ALL", AudioConsent.AllowsAudio(approval));
             await VideoHostSession.Run(listener, client, tls, identity, hello, backend, stop,
-                SessionCapabilities.Grant(requestedFeatures, AudioConsent.Base(approval) is "APPROVE_CLIPBOARD" or "APPROVE_ALL", selectedFileRoot is not null && AudioConsent.Base(approval) is "APPROVE_FILES" or "APPROVE_ALL",AudioConsent.AllowsAudio(approval)), shell?.ClipboardRevoked ?? default, selectedFileRoot, shell?.FilesRevoked ?? default,fileResumes,selectedDisplay,shell?.AudioRevoked??default,access,shell?.InputRevoked??default,elevated,shell?.AdminInputRevoked??default,shell?.Id);
+                availableFeatures, shell?.ClipboardRevoked ?? default, selectedFileRoot, shell?.FilesRevoked ?? default,fileResumes,selectedDisplay,shell?.AudioRevoked??default,access,shell?.InputRevoked??default,elevated,shell?.AdminInputRevoked??default,shell?.Id);
             return;
         }
         listener.Stop();

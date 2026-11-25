@@ -23,6 +23,8 @@ public static class SessionCapabilities
     }
     public static string[] Grant(string[]? requested, bool allowClipboard, bool allowFiles = false,bool allowAudio=false) => Validate(requested)
         .Where(feature => IsClipboard(feature) && allowClipboard&&(feature!=ClipboardFiles||allowFiles) || feature == FileTransfer && allowFiles||feature==SystemAudio&&allowAudio).ToArray();
+    public static string[] ForFullControl(string[]? offered, bool hasFileDirectory) =>
+        Validate(offered).Where(feature => hasFileDirectory || feature is not (FileTransfer or ClipboardFiles)).ToArray();
     public static string[] ValidateGrant(string[]? requested, string[]? granted)
     {
         var result = Validate(granted); var offered = Validate(requested);

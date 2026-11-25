@@ -35,6 +35,7 @@ internal sealed partial class HostWindow:Window
     string? desktopNotice;
     bool hostTokenDenied;
     bool adminDeploymentUnavailable;
+    string[] fullControlFeatures = [];
     const string AdminDeploymentNotice = "管理员输入代理不可用。访客和工作模式仍可使用。要修复代理，请结束共享，在「系统服务」的「更多设置」中选择「更新／修复并应用设置（管理员）」。";
     const string DesktopUnavailableNotice="不支持当前会话或安全桌面控制。请回到原用户的普通桌面后重新连接并授权；Host 继续等待连接。";
     string? displayedSessionId;
@@ -104,7 +105,7 @@ internal sealed partial class HostWindow:Window
         finally{UpdateServiceControls();}
     }
     internal async Task Decide(bool accepted){string? id=displayedSessionId;if(id is null)return;allow.IsEnabled=deny.IsEnabled=false;
-        bool clipboard=accepted&&clipboardPermission.IsChecked==true;bool files=accepted&&filesPermission.IsChecked==true&&selectedFileRoot is not null;bool audio=accepted&&audioPermission.IsChecked==true;var remember=CaptureWorkTrust(accepted,clipboard,files,audio);activeInput=accepted&&(activeMode is "Work" or "Admin"||guestInputPermission.IsChecked==true);await Host.Decide(accepted,clipboard,files,id,audio,activeMode=="Guest"&&activeInput);if(displayedSessionId!=id)return;revokeGuestInput.Visibility=activeInput&&(activeMode=="Guest"||workInputRevoke)?Visibility.Visible:Visibility.Collapsed;revokeAudio.Visibility=audio?Visibility.Visible:Visibility.Collapsed;revokeClipboard.Visibility=clipboard?Visibility.Visible:Visibility.Collapsed;revokeFiles.Visibility=files?Visibility.Visible:Visibility.Collapsed;request.Visibility=Visibility.Collapsed;if(remember is not null)await SaveWorkTrust(remember);}
+        bool legacyFeatures=accepted&&activeMode!="Admin";bool clipboard=legacyFeatures&&clipboardPermission.IsChecked==true;bool files=legacyFeatures&&filesPermission.IsChecked==true&&selectedFileRoot is not null;bool audio=legacyFeatures&&audioPermission.IsChecked==true;var remember=CaptureWorkTrust(accepted,clipboard,files,audio);activeInput=accepted&&(activeMode is "Work" or "Admin"||guestInputPermission.IsChecked==true);await Host.Decide(accepted,clipboard,files,id,audio,activeMode=="Guest"&&activeInput);if(displayedSessionId!=id)return;revokeGuestInput.Visibility=activeInput&&(activeMode=="Guest"||workInputRevoke)?Visibility.Visible:Visibility.Collapsed;var enabled = accepted && activeMode == "Admin" ? fullControlFeatures : [];revokeAudio.Visibility=audio||enabled.Contains(SessionCapabilities.SystemAudio)?Visibility.Visible:Visibility.Collapsed;revokeClipboard.Visibility=clipboard||enabled.Any(SessionCapabilities.IsClipboard)?Visibility.Visible:Visibility.Collapsed;revokeFiles.Visibility=files||enabled.Contains(SessionCapabilities.FileTransfer)?Visibility.Visible:Visibility.Collapsed;request.Visibility=Visibility.Collapsed;if(remember is not null)await SaveWorkTrust(remember);}
     internal async Task StopSharing(){CancelRecovery();stop.IsEnabled=false;try{await Host.Stop();}catch(Exception e){detail.Text=e.Message;}}
     internal Task DisconnectSession()=>displayedSessionId is {} id?Host.Disconnect(id):Task.CompletedTask;
     void Changed(HostEvent change)
@@ -138,7 +139,20 @@ internal sealed partial class HostWindow:Window
                 guestInputPermission.IsChecked = false;
                 guestInputPermission.Visibility = guest ? Visibility.Visible : Visibility.Collapsed;
                 consentAccess.Text = activeMode == "Admin" ? "允许后，对方可控制此桌面并操作管理员权限窗口。请核对设备指纹后再批准。" : guest ? "允许后共享画面。可单独允许键鼠操作。" : "允许后共享画面，并允许普通桌面的键鼠操作。";
-                request.Visibility=Visibility.Visible;allow.IsEnabled=deny.IsEnabled=true;clipboardPermission.IsChecked=false;clipboardPermission.Content=new TextBlock{Text="允许双向剪贴板："+SessionCapabilities.ClipboardDescription(change.Features??[])+"（读取/替换两端新复制的内容）",TextWrapping=TextWrapping.Wrap};clipboardPermission.Visibility=(change.Features??[]).Any(SessionCapabilities.IsClipboard)?Visibility.Visible:Visibility.Collapsed;ShowFileRequest((change.Features??[]).Contains(SessionCapabilities.FileTransfer));ShowAudioRequest(change.Features);ApplyWorkTrust(change);state.Text="等待你的授权";detail.Text="还未共享桌面或开放输入。";break;
+                request.Visibility=Visibility.Visible;allow.IsEnabled=deny.IsEnabled=true;clipboardPermission.IsChecked=false;clipboardPermission.Content=new TextBlock{Text="允许双向剪贴板："+SessionCapabilities.ClipboardDescription(change.Features??[])+"（读取/替换两端新复制的内容）",TextWrapping=TextWrapping.Wrap};clipboardPermission.Visibility=(change.Features??[]).Any(SessionCapabilities.IsClipboard)?Visibility.Visible:Visibility.Collapsed;ShowFileRequest((change.Features??[]).Contains(SessionCapabilities.FileTransfer));ShowAudioRequest(change.Features);ApplyWorkTrust(change);
+                if (activeMode == "Admin")
+                {
+                    fullControlFeatures = SessionCapabilities.ForFullControl(change.Features, selectedFileRoot is not null);
+                    clipboardPermission.Visibility = filesPermission.Visibility = audioPermission.Visibility = Visibility.Collapsed;
+                    filesScopeLabel.Visibility = Visibility.Collapsed;
+                    if (fullControlFeatures.Any(SessionCapabilities.IsClipboard))
+                        consentAccess.Text += "\n双向剪贴板：" + SessionCapabilities.ClipboardDescription(fullControlFeatures);
+                    if (fullControlFeatures.Contains(SessionCapabilities.FileTransfer))
+                        consentAccess.Text += "\n文件传输目录：" + selectedFileRoot;
+                    if (fullControlFeatures.Contains(SessionCapabilities.SystemAudio))
+                        consentAccess.Text += "\n共享系统声音。";
+                }
+                state.Text="等待你的授权";detail.Text="还未共享桌面或开放输入。";break;
             case "admin-starting":
                 state.Text = activeMode == "Work" ? "正在共享 · Work" : "正在准备管理员输入";
                 detail.Text = "正在检查并启动管理员输入代理。如果 Windows 显示 UAC 提示，请在本机确认。";

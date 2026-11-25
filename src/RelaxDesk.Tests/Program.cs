@@ -32,6 +32,12 @@ Check(guest.Allows(SessionCapabilities.ClipboardText));
 Check(!guest.AcceptControl(new Packet("ping-v2", 1, Mode: SessionMode.Admin, InputAllowed: true)));
 Check(guest.AcceptControl(new Packet("ping-v2", 1)));
 var revokedInput = new AccessGate();
+string[] offeredFullControl = [SessionCapabilities.ClipboardText, SessionCapabilities.ClipboardFiles,
+    SessionCapabilities.FileTransfer, SessionCapabilities.SystemAudio];
+Check(SessionCapabilities.ForFullControl(offeredFullControl, true).SequenceEqual(offeredFullControl));
+Check(SessionCapabilities.ForFullControl(offeredFullControl, false).SequenceEqual(
+    new[] { SessionCapabilities.ClipboardText, SessionCapabilities.SystemAudio }));
+Check(SessionCapabilities.ForFullControl(null, true).Length == 0);
 revokedInput.Approve();
 Check(revokedInput.TryExecuteInput(input, () => { }));
 revokedInput.RevokeInput();
