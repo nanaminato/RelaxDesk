@@ -15,6 +15,13 @@ The pre-QUIC Viewer from `e9c3ea3` passed `Smoke <Host.dll> --wpf <Viewer.dll> h
 
 In the reverse direction, Viewer `6150476` passed `Viewer --statistics-contracts <Host.dll> <output> legacy-auto` against Host `e9c3ea3`. Auto selected TCP/TLS and the WPF panel reported that the legacy Host did not offer UDP. The test observed live frame, byte and control RTT samples and verified cleanup on disconnect.
 
+The `58514fc` candidate role EXEs repeated both directions against the
+pre-QUIC `e9c3ea3` source build. The old Viewer submitted 60 H.264 frames
+from the new Host over TCP/TLS. The new Auto Viewer used TCP/TLS with the
+old Host and displayed the missing UDP offer in its statistics. The newer
+`ed21ca0` role EXEs also passed bidirectional TCP/TLS sessions against the
+`58514fc` candidates. These runs used synthetic sources and local loopback.
+
 For UDP diagnostics, run the built Host with `--deployment-info` to record the .NET runtime directory and recognized QUIC provider. Use a current `RelaxDesk.Native.dll` from the native build and pass its full path via `-p:RelaxDeskNativePath=...` when building the solution. If the machine's runtime cannot run the production UDP cases, repeat those cases with the matching native library and MsQuic provider in an isolated runtime. Put that runtime first on `PATH` for the test process so its child `dotnet` processes use it too. Keep the original report. The core suite also exercises `System.Net.Quic` and can have different provider requirements from the production DATAGRAM transport.
 
 To run both sets of cases in one report, start with the isolated runtime first on `PATH` and pass the full path to the system `dotnet.exe` for Core. The choice applies only to the `office-core-tls` case and is recorded in `office-suite.json`.
