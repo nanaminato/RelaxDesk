@@ -105,9 +105,26 @@ public sealed partial class ViewerWindow
                         if (viewer.inputAuthorized || viewer.sequence != pendingSequence || viewer.richHeld.Count != 0)
                             throw new IOException("Input entered the Viewer queue while local administrator approval was pending");
                         await Send($"ALLOW_ADMIN_INPUT {id} {requestId}");
-                        if (cancelElevation)
+                        if (realWorker)
                         {
                             await Event("admin-starting", unexpected: "admin-denied");
+                            bool IsPaused() => viewer.Toolbar?.EndpointText.StartsWith("Work · Host 正在准备管理员输入 · ", StringComparison.Ordinal) == true;
+                            await Until(IsPaused);
+                            // A frame already queued before the pause can still be rendered.
+                            await Task.Delay(250, ct);
+                            int pausedFrames = Volatile.Read(ref viewer.smokeFrames);
+                            long pausedSequence = viewer.sequence;
+                            viewer.SendPointerMove(200, 100);
+                            viewer.SendRich(new("key", VirtualKey: 0x77));
+                            if (viewer.inputAuthorized || viewer.sequence != pausedSequence || viewer.richHeld.Count != 0)
+                                throw new IOException("Input entered the queue while the administrator desktop was paused");
+                            await Task.Delay(500, ct);
+                            if (!IsPaused() || connection.IsCompleted || Volatile.Read(ref viewer.smokeFrames) != pausedFrames)
+                                throw new IOException("Expected a sustained pause with no new video. Leave Windows UAC open for at least two seconds.");
+                            Console.WriteLine("PASS administrator desktop pause suppressed new video and Viewer input while TLS remained open");
+                        }
+                        if (cancelElevation)
+                        {
                             await Event("admin-denied", unexpected: "admin-ready");
                             if (!observedUacCancellation)
                                 throw new IOException("Host denied the request without observing Windows UAC cancellation");
