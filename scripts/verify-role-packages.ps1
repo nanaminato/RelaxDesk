@@ -133,6 +133,8 @@ try {
         $quicSession.Contains('PASS healthy static UDP video stayed connected through the datagram silence interval') -and
         $quicSession.Contains('PASS requested static desktop refresh delivered a decodable key frame over the same UDP path')) 'Packaged Host QUIC, fallback, or static refresh evidence missing'
     Confirm ($quicSession -match '(?m)^PASS shaped UDP 524288 B/s cap, 8/20 ms delay pulses, shaped_packets=[1-9][0-9]*, reordered_pairs=[1-9][0-9]*, QUIC_reordered=[1-9][0-9]*, advancing H\.264 and jitter statistics') 'Packaged Host shaped UDP delay, reordering or jitter evidence missing'
+    Confirm ($quicSession -match '(?m)^PASS static UDP four-second window: video_fragments=0, heartbeats=[1-9][0-9]*, heartbeat_payload_bytes=[1-9][0-9]*' -and
+        $quicSession.Contains('PASS static TCP fallback stayed idle for one second and refreshed with a decodable key frame')) 'Packaged Host static media or fallback evidence missing'
     Confirm ($quicSession -match '(?m)^PASS datagram loss relay dropped=[1-9][0-9]*, host_estimated_lost=[1-9][0-9]*, sent=[1-9][0-9]*' -and
         $quicSession.Contains('PASS loss relay drove the running H.264 encoder from 8 to 6 Mbit/s target')) 'Packaged Host measured UDP loss or bitrate adaptation evidence missing'
     $autoFiles = Invoke-App 'packaged-auto-files' $SmokeApplication @($hostExe, '--file-transfer-auto', (Join-Path $output 'auto-file-fixtures')) 150
@@ -150,6 +152,7 @@ try {
     foreach ($reason in @('WindowsSessionUnavailable','WindowsLocked','WindowsSessionChanged','WindowsDesktopUnavailable')) {
         Confirm ($sessionEnd.Contains("PASS actual Host/TLS synthetic $reason")) "Packaged Host session termination evidence missing for $reason"
     }
+    Confirm ($sessionEnd.Contains('PASS actual Host/TLS synthetic WindowsDesktopUnavailable after desktop pause expiry')) 'Packaged Host desktop pause expiry evidence missing'
     $adminLifecycle = Invoke-App 'packaged-admin-lifecycle' $viewerExe @('--admin-lifecycle-contracts',$hostExe)
     Confirm ($adminLifecycle.Contains('PASS WPF Viewer twice entered Admin and routed input to protected non-injecting pipe workers')) 'Packaged Admin lifecycle evidence missing'
     $adminWorkerLoss = Invoke-App 'packaged-admin-worker-loss' $viewerExe @('--admin-worker-loss-contracts', $hostExe)
