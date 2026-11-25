@@ -12,6 +12,8 @@ internal static class ToolbarVerification
     [DllImport("user32.dll")] static extern bool IsChild(nint parent, nint child);
     [DllImport("user32.dll")] static extern nint GetWindow(nint window, uint command);
 
+    [DllImport("user32.dll")] static extern nint SendMessageW(nint window, int message, nint wParam, nint lParam);
+
     static bool IsAboveOwner(nint toolbar, nint owner)
     {
         const uint PreviousInZOrder = 3;
@@ -35,7 +37,7 @@ internal static class ToolbarVerification
                 var bar = window.Toolbar ?? throw new Exception("Toolbar missing");
                 if (bar.RemoteKeyItems.OfType<MenuItem>().Any(item => item.Tag is RelaxDesk.Core.RemoteShortcut && item.IsEnabled))
                     throw new Exception("Offline preview exposed remote shortcuts");
-                if(bar.FilesButton.IsEnabled)throw new Exception("Offline preview exposed file access");
+                if(bar.FilesAction.IsEnabled)throw new Exception("Offline preview exposed file access");
                 Point client = ((FrameworkElement)window.Content).PointToScreen(new Point(20, 200));
                 SessionToolbar.PixelPoint? pointer = new() { X = (int)client.X, Y = (int)client.Y };
                 bar.TestPointer = () => pointer; // No desktop pointer injection in automation.
@@ -53,6 +55,21 @@ internal static class ToolbarVerification
                     throw new Exception($"Toolbar is missing or behind its native video surface at ({point.X}, {point.Y}); hit={hit:X}, toolbar={toolbarHwnd:X}, owner={ownerHwnd:X}, native={child.Handle:X}");
                 if (hit != toolbarHwnd && !IsChild(toolbarHwnd, hit))
                     Console.WriteLine("Toolbar owned HWND order verified; another window occluded the screen hit-test");
+                if (!bar.BlocksPointer(point.X, point.Y) || bar.BlocksPointer(point.X, point.Y + 100))
+                    throw new Exception("Toolbar screen exclusion bounds incorrect");
+                if (bar.FilesAction.Parent != bar.ShortcutMenu)
+                    throw new Exception("Secondary controls must live in the session menu");
+                int forwarded = 0;
+                child.Input = (_, _, _, _) => forwarded++;
+                child.RichInput = _ => forwarded++;
+                child.LocalPointerOverlay = (_, _) => true;
+                foreach (int message in new[] { 0x200, 0x201, 0x202, 0x204, 0x205, 0x20A, 0x20B, 0x20C })
+                    SendMessageW(child.Handle, message, 0, 0);
+                child.RichInput = null;
+                foreach (int message in new[] { 0x200, 0x201, 0x202, 0x20A })
+                    SendMessageW(child.Handle, message, 0, 0);
+                if (forwarded != 0) throw new Exception("Local overlay forwarded native pointer input");
+                child.Input = null; child.LocalPointerOverlay = null;
                 var chord = ModifierKeys.Control | ModifierKeys.Alt;
                 var breakDown = new MSG { hwnd = child.Handle, message = 0x100, wParam = 0x03 };
                 if (!window.HandleConnectionKeys(breakDown, chord) ||
@@ -108,7 +125,7 @@ internal static class ToolbarVerification
                     testBar.ShortcutsButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     await Task.Delay(1800);
                     if (!testBar.ShortcutMenu.IsOpen || !testBar.Expanded || !testBar.Surface.IsVisible ||
-                        releaseRequests != 1 || shortcuts.Count != 0)
+                        releaseRequests < 2 || shortcuts.Count != 0)
                         throw new Exception("Fullscreen shortcut menu did not stay open independently of remote actions");
                     foreach (var item in testBar.RemoteKeyItems.OfType<MenuItem>().Where(item => item.IsEnabled))
                         item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
@@ -131,7 +148,7 @@ internal static class ToolbarVerification
                 if (!window.ConnectionPanelVisible || window.Toolbar is not null || window.DesktopFillsClient) throw new Exception("Disconnect did not restore connection chrome");
                 window.StartLocalPreview(); var closingBar = window.Toolbar!; window.Close();
                 if (!closingBar.IsDisposed || closingBar.Surface.IsVisible) throw new Exception("Closing owner leaked toolbar/timer");
-                Console.WriteLine("PASS real HWND toolbar: persistent media path/fallback labels and session reset, full-client desktop, timed hide, top-edge reveal, HWND order above native video, 15 shortcut menu actions, disabled secure attention, offline shortcut denial, fullscreen/window actions, minimize/restore, disconnect and disposal; simulated pointer positions, synthetic preview, no remote input; physical hover/DPI pending");
+                Console.WriteLine("PASS real HWND toolbar: persistent media path/fallback labels and session reset, full-client desktop, timed hide, top-edge reveal, HWND order above native video, compact menu layout, native rich/legacy overlay pointer exclusion, 15 shortcut menu actions, disabled secure attention, offline shortcut denial, fullscreen/window actions, minimize/restore, disconnect and disposal; simulated pointer positions, synthetic preview, no remote input; physical hover/DPI pending");
             }
             catch (Exception e) { Console.Error.WriteLine(e); Environment.ExitCode = 1; }
             finally { child?.Dispose(); window.StopLocalPreview(); window.Close(); }

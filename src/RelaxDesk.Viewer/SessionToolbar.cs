@@ -13,7 +13,7 @@ namespace RelaxDesk.Viewer;
 // native D3D surface. This window does not activate or reserve desktop pixels.
 internal sealed class SessionToolbar : IDisposable
 {
-    const double MaximumWidth = 720;
+    const double MaximumWidth = 520;
     readonly Window owner, window;
     readonly Action? releaseInput;
     readonly StackPanel controls = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -36,7 +36,7 @@ internal sealed class SessionToolbar : IDisposable
     readonly MenuItem remoteKeys = new() { Header = "远程快捷键" };
     readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(100) };
     DateTime keepUntil;
-    bool disposed, expanded;
+    bool disposed, expanded, pointerInside;
     nint handle;
     int left, top, width, height;
     [StructLayout(LayoutKind.Sequential)] internal struct PixelPoint { public int X, Y; }
@@ -50,14 +50,23 @@ internal sealed class SessionToolbar : IDisposable
     internal bool IsDisposed => disposed;
     internal Func<PixelPoint?>? TestPointer;
     public Window Surface => window;
+    internal bool BlocksPointer(double x, double y) => !disposed && window.IsVisible &&
+        (ShortcutMenu.IsOpen || (x >= left && x < left + width && y >= top && y < top + height));
     internal Button FullScreenButton => full;
     internal ToggleButton PinButton => pin;
     internal Button MinimizeButton => minimize;
     internal ItemCollection RemoteKeyItems => remoteKeys.Items;
     internal Button DisconnectButton { get; }
-    internal Button FilesButton {get;}
+    internal MenuItem FilesAction { get; } = new() { Header = "文件传输…", IsEnabled = false };
     Action? openFiles;
-    public void SetFiles(Action? open,int recoveryCount=0){openFiles=open;FilesButton.IsEnabled=open is not null;FilesButton.Content=recoveryCount>0?"文件续传":"文件";FilesButton.ToolTip=recoveryCount>0?$"有{recoveryCount}项中断任务，打开后确认继续":"上传、下载与任务队列（需Host授权）";endpoint.MaxWidth=recoveryCount>0?140:170;}
+    public void SetFiles(Action? open, int recoveryCount = 0)
+    {
+        openFiles = open;
+        FilesAction.IsEnabled = open is not null;
+        FilesAction.Header = recoveryCount > 0 ? "文件续传…" : "文件传输…";
+        FilesAction.ToolTip = recoveryCount > 0 ? $"有{recoveryCount}项中断任务，打开后确认继续" : "上传、下载与任务队列（需Host授权）";
+    }
+
     internal Button ShortcutsButton { get; }
     internal ContextMenu ShortcutMenu { get; }
     readonly MenuItem displays=new(){Header="显示器（Host 未开放切换）",IsEnabled=false};
@@ -107,7 +116,6 @@ internal sealed class SessionToolbar : IDisposable
     internal MenuItem StatisticsAction=>statistics;
     readonly TextBlock mediaRate = new() { FontSize = 12, TextAlignment = TextAlignment.Center };
     readonly TextBlock connectionTiming = new() { FontSize = 11, TextAlignment = TextAlignment.Center };
-    internal Button ConnectionInfoButton { get; }
     internal string MediaRateText => mediaRate.Text;
     internal string ConnectionTimingText => connectionTiming.Text;
     Action? openStatistics;
@@ -119,7 +127,6 @@ internal sealed class SessionToolbar : IDisposable
         statistics.IsEnabled = open is not null;
         statisticsSource = source;
         previousStatistics = null;
-        ConnectionInfoButton.Visibility = source is null ? Visibility.Collapsed : Visibility.Visible;
         RefreshConnectionInfo();
     }
 
@@ -138,6 +145,7 @@ internal sealed class SessionToolbar : IDisposable
         mediaRate.Text = rate is null ? "— FPS   ·   — Mbit/s" : $"{rate.FramesPerSecond:F1} FPS   ·   {rate.ApplicationMegabitsPerSecond:F2} Mbit/s";
         string rtt = sample.ControlRtt < 0 ? "—" : $"{sample.ControlRtt:F1} ms";
         connectionTiming.Text = $"{sample.Transport}   ·   RTT {rtt}";
+        statistics.ToolTip = mediaRate.Text + "\n" + connectionTiming.Text;
     }
     internal MenuItem AudioAction=>audio;
     public void SetAudio(bool enabled,double volume,bool muted,Action<double,bool> adjust,Action stop)
@@ -175,7 +183,7 @@ internal sealed class SessionToolbar : IDisposable
         minimize.Click += (_, _) => owner.WindowState = WindowState.Minimized;
         minimize.ToolTip = "最小化连接端窗口，保持会话";
         DisconnectButton.Click += (_, _) => disconnect();
-        FilesButton=new Button{Content="文件",Focusable=false,Padding=new(12,6,12,6),Margin=new(3),IsEnabled=false,ToolTip="上传、下载与任务队列（需Host授权）"};FilesButton.Click+=(_,_)=>openFiles?.Invoke();
+
         ShortcutsButton = new Button { Content = "会话菜单", Focusable = false, Padding = new(12, 6, 12, 6), Margin = new(3), ToolTip = "远程快捷键、显示和连接设置" };
         ShortcutMenu = new ContextMenu();
         textInput.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;openTextInput?.Invoke();};
@@ -195,6 +203,9 @@ internal sealed class SessionToolbar : IDisposable
         }
         remoteKeys.Items.Add(new Separator());
         remoteKeys.Items.Add(new MenuItem { Header = "Ctrl+Alt+End / 安全注意序列：不支持", IsEnabled = false });
+        FilesAction.Click += (_, _) => { ShortcutMenu.IsOpen = false; openFiles?.Invoke(); };
+        ShortcutMenu.Opened += (_, _) => releaseInput?.Invoke();
+        ShortcutMenu.Items.Add(FilesAction);
         ShortcutMenu.Items.Add(remoteKeys);
         ShortcutMenu.Items.Add(new Separator()); ShortcutMenu.Items.Add(clipboard);
         ShortcutMenu.Items.Add(textInput);
@@ -207,25 +218,9 @@ internal sealed class SessionToolbar : IDisposable
         clipboard.Click += (_, _) => { ShortcutMenu.IsOpen = false; disableClipboard?.Invoke(); };
         ShortcutsButton.Click += (_, _) => OpenSessionMenu();
         ShortcutMenu.Closed += (_, _) => keepUntil = DateTime.UtcNow.AddSeconds(1);
-        var readings = new StackPanel();
-        readings.Children.Add(mediaRate);
-        readings.Children.Add(connectionTiming);
-        var connectionButtonContent = new DockPanel();
-        var more = new TextBlock { Text = "更多", FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new(8, 0, 0, 0) };
-        DockPanel.SetDock(more, Dock.Right);
-        connectionButtonContent.Children.Add(more);
-        connectionButtonContent.Children.Add(readings);
-        ConnectionInfoButton = new Button
-        {
-            Content = connectionButtonContent, Focusable = false, Padding = new(8, 2, 8, 2), Margin = new(3),
-            Width = 183, Visibility = Visibility.Collapsed,
-            ToolTip = "画面提交帧率 · 视频应用数据接收速率 · 控制往返时间（含排队）\n点击查看连接统计"
-        };
-        System.Windows.Automation.AutomationProperties.SetName(ConnectionInfoButton, "连接状态和详细统计");
-        ConnectionInfoButton.Click += (_, _) => openStatistics?.Invoke();
         var identity = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new(14, 0, 12, 0) };
         endpoint.Margin = new(0); identity.Children.Add(endpoint); identity.Children.Add(mediaPath);
-        controls.Children.Add(ConnectionInfoButton); controls.Children.Add(FilesButton); controls.Children.Add(ShortcutsButton);
+        controls.Children.Add(ShortcutsButton);
         controls.Children.Add(pin); controls.Children.Add(minimize); controls.Children.Add(full); controls.Children.Add(DisconnectButton);
         var bar = new DockPanel();
         DockPanel.SetDock(controls, Dock.Right);
@@ -292,10 +287,11 @@ internal sealed class SessionToolbar : IDisposable
         PixelPoint? pointer = TestPointer is null ? GetCursorPos(out var current) ? current : null : TestPointer();
         {
             bool inside = pointer is {} p && p.X >= left && p.X < left + width && p.Y >= top && p.Y < top + height;
-            if (inside) { if (!expanded) Reveal(); keepUntil = DateTime.UtcNow.AddSeconds(1); }
+            if (inside) { if (!pointerInside) releaseInput?.Invoke(); if (!expanded) Reveal(); keepUntil = DateTime.UtcNow.AddSeconds(1); }
             else if (expanded && (pin.Visibility != Visibility.Visible || pin.IsChecked != true) &&
                 DateTime.UtcNow >= keepUntil) expanded = false;
         }
+        pointerInside = pointer is {} position && BlocksPointer(position.X, position.Y);
         UpdatePosition();
     }
     bool MenuOwnsForeground()
@@ -315,7 +311,7 @@ internal sealed class SessionToolbar : IDisposable
         if (content.ActualWidth <= 0) return;
         Point origin = content.PointToScreen(new Point(0, 0));
         var dpi = VisualTreeHelper.GetDpi(owner);
-        int nextWidth = (int)Math.Round(Math.Min(statisticsSource is null ? 560 : MaximumWidth, content.ActualWidth) * dpi.DpiScaleX);
+        int nextWidth = (int)Math.Round(Math.Min(MaximumWidth, content.ActualWidth) * dpi.DpiScaleX);
         int nextHeight = (int)Math.Round((expanded ? 48 : 5) * dpi.DpiScaleY);
         int nextLeft = (int)Math.Round(origin.X + (content.ActualWidth * dpi.DpiScaleX - nextWidth) / 2);
         int nextTop = (int)Math.Round(origin.Y);

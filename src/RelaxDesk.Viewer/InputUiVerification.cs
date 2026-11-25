@@ -96,6 +96,23 @@ public sealed partial class ViewerWindow
                     while (window.outgoing.TryRead(out _)) { }
                     window.session = null;
                 }
+                window.session = lifetime;
+                window.inputAuthorized = true;
+                window.inputVersion = InputProtocol.Version;
+                window.ShowConnectedView(true);
+                window.UpdateLayout();
+                var toolbar = window.sessionToolbar!;
+                var screenPoint = toolbar.Surface.PointToScreen(new Point(20, 20));
+                var bitmapPoint = window.videoPanel.PointFromScreen(screenPoint);
+                foreach (int version in new[] { 0, InputProtocol.Version })
+                {
+                    window.inputVersion = version;
+                    window.viewportInputReady = true;
+                    Check(!window.BitmapPosition(bitmapPoint, dragging: true));
+                    window.SendBitmapWheel(bitmapPoint, 120);
+                    Check(window.outgoing.Depth == 0);
+                }
+                window.ShowConnectedView(false);
                 Console.WriteLine($"PASS {count} WPF input adapter/committed-text contracts: authorization gate, raw metadata/repeats, balanced held release, mouse barriers, legacy fallback, staged composition/no preedit/no double send, teardown and overflow; standalone motion drops without cancelling and a rejected click position prevents button submission; owned windows/non-injecting queue only, no foreground/physical IME acceptance");
                 window.session=null;window.Close();app.Shutdown();
             }

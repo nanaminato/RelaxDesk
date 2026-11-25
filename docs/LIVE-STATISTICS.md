@@ -12,10 +12,18 @@ Connection negotiation and consent, media framing/readers, and remote-input
 messages remain in RelaxDesk.Core for clients with their own display and
 gesture controls.
 
-After a v2 connection is authorized, move the pointer to the top-center tab in either windowed or full-screen mode. The floating bar shows submitted FPS, application video receive rate, media transport and the latest control RTT. Rates use roughly one-second intervals, and the bar shows a dash until it has a complete sample on the current transport. RTT comes from the existing heartbeat and includes queueing. The bar reads lightweight counters without collecting process information or computing percentiles.
+The floating bar keeps the endpoint/media path, session menu, full-screen and
+disconnect actions. File transfer and Connection Statistics are in the session
+menu; pin and minimize remain available in full screen. The bar is at most
+520 DIPs wide. Moving into it releases held remote input and mouse capture.
+Both bitmap and native video adapters reject pointer messages in its screen
+bounds, including captured drag messages and the collapsed reveal strip.
+While the session menu is open, remote pointer forwarding is paused.
 
-Click More (更多) in the floating bar or select Connection Statistics in the
-session menu to open the modal connection information dialog. It shows the
+Select Connection Statistics in the session menu to open the modal connection
+information dialog. Its menu tooltip shows recent FPS, application media rate,
+transport and control RTT. Rates use roughly one-second intervals and remain
+unavailable until a full sample exists on the current transport. The dialog shows the
 connection and sample timestamps in UTC, the Viewer activity ID, client build
 and local Windows version, negotiated media transport, current control RTT,
 submitted FPS, application receive rate, and the remote endpoint and display

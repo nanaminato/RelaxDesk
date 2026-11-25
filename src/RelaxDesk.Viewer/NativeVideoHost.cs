@@ -13,6 +13,7 @@ public sealed class NativeVideoHost : HwndHost
     public Action? InputBacklogExceeded;
     public Action? InputFocusLost;
     public Action? InputCaptureLost;
+    public Func<int, int, bool>? LocalPointerOverlay;
     public Action? RenderInvalidated;
     sealed record VideoSize(int Width,int Height);
     VideoSize? videoSize;
@@ -71,6 +72,7 @@ public sealed class NativeVideoHost : HwndHost
     internal void FocusInput() => FocusRemoteKeyboard();
     readonly HashSet<int> pointerButtons=[];
     [StructLayout(LayoutKind.Sequential)] struct Point { public int X,Y; }
+    [DllImport("user32.dll")] static extern bool ClientToScreen(nint hwnd,ref Point point);
     [DllImport("user32.dll")] static extern bool ScreenToClient(nint hwnd,ref Point point);
     internal void SetHostPointer(bool value)
     {
@@ -192,6 +194,17 @@ public sealed class NativeVideoHost : HwndHost
         if (message == 0x7) keyboardOwned = true;
         if (message == 0x215) { pointerButtons.Clear();InputCaptureLost?.Invoke(); }
         if (message is 0x5 or 0xF or 0x18 or 0x2E0) RenderInvalidated?.Invoke();
+        var pointer = new Point { X = (short)((long)lParam & 65535), Y = (short)((long)lParam >> 16) };
+        if (message is >= 0x200 and <= 0x20E && LocalPointerOverlay is not null &&
+            (message is 0x20A or 0x20E || ClientToScreen(hwnd, ref pointer)) &&
+            LocalPointerOverlay(pointer.X, pointer.Y))
+        {
+            pointerButtons.Clear();
+            InputCaptureLost?.Invoke();
+            ReleaseInputCapture();
+            handled = true;
+            return message is 0x20B or 0x20C or 0x20D ? 1 : 0;
+        }
         if(RichInput is not null&&RouteRichPointer(hwnd,message,wParam,lParam)){handled=true;return message is 0x20B or 0x20C or 0x20D?1:0;}
         if (message is >= MouseMove and <= 0x20E && GetForegroundWindow() != GetAncestor(hwnd, 2))
         {

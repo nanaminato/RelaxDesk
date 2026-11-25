@@ -54,7 +54,7 @@ public sealed partial class ViewerWindow
         await driver.Send("APPROVE", fresh.Id);
         await Until(() => connectionGeneration == before + 1 && smokeFrames > oldFrames);
         await Task.Delay(300, ct);
-        if (!fullScreen || sessionPermissions?.Allows(SessionCapabilities.FileTransfer) != false || fileQueue is not null || sessionToolbar?.FilesButton.IsEnabled != false || heldInputs.ReleaseAll().Length != 0) throw new IOException("Recovery viewport/input/permission state incorrect");
+        if (!fullScreen || sessionPermissions?.Allows(SessionCapabilities.FileTransfer) != false || fileQueue is not null || sessionToolbar?.FilesAction.IsEnabled != false || heldInputs.ReleaseAll().Length != 0) throw new IOException("Recovery viewport/input/permission state incorrect");
         int delayedNotices = relay.DelayedControlWrites;
         relay.DelayControlDownstream(TimeSpan.FromMilliseconds(150));
         await driver.Send("DISCONNECT", fresh.Id); await connectionEnded.Task.WaitAsync(ct);

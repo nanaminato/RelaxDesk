@@ -61,9 +61,9 @@ public sealed partial class ViewerWindow
                     };
                 };
                 var bar = window.sessionToolbar;
-                await Until(() => bar.ConnectionInfoButton.Visibility == Visibility.Visible &&
+                await Until(() => bar.StatisticsAction.IsEnabled &&
                     !bar.MediaRateText.Contains('—') && bar.ConnectionTimingText.Contains(" ms"));
-                bar.ConnectionInfoButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                bar.StatisticsAction.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
                 var panel=window.statisticsWindow??throw new IOException("Panel absent after clicking the toolbar readings");
                 await Until(()=>panel.Updates>=2&&!panel.DisplayText.Contains("控制往返（含排队）：未采集"));
                 if (panel.Owner != window || !panel.IsVisible ||

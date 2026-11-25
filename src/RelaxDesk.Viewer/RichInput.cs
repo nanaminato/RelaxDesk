@@ -36,6 +36,12 @@ public sealed partial class ViewerWindow
     }
     bool BitmapPosition(Point point,bool dragging,bool standaloneMove=false)
     {
+        var screen = videoPanel.PointToScreen(point);
+        if (sessionToolbar?.BlocksPointer(screen.X, screen.Y) == true)
+        {
+            ReleaseHeldInputs();
+            return false;
+        }
         var dpi=System.Windows.Media.VisualTreeHelper.GetDpi(videoPanel);
         if(!TryViewportLayout(out var layout)||!layout.TryNormalize(point.X*dpi.DpiScaleX,point.Y*dpi.DpiScaleY,dragging,out int x,out int y))return false;
         if (standaloneMove)
@@ -54,7 +60,7 @@ public sealed partial class ViewerWindow
         };
         image.MouseUp+=(_,e)=>
         {
-            if(Mouse.Captured==image||image.IsMouseOver){BitmapPosition(e.GetPosition(videoPanel),Mouse.Captured==image);SendPointerButton(e.ChangedButton,true);}
+            if((Mouse.Captured==image||image.IsMouseOver) && BitmapPosition(e.GetPosition(videoPanel),Mouse.Captured==image))SendPointerButton(e.ChangedButton,true);
             if(e.LeftButton==MouseButtonState.Released&&e.RightButton==MouseButtonState.Released&&e.MiddleButton==MouseButtonState.Released&&e.XButton1==MouseButtonState.Released&&e.XButton2==MouseButtonState.Released)Mouse.Capture(null);
             e.Handled=true;
         };

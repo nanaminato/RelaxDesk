@@ -112,7 +112,7 @@ public sealed partial class ViewerWindow
         await Until(() => fileQueue!.Snapshot().Any(job => job.CompletedBytes >= 512 * 1024 && job.State == TransferJobState.Running));
         relay.Cut(); var screenOnly = await driver.Request(ct); await driver.Send("APPROVE", screenOnly.Id);
         await Until(() => sessionPermissions is not null && fileQueue is null && pendingFileRecovery is null); await recoveryCleanup;
-        Check(sessionToolbar?.FilesButton.IsEnabled == false && !File.Exists(Path.Combine(hostRoot, "denied-recovery.bin")), "Fresh screen-only consent restored file access");
+        Check(sessionToolbar?.FilesAction.IsEnabled == false && !File.Exists(Path.Combine(hostRoot, "denied-recovery.bin")), "Fresh screen-only consent restored file access");
         using (var writer = File.OpenWrite(deniedSource)) { }
         await driver.Send("DISCONNECT", screenOnly.Id); await connectionEnded.Task.WaitAsync(ct);
         await driver.Listening(ct); // Host joins workers/clears cache before reopening.

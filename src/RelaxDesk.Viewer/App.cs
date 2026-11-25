@@ -368,7 +368,7 @@ public sealed partial class ViewerWindow : Window
         {
             try
             {
-                nativeView = new() { Input = Send, RichInput = inputVersion==2?SendRich:null, PointerMove = SendPointerMove, InputBacklogExceeded = ()=>cancellation.Cancel(), InputFocusLost = ReleaseHeldInputs, InputCaptureLost = ReleaseMouseButtons, RenderInvalidated = () => repaintSignal.Set() }; videoPanel.Children.Add(nativeView); nativeView.SetViewport(CurrentViewport);renderPanel.UpdateLayout();
+                nativeView = new() { LocalPointerOverlay = (x,y) => sessionToolbar?.BlocksPointer(x,y) == true, Input = Send, RichInput = inputVersion==2?SendRich:null, PointerMove = SendPointerMove, InputBacklogExceeded = ()=>cancellation.Cancel(), InputFocusLost = ReleaseHeldInputs, InputCaptureLost = ReleaseMouseButtons, RenderInvalidated = () => repaintSignal.Set() }; videoPanel.Children.Add(nativeView); nativeView.SetViewport(CurrentViewport);renderPanel.UpdateLayout();
                 nativeView.SetFilesDrop(fileQueue?.Enabled==true?FilesDropped:null);
                 gpuViewportActive=true;hwnd = nativeView.Handle; if (hwnd == 0) throw new InvalidOperationException("Render child HWND not available");
                 image.Visibility = Visibility.Collapsed;

@@ -18,7 +18,7 @@ public sealed partial class ViewerWindow
             string root = smoke?.FileFixtureRoot ?? throw new IOException("Missing file smoke fixture");
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token); deadline.CancelAfter(TimeSpan.FromSeconds(20));
             async Task Until(Func<bool> condition) { while (!condition()) await Task.Delay(20, deadline.Token); }
-            if (fileQueue is null || sessionToolbar?.FilesButton.IsEnabled != true) throw new IOException("Negotiated file session did not expose toolbar");
+            if (fileQueue is null || sessionToolbar?.FilesAction.IsEnabled != true) throw new IOException("Negotiated file session did not expose toolbar");
             string local = Path.Combine(root, "viewer-source.txt");
             string payload = "session test 中文 / 日本語\n" + new string('x', 512 * 1024);
             await File.WriteAllTextAsync(local, payload, deadline.Token);
@@ -39,10 +39,10 @@ public sealed partial class ViewerWindow
             if (downloadTime < TimeSpan.FromSeconds(1.5) || File.ReadAllText(Path.Combine(root, "viewer-download.txt")) != payload || smokeFrames <= beforeDownload)
                 throw new IOException("Limited download did not preserve file contents and advancing video");
             Console.WriteLine($"PASS WPF configured file cap 256 KiB/s: upload_seconds={uploadTime.TotalSeconds:F2} download_seconds={downloadTime.TotalSeconds:F2}, video advanced during download");
-            fileWindow.Close(); sessionToolbar.FilesButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Until(() => fileWindow.IsVisible);
+            fileWindow.Close(); sessionToolbar.FilesAction.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); await Until(() => fileWindow.IsVisible);
             fileWindow.StopFilesButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Until(() => Interlocked.Read(ref fileRevocationReplies) > 0);
             await Until(() => smokeFrames > 0); await Task.Delay(250, deadline.Token);
-            if (cancellation.IsCancellationRequested || fileQueue.Enabled || sessionToolbar.FilesButton.IsEnabled) throw new IOException("File revocation killed session or retained file access");
+            if (cancellation.IsCancellationRequested || fileQueue.Enabled || sessionToolbar.FilesAction.IsEnabled) throw new IOException("File revocation killed session or retained file access");
             fileSessionVerified = true;
             Console.WriteLine("PASS actual Viewer session: feature request/grant -> files toolbar -> drop confirmation -> scoped upload -> panel hide/reopen -> live control-channel file revocation; video continues; no real desktop/input claim");
         }
