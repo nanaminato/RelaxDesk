@@ -82,6 +82,7 @@ public sealed class SessionClient : IDisposable
     public SslStream? Data { get; private set; }
     public string[] Capabilities { get; private set; } = [];
     public SessionMode? RequestedMode { get; init; }
+    public bool FullControl { get; init; }
     public Func<ECDsa>? OpenDeviceKey { get; init; }
     public bool InputAllowed { get; private set; }
     public bool RequestWorkInputRevoke { get; init; }
@@ -185,28 +186,38 @@ public sealed class SessionClient : IDisposable
         if(!VideoSettingsProtocol.Supported(RequestedVideoVersion))throw new InvalidDataException("Unsupported video version request");
         if(RequestedInputVersion is not (0 or InputProtocol.Version))throw new InvalidDataException("Unsupported requested input version");
         if(!DisplayProtocol.Supported(RequestedDisplayVersion)||RequestedDisplayVersion!=0&&RequestedInputVersion!=InputProtocol.Version)throw new InvalidDataException("Unsupported requested display version");
-        using var deviceKey = RequestedMode is SessionMode.Guest ? null : OpenDeviceKey?.Invoke();
+        using var deviceKey = FullControl || RequestedMode is not SessionMode.Guest ? OpenDeviceKey?.Invoke() : null;
+        if (FullControl && deviceKey is null) throw new AuthenticationException("Full control requires a device identity");
+        string requestKind = FullControl
+            ? approvalOnly ? FullControlProtocol.Request : FullControlProtocol.PinnedRequest
+            : approvalOnly ? "request-v2" : "hello-v2";
         bool requestResume=RequestFileResume&&requestedFeatures.Contains(SessionCapabilities.FileTransfer);
-        await Wire.Write(Control, new Packet(approvalOnly ? "request-v2" : "hello-v2", Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], PointerBrotli: RequestPointerCompression ? true : null, WorkInputRevoke: RequestWorkInputRevoke && RequestedMode == SessionMode.Work ? true : null, Features: requestedFeatures.Length == 0 ? null : requestedFeatures,FileResume:requestResume,InputVersion:RequestedInputVersion,DisplayVersion:RequestedDisplayVersion,VideoVersion:RequestedVideoVersion, Mode:RequestedMode, Network:requestedNetwork, DeviceKey: deviceKey is null ? null : DeviceIdentity.Export(deviceKey), QuicRecovery: requestQuicRecovery ? true : null), ct);
+        await Wire.Write(Control, new Packet(requestKind, Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], PointerBrotli: RequestPointerCompression ? true : null, WorkInputRevoke: !FullControl && RequestWorkInputRevoke && RequestedMode == SessionMode.Work ? true : null, Features: requestedFeatures.Length == 0 ? null : requestedFeatures,FileResume:requestResume,InputVersion:RequestedInputVersion,DisplayVersion:RequestedDisplayVersion,VideoVersion:RequestedVideoVersion, Mode:FullControl ? null : RequestedMode, Network:requestedNetwork, DeviceKey: deviceKey is null ? null : DeviceIdentity.Export(deviceKey), QuicRecovery: requestQuicRecovery ? true : null), ct);
         PhaseChanged?.Invoke(ConnectionPhase.AwaitingApproval);
         var approval = await Wire.Read(Control, ct);
-        if (approval.Kind == "work-device-challenge-v2")
+        string challengeKind = FullControl ? FullControlProtocol.DeviceChallenge : "work-device-challenge-v2";
+        bool deviceChallenged = approval.Kind == challengeKind;
+        if (deviceChallenged)
         {
             if (deviceKey is null ||
                 approval.Data is not { Length: 32 } challenge ||
-                approval != new Packet("work-device-challenge-v2", Data: challenge))
+                approval != new Packet(challengeKind, Data: challenge))
                 throw new AuthenticationException("Invalid device challenge");
             using var proofDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
             proofDeadline.CancelAfter(TimeSpan.FromSeconds(5));
             var signature = DeviceIdentity.Sign(deviceKey, challenge, VerifiedFingerprint);
-            await Wire.Write(Control, new("work-device-proof-v2", Data: signature), proofDeadline.Token);
+            await Wire.Write(Control, new(FullControl ? FullControlProtocol.DeviceProof : "work-device-proof-v2", Data: signature), proofDeadline.Token);
             approval = await Wire.Read(Control, ct);
         }
         if (approval == new Packet("denied-v2")) throw new HostConsentRejectedException();
-        if (approval.Kind != "approved-v2" || approval.Text is null || approval.Capabilities is not { Length: > 0 }) throw new AuthenticationException("Host approval/capabilities missing");
+        if (approval == new Packet(FullControlProtocol.UpdateRequired) || FullControl && approval.Kind == "approved-v2") throw new FullControlVersionException();
+        if (approval.Kind != (FullControl ? FullControlProtocol.Approved : "approved-v2") || approval.Text is null || approval.Capabilities is not { Length: > 0 }) throw new AuthenticationException("Host approval/capabilities missing");
         if(approval.Input is not null||approval.InputVersion is not (0 or InputProtocol.Version)||approval.InputVersion!=0&&approval.InputVersion!=RequestedInputVersion)throw new AuthenticationException("Unrequested/invalid input version");
-        bool legacyWork = RequestedMode == SessionMode.Work && approval.Mode is null && approval.InputAllowed is null;
-        if (!legacyWork && (approval.Mode != RequestedMode || (approval.InputAllowed is null) != (RequestedMode is null)) ||
+        if (FullControl && (!deviceChallenged || approval.InputVersion != InputProtocol.Version))
+            throw new AuthenticationException("Incomplete full-control handshake");
+        var mode = FullControl ? null : RequestedMode;
+        bool legacyWork = mode == SessionMode.Work && approval.Mode is null && approval.InputAllowed is null;
+        if (!legacyWork && (approval.Mode != mode || (approval.InputAllowed is null) != (mode is null)) ||
             (!SessionAccess.Available(approval.Mode) && approval.Mode != SessionMode.Admin) ||
             (approval.Mode is SessionMode.Work or SessionMode.Admin) && approval.InputAllowed != true ||
             approval.Mode == SessionMode.Admin && approval.InputVersion != InputProtocol.Version)

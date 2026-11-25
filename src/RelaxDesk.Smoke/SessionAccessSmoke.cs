@@ -17,7 +17,7 @@ internal static class SessionAccessSmoke
         await Verify(hostPath, SessionMode.Work, grantInput: false, denied: true, proveDevice: true, production: true);
         await Verify(hostPath, SessionMode.Admin, grantInput: false, denied: true, production: true);
         await Verify(hostPath, SessionMode.Admin, grantInput: false, denied: true, testAdminConsent: true, proveDevice: true, production: true);
-        Console.WriteLine("PASS production Host rejects legacy session modes and full-control requests without device proof");
+        Console.WriteLine("PASS production Host requires an updated full-control client");
         Console.WriteLine("PASS verified Work device proof over production TLS; local approval still required");
         Console.WriteLine("PASS retired in-session elevation request terminates the connection");
         Console.WriteLine("PASS production TLS and shell approval: Guest view/input/revoke, legacy Work policy, full-control denial before and after device verification");
@@ -37,6 +37,7 @@ internal static class SessionAccessSmoke
         using var viewer = new SessionClient
         {
             RequestedMode = mode,
+            FullControl = testAdminConsent,
             RequestedDisplayVersion = DisplayProtocol.Version,
             OpenDeviceKey = proveDevice ? () => ECDsa.Create(key.ExportParameters(true)) : null
         };
@@ -58,7 +59,8 @@ internal static class SessionAccessSmoke
                     await host.StandardInput.FlushAsync();
                 }
                 try { await connect; throw new IOException("Forbidden mode advanced"); }
-                catch (HostConsentRejectedException) { }
+                catch (HostConsentRejectedException) when (testAdminConsent || !production) { }
+                catch (FullControlVersionException) when (production && !testAdminConsent) { }
                 return;
             }
 

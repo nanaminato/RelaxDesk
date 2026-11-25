@@ -23,14 +23,25 @@ internal static class HostConnection
             auth.CancelAfter(TimeSpan.FromSeconds(30));
             await tls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = cert, EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, auth.Token);
             hello = await Wire.Read(tls, auth.Token, 16 * 1024);
-            if (hello.Kind == "request-v2")
+            if (hello.Kind is "request-v2" or FullControlProtocol.Request)
             {
                 if (hello.Text is not { Length: 32 } || !hello.Text.All(char.IsAsciiHexDigit) || hello.Capabilities is not { Length: > 0 and <= 2 } || hello.Capabilities.Any(c => c is not ("h264" or "deflate"))) throw new AuthenticationException("Invalid consent request");
                 if (shell is null) Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests a desktop session via IP/port approval. First-contact identity is not independently verified. Type APPROVE only if you expect this connection:");
             }
-            else if (hello.Kind is not ("hello-v1" or "hello-v2") || hello.Text is null || !CryptographicOperations.FixedTimeEquals(System.Text.Encoding.UTF8.GetBytes(hello.Text), System.Text.Encoding.UTF8.GetBytes(token))) throw new AuthenticationException("Pairing rejected");
+            else if (hello.Kind is not ("hello-v1" or "hello-v2" or FullControlProtocol.PinnedRequest) || hello.Text is null || !CryptographicOperations.FixedTimeEquals(System.Text.Encoding.UTF8.GetBytes(hello.Text), System.Text.Encoding.UTF8.GetBytes(token))) throw new AuthenticationException("Pairing rejected");
         }
-        if (shell is null && hello.Kind != "request-v2") Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests a desktop session. Type APPROVE to allow this session:");
+        bool synthetic = backend.StartsWith("test-", StringComparison.Ordinal);
+        bool administrator = FullControlProtocol.IsRequest(hello.Kind);
+        if (!synthetic && !administrator)
+        {
+            using var versionReply = CancellationTokenSource.CreateLinkedTokenSource(stop);
+            versionReply.CancelAfter(TimeSpan.FromSeconds(2));
+            await Wire.Write(tls, new(FullControlProtocol.UpdateRequired), versionReply.Token);
+            return;
+        }
+        if (administrator && (hello.Mode is not null || hello.WorkInputRevoke is not null))
+            throw new AuthenticationException("Legacy session fields are invalid on a full-control request");
+        if (shell is null && hello.Kind is not ("request-v2" or FullControlProtocol.Request)) Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests a desktop session. Type APPROVE to allow this session:");
         if(hello.AudioTicket is not null||hello.ClipboardTicket is not null||hello.Input is not null||hello.InputVersion is not (0 or InputProtocol.Version)||hello.Kind=="hello-v1"&&hello.InputVersion!=0)throw new AuthenticationException("Invalid input negotiation request");
         if(!DisplayProtocol.Supported(hello.DisplayVersion)||hello.DisplayVersion!=0&&(hello.Kind=="hello-v1"||hello.InputVersion!=InputProtocol.Version)||hello.DisplayState is not null||hello.DisplayId is not null||hello.DisplayGeneration!=0)throw new AuthenticationException("Invalid display negotiation request");
         var requestedFeatures = SessionCapabilities.Validate(hello.Features);
@@ -55,22 +66,20 @@ internal static class HostConnection
             throw new AuthenticationException("Invalid session access negotiation");
         if (shell is null && hello.Mode == SessionMode.Guest)
             Console.WriteLine("Guest defaults to view only. Append _INPUT to an approval command to allow ordinary input.");
-        bool synthetic = backend.StartsWith("test-", StringComparison.Ordinal);
-        bool administrator = hello.Mode == SessionMode.Admin;
         bool adminEligible = administrator && shell is not null && hello.InputVersion == InputProtocol.Version;
         if (hello.DeviceKey is not null && (hello.Kind == "hello-v1" || hello.Mode == SessionMode.Guest))
             throw new AuthenticationException("Device identity is unavailable for this connection");
         string? deviceFingerprint = hello.DeviceKey is not null && (synthetic || adminEligible)
-            ? await VerifyDeviceIdentity(tls, cert, hello.DeviceKey, stop) : null;
+            ? await VerifyDeviceIdentity(tls, cert, hello.DeviceKey, administrator, stop) : null;
         string? approval = (adminEligible && deviceFingerprint is not null || synthetic && SessionAccess.Available(hello.Mode))
-            ? await RequestConsent(client, shell, requestedFeatures, hello.Mode, deviceFingerprint, hello.WorkInputRevoke == true, stop)
+            ? await RequestConsent(client, shell, requestedFeatures, administrator ? SessionMode.Admin : hello.Mode, deviceFingerprint, hello.WorkInputRevoke == true, stop)
             : null;
         bool guestInput = approval?.EndsWith("_INPUT", StringComparison.Ordinal) == true && hello.Mode == SessionMode.Guest;
         if (guestInput) approval = approval![..^6];
         if (approval is null || AudioConsent.Parse(approval) is null or ConsentDecision.Deny)
         {
             if (shell is not null) ShellBridge.Emit("denied", sessionId: shell.Id);
-            if (hello.Kind is "hello-v2" or "request-v2")
+            if (hello.Kind is "hello-v2" or "request-v2" || administrator)
             {
                 using var denied = CancellationTokenSource.CreateLinkedTokenSource(stop); denied.CancelAfter(TimeSpan.FromSeconds(2));
                 await Wire.Write(tls, new("denied-v2"), denied.Token);
@@ -87,7 +96,7 @@ internal static class HostConnection
         if (administrator && !synthetic && elevated is null) return;
         var access = administrator ? new SessionAccess(SessionMode.Admin, true) : SessionAccess.Approve(hello.Mode, guestInput);
         if (shell is not null) ShellBridge.Emit("approved", sessionId: shell.Id);
-        if (hello.Kind is "hello-v2" or "request-v2")
+        if (hello.Kind is "hello-v2" or "request-v2" || administrator)
         {
             var availableFeatures = administrator
                 ? SessionCapabilities.ForFullControl(requestedFeatures, selectedFileRoot is not null)
@@ -165,7 +174,7 @@ internal static class HostConnection
         finally { deadline.Cancel(); await peer; }
     }
 
-    static async Task<string> VerifyDeviceIdentity(SslStream tls, X509Certificate2 certificate, string publicKey, CancellationToken stop)
+    static async Task<string> VerifyDeviceIdentity(SslStream tls, X509Certificate2 certificate, string publicKey, bool fullControl, CancellationToken stop)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop);
         deadline.CancelAfter(TimeSpan.FromSeconds(5));
@@ -173,9 +182,9 @@ internal static class HostConnection
         {
             using var key = DeviceIdentity.Import(publicKey);
             byte[] challenge = RandomNumberGenerator.GetBytes(32);
-            await Wire.Write(tls, new("work-device-challenge-v2", Data: challenge), deadline.Token);
+            await Wire.Write(tls, new(fullControl ? FullControlProtocol.DeviceChallenge : "work-device-challenge-v2", Data: challenge), deadline.Token);
             var proof = await Wire.Read(tls, deadline.Token, 2048);
-            if (proof.Data is not { Length: 64 } signature || proof != new Packet("work-device-proof-v2", Data: signature) ||
+            if (proof.Data is not { Length: 64 } signature || proof != new Packet(fullControl ? FullControlProtocol.DeviceProof : "work-device-proof-v2", Data: signature) ||
                 !DeviceIdentity.Verify(key, challenge, certificate.GetCertHashString(HashAlgorithmName.SHA256), signature))
                 throw new AuthenticationException("Device proof rejected");
             return DeviceIdentity.Fingerprint(key);

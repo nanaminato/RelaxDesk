@@ -1,5 +1,14 @@
 # Session access and transport development
 
+## Full-control connection
+
+Production Host and Viewer use the v3 full-control handshake. The Viewer
+proves its device identity over TLS before the Host displays the local approval
+prompt. Approval enables the offered features within Host configuration. Older
+connection requests receive a client-update response. Media and auxiliary
+channel framing continue to use their existing versions.
+
+
 ## Current session behavior
 
 | Mode | Host decision | Input | Optional features |

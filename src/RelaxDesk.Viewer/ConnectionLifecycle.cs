@@ -10,7 +10,7 @@ public sealed partial class ViewerWindow
     CancellationTokenSource? connectionRun;
     ConnectionPhase connectionPhase;
     int connectionGeneration;
-    sealed record ConnectionTarget(string Host, int Port, bool Strict, string Pin, string Token, string[] Features, bool FullScreen = false,int DisplayVersion=DisplayProtocol.TopologyVersion,SessionMode? Mode=null,NetworkMode Network=NetworkMode.Auto,bool IdentifyDevice=false)
+    sealed record ConnectionTarget(string Host, int Port, bool Strict, string Pin, string Token, string[] Features, bool FullScreen = false,int DisplayVersion=DisplayProtocol.TopologyVersion,NetworkMode Network=NetworkMode.Auto,bool FullControl=false)
     { public override string ToString() => "ConnectionTarget [credentials redacted]"; }
     sealed record AttemptResult(Exception? Error, bool Established, string Pin, string[] Features, bool FullScreen, bool Stable);
     void StopConnection() { connectionRun?.Cancel(); session?.Cancel(); }
@@ -35,7 +35,7 @@ public sealed partial class ViewerWindow
         ClearConnectionError();
         if (!IPAddress.TryParse(host.Text.Trim(), out var address) || address.Equals(IPAddress.Any) || address.Equals(IPAddress.IPv6Any) || !int.TryParse(port.Text, out int number) || number is < 1 or > 65535)
         { status.Text = "请输入有效的远程 IP 和端口。"; ShowConnectionError(new FormatException("Invalid endpoint"), "configuration"); return; }
-        var target = new ConnectionTarget(address.ToString(), number, pinnedConnection.IsChecked == true, fingerprint.Text, token.Password, RequestedFeatures(), fullScreen,requestTopology.IsChecked==true?DisplayProtocol.TopologyVersion:DisplayProtocol.Version,fullControl ? SessionMode.Admin : SessionMode.Work, networkMode.SelectedIndex switch { 1 => NetworkMode.Tcp, 2 => NetworkMode.Udp, _ => NetworkMode.Auto }, fullControl);
+        var target = new ConnectionTarget(address.ToString(), number, pinnedConnection.IsChecked == true, fingerprint.Text, token.Password, RequestedFeatures(), fullScreen,requestTopology.IsChecked==true?DisplayProtocol.TopologyVersion:DisplayProtocol.Version,networkMode.SelectedIndex switch { 1 => NetworkMode.Tcp, 2 => NetworkMode.Udp, _ => NetworkMode.Auto }, fullControl);
         if (smoke?.RequireUdp == true) target = target with { Network = NetworkMode.Udp };
         using var lifetime = new CancellationTokenSource(); connectionRun = lifetime;
         connectionEnded = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -64,6 +64,7 @@ public sealed partial class ViewerWindow
                     SetConnectionPhase(result.Error is RemoteSessionEndedException ? ConnectionPhase.Disconnected : ConnectionPhase.Failed);
                     status.Text = result.Error switch
                     {
+                        FullControlVersionException => "Host 与 Viewer 需要升级到支持完整控制的版本。",
                         HostConsentRejectedException => "Host 已拒绝本次连接，已停止自动重连。",
                         UdpMediaUnavailableException { Reason: UdpMediaFailure.LocalUnavailable } => "本机无法使用 UDP 媒体。请选择 Auto 或 TCP 后重试。",
                         UdpMediaUnavailableException { Reason: UdpMediaFailure.HostUnavailable } => "Host 未提供 UDP 媒体。请选择 Auto 或 TCP 后重试。",
