@@ -10,7 +10,7 @@ internal sealed partial class HostWindow
 {
     readonly CheckBox useService=new(){Content="使用已安装的系统服务协调（可选，不增加桌面权限）",Margin=new(0,12,0,4)};
     readonly Button connectService=new(){Content="连接系统服务",IsEnabled=false};
-    readonly TextBlock serviceStatus=new(){Text="未启用系统服务，普通共享仍可使用。",TextWrapping=TextWrapping.Wrap};
+    readonly TextBlock serviceStatus=new(){Text="尚未连接系统服务。完整控制需要已安装的管理员输入组件。",TextWrapping=TextWrapping.Wrap};
     SessionAgentClient? serviceAgent;
     CancellationTokenSource? serviceAttempt,serviceWatch;
     Task? serviceConnectingOperation,serviceObserver;
@@ -23,16 +23,16 @@ internal sealed partial class HostWindow
     {
         var panel=new StackPanel();panel.Children.Add(serviceStatus);
         AddServiceSetup(panel);
-        settings.Children.Add(new Expander{Header="系统服务（可选）",Content=panel,IsExpanded=true,Margin=new(0,8,0,0)});
+        settings.Children.Add(new Expander{Header="系统服务与输入组件",Content=panel,IsExpanded=true,Margin=new(0,8,0,0)});
         connectService.Click+=async(_,_)=>await ConnectService();
         useService.Checked+=(_,_)=>{if(!ServiceReady)serviceStatus.Text="服务模式尚未连接；不会开始共享。";UpdateServiceControls();};
-        useService.Unchecked+=async(_,_)=>{if(Host.Running){useService.IsChecked=true;return;}await DisconnectService();serviceStatus.Text="普通用户模式：不需要安装系统服务。";if(!ServiceSetupBusy)serviceSetupNotice.Text="已切换为普通共享；需要时点击“启用系统服务”。";UpdateServiceControls();};
+        useService.Unchecked+=async(_,_)=>{if(Host.Running){useService.IsChecked=true;return;}await DisconnectService();serviceStatus.Text="已断开系统服务协调。";UpdateServiceControls();};
     }
     void UpdateServiceControls()
     {
         useService.IsEnabled=!Host.Running&&!serviceConnecting&&!serviceCleaning&&!closing&&!ServiceSetupBusy;
         connectService.IsEnabled=ServiceRequired&&!Host.Running&&!serviceConnecting&&!serviceCleaning&&!ServiceReady&&!closing&&!ServiceSetupBusy;
-        start.IsEnabled=!Host.Running&&!serviceConnecting&&!serviceCleaning&&!closing&&!ServiceSetupBusy&&(!ServiceRequired||ServiceReady);
+        start.IsEnabled=!Host.Running&&!checkingInputDeployment&&!serviceConnecting&&!serviceCleaning&&!closing&&!ServiceSetupBusy&&(!ServiceRequired||ServiceReady);
         UpdateServiceSetupControls();
         UpdateRecoveryControls();
     }

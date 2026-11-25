@@ -67,6 +67,12 @@ internal static class ShellVerification
             try
             {
                 window.VerifyAdminStatusEvents();
+                window.InputDeploymentForVerification = () => RelaxDesk.Session.AdminWorkerDeployment.RepairRequired;
+                await window.StartSharing("127.0.0.1", Port());
+                if (window.Host.Running || !window.AdminDeploymentNoticeVisible)
+                    throw new IOException("Sharing began before the protected input deployment was ready");
+                window.InputDeploymentForVerification = null;
+                Console.WriteLine("PASS WPF Host refuses to listen when protected input deployment needs repair");
                 Console.WriteLine("PASS WPF Host administrator status rejects stale session events and clears controls on session end");
                 await Until(()=>window.DisplayEnumerationFinished);await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);Snapshot("host-idle.png");
                 if(!window.DisplayConfigurationEnabled||window.DisplayChoiceCount<2)throw new IOException("Physical display metadata choices missing");

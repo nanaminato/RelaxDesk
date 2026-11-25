@@ -44,7 +44,7 @@ internal sealed partial class HostWindow
     }
     void UpdateServiceSetupControls()
     {
-        bool idle=!Host.Running&&!RestartPending&&!serviceConnecting&&!serviceCleaning&&!closing&&!ServiceSetupBusy;
+        bool idle=!Host.Running&&!checkingInputDeployment&&!RestartPending&&!serviceConnecting&&!serviceCleaning&&!closing&&!ServiceSetupBusy;
         enableService.IsEnabled=idle&&!ServiceReady;enableService.Content=ServiceReady?"系统服务已启用":ServiceSetupBusy?"正在处理…":"启用系统服务";
         installService.IsEnabled=uninstallService.IsEnabled=serviceStartup.IsEnabled=idle;
         refreshService.IsEnabled=!ServiceSetupBusy&&!serviceInspecting&&!closing;

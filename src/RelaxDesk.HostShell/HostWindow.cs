@@ -2,11 +2,13 @@ using System.IO;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Security.Principal;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using RelaxDesk.Core;
+using RelaxDesk.Session;
 namespace RelaxDesk.HostShell;
 
 internal sealed partial class HostWindow:Window
@@ -27,6 +29,8 @@ internal sealed partial class HostWindow:Window
     string? desktopNotice;
     bool hostTokenDenied;
     bool adminDeploymentUnavailable;
+    bool checkingInputDeployment;
+    internal Func<AdminWorkerDeployment>? InputDeploymentForVerification { get; set; }
     string? adminStartupNotice;
     string[] fullControlFeatures = [];
     const string AdminDeploymentNotice = "完整远程控制不可用。要修复代理，请结束共享，在「系统服务」的「更多设置」中选择「更新／修复并应用设置（管理员）」。";
@@ -77,12 +81,44 @@ internal sealed partial class HostWindow:Window
     string ListeningDetail => desktopNotice ?? (adminDeploymentUnavailable ? AdminDeploymentNotice : adminStartupNotice ?? $"Viewer 可连接 {ip.Text}:{port.Text}，收到请求后由你确认。");
     internal async Task StartSharing(string? address=null,int? number=null,string backend="dxgi",bool recovering=false)
     {
-        if(ServiceSetupBusy)return;
+        if(ServiceSetupBusy || checkingInputDeployment || Host.Running)return;
         if(!recovering){if(RestartPending)return;restartBudget=new();restartBackend=backend;desktopNotice=null;hostTokenDenied=false;}
         if(ServiceRequired&&!ServiceReady){state.Text="服务协调不可用";detail.Text="请先连接已授权的系统服务；没有开始共享。";UpdateServiceControls();return;}
+        if (!backend.StartsWith("test-", StringComparison.Ordinal) && !await CheckInputDeployment()) return;
+        if (closing || ServiceSetupBusy || ServiceRequired && !ServiceReady) return;
         try{if(address is not null)ip.Text=address;if(number.HasValue)port.Text=number.Value.ToString();if(!int.TryParse(port.Text,out int selected))throw new ArgumentException("端口应为 1–65535");ip.IsEnabled=port.IsEnabled=start.IsEnabled=false;SetFileConfigurationEnabled(false);SetDisplayConfigurationEnabled(false);stop.IsEnabled=true;state.Text="正在启动";await Host.Start(application,ip.Text.Trim(),selected,backend,selectedFileRoot,SelectedDisplay);}
         catch(Exception e){state.Text="无法开始共享";detail.Text=e.Message;ip.IsEnabled=port.IsEnabled=start.IsEnabled=true;SetFileConfigurationEnabled(true);SetDisplayConfigurationEnabled(true);stop.IsEnabled=false;}
         finally{UpdateServiceControls();}
+    }
+
+    async Task<bool> CheckInputDeployment()
+    {
+        checkingInputDeployment = true;
+        state.Text = "正在检查完整远程控制组件";
+        UpdateServiceControls();
+        try
+        {
+            var deployment = await Task.Run(InputDeploymentForVerification ?? InspectInputDeployment);
+            if (closing || !IsLoaded) return false;
+            adminDeploymentUnavailable = deployment != AdminWorkerDeployment.Verified;
+            if (!adminDeploymentUnavailable) return true;
+            state.Text = "完整远程控制不可用";
+            detail.Text = AdminDeploymentNotice;
+            return false;
+        }
+        finally
+        {
+            checkingInputDeployment = false;
+            UpdateServiceControls();
+        }
+    }
+
+    static AdminWorkerDeployment InspectInputDeployment()
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        return identity.User is { } owner
+            ? ServiceDeploymentTrust.InspectElevatedInput(owner.Value)
+            : AdminWorkerDeployment.RepairRequired;
     }
     internal async Task Decide(bool accepted){string? id=displayedSessionId;if(id is null)return;allow.IsEnabled=deny.IsEnabled=false;
         bool legacyFeatures=accepted&&!fullControlRequest;bool clipboard=legacyFeatures&&clipboardPermission.IsChecked==true;bool files=legacyFeatures&&filesPermission.IsChecked==true&&selectedFileRoot is not null;bool audio=legacyFeatures&&audioPermission.IsChecked==true;var remember=CaptureDeviceTrust(accepted);activeInput=accepted;await Host.Decide(accepted,clipboard,files,id,audio);if(displayedSessionId!=id)return;var enabled = accepted && fullControlRequest ? fullControlFeatures : [];revokeAudio.Visibility=audio||enabled.Contains(SessionCapabilities.SystemAudio)?Visibility.Visible:Visibility.Collapsed;revokeClipboard.Visibility=clipboard||enabled.Any(SessionCapabilities.IsClipboard)?Visibility.Visible:Visibility.Collapsed;revokeFiles.Visibility=files||enabled.Contains(SessionCapabilities.FileTransfer)?Visibility.Visible:Visibility.Collapsed;request.Visibility=Visibility.Collapsed;if(remember is not null)await SaveDeviceTrust(remember);}
