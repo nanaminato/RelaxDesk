@@ -21,6 +21,15 @@ Exit 0 means ready for local approval. Exit 2 reports which prerequisite was
 unavailable. The command neither starts sharing nor requests elevation. It
 does not exercise the UAC prompt, worker launch, or elevated input.
 
+For a repeatable input target, launch `RelaxDesk.Viewer.exe --desktop-input-probe`
+on the Host PC. Launch one copy as the ordinary signed-in user and a second copy
+from a locally elevated terminal on the same Default desktop. The window title
+shows the process integrity RID. With each window focused, press F8 and click
+its test button from the remote Viewer. Record whether each counter advances
+in Work, in locally authorized Admin, and after returning to Work. Close the
+windows to emit their final counters on redirected standard output. The probe
+records only these two counts and its token elevation and integrity values.
+
 | Test | Required evidence | Result |
 | --- | --- | --- |
 | Host start / approve / deny | No capture or input before explicit approval; fresh approvals each Host launch | Pending |
