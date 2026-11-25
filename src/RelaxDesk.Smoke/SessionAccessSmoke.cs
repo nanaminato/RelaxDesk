@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
 using System.Text.Json;
 using System.Security.Cryptography;
@@ -12,12 +13,73 @@ internal static class SessionAccessSmoke
         await Verify(hostPath, proveDevice: true, denied: false);
         await Verify(hostPath, proveDevice: true, denied: false, allFeatures: true);
         await Verify(hostPath, proveDevice: false, denied: true, production: true);
+        await RejectInvalidHandshake(hostPath);
         await Verify(hostPath, proveDevice: true, denied: true);
         await Verify(hostPath, proveDevice: true, denied: false, workerLoss: false);
         await Verify(hostPath, proveDevice: true, denied: false, workerLoss: true);
-        Console.WriteLine("PASS verified device proof over production TLS; local approval still required");
         Console.WriteLine("PASS retired in-session elevation request terminates the connection");
-        Console.WriteLine("PASS production TLS and shell approval: full-control denial before and after device verification");
+        Console.WriteLine("PASS production Host denies missing device identity; verified-device fixture still requires local approval");
+    }
+
+    static async Task RejectInvalidHandshake(string hostPath)
+    {
+        using var reservation = new TcpListener(IPAddress.Loopback, 0);
+        reservation.Start();
+        int port = ((IPEndPoint)reservation.LocalEndpoint).Port;
+        reservation.Stop();
+        using var host = Process.Start(ChildProcess.Create(hostPath, "--shell", "127.0.0.1", port.ToString(), "dxgi"))
+            ?? throw new IOException("Host launch failed");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(18));
+        try
+        {
+            await WaitForListening();
+            await Reject(new Packet("unknown-connection-request"), false);
+            await WaitForListening();
+            using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            await Reject(new Packet(FullControlProtocol.Request, Text: new string('0', 32), Capabilities: ["deflate"],
+                InputVersion: InputProtocol.Version, DeviceKey: Convert.ToBase64String(key.ExportSubjectPublicKeyInfo())), true);
+            await WaitForListening();
+            Console.WriteLine("PASS production Host rejects unknown requests and invalid device proofs before local approval");
+        }
+        finally
+        {
+            if (!host.HasExited) host.Kill(true);
+            await host.WaitForExitAsync();
+        }
+
+        async Task Reject(Packet request, bool expectChallenge)
+        {
+            using var client = new TcpClient();
+            await client.ConnectAsync(IPAddress.Loopback, port, timeout.Token);
+            using var tls = new SslStream(client.GetStream(), false, static (_, _, _, _) => true);
+            await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = "127.0.0.1" }, timeout.Token);
+            await Wire.Write(tls, request, timeout.Token);
+            if (expectChallenge)
+            {
+                var challenge = await Wire.Read(tls, timeout.Token);
+                if (challenge.Kind != FullControlProtocol.DeviceChallenge)
+                    throw new IOException("Host did not challenge the provided device key");
+                await Wire.Write(tls, new(FullControlProtocol.DeviceProof, Data: new byte[64]), timeout.Token);
+            }
+            if (await tls.ReadAsync(new byte[1], timeout.Token) != 0)
+                throw new IOException("Host continued an invalid handshake");
+        }
+
+        async Task WaitForListening()
+        {
+            while (await host.StandardOutput.ReadLineAsync(timeout.Token) is { } line)
+            {
+                if (!line.StartsWith("RD_EVENT ", StringComparison.Ordinal)) continue;
+                using var json = JsonDocument.Parse(line[9..]);
+                switch (json.RootElement.GetProperty("type").GetString())
+                {
+                    case "listening": return;
+                    case "approval-request" or "native-approval-request" or "admin-starting" or "approved":
+                        throw new IOException("Invalid handshake entered the approval or input flow");
+                }
+            }
+            throw new IOException("Host did not return to listening");
+        }
     }
 
     static async Task Verify(string hostPath, bool proveDevice, bool denied, bool production = false, bool? workerLoss = null, bool allFeatures = false)
