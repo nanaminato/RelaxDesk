@@ -155,6 +155,9 @@ try {
         Confirm ($sessionEnd.Contains("PASS actual Host/TLS synthetic $reason")) "Packaged Host session termination evidence missing for $reason"
     }
     Confirm ($sessionEnd.Contains('PASS actual Host/TLS synthetic WindowsDesktopUnavailable after desktop pause expiry')) 'Packaged Host desktop pause expiry evidence missing'
+    $inputLifecycle = Invoke-App 'packaged-full-control-input' $SmokeApplication @($hostExe, '--session-access')
+    Confirm ($inputLifecycle.Contains('PASS full-control disconnect releases input and requires fresh consent') -and
+        $inputLifecycle.Contains('PASS full-control worker loss releases input and requires fresh consent')) 'Packaged full-control input cleanup or fresh consent evidence missing'
     $deviceTrust = Invoke-App 'packaged-device-trust' $shellExe @('--device-trust-contracts',$hostExe,(Join-Path $output 'device-trust-fixtures'))
     Confirm ($deviceTrust.Contains('PASS WPF device trust') -and $deviceTrust.Contains('PASS WPF saved device requires fresh Host consent')) 'Packaged device trust and fresh consent evidence missing'
     $details=[pscustomobject]@{version=$hostPackage.metadata.version;revision=$hostPackage.metadata.revision;native_sha256=$native[0];quic_tls_provider=$provider;quic_runtime_version=$hostPackage.metadata.quic_runtime_version;packages=@($packages | ForEach-Object {[pscustomobject]@{role=$_.metadata.role;archive=$_.archive;sha256=$_.sha256;bytes=$_.bytes;manifest_files=$_.manifest_files}})}

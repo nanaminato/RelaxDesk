@@ -12,18 +12,25 @@ internal static class SessionAccessSmoke
         await Verify(hostPath, proveDevice: true, denied: false);
         await Verify(hostPath, proveDevice: false, denied: true, production: true);
         await Verify(hostPath, proveDevice: true, denied: true, production: true);
+        await Verify(hostPath, proveDevice: true, denied: false, workerLoss: false);
+        await Verify(hostPath, proveDevice: true, denied: false, workerLoss: true);
         Console.WriteLine("PASS verified device proof over production TLS; local approval still required");
         Console.WriteLine("PASS retired in-session elevation request terminates the connection");
         Console.WriteLine("PASS production TLS and shell approval: full-control denial before and after device verification");
     }
 
-    static async Task Verify(string hostPath, bool proveDevice, bool denied, bool production = false)
+    static async Task Verify(string hostPath, bool proveDevice, bool denied, bool production = false, bool? workerLoss = null)
     {
         var reservation = new TcpListener(IPAddress.Loopback, 0);
         reservation.Start();
         int port = ((IPEndPoint)reservation.LocalEndpoint).Port;
         reservation.Stop();
-        string backend = production ? "dxgi" : "test-displays";
+        string backend = workerLoss switch
+        {
+            true => "test-admin-worker-loss",
+            false => "test-admin-lifecycle",
+            null => production ? "dxgi" : "test-displays"
+        };
         using var host = Process.Start(ChildProcess.Create(hostPath, ["--shell", "127.0.0.1", port.ToString(), backend]))
             ?? throw new IOException("Host launch failed");
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(18));
@@ -33,6 +40,7 @@ internal static class SessionAccessSmoke
             RequestedDisplayVersion = DisplayProtocol.Version,
             OpenDeviceKey = proveDevice ? () => ECDsa.Create(key.ExportParameters(true)) : null
         };
+        bool inputRouted = false, inputReleased = false, workerFailed = false;
         try
         {
             await ReadEvent("listening");
@@ -69,6 +77,36 @@ internal static class SessionAccessSmoke
             var frame = await viewer.Video.Read(timeout.Token);
             if (frame.Data.Length == 0) throw new IOException("No media delivered");
 
+            if (workerLoss is { } loseWorker)
+            {
+                await Wire.Write(viewer.Control, InputProtocol.Encode(new("move"), 1), timeout.Token);
+                if (!loseWorker)
+                {
+                    await Wire.Write(viewer.Control, new("ping-v2", 2), timeout.Token);
+                    if (await Wire.Read(viewer.Control, timeout.Token) != new Packet("pong-v2", 2))
+                        throw new IOException("Input worker interrupted reliable control");
+                    await host.StandardInput.WriteLineAsync($"DISCONNECT {id}");
+                    await host.StandardInput.FlushAsync();
+                }
+                await ReadEvent("session-ended");
+                if (!inputRouted || !inputReleased || workerFailed != loseWorker)
+                    throw new IOException("Input worker routing, failure or release was not observed");
+                await ReadEvent("listening");
+                using var reconnect = new SessionClient { OpenDeviceKey = () => ECDsa.Create(key.ExportParameters(true)) };
+                Task pending = reconnect.ConnectByApproval("127.0.0.1", port, timeout.Token);
+                var fresh = await ReadEvent("approval-request");
+                string? freshId = fresh.GetProperty("sessionId").GetString();
+                if (pending.IsCompleted || freshId is null || freshId == id)
+                    throw new IOException("Reconnect reused an earlier grant or skipped local approval");
+                await host.StandardInput.WriteLineAsync($"DENY {freshId}");
+                await host.StandardInput.FlushAsync();
+                try { await pending; throw new IOException("Reconnect ignored the new denial"); }
+                catch (HostConsentRejectedException) { }
+                string scenario = loseWorker ? "worker loss" : "disconnect";
+                Console.WriteLine($"PASS full-control {scenario} releases input and requires fresh consent; non-injecting local pipe fixture");
+                return;
+            }
+
             await Wire.Write(viewer.Control, new("display-ready-v2", 1, DisplayGeneration: frame.DisplayGeneration), timeout.Token);
             await Wire.Write(viewer.Control, InputProtocol.Encode(new("move"), 2, frame.DisplayGeneration), timeout.Token);
             await Wire.Write(viewer.Control, new("ping-v2", 3), timeout.Token);
@@ -91,6 +129,9 @@ internal static class SessionAccessSmoke
         {
             while (await host.StandardOutput.ReadLineAsync(timeout.Token) is { } line)
             {
+                inputRouted |= line.Contains("test_admin_input_routed", StringComparison.Ordinal);
+                inputReleased |= line.Contains("test_admin_input_released", StringComparison.Ordinal);
+                workerFailed |= line.Contains("session_end worker=admin-input", StringComparison.Ordinal);
                 if (!line.StartsWith("RD_EVENT ", StringComparison.Ordinal)) continue;
                 using var json = JsonDocument.Parse(line[9..]);
                 if (json.RootElement.GetProperty("type").GetString() == kind) return json.RootElement.Clone();

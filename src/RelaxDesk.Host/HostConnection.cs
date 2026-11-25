@@ -70,7 +70,9 @@ internal static class HostConnection
             WindowsSessionAccess.EnsureAllowed();
         }
         if (!synthetic) selectedDisplay = new WindowsDisplaySelection(selectedDisplay).Device;
-        await using var elevated = !synthetic ? await StartAdmin(client, tls, shell!, selectedDisplay!, stop) : null;
+        await using var elevated = !synthetic ? await StartAdmin(client, tls, shell!, selectedDisplay!, stop) :
+            deviceFingerprint is not null && backend is ("test-admin-lifecycle" or "test-admin-worker-loss")
+                ? await AdminInputFixture.Start(backend == "test-admin-worker-loss", stop) : null;
         if (!synthetic && elevated is null) return;
         if (shell is not null) ShellBridge.Emit("approved", sessionId: shell.Id);
         var availableFeatures = deviceFingerprint is not null

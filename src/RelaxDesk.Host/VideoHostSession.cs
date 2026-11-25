@@ -403,21 +403,21 @@ internal static class VideoHostSession
                 }
                 if (packet.Kind is "input" or "input-v2")
                 {
-                    if (synthetic&&displays is null) throw new AuthenticationException("Input disabled in synthetic video test");
+                    if (synthetic && displays is null && elevated is null) throw new AuthenticationException("Input disabled in synthetic video test");
                     if (!gate.TryExecuteInput(packet, () => {
                         session.Token.ThrowIfCancellationRequested();
                         if (desktopPause.IsPaused) return;
                         void Inject()
                         {
-                            if (synthetic)
+                            if (synthetic && elevated is null)
                             {
                                 HostSessionLog.Write($"test_display_input generation={packet.DisplayGeneration}");
                                 return;
                             }
                             if (elevated is not null)
                             {
-                                var device = (displays?.Active ?? displaySelection!).Device;
-                                if (device != elevatedDisplay)
+                                var device = (displays?.Active ?? displaySelection)?.Device;
+                                if (device is not null && device != elevatedDisplay)
                                 {
                                     elevated.SelectDisplay(device, session.Token).GetAwaiter().GetResult();
                                     elevatedDisplay = device;
