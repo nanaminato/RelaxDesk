@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Threading;
 using RelaxDesk.Windows;
 
@@ -32,18 +33,17 @@ internal sealed class DesktopInputProbe : Window
         Target.PreviewMouseLeftButtonUp += (_, _) => { buttonUps++; UpdateCounts(); };
         PreviewKeyDown += (_, input) =>
         {
-            if (input.Key != Key.F8 || input.IsRepeat) return;
+            if (finishOnKey || input.Key != Key.F8 || input.IsRepeat) return;
             keyDowns++;
             UpdateCounts();
             input.Handled = true;
         };
         PreviewKeyUp += (_, input) =>
         {
-            if (input.Key != Key.F8) return;
+            if (finishOnKey || input.Key != Key.F8) return;
             keyUps++;
             UpdateCounts();
             input.Handled = true;
-            if (finishOnKey && keyDowns == 1 && keyUps == 1) Close();
         };
 
         var panel = new StackPanel { Margin = new Thickness(20) };
@@ -55,10 +55,27 @@ internal sealed class DesktopInputProbe : Window
         if (finishOnKey)
         {
             Activated += (_, _) => Keyboard.Focus(Target);
+            SourceInitialized += (_, _) =>
+            {
+                var source = (HwndSource)PresentationSource.FromVisual(this);
+                source.AddHook(ObserveNativeKey);
+            };
             var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(90) };
             timer.Tick += (_, _) => Close();
             Closed += (_, _) => timer.Stop();
             timer.Start();
+        }
+
+        nint ObserveNativeKey(nint window, int message, nint key, nint flags, ref bool handled)
+        {
+            if (key != 0x77) return 0;
+            if (message == 0x100 && ((long)flags & (1L << 30)) == 0) keyDowns++;
+            else if (message == 0x101) keyUps++;
+            else return 0;
+            UpdateCounts();
+            handled = true;
+            if (keyDowns == 1 && keyUps == 1) Dispatcher.BeginInvoke(Close);
+            return 0;
         }
     }
 }

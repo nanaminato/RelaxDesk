@@ -406,6 +406,7 @@ internal static class VideoHostSession
         TaskCompletionSource? elevationAnnounced = null, elevationActivated = null;
         string? activationChallenge = null;
         string? elevatedDisplay = displaySelection?.Device;
+        bool elevatedInputForwarded = false;
         int displayRequests = 0;
         async Task UpgradeAdmin()
         {
@@ -468,6 +469,7 @@ internal static class VideoHostSession
                         {
                             elevated = worker;
                             elevatedDisplay = device;
+                            elevatedInputForwarded = false;
                             elevationAnnounced = announced;
                             elevationActivated = activated;
                             activationChallenge = challenge;
@@ -594,7 +596,14 @@ internal static class VideoHostSession
                             }
                             if (adminRoute == 0 && !adminRevoked.IsCancellationRequested &&
                                 (testAdminLifecycle || string.Equals((displays?.Active ?? displaySelection)?.Device, elevatedDisplay, StringComparison.Ordinal)))
+                            {
                                 elevated!.Send(packet.Input ?? throw new InvalidDataException("Administrator input requires rich input"), session.Token).GetAwaiter().GetResult();
+                                if (!elevatedInputForwarded)
+                                {
+                                    elevatedInputForwarded = true;
+                                    HostSessionLog.Write("admin_input_first_forwarded");
+                                }
+                            }
                             else if (adminRoute == 2)
                             {
                                 bool accepted = packet.Input is { } rich ? inputDesktop!.TryInjectOrdinary(rich) :
