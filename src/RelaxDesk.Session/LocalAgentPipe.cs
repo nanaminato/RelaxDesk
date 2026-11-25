@@ -23,6 +23,8 @@ public static class LocalAgentPipe
     [DllImport("kernel32.dll",SetLastError=true)] static extern bool GetNamedPipeServerProcessId(SafePipeHandle pipe,out uint pid);
     [DllImport("kernel32.dll",SetLastError=true)] static extern bool GetNamedPipeServerSessionId(SafePipeHandle pipe,out uint session);
     [DllImport("kernel32.dll",SetLastError=true)] static extern SafeProcessHandle OpenProcess(uint access,bool inherit,uint pid);
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+    static extern bool QueryFullProcessImageName(SafeProcessHandle process, uint flags, [Out] char[] image, ref uint length);
     [DllImport("kernel32.dll",SetLastError=true)] static extern bool ProcessIdToSessionId(uint pid,out uint session);
     [DllImport("advapi32.dll",SetLastError=true)] static extern bool OpenProcessToken(SafeProcessHandle process,uint access,out SafeAccessTokenHandle token);
     [DllImport("advapi32.dll",SetLastError=true)] static extern bool GetTokenInformation(SafeAccessTokenHandle token,int information,out uint value,uint size,out uint returned);
@@ -96,11 +98,19 @@ public static class LocalAgentPipe
         finally { Marshal.FreeHGlobal(buffer); }
     }
 
-    public static void AuthenticateAdminWorker(NamedPipeServerStream pipe, int expectedPid)
+    public static void AuthenticateAdminWorker(NamedPipeServerStream pipe, int expectedPid, string? expectedImage = null)
     {
         Check(GetNamedPipeClientProcessId(pipe.SafePipeHandle, out uint pid));
         Check(GetNamedPipeClientSessionId(pipe.SafePipeHandle, out uint session));
         RequirePeer(pid, session, expectedPid);
+        if (expectedImage is null) return;
+        using var process = OpenProcess(0x1000, false, pid); // PROCESS_QUERY_LIMITED_INFORMATION
+        if (process.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
+        var image = new char[32_768];
+        uint length = (uint)image.Length;
+        Check(QueryFullProcessImageName(process, 0, image, ref length));
+        if (!image.AsSpan(0, checked((int)length)).Equals(expectedImage.AsSpan(), StringComparison.OrdinalIgnoreCase))
+            throw new SecurityException("Administrator input worker image mismatch");
     }
 
     static void RequirePeer(uint pid, uint session, int expectedPid)

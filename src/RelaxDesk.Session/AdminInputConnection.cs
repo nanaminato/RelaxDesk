@@ -27,7 +27,7 @@ public sealed class AdminInputConnection : IAsyncDisposable
     public Task Completion => heartbeat;
 
     public static async Task<AdminInputConnection> Accept(NamedPipeServerStream server, Guid grant,
-        int workerPid, CancellationToken cancellation)
+        int workerPid, CancellationToken cancellation, string? workerImage = null)
     {
         try
         {
@@ -35,7 +35,7 @@ public sealed class AdminInputConnection : IAsyncDisposable
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
             deadline.CancelAfter(TimeSpan.FromSeconds(15));
             await server.WaitForConnectionAsync(deadline.Token);
-            LocalAgentPipe.AuthenticateAdminWorker(server, workerPid);
+            LocalAgentPipe.AuthenticateAdminWorker(server, workerPid, workerImage);
             var ready = await Wire.Read(server, deadline.Token, 2048);
             if (ready != new Packet(AdminInputChannel.Ready, Origin: grant.ToString("N")))
                 throw new SecurityException("Administrator worker readiness rejected");

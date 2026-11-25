@@ -41,7 +41,7 @@ public static class AdminInputLauncher
             }, cancellation), cancellation)
                 ?? throw new IOException("Administrator input worker did not launch");
             cancellation.ThrowIfCancellationRequested();
-            return await AdminInputConnection.Accept(server, grant, process.Id, cancellation);
+            return await AdminInputConnection.Accept(server, grant, process.Id, cancellation, executable);
         }
         catch (Win32Exception error) when (error.NativeErrorCode == 1223)
         {

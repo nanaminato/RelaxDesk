@@ -33,7 +33,13 @@ internal static class SessionBrokerSmoke
             await accepting;
             int pid = Environment.ProcessId;
             LocalAgentPipe.AuthenticateAdminCoordinator(adminClient, pid, own);
-            LocalAgentPipe.AuthenticateAdminWorker(adminServer, pid);
+            LocalAgentPipe.AuthenticateAdminWorker(adminServer, pid, Environment.ProcessPath!);
+            try
+            {
+                LocalAgentPipe.AuthenticateAdminWorker(adminServer, pid, Environment.ProcessPath! + ".wrong");
+                throw new IOException("Wrong administrator worker image was accepted");
+            }
+            catch (SecurityException) { Check(true); }
             Check(adminServer.IsConnected);
             bool rejected = false;
             try { LocalAgentPipe.AuthenticateAdminWorker(adminServer, pid + 1); }
