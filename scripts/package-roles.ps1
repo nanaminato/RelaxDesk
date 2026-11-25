@@ -9,6 +9,12 @@ try {
     if($LASTEXITCODE){throw 'Source revision unavailable'}
     $changes=@(& git status --porcelain)
     if($LASTEXITCODE -or $changes.Count){throw 'Role packages require committed, clean source'}
+    function Assert-PackageRevision {
+        $head = & git rev-parse HEAD
+        if ($LASTEXITCODE -or $head -cne $revision) { throw 'Source revision changed during role packaging' }
+        $pending = @(& git status --porcelain)
+        if ($LASTEXITCODE -or $pending.Count) { throw 'Source files changed during role packaging' }
+    }
     $stamp=Get-Date -Format 'yyyyMMdd-HHmmss'
     $version='0.4.2-roles.'+$stamp+'.g'+$revision.Substring(0,7)
     $fileVersion='0.4.'+(Get-Date -Format 'MMdd')+'.'+(Get-Date -Format 'HHmm')
@@ -57,10 +63,12 @@ try {
         Host=[ordered]@{Name='RelaxDesk-Host-win-x64';Projects=[ordered]@{'RelaxDesk.Host'='Host';'RelaxDesk.HostShell'='HostUi';'RelaxDesk.Service'='Service';'RelaxDesk.ElevatedInput'='ElevatedInput'};Launcher='Start-Host.cmd';Entry='启动被控端.cmd';Guide='HOST.zh-CN.md'}
         Viewer=[ordered]@{Name='RelaxDesk-Viewer-win-x64';Projects=[ordered]@{'RelaxDesk.Viewer'='Viewer'};Launcher='Start-Viewer.cmd';Entry='启动连接端.cmd';Guide='VIEWER.zh-CN.md'}
     }
+    $roleOutputs = @()
     foreach($role in $roles.Keys){
         $definition=$roles[$role];$package=Join-Path $output $definition.Name
         [void][IO.Directory]::CreateDirectory($package)
         foreach($project in $definition.Projects.Keys){
+            Assert-PackageRevision
             dotnet publish "src/$project/$project.csproj" --artifacts-path $artifacts -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false "-p:InformationalVersion=$version" "-p:FileVersion=$fileVersion" -p:IncludeSourceRevisionInInformationalVersion=false "-p:RelaxDeskNativePath=$native" -o (Join-Path $package $definition.Projects[$project])
             if($LASTEXITCODE){throw "Publish failed: $project"}
             if ($project -in @('RelaxDesk.Host', 'RelaxDesk.Viewer')) {
@@ -109,9 +117,11 @@ try {
         Compress-Archive -LiteralPath $package -DestinationPath $archive -CompressionLevel Optimal
         $hash=Get-FileHash -LiteralPath $archive -Algorithm SHA256
         ($hash.Hash+' *'+[IO.Path]::GetFileName($archive)) | Set-Content -LiteralPath ($archive+'.sha256') -Encoding ascii
-        Write-Output ($role.ToUpperInvariant()+'_PACKAGE='+$archive)
-        Write-Output ($role.ToUpperInvariant()+'_SHA256='+$hash.Hash)
+        $roleOutputs += ($role.ToUpperInvariant()+'_PACKAGE='+$archive)
+        $roleOutputs += ($role.ToUpperInvariant()+'_SHA256='+$hash.Hash)
     }
+    Assert-PackageRevision
+    $roleOutputs | Write-Output
     Write-Output ('VERSION='+$version)
     Write-Output ('ARTIFACTS='+$artifacts)
 } finally {Pop-Location}

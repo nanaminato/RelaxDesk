@@ -59,8 +59,14 @@ try {
         $exe=Join-Path $output ("RelaxDesk-$role-Setup-x64.exe");$hash=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash
         ($hash+' *'+[IO.Path]::GetFileName($exe)) | Set-Content -LiteralPath ($exe+'.sha256') -Encoding ascii
         $results+= [pscustomobject]@{role=$role.ToLowerInvariant();file=$exe;sha256=$hash;bytes=(Get-Item -LiteralPath $exe).Length;package_version=$metadata.version;application_revision=$metadata.revision;release=$release;source_archive_sha256=$archiveHash;recipe_revision=$revision;compiler=$compilerVersion;compiler_pe_product_version=(Get-Item -LiteralPath $iscc).VersionInfo.ProductVersion;compiler_sha256=(Get-FileHash -LiteralPath $iscc -Algorithm SHA256).Hash;signature='UNSIGNED_EXPERIMENTAL'}
-        Write-Output ($role.ToUpperInvariant()+'_INSTALLER='+$exe)
     }
+    $currentRevision = & git rev-parse HEAD
+    if ($LASTEXITCODE -or $currentRevision -cne $revision) { throw 'Installer recipe revision changed during compilation' }
+    $pending = @(& git status --porcelain)
+    if ($LASTEXITCODE -or $pending.Count) { throw 'Installer recipe changed during compilation' }
     $resultName=if($CheckOnly){'compile-check.json'}else{'installers.json'}
     $results | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $output $resultName) -Encoding utf8
+    if (!$CheckOnly) {
+        foreach ($result in $results) { Write-Output ($result.role.ToUpperInvariant()+'_INSTALLER='+$result.file) }
+    }
 } finally {Pop-Location}
