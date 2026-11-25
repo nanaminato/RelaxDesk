@@ -4,7 +4,7 @@ File tasks can now survive an unexpected v2 session interruption within the curr
 
 ## Compatibility and authorization
 
-Optional control fields `FileResume`/`FileScope` extend v2 without adding an unknown capability to older peers. Viewer offers FileResume only alongside `file.transfer`; Host grants it only under separately approved file access. FileScope is an opaque random directory identity, not a path or access credential. Client rejects an unsolicited/malformed scope and accepts older Host omission as ordinary non-resumable file transfer. All three TLS connections remain pinned to the control certificate; every reattachment has fresh media/data binding tickets.
+The control channel negotiates resumption with `FileResume` and `FileScope`. Viewer offers FileResume only alongside `file.transfer`; Host grants it only under separately approved file access. FileScope is an opaque random directory identity, not a path or access credential. The Viewer rejects an unsolicited or malformed scope. All three TLS connections remain pinned to the control certificate; every reattachment has fresh media/data binding tickets.
 
 A process-local Host store holds at most eight active/suspended entries and at most 64GiB of suspended upload data. Each suspended ticket expires after five minutes, rotates on use and binds direction, exact normalized relative path, expected upload length and overwrite decision. Replays, mismatched paths/directions and expired tokens return fixed error codes. Directory object identity is revalidated; replacement at the same local path rotates the scope and clears stale entries. Root paths and resume tickets are excluded from logs.
 

@@ -1,37 +1,45 @@
-# Host lifetime and fresh consent
+# Password sessions and automatic reconnect
 
-HostShell and an interactive console launch now keep one Host process alive between sessions. A scripted `Host <IP> <port> [backend]` retains its one-session behavior for existing callers; use `Host --listen [--file-root <directory>] <IP> <port> [backend]` for repeated console sessions. The listener binds only the explicitly selected local address. No service, startup registration, firewall change or unattended authorization is installed.
+The Host starts sharing from its ordinary Windows user session and binds only the
+selected local address. It remains available between connections until the
+operator stops sharing or closes the window. One controller is admitted at a time.
 
-Only one controller is admitted. While waiting for consent, the Host has not constructed capture/input or granted optional capabilities. After role-specific media/data binding, the listener closes while the current session runs. Teardown joins workers, revokes authorization, closes sockets and releases held input/native resources before reopening the listener. Denied/malformed/abandoned connections also return to listening. A 250ms cancellable delay bounds repeated failed-connection churn. TLS/hello has a 30-second limit; local approval has a 60-second limit, with disconnected or unsolicited-data peers removed during approval.
+The Viewer verifies the Host TLS certificate before sending the configured
+username and password. The Host verifies the password and challenges the Viewer
+to prove possession of its device key. The operator must approve a new device
+before the Host opens a desktop, input or optional feature channel. Approving
+records that device and the selected permissions. A recognized device still
+requires the correct password. Passwords are not written to Viewer history.
+Changing the Host password clears device approvals.
 
-The Host process holds one ephemeral TLS certificate for its lifetime. Console pairing tokens rotate for every new invitation/connection attempt. A Host restart changes the certificate; nothing stores a permanent secret. `SessionClient.ConnectByPinnedApproval` supports fresh explicit approval against a previously verified SHA256 certificate without reusing an old pairing token. Missing/malformed pins and changed control/media/data certificates fail closed. Viewer uses this path for bounded automatic recovery. First-contact IP/port approval still has its documented lack of out-of-band identity proof.
+## Local controls
 
-## Local UI boundary
+Local IPC commands name the current session. Delayed commands cannot approve,
+revoke or disconnect another session. Disconnect ends the current session and
+returns to listening. Stop Sharing closes the listener. Revoking a device ends
+its active session and removes its unattended approval. Optional permissions
+are granted only within the operator's selection and current file scope.
 
-Each connection owns a unique one-shot ConsentRequest plus independent cancellation/revocation scopes. Host stdio events carry `sessionId`; APPROVE/APPROVE_CLIPBOARD/APPROVE_FILES/APPROVE_ALL/DENY, DISCONNECT and REVOKE commands must include that exact current identifier. Stale decisions, duplicate decisions and old-session revocations/disconnects are ignored. This identifier is a local IPC correlation value, not a network authentication credential. The UI captures the displayed request ID rather than silently applying an old click to the latest peer. Command writes serialize.
+## Recovery
 
-“断开本次连接” cancels the current request/session and returns to waiting. “停止共享” cancels the global Host lifetime and exits the child. Closing HostShell also stops its own child; a closed stdio parent stops Host. File-root configuration remains fixed until global stop. New connection checkboxes always start unchecked; no previous clipboard/file approval or revocation carries into the next session. A `denied-v2` reply carries no media/data ticket, capability grant or content before the socket closes; older v2 clients also fail closed on this non-approval reply.
+After a successful session, network EOF, reset or control silence triggers up to
+five retries within a 120-second outage window. Delays are 1, 2, 4, 8 and 8
+seconds with jitter. A stable session with a presented frame and 30 seconds of
+connection time resets the outage budget. Retry uses the same verified
+certificate, password and device identity. It never opens a new approval
+prompt. Invalid credentials, revoked devices, certificate changes, operator
+cancellation and a received Host termination notice stop retry.
 
-## Reproduce and limits
+Each attempt uses fresh media and data tickets. The Viewer releases input,
+clears its old queue and requests a keyframe on reconnection. File resume
+requires an approved scope and confirmation. See [file resume](FILE-RESUME.md)
+and [display topology](DISPLAY-TOPOLOGY.md).
 
-`Smoke <Host.dll> --persistent-host <fixture-directory>` launches the actual Host in shell mode and exercises several real pinned TLS sessions, stale local commands, explicit rejection, grants/revokes and cleanup. `HostShell --shell-contracts <Host.dll> <output-directory>` exercises actual WPF approval and both stop actions. All test capture/clipboard sources are synthetic/isolated and file content is generated under a unique fixture directory. [Evidence](../benchmarks/2026-11-23-session-lifecycle-validation.md).
+## Validation
 
-## Viewer automatic recovery
-
-After a successfully approved v2 session, transport EOF/reset/control silence triggers exponential backoff of 1/2/4/8/8 seconds with independent ±20% jitter, at most five retries and a 120-second outage window including consent/negotiation. Brief handshakes do not reset the retry budget; a session with at least one frame and 30 seconds connected starts a new outage budget. An established session has no artificial 120-second lifetime limit. Initial connection/approval is bounded to 75 seconds and can always be cancelled. Legacy v1 has no automatic recovery.
-
-ConnectionTarget and the outer lifetime own the run; Connecting/Authenticating/AwaitingApproval/Negotiating/Connected/Reconnecting/Disconnected/Failed progress belongs to this coordinator. A child attempt owns its sockets, heartbeat, decoder/renderer/cursor, optional clipboard/file workers and queues. UI callbacks verify attempt identity. Attempt teardown finishes before the next starts. The full run remains cancellable while waiting/backing off, and window closing waits for cleanup.
-
-Every retry pins the approved certificate, including after first-contact consent; a strict initial connection also keeps its verified identity and never reuses its consumed pairing token. Each retry still requests fresh Host consent, capabilities and media/data tickets. No screen/input is restored before approval. Authentication errors, explicit denial, protocol errors and an explicit Host-end notice stop retries. No certificate change is silently accepted; manually initiating a new first-contact connection is a separate user action. Only previously granted, still-enabled optional features are requested on an automatic retry; revoked/denied capabilities are not silently re-requested. Host checkboxes remain default-off.
-
-Each new attempt drains old outgoing input, clears held-input state, constructs a fresh decoder/cursor and requests an IDR. Fullscreen preference is restored. Clipboard workers only restart under fresh grants. Scoped file workers can export a five-minute in-memory manifest/partial on unexpected transport loss. A fresh grant, matching directory identity and explicit continue confirmation restore unfinished tasks and byte offsets; cancel/revoke/stop discards them. [File resume contract](FILE-RESUME.md). Display selection/scaling and identity-scoped same-session topology recovery are implemented; every new connection still obtains a fresh display grant. [Display contract](DISPLAY-TOPOLOGY.md).
-
-Viewer Disconnect/close cancels the entire run and cannot schedule a retry. Host operator stop sends the strict bounded `session-ended-v2`/Text=`host-ended` notice before socket teardown. This notice is best effort under network failure; when received it prevents a retry, and any retry after a lost notice still requires new Host consent. Old v2 viewers reject the unknown terminal packet and close safely.
-
-The WPF `--reconnect-contracts <Host.dll> <output-directory>` suite uses a real TCP relay cut and actual Host/Viewer paths, verifies new consent, fullscreen/input reset, revoked feature suppression, rejection/user cancellation/changed identity, exactly five retries against an unavailable Host and zero owned native resources. [Recorded evidence](../benchmarks/2026-11-23-reconnect-validation.md). A loopback relay and synthetic frames do not prove physical LAN/adapter/driver or foreground input behavior.
-
-The interactive Host remains an ordinary-user process. Optional [service broker coordination](SESSION-BROKER.md) now has source and console/WPF evidence; actual SCM deployment, logon/reboot recovery, secure-desktop/UAC control and reboot-persistent file resume remain unaccepted. Physical Windows Home desktop and held-input cleanup require local-console dual-PC testing; synthetic media and zero native resource counters cannot prove those behaviors.
-
-## Windows session boundary
-
-[Read-only session eligibility and controlled teardown](WINDOWS-SESSIONS.md) now reject Session 0, inactive/unknown WTS state, invisible/unknown window stations, and a non-Default or unavailable calling-thread/input desktop. Checks do not grant consent or privilege. A 250ms session watch ends even an idle/headless v2 session; per-operation capture/input/clipboard checks remain. Session failure revokes capabilities, ends the attempt, clears process-local file resume and returns a persistent Host to Listening. The existing best-effort host-ended terminal notice stops Viewer retry when delivered; a lost notice still cannot bypass fresh Host consent. HostShell preserves a specific unsupported-session/security-desktop message while listening. No worker migration, service installation, logon control or UAC support is implied.
+Run `RelaxDesk.HostShell --password-login-contracts <Host.exe> <output>` for
+local TLS and WPF coverage of password validation, first approval, unattended
+return, reconnect and device revocation. The fixture uses synthetic video.
+Physical Windows Home input, LAN outages and a secure-desktop transition
+require separate tests. Unattended access requires the original Windows
+desktop to stay signed in, unlocked and shared.

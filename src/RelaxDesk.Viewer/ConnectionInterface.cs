@@ -10,7 +10,7 @@ public sealed partial class ViewerWindow
 {
     readonly ComboBox networkMode = new() { ItemsSource = new[] { "Auto", "TCP", "UDP" }, SelectedIndex = 0 };
     readonly ComboBox fileRateLimit = new() { ItemsSource = new[] { "20 MiB/s（默认）", "4 MiB/s", "1 MiB/s", "256 KiB/s" }, SelectedIndex = 0 };
-    readonly TextBox loginName = new() { MaxLength = 64 };
+    readonly TextBox loginName = new() { MaxLength = PasswordVerifier.MaximumUserNameLength };
     string SessionEndpoint => host.Text;
 
     void BuildInterface()

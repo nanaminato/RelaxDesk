@@ -2,7 +2,7 @@
 
 The authorized Viewer toolbar menu now has Video Settings. Presets select a capture/encode frame-rate limit of 15/30/60 FPS and an H.264 target bitrate of 2/8/20 Mbit/s. The protocol bounds are 5–60 FPS and 1–40 Mbit/s. Defaults remain 30 FPS and 8 Mbit/s. Targets do not guarantee delivered FPS, NIC rate, visual quality or office responsiveness; compare the measured live statistics and final physical workloads. No adaptive/hybrid transport or automatic codec preference change is introduced.
 
-Changes retain the current desktop/display grant and pixel dimensions. They never authorize another monitor, clipboard, files, audio or input mode. Deflate compatibility still supports the FPS limit; its bitrate controls are disabled with an explicit explanation. Old peers without the extension and legacy v1 leave the settings entry disabled. Reconnect renegotiates a fresh session and Host defaults; queued/in-flight old settings are not replayed or persisted in history.
+Changes retain the current desktop/display grant and pixel dimensions. They never authorize another monitor, clipboard, files, audio or input mode. Deflate compatibility still supports the FPS limit; its bitrate controls are disabled with an explicit explanation. Reconnect renegotiates a fresh session and Host defaults; queued/in-flight old settings are not replayed or persisted in history.
 
 ## Negotiation and validation
 

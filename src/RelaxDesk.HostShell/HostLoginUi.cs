@@ -15,12 +15,12 @@ internal sealed partial class HostWindow
 
     void AddLoginSettings(Panel navigation)
     {
-        var name = new TextBox { MaxLength = 64 };
-        var password = new PasswordBox { MaxLength = 128 };
+        var name = new TextBox { MaxLength = PasswordVerifier.MaximumUserNameLength };
+        var password = new PasswordBox { MaxLength = PasswordVerifier.MaximumPasswordLength };
         var panel = new StackPanel();
-        panel.Children.Add(Text("连接端用户名", 14, true));
+        panel.Children.Add(Text($"连接端用户名（{PasswordVerifier.MinimumNewUserNameLength} 至 {PasswordVerifier.MaximumUserNameLength} 个字符）", 14, true));
         panel.Children.Add(name);
-        panel.Children.Add(Text("新密码（12 至 128 个字符）", 14, true));
+        panel.Children.Add(Text($"新密码（{PasswordVerifier.MinimumPasswordLength} 至 {PasswordVerifier.MaximumPasswordLength} 个字符）", 14, true));
         panel.Children.Add(password);
         panel.Children.Add(saveLogin);
         panel.Children.Add(loginNotice);

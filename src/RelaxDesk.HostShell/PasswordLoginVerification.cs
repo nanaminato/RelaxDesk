@@ -13,8 +13,8 @@ internal sealed partial class HostWindow
     {
         Directory.CreateDirectory(output);
         var store = new DeviceTrustStore(Path.Combine(output, $"{Guid.NewGuid():N}.json"));
-        const string userName = "FixtureUser";
-        string secret = Convert.ToHexString(RandomNumberGenerator.GetBytes(18));
+        const string userName = "User06";
+        string secret = Convert.ToHexString(RandomNumberGenerator.GetBytes(4));
         var window = new HostWindow(host, store) { loginVerifierForTests = PasswordVerifier.Create(userName, secret), ShowActivated = false };
         window.Loaded += async (_, _) =>
         {
@@ -58,6 +58,18 @@ internal sealed partial class HostWindow
             }
             try
             {
+                Check(!PasswordVerifier.ValidPasswordLength(7) && PasswordVerifier.ValidPasswordLength(8),
+                    "Password length boundary is incorrect");
+                try
+                {
+                    _ = PasswordVerifier.Create(userName[..5], secret);
+                    throw new IOException("A five-character username was accepted for setup");
+                }
+                catch (ArgumentException) { }
+                var existing = window.loginVerifierForTests! with { UserName = "user" };
+                byte[] supplied = PasswordVerifier.EncodePassword(secret);
+                try { Check(existing.Verify("user", supplied), "An existing account stopped verifying"); }
+                finally { CryptographicOperations.ZeroMemory(supplied); }
                 await window.StartSharing("127.0.0.1", port, "test-hardware");
                 await Listening();
                 using (var bad = Client(known))

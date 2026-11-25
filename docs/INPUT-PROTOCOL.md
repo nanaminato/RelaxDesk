@@ -2,7 +2,7 @@
 
 Status: protocol/Host/native foundation and Viewer rich input/explicit committed-text UI implemented. Physical remote application, foreground and IME acceptance remains open.
 
-The TLS v2 hello optionally requests `InputVersion: 2`. After explicit screen/input approval, the Host echoes 2; omission/0 uses legacy input. A client rejects unknown or unsolicited versions before media binding. A v1 hello cannot request this extension. No extra clipboard or file permissions are implied.
+The password login request specifies `InputVersion: 2`. The Host echoes 2 once it authorizes the device. A client rejects unknown or unsolicited versions before media binding. No extra clipboard or file permissions are implied.
 
 `input-v2` carries a positive shared control sequence and a single canonical `RemoteInput`. Replay, malformed fields, unnegotiated input, and input after revoke are rejected before injection under the existing access lock. Other payload fields must be absent/default. Kinds:
 
@@ -23,7 +23,7 @@ On disposal, if cleanup is unavailable, known releases are kept only in a proces
 
 Primary display coordinates are translated through the virtual desktop rectangle with pixel-center normalization, including negative secondary origins. This fixes coordinate arithmetic only; monitor selection/capture, hotplug and mixed-DPI support are still pending.
 
-Viewer native and CPU bitmap paths forward raw scan/E0/repeat metadata before local WPF commands. Native focus and actual foreground gates stay strict. Rich pointer paths send position before button events, preserve both wheel axes and all five buttons, clamp only during captured drag, reject letterbox clicks, and release on capture/focus loss. Pixel-span endpoint mapping covers the last visible pixel; bitmap DIP coordinates are converted to device pixels first. Legacy peers retain the original VK/two-button/fixed-wheel contract.
+Viewer native and CPU bitmap paths forward raw scan/E0/repeat metadata before local WPF commands. Native focus and actual foreground gates stay strict. Rich pointer paths send position before button events, preserve both wheel axes and all five buttons, clamp only during captured drag, reject letterbox clicks, and release on capture/focus loss. Pixel-span endpoint mapping covers the last visible pixel; bitmap DIP coordinates are converted to device pixels first.
 
 No input may enter the outgoing queue before session approval/media binding. Each reconnect clears the profile, held state and queued input. Reveal of the toolbar, deactivation, minimization and fullscreen transitions release held input; network failure relies on the Host's session teardown. OS-reserved shortcuts remain available via the dedicated menu, and secure attention remains unsupported.
 

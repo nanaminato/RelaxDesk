@@ -7,19 +7,27 @@ namespace RelaxDesk.Core;
 public sealed record PasswordVerifier(string UserName, byte[] Salt, byte[] Hash)
 {
     const int Iterations = 600_000;
+    public const int MinimumNewUserNameLength = 6;
+    public const int MaximumUserNameLength = 64;
+    public const int MinimumPasswordLength = 8;
+    public const int MaximumPasswordLength = 128;
 
     public static bool ValidUserName(string? name) =>
-        name is { Length: > 0 and <= 64 } && name == name.Trim() && !name.Any(char.IsControl);
+        name is { Length: > 0 and <= MaximumUserNameLength } && name == name.Trim() && !name.Any(char.IsControl);
+
+    public static bool ValidPasswordLength(int length) => length is >= MinimumPasswordLength and <= MaximumPasswordLength;
 
     public static byte[] EncodePassword(string password)
     {
-        if (password.Length is < 12 or > 128) throw new ArgumentException("密码长度须为 12 至 128 个字符。");
+        if (!ValidPasswordLength(password.Length))
+            throw new ArgumentException($"密码长度须为 {MinimumPasswordLength} 至 {MaximumPasswordLength} 个字符。");
         return Encoding.UTF8.GetBytes(password);
     }
 
     public static PasswordVerifier Create(string name, string password)
     {
-        if (!ValidUserName(name)) throw new ArgumentException("请输入 1 至 64 个字符的用户名。");
+        if (name.Length < MinimumNewUserNameLength || !ValidUserName(name))
+            throw new ArgumentException($"请输入 {MinimumNewUserNameLength} 至 {MaximumUserNameLength} 个字符的用户名。");
         byte[] bytes = EncodePassword(password);
         try
         {
@@ -33,7 +41,7 @@ public sealed record PasswordVerifier(string UserName, byte[] Salt, byte[] Hash)
 
     public bool Verify(string? name, byte[]? password)
     {
-        if (!IsValid || password is not { Length: >= 12 and <= 512 }) return false;
+        if (!IsValid || password is not { Length: >= MinimumPasswordLength and <= MaximumPasswordLength * 4 }) return false;
         byte[] candidate = Derive(password, Salt);
         try { return CryptographicOperations.FixedTimeEquals(candidate, Hash) && UserName == name; }
         finally { CryptographicOperations.ZeroMemory(candidate); }

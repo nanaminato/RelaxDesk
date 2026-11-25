@@ -98,7 +98,7 @@ Native DLL is copied through the Windows project to Host/Viewer/Smoke output and
 
 Transfer the SHA256 fingerprint and per-run 128-bit token over a trusted channel, enter both in Viewer, connect, then type APPROVE in the Host console. A scripted host launch serves one session; `--listen`, interactive Host and HostShell support sequential sessions with new consent. Pairing tokens rotate per attempt while the certificate lasts for the process. No frames/input before approval and media binding. No persistent trust across process restarts. Firewall changes are not installed automatically; scope any manually allowed inbound rule to private LAN/program/port. Run in the authorized interactive session at ordinary privilege. Secure desktop/UAC/lock/login/elevated-target control remains unsupported. Viewer deactivation, Disconnect, closing Viewer or host Ctrl+C ends sharing. Held input is released on normal teardown where desktop permissions allow it; crash/desktop-change release is not guaranteed.
 
-The Viewer defaults to v2; its Legacy checkbox preserves v1 GDI+JSON/Base64+Deflate. For a like-for-like original baseline, select Legacy rather than assuming the v2 GDI backend also forces Deflate (v2 negotiates H.264 first).
+Capture backend and media codec are separate choices. Selecting GDI does not select Deflate.
 
 ## GDI fault localization
 

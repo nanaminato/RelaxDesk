@@ -39,9 +39,9 @@ public sealed partial class ViewerWindow
         if (!App.VerificationMode || !IPAddress.IsLoopback(address) || loginName.Text.Length != 0)
         {
             string name = loginName.Text.Trim();
-            if (!PasswordVerifier.ValidUserName(name) || target.Token.Length is < 12 or > 128)
+            if (!PasswordVerifier.ValidUserName(name) || !PasswordVerifier.ValidPasswordLength(target.Token.Length))
             {
-                status.Text = "请输入有效的用户名和密码。";
+                status.Text = $"请输入用户名和 {PasswordVerifier.MinimumPasswordLength} 至 {PasswordVerifier.MaximumPasswordLength} 个字符的密码。";
                 return;
             }
             target = target with { UserName = name, Pin = RelaxDesk.Windows.PasswordLoginSettings.ReadServerPin(new IPEndPoint(address, number).ToString()) ?? "", FullControl = true };
@@ -76,7 +76,7 @@ public sealed partial class ViewerWindow
                     status.Text = result.Error switch
                     {
                         HostConsentRejectedException => "Host 已拒绝本次连接，已停止自动重连。",
-                        PasswordLoginRejectedException => "用户名或密码错误，或受控端版本不支持密码登录。",
+                        PasswordLoginRejectedException => "受控端拒绝登录，请检查用户名和密码。",
                         FullControlInputUnavailableException => "Host 的完整远程控制暂不可用。请在 Host 检查管理员输入组件后重新连接。",
                         UdpMediaUnavailableException { Reason: UdpMediaFailure.LocalUnavailable } => "本机无法使用 UDP 媒体。请选择 Auto 或 TCP 后重试。",
                         UdpMediaUnavailableException { Reason: UdpMediaFailure.HostUnavailable } => "Host 未提供 UDP 媒体。请选择 Auto 或 TCP 后重试。",
