@@ -42,7 +42,10 @@ internal sealed class AdminInputTask : IAdminInputTaskRegistration
     static object? Find(dynamic folder, string name)
     {
         try { return folder.GetTask(name); }
-        catch (COMException error) when (error.HResult == FileNotFound) { return null; }
+        // COM interop can map HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND) to a
+        // FileNotFoundException instead of a COMException.
+        catch (Exception error) when (error.HResult == FileNotFound &&
+            error is COMException or FileNotFoundException) { return null; }
     }
 
     public void Register(string executable, string owner)
