@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Security;
 using System.Security.AccessControl;
 using System.Security.Principal;
+using System.Xml.Linq;
 
 namespace RelaxDesk.Session;
 
@@ -112,7 +113,7 @@ internal sealed class AdminInputTask : IAdminInputTaskRegistration
     {
         dynamic definition = task.Definition;
         if ((int)definition.Actions.Count != 1 || (int)definition.Triggers.Count != 0 ||
-            (string)definition.Principal.UserId != owner || (int)definition.Principal.LogonType != InteractiveToken ||
+            !HasRegisteredOwner((string)task.Xml, owner) || (int)definition.Principal.LogonType != InteractiveToken ||
             (int)definition.Principal.RunLevel != Highest)
             throw new SecurityException("Unexpected elevated input task configuration");
         dynamic action = definition.Actions.Item(1);
@@ -125,5 +126,18 @@ internal sealed class AdminInputTask : IAdminInputTaskRegistration
         if (!actual.GetSddlForm(AccessControlSections.All & ~AccessControlSections.Audit).Equals(
             expected.GetSddlForm(AccessControlSections.All & ~AccessControlSections.Audit), StringComparison.Ordinal))
             throw new SecurityException("Unexpected elevated input task permissions");
+    }
+
+    internal static bool HasRegisteredOwner(string taskXml, string owner)
+    {
+        // The COM principal can return a display account name. The registered
+        // XML retains the SID passed to RegisterTaskDefinition.
+        XNamespace schema = "http://schemas.microsoft.com/windows/2004/02/mit/task";
+        var task = XDocument.Parse(taskXml).Root;
+        if (task?.Name != schema + "Task") return false;
+        var principals = task.Elements(schema + "Principals").Elements(schema + "Principal").ToArray();
+        return principals.Length == 1 &&
+            !principals[0].Elements(schema + "GroupId").Any() &&
+            principals[0].Elements(schema + "UserId").Select(user => user.Value).SequenceEqual([owner]);
     }
 }

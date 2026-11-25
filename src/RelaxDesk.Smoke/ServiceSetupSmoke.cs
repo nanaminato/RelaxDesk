@@ -60,6 +60,13 @@ internal static class ServiceSetupSmoke
         foreach(string sid in new[]{own,ServiceFilePolicy.SystemSid,ServiceFilePolicy.AdminsSid})acl.AddAccessRule(new(new SecurityIdentifier(sid),FileSystemRights.FullControl,InheritanceFlags.ContainerInherit|InheritanceFlags.ObjectInherit,PropagationFlags.None,AccessControlType.Allow));
         Directory.CreateDirectory(parent);new DirectoryInfo(fixture).Create(acl);
         int count=0;void Check(bool good){if(!good)throw new IOException($"Machine setup contract {count+1} failed");count++;}
+        const string taskStart = "<Task xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\"><Principals><Principal>";
+        const string taskEnd = "</Principal></Principals></Task>";
+        string userId = $"<UserId>{own}</UserId>";
+        Check(AdminInputTask.HasRegisteredOwner(taskStart + userId + taskEnd, own));
+        Check(!AdminInputTask.HasRegisteredOwner(taskStart + "<UserId>S-1-5-18</UserId>" + taskEnd, own));
+        Check(!AdminInputTask.HasRegisteredOwner(taskStart + userId + "<GroupId>S-1-5-32-544</GroupId>" + taskEnd, own));
+        Check(!AdminInputTask.HasRegisteredOwner(taskStart + userId + userId + taskEnd, own));
         async Task Reject(Func<Task> action){bool rejected=false;try{await action();}catch(Exception error)when(error is IOException or InvalidDataException or SecurityException or UnauthorizedAccessException or ArgumentException or System.Text.Json.JsonException){rejected=true;}Check(rejected);}
         void RejectPolicy(Action action){bool rejected=false;try{action();}catch(Exception error)when(error is SecurityException or InvalidDataException){rejected=true;}Check(rejected);}
         string serviceFolder=Path.GetDirectoryName(Path.GetFullPath(application))!;
