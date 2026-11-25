@@ -98,14 +98,6 @@ internal sealed class HostProcess
     public Task RevokeClipboard(string? expectedSessionId=null)=>SessionCommand("REVOKE_CLIPBOARD",expectedSessionId);
     public Task RevokeFiles(string? expectedSessionId=null)=>SessionCommand("REVOKE_FILES",expectedSessionId);
     public Task RevokeAdminInput(string? expectedSessionId=null)=>SessionCommand("REVOKE_ADMIN_INPUT",expectedSessionId);
-    public Task DecideAdmin(bool allow, string sessionId, string requestId)
-    {
-        var child = process;
-        if (child is null || sessionId != SessionId || !Guid.TryParseExact(requestId, "N", out _))
-            return Task.CompletedTask;
-        string command = allow ? "ALLOW_ADMIN_INPUT" : "DENY_ADMIN_INPUT";
-        return Send(child, $"{command} {sessionId} {requestId}");
-    }
     public Task RevokeWorkInput(string? expectedSessionId=null)=>SessionCommand("REVOKE_WORK_INPUT",expectedSessionId);
     public Task RevokeGuestInput(string? expectedSessionId=null)=>SessionCommand("REVOKE_GUEST_INPUT",expectedSessionId);
     public Task RevokeAudio(string? expectedSessionId=null)=>SessionCommand("REVOKE_AUDIO",expectedSessionId);

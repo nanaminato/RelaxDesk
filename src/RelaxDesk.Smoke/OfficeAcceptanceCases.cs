@@ -53,9 +53,6 @@ internal static class OfficeAcceptanceCases
         Add("office-viewer-fallback-statistics", a.Viewer, "--statistics-contracts", a.Host, Folder("statistics-fallback"), "oversized");
         Add("office-viewer-host-without-udp", a.Viewer, "--statistics-contracts", a.Host, Folder("statistics-host-without-udp"), "host-without-udp");
         Add("office-viewer-text-quality", a.Viewer, "--office-text-quality", "software");
-        Add("office-viewer-admin-upgrade", a.Viewer, "--admin-upgrade-contracts", a.Host);
-        Add("office-viewer-admin-lifecycle", a.Viewer, "--admin-lifecycle-contracts", a.Host);
-        Add("office-viewer-admin-worker-loss", a.Viewer, "--admin-worker-loss-contracts", a.Host);
         foreach (string mode in new[] { "granted", "deny-clipboard", "deny-files" })
             Add("office-viewer-file-clipboard-" + mode, a.Viewer, "--file-clipboard-contracts", a.Host, Folder("file-clipboard-ui"), mode);
         foreach (string mode in new[] { "granted", "denied" })

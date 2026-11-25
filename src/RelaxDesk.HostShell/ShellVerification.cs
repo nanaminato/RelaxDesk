@@ -112,30 +112,30 @@ internal static class ShellVerification
                 port = Port();
                 await window.StartSharing("127.0.0.1", port, "test-displays");
                 await Until(() => window.Status == "等待连接");
-                using (var work = new SessionClient { RequestedMode = SessionMode.Work, RequestAdminUpgrade = true })
+                using (var work = new SessionClient { RequestedMode = SessionMode.Work })
                 {
                     var connecting = work.ConnectByApproval("127.0.0.1", port, timeout.Token);
                     await Until(() => window.RequestVisible);
                     if (connecting.IsCompleted) throw new IOException("Work-only policy skipped local consent");
                     await window.Decide(true);
                     await connecting;
-                    if (work.AdminUpgrade || !work.InputAllowed || (await work.Video.Read(timeout.Token)).Data.Length == 0)
+                    if (!work.InputAllowed || (await work.Video.Read(timeout.Token)).Data.Length == 0)
                         throw new IOException("Host UI Work-only policy negotiated the wrong capabilities");
                 }
                 await window.StopSharing();
                 await window.Host.Finished;
-                Console.WriteLine("PASS WPF Host Work-only settings reject Guest and allow separately approved Work without administrator upgrade");
+                Console.WriteLine("PASS WPF Host Work-only settings reject Guest and allow separately approved Work");
                 window.SelectAllowedModesForVerification("访客和工作");
                 port = Port();
                 await window.StartSharing("127.0.0.1", port, "test-displays");
                 await Until(() => window.Status == "等待连接");
-                using (var work = new SessionClient { RequestedMode = SessionMode.Work, RequestAdminUpgrade = true })
+                using (var work = new SessionClient { RequestedMode = SessionMode.Work })
                 {
                     var connecting = work.ConnectByApproval("127.0.0.1", port, timeout.Token);
                     await Until(() => window.RequestVisible);
                     await window.Decide(true);
                     await connecting;
-                    if (work.AdminUpgrade || !work.InputAllowed) throw new IOException("Disabling Admin affected the ordinary Work grant");
+                    if (!work.InputAllowed) throw new IOException("Disabling Admin affected the ordinary Work grant");
                 }
                 await Until(() => window.Status == "等待连接");
                 using (var guest = new SessionClient { RequestedMode = SessionMode.Guest })
@@ -144,40 +144,12 @@ internal static class ShellVerification
                     await Until(() => window.RequestVisible);
                     await window.Decide(true);
                     await connecting;
-                    if (guest.AdminUpgrade || guest.InputAllowed || (await guest.Video.Read(timeout.Token)).Data.Length == 0)
+                    if (guest.InputAllowed || (await guest.Video.Read(timeout.Token)).Data.Length == 0)
                         throw new IOException("Disabling Admin changed the default Guest view-only grant");
                 }
                 await window.StopSharing();
                 await window.Host.Finished;
-                Console.WriteLine("PASS WPF no-Admin policy permits ordinary Work and Guest viewing without negotiating administrator upgrade");
-                window.SelectAllowedModesForVerification("访客、工作和管理员");
-                port = Port();
-                await window.StartSharing("127.0.0.1", port, "test-displays");
-                await Until(() => window.Status == "等待连接");
-                using (var work = new SessionClient { RequestedMode = SessionMode.Work, RequestAdminUpgrade = true })
-                {
-                    var connecting = work.ConnectByApproval("127.0.0.1", port, timeout.Token);
-                    await Until(() => window.RequestVisible);
-                    await window.Decide(true);
-                    await connecting;
-                    if (!work.AdminUpgrade || window.AdminRequestVisible) throw new IOException("Incorrect initial administrator approval state");
-                    var frame = await work.Video.Read(timeout.Token);
-                    await Wire.Write(work.Control, new("admin-input-request-v2", 1), timeout.Token);
-                    await Until(() => window.AdminRequestVisible);
-                    if (window.RequestVisible) throw new IOException("Administrator approval reopened initial consent");
-                    Snapshot("host-admin-request.png");
-                    await Wire.Write(work.Control, new("ping-v2", 2), timeout.Token);
-                    if (await Wire.Read(work.Control, timeout.Token) != new Packet("pong-v2", 2))
-                        throw new IOException("Administrator approval blocked control");
-                    await window.DecideAdmin(false);
-                    if (await Wire.Read(work.Control, timeout.Token) != new Packet("admin-input-denied-v2"))
-                        throw new IOException("Local administrator denial did not reach Viewer");
-                    await Until(() => !window.AdminRequestVisible && window.Status == "正在共享 · Work");
-                    if ((await work.Video.Read(timeout.Token)).Sequence <= frame.Sequence) throw new IOException("Work media did not continue");
-                }
-                await window.StopSharing();
-                await window.Host.Finished;
-                Console.WriteLine("PASS WPF in-session administrator approval: separate local panel, control heartbeat during approval, denial closes panel and Work media continues; no UAC");
+                Console.WriteLine("PASS WPF no-Admin policy permits ordinary Work and Guest viewing");
                 port=Port();await window.StartSharing("127.0.0.1",port,"test-hardware");await Until(()=>window.Status=="等待连接");
                 using(var viewer=new SessionClient())
                 {

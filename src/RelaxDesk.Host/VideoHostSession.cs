@@ -7,7 +7,6 @@ using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
-using System.Security.Principal;
 using System.Threading.Channels;
 using RelaxDesk.Core;
 using RelaxDesk.Session;
@@ -26,7 +25,7 @@ internal static class VideoHostSession
         public TaskCompletionSource<Packet> Result { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
     public static async Task Run(TcpListener listener, TcpClient controlSocket, SslStream control, HostMediaIdentity identity,
-        Packet hello, string backend, CancellationToken stop, string[]? grantedFeatures = null, CancellationToken clipboardRevoked = default, string? selectedFileRoot = null, CancellationToken filesRevoked = default,FileTransferResumeStore? fileResumes=null,string? selectedDisplay=null,CancellationToken audioRevoked=default,SessionAccess? access=null,CancellationToken inputRevoked=default,AdminInputConnection? elevated=null,CancellationToken adminRevoked=default,string? shellSessionId=null, ShellBridge.Session? shell=null)
+        Packet hello, string backend, CancellationToken stop, string[]? grantedFeatures = null, CancellationToken clipboardRevoked = default, string? selectedFileRoot = null, CancellationToken filesRevoked = default,FileTransferResumeStore? fileResumes=null,string? selectedDisplay=null,CancellationToken audioRevoked=default,SessionAccess? access=null,CancellationToken inputRevoked=default,AdminInputConnection? elevated=null,CancellationToken adminRevoked=default,string? shellSessionId=null)
     {
         var certificate = identity.Certificate;
         access ??= SessionAccess.Approve(hello.Mode, false);
@@ -36,9 +35,6 @@ internal static class VideoHostSession
         if (synthetic && !IPAddress.IsLoopback(((IPEndPoint)controlSocket.Client.LocalEndPoint!).Address))
             throw new AuthenticationException("Synthetic video testing is loopback-only");
         if(!synthetic)WindowsSessionAccess.EnsureAllowed();
-        bool testAdminLifecycle = backend is "test-admin-lifecycle" or "test-admin-worker-loss";
-        bool upgradeAvailable = (!synthetic || backend == "test-displays" || testAdminLifecycle) && shell is not null &&
-            hello.AdminUpgrade == true && hello.Mode == SessionMode.Work && access.InputAllowed;
         var displaySelection=synthetic?null:new WindowsDisplaySelection(selectedDisplay);
         var displays=elevated is null&&hello.DisplayVersion!=0&&(!synthetic||backend is "test-displays" or "test-admin-lifecycle" or "test-admin-worker-loss" or "test-topology" or "test-topology-init-race")?new HostDisplaySession(displaySelection,synthetic?selectedDisplay:null,hello.DisplayVersion,backend=="test-topology"):null;
         int displayVersion=displays?.Version??0;
@@ -68,7 +64,7 @@ internal static class VideoHostSession
         var dataTicket = fileRoot is null ? null : new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15));
         var clipboardTicket=SessionCapabilities.RichClipboard(features)?new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15)):null;
         var audioTicket=features.Contains(SessionCapabilities.SystemAudio)?new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15)):null;
-        await Wire.Write(control, new Packet("approved-v2", Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features, DataTicket: dataTicket?.Value,FileResume:resumeFiles,FileScope:fileScope,InputVersion:hello.InputVersion,ClipboardTicket:clipboardTicket?.Value,DisplayVersion:displayVersion,DisplayState:displays?.Switch.Snapshot,AudioTicket:audioTicket?.Value,VideoVersion:video is null?0:VideoSettingsProtocol.Version,VideoSettings:video?.Current, Mode:hello.Mode, InputAllowed:hello.Mode is null ? null : access.InputAllowed, QuicPort:datagrams?.Port ?? 0, QuicTicket:quicTicket?.Value, AdminUpgrade:upgradeAvailable ? true : null, QuicRecovery: hello.QuicRecovery, WorkInputRevoke: shellSessionId is not null ? hello.WorkInputRevoke : null), stop);
+        await Wire.Write(control, new Packet("approved-v2", Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features, DataTicket: dataTicket?.Value,FileResume:resumeFiles,FileScope:fileScope,InputVersion:hello.InputVersion,ClipboardTicket:clipboardTicket?.Value,DisplayVersion:displayVersion,DisplayState:displays?.Switch.Snapshot,AudioTicket:audioTicket?.Value,VideoVersion:video is null?0:VideoSettingsProtocol.Version,VideoSettings:video?.Current, Mode:hello.Mode, InputAllowed:hello.Mode is null ? null : access.InputAllowed, QuicPort:datagrams?.Port ?? 0, QuicTicket:quicTicket?.Value, QuicRecovery: hello.QuicRecovery, WorkInputRevoke: shellSessionId is not null ? hello.WorkInputRevoke : null), stop);
         using var attach = CancellationTokenSource.CreateLinkedTokenSource(stop); attach.CancelAfter(TimeSpan.FromSeconds(15));
         int quicBudget = 0;
         if (datagrams is not null)
@@ -396,175 +392,8 @@ internal static class VideoHostSession
             await WriteControl(new(hello.Mode == SessionMode.Work ? "work-input-revoked-v2" : "guest-input-revoked-v2"));
         }
         Task inputRevocation = NotifyInputRevoked();
-        // Routes are Admin, paused, Work, or waiting for Viewer activation.
-        int adminRoute = elevated is null ? 2 : 0;
-        var initialWorker = elevated;
-        int workOffered = 0;
-        var routeLock = new object();
-        using var downgrade = CancellationTokenSource.CreateLinkedTokenSource(adminRevoked, session.Token);
-        var elevationRequests = Channel.CreateBounded<bool>(1);
-        TaskCompletionSource? elevationAnnounced = null, elevationActivated = null;
-        string? activationChallenge = null;
-        string? elevatedDisplay = displaySelection?.Device;
+        using var endOnWorkerRevocation = adminRevoked.Register(session.Cancel);
         bool elevatedInputForwarded = false;
-        int displayRequests = 0;
-        async Task UpgradeAdmin()
-        {
-            while (true)
-            {
-                _ = await elevationRequests.Reader.ReadAsync(session.Token);
-                await HandleAdminRequest();
-            }
-        }
-        async Task HandleAdminRequest()
-        {
-            inputDesktop?.ReleaseAll();
-            bool approved = await shell!.RequestAdmin(downgrade.Token);
-            AdminInputConnection? worker = null;
-            bool deploymentUnavailable = false;
-            var announced = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var activated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            if (approved && synthetic && !testAdminLifecycle)
-            {
-                await desktopPause.Begin(TestDesktop()).WaitAsync(session.Token);
-                await WriteControl(new("admin-desktop-paused-v2"));
-                desktopPause.Resume(TestDesktop());
-            }
-            if (approved && (!synthetic || testAdminLifecycle))
-            {
-                int displayRequest = Volatile.Read(ref displayRequests);
-                string device = testAdminLifecycle ? "fixture" : (displays?.Active ?? displaySelection!).Device;
-                WindowsSessionSnapshot ReadDesktop() => testAdminLifecycle ? TestDesktop() : WindowsSessionAccess.Read();
-                // Finish the capture pause even if permission is withdrawn so
-                // Resume can verify the original desktop and restore Work.
-                await desktopPause.Begin(ReadDesktop()).WaitAsync(TimeSpan.FromSeconds(5), session.Token);
-                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(downgrade.Token);
-                deadline.CancelAfter(TimeSpan.FromSeconds(45));
-                if (!deadline.IsCancellationRequested) await WriteControl(new("admin-desktop-paused-v2"));
-                try
-                {
-                    deadline.Token.ThrowIfCancellationRequested();
-                    ShellBridge.Emit("admin-starting", sessionId: shell.Id, mode: SessionMode.Admin);
-                    Guid grant = Guid.NewGuid();
-                    worker = testAdminLifecycle ? await StartTestAdminWorker(grant, deadline.Token) :
-                        await AdminInputLauncher.StartAfterLocalApproval(grant, device, deadline.Token);
-                }
-                catch (Exception error) when (!session.IsCancellationRequested && error is (IOException or OperationCanceledException or System.Security.SecurityException or System.ComponentModel.Win32Exception or UnauthorizedAccessException))
-                {
-                    deploymentUnavailable = error is AdminInputDeploymentException;
-                    if (error is OperationCanceledException { InnerException: System.ComponentModel.Win32Exception { NativeErrorCode: 1223 } })
-                        HostSessionLog.Write("admin_uac_cancelled native_error=1223");
-                    else
-                        HostSessionLog.Write($"admin_start_failed type={error.GetType().Name}");
-                }
-                try { await desktopPause.ResumeWhenAvailable(ReadDesktop, session.Token); }
-                catch { if (worker is not null) await worker.DisposeAsync(); throw; }
-                if (worker is not null)
-                {
-                    string challenge = Guid.NewGuid().ToString("N");
-                    lock (routeLock)
-                    {
-                        if (!downgrade.IsCancellationRequested && displayRequest == displayRequests &&
-                            (testAdminLifecycle || string.Equals((displays?.Active ?? displaySelection)?.Device, device, StringComparison.Ordinal)))
-                        {
-                            elevated = worker;
-                            elevatedDisplay = device;
-                            elevatedInputForwarded = false;
-                            elevationAnnounced = announced;
-                            elevationActivated = activated;
-                            activationChallenge = challenge;
-                            Volatile.Write(ref adminRoute, 3);
-                        }
-                    }
-                    if (elevated != worker) { await worker.DisposeAsync(); worker = null; }
-                }
-                if (worker is not null)
-                {
-                    ShellBridge.Emit("admin-awaiting-viewer", sessionId: shell.Id, mode: SessionMode.Work);
-                    await WriteControl(new("admin-input-ready-v2", Text: activationChallenge));
-                    announced.SetResult();
-                    try { await activated.Task.WaitAsync(TimeSpan.FromSeconds(5), session.Token); }
-                    catch (TimeoutException)
-                    {
-                        await DowngradeAdmin(waitingForActivation: true);
-                    }
-                    await worker.Completion.WaitAsync(session.Token);
-                    if (Volatile.Read(ref adminRoute) is 0 or 3) throw new IOException("Administrator input worker disconnected");
-                }
-            }
-            if (worker is null)
-            {
-                lock (routeLock) Volatile.Write(ref adminRoute, 2);
-                await WriteControl(new("admin-input-denied-v2", Text: adminRevoked.IsCancellationRequested ? "retry-disabled" : null));
-                ShellBridge.Emit("admin-denied", sessionId: shell.Id, mode: SessionMode.Work);
-                if (deploymentUnavailable) ShellBridge.Emit("admin-deployment-unavailable", sessionId: shell.Id);
-            }
-        }
-        async Task<AdminInputConnection> StartTestAdminWorker(Guid grant, CancellationToken cancellation)
-        {
-            using var identity = WindowsIdentity.GetCurrent();
-            using var startup = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-            var server = LocalAgentPipe.CreateAdminServer(grant, identity.User!.Value);
-            var accepting = AdminInputConnection.Accept(server, grant, Environment.ProcessId, startup.Token);
-            try
-            {
-                var peer = await LocalAgentPipe.ConnectAdmin(grant, startup.Token);
-                _ = RunTestWorker(peer, grant);
-                return await accepting;
-            }
-            catch
-            {
-                startup.Cancel();
-                try { await accepting; } catch (Exception) { }
-                server.Dispose();
-                throw;
-            }
-        }
-
-        async Task RunTestWorker(Stream peer, Guid grant)
-        {
-            using (peer)
-            {
-                try
-                {
-                    await Wire.Write(peer, new("admin-input-ready", Origin: grant.ToString("N")), session.Token);
-                    await AdminInputChannel.Run(peer, grant, _ =>
-                    {
-                        HostSessionLog.Write("test_admin_input_routed");
-                        if (backend == "test-admin-worker-loss") throw new IOException("Injected loss of the administrator worker pipe");
-                    },
-                        () => HostSessionLog.Write("test_admin_input_released"), session.Token);
-                }
-                catch (Exception error) when (error is IOException or OperationCanceledException or ObjectDisposedException) { }
-            }
-        }
-
-        async Task DowngradeAdmin(bool waitingForActivation = false)
-        {
-            AdminInputConnection worker;
-            Task? announced;
-            lock (routeLock)
-            {
-                if (elevated is null || adminRoute is not (0 or 3) || waitingForActivation && adminRoute != 3) return;
-                worker = elevated;
-                announced = worker != initialWorker ? elevationAnnounced?.Task : null;
-                Volatile.Write(ref adminRoute, 1);
-                elevationActivated?.TrySetResult();
-            }
-            await worker.End(session.Token);
-            if (announced is not null) await announced.WaitAsync(session.Token);
-            await worker.DisposeAsync();
-            Volatile.Write(ref workOffered, 1);
-            await WriteControl(new("admin-input-revoked-v2", Text: upgradeAvailable && !adminRevoked.IsCancellationRequested ? "retry-available" : null));
-            if (shellSessionId is not null) ShellBridge.Emit("admin-revoked", sessionId: shellSessionId);
-        }
-        async Task WatchLocalDowngrade()
-        {
-            try { await Task.Delay(Timeout.Infinite, downgrade.Token); }
-            catch (OperationCanceledException) when (downgrade.IsCancellationRequested) { }
-            if (adminRevoked.IsCancellationRequested && !session.IsCancellationRequested) await DowngradeAdmin();
-            await Task.Delay(Timeout.Infinite, session.Token);
-        }
         int ignoredDisplayInputs=0;
         bool ordinaryInputBlocked = false;
         var input = Task.Run(async () =>
@@ -587,24 +416,23 @@ internal static class VideoHostSession
                     if (!gate.TryExecuteInput(packet, () => {
                         session.Token.ThrowIfCancellationRequested();
                         if (desktopPause.IsPaused) return;
-                        void Inject(){lock (routeLock)
+                        void Inject()
                         {
-                            if (synthetic && adminRoute != 0)
+                            if (synthetic)
                             {
-                                if (adminRoute == 2) HostSessionLog.Write($"test_display_input generation={packet.DisplayGeneration}");
+                                HostSessionLog.Write($"test_display_input generation={packet.DisplayGeneration}");
                                 return;
                             }
-                            if (adminRoute == 0 && !adminRevoked.IsCancellationRequested &&
-                                (testAdminLifecycle || string.Equals((displays?.Active ?? displaySelection)?.Device, elevatedDisplay, StringComparison.Ordinal)))
+                            if (elevated is not null)
                             {
-                                elevated!.Send(packet.Input ?? throw new InvalidDataException("Administrator input requires rich input"), session.Token).GetAwaiter().GetResult();
+                                elevated.Send(packet.Input ?? throw new InvalidDataException("Administrator input requires rich input"), session.Token).GetAwaiter().GetResult();
                                 if (!elevatedInputForwarded)
                                 {
                                     elevatedInputForwarded = true;
                                     HostSessionLog.Write("admin_input_first_forwarded");
                                 }
                             }
-                            else if (adminRoute == 2)
+                            else
                             {
                                 bool accepted = packet.Input is { } rich ? inputDesktop!.TryInjectOrdinary(rich) :
                                     inputDesktop!.TryInjectOrdinaryLegacy(packet.Code,packet.Up,packet.X,packet.Y);
@@ -617,62 +445,17 @@ internal static class VideoHostSession
                                         ShellBridge.Emit(blocked ? "ordinary-input-blocked" : "ordinary-input-restored", sessionId: shellSessionId);
                                 }
                             }
-                        }}
+                        }
                         try{if(displays is null)Inject();else if(!displays.Switch.TryInput(packet.DisplayGeneration,Inject)&&Interlocked.Increment(ref ignoredDisplayInputs)==1)HostSessionLog.Write("display_input_ignored reason=stale-or-switching");}
                         catch(DisplayTopologyChangedException changed)when(displays?.TopologyEnabled==true){displays.Observe(changed.Displays,()=>inputDesktop?.ReleaseAll());}
                         catch(DisplayMetadataUnavailableException)when(displays?.TopologyEnabled==true){displays.MetadataUnavailable(()=>inputDesktop?.ReleaseAll());}
                     })) throw new AuthenticationException("Input authorization revoked");
                     continue;
                 }
-                if (!gate.AcceptControl(packet, adminTransition: elevated is not null, adminRequest: upgradeAvailable,
-                    discardRevokedAdminRequest: hello.WorkInputRevoke == true)) throw new InvalidDataException("Unauthorized control event");
-                if (packet.Kind == "admin-input-request-v2")
-                {
-                    if (inputRevoked.IsCancellationRequested)
-                    {
-                        await WriteControl(new("admin-input-denied-v2", Text: "retry-disabled"));
-                        continue;
-                    }
-                    lock (routeLock)
-                    {
-                        if (adminRoute != 2 || elevated is not null)
-                            throw new InvalidDataException("Administrator input request unavailable");
-                        Volatile.Write(ref adminRoute, 1);
-                        if (!elevationRequests.Writer.TryWrite(true)) throw new InvalidDataException("Administrator input request already queued");
-                    }
-                }
-                else if (packet.Kind == "admin-input-activate-v2")
-                {
-                    lock (routeLock)
-                    {
-                        if (adminRoute == 3 && !adminRevoked.IsCancellationRequested)
-                        {
-                            if (!string.Equals(packet.Text, activationChallenge, StringComparison.Ordinal))
-                                throw new AuthenticationException("Administrator activation challenge mismatch");
-                            activationChallenge = null;
-                            Volatile.Write(ref adminRoute, 0);
-                            ShellBridge.Emit("admin-ready", sessionId: shellSessionId, mode: SessionMode.Admin);
-                            elevationActivated!.TrySetResult();
-                        }
-                    }
-                }
-                else if (packet.Kind == "admin-input-stop-v2") await DowngradeAdmin();
-                else if (packet.Kind == "work-input-ready-v2")
-                {
-                    if (Interlocked.Exchange(ref workOffered, 0) != 1) throw new InvalidDataException("Work transition not offered");
-                    lock (routeLock)
-                    {
-                        elevated = null;
-                        activationChallenge = null;
-                        elevationActivated = elevationAnnounced = null;
-                        Volatile.Write(ref adminRoute, 2);
-                    }
-                }
-                else if(packet.Kind=="video-settings-v2")video!.Request(packet.VideoSettings!);
+                if (!gate.AcceptControl(packet)) throw new InvalidDataException("Unauthorized control event");
+                if(packet.Kind=="video-settings-v2")video!.Request(packet.VideoSettings!);
                 else if (packet.Kind == "display-select-v2")
                 {
-                    lock (routeLock) displayRequests++;
-                    await DowngradeAdmin();
                     displays!.Request(packet.DisplayId!, packet.DisplayGeneration, () => inputDesktop?.ReleaseAll());
                 }
                 else if(packet.Kind=="display-configured-v2")displays!.Switch.ConfirmConfiguration(packet.DisplayGeneration);
@@ -829,19 +612,16 @@ internal static class VideoHostSession
         Task observedInputRevocation = Observe(WatchInputRevocation(), "input-revocation", failures, session.Token);
         async Task WatchAdmin()
         {
-            if (initialWorker is null) { await Task.Delay(Timeout.Infinite, session.Token); return; }
-            await initialWorker.Completion.WaitAsync(session.Token);
-            if (Volatile.Read(ref adminRoute) == 0) throw new IOException("Administrator input worker disconnected");
-            await Task.Delay(Timeout.Infinite, session.Token);
+            if (elevated is null) { await Task.Delay(Timeout.Infinite, session.Token); return; }
+            await elevated.Completion.WaitAsync(session.Token);
+            throw new IOException("Administrator input worker disconnected");
         }
         Task observedAdmin = Observe(WatchAdmin(), "admin-input", failures, session.Token);
-        Task localDowngrade = Observe(WatchLocalDowngrade(), "admin-downgrade", failures, session.Token);
         Task observedTcpFallback = Observe(WatchTcpFallback(), "tcp-media-fallback", failures, session.Token);
         Task networkQuality = Observe(WatchNetworkQuality(), "udp-network-quality", failures, session.Token);
         Task quicRecovery = Observe(WatchQuicRecovery(), "udp-recovery", failures, session.Token);
         Task simulatedTransition = Observe(SimulateLocalElevation(), "local-desktop-transition", failures, session.Token);
-        Task liveUpgrade = Observe(UpgradeAdmin(), "admin-upgrade", failures, session.Token);
-        Task first = await Task.WhenAny(observedInput, observedSender, observedProducer, observedClipboard,observedSession,observedInputRevocation,observedAdmin,localDowngrade,observedTcpFallback,networkQuality,quicRecovery,simulatedTransition,liveUpgrade);
+        Task first = await Task.WhenAny(observedInput, observedSender, observedProducer, observedClipboard,observedSession,observedInputRevocation,observedAdmin,observedTcpFallback,networkQuality,quicRecovery,simulatedTransition);
         string worker = failures.First?.Worker ?? (first == observedInput ? "control-read" : first == observedSender ? "media-send" : "capture-encode");
         var failure = failures.First;
         HostSessionLog.Write($"session_end worker={worker} stage={failure?.Stage ?? "shutdown"} completed_frames={failure?.CompletedFrames ?? 0} state={first.Status} error_type={failure?.Error.GetType().Name ?? "none"} hresult=0x{failure?.Error.HResult ?? 0:X8} reason={failure?.Error.Message ?? "worker completed/cancelled"}");
@@ -849,17 +629,7 @@ internal static class VideoHostSession
         // suspend a resumable transfer instead of looking like a file denial.
         fileSession.Cancel();
         gate.Revoke();
-        // Stop pending local approval or worker startup before taking ownership
-        // of the installed worker. Keep control open for the terminal notice.
-        downgrade.Cancel();
-        AdminInputConnection? endingWorker;
-        lock (routeLock)
-        {
-            Volatile.Write(ref adminRoute, 1);
-            activationChallenge = null;
-            endingWorker = elevated;
-        }
-        if (endingWorker is not null) await endingWorker.DisposeAsync();
+        if (elevated is not null) await elevated.DisposeAsync();
         if (stop.IsCancellationRequested || failure?.Error is WindowsSessionUnavailableException)
         {
             // Bounded terminal notice distinguishes local stop from network loss.
@@ -888,8 +658,7 @@ internal static class VideoHostSession
         try { if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure.Error).Throw(); await first; }
         finally
         {
-            try { await Task.WhenAll(observedInput, observedSender, observedProducer, observedClipboard,observedSession,observedInputRevocation,observedAdmin,localDowngrade,observedTcpFallback,networkQuality,quicRecovery,simulatedTransition,liveUpgrade); } catch (Exception) { /* Causal failure is reported above; join all workers. */ }
-            if (elevated is not null && elevated != initialWorker) await elevated.DisposeAsync();
+            try { await Task.WhenAll(observedInput, observedSender, observedProducer, observedClipboard,observedSession,observedInputRevocation,observedAdmin,observedTcpFallback,networkQuality,quicRecovery,simulatedTransition); } catch (Exception) { /* Causal failure is reported above; join all workers. */ }
             try { await fileWorker; } catch (Exception error) { HostSessionLog.Write($"file_worker_shutdown error_type={error.GetType().Name} hresult=0x{error.HResult:X8}"); }
             await audioWorker;
             if(fileResumes is not null&&(stop.IsCancellationRequested||failure?.Error is WindowsSessionUnavailableException||Volatile.Read(ref explicitFileRevocation)!=0))await fileResumes.Clear();

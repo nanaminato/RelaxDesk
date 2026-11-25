@@ -73,17 +73,6 @@ public sealed class App : Application
             else if(args is ["--statistics-contracts",var legacyStatisticsHost,var legacyStatisticsFixtures,"legacy-auto"])ViewerWindow.VerifyStatistics(app,legacyStatisticsHost,legacyStatisticsFixtures,legacyAuto:true);
             else if(args is ["--statistics-contracts",var tcpOnlyStatisticsHost,var tcpOnlyStatisticsFixtures,"host-without-udp"])ViewerWindow.VerifyStatistics(app,tcpOnlyStatisticsHost,tcpOnlyStatisticsFixtures,hostWithoutUdp:true);
             else if(args is ["--statistics-contracts",var missingUdpHost,var missingUdpFixtures,"viewer-without-udp"])ViewerWindow.VerifyStatistics(app,missingUdpHost,missingUdpFixtures,viewerWithoutUdp:true);
-            else if (args is ["--admin-upgrade-contracts", var adminHost]) ViewerWindow.VerifyAdminUpgrade(app, adminHost);
-            else if (args is ["--admin-lifecycle-contracts", var lifecycleHost]) ViewerWindow.VerifyAdminUpgrade(app, lifecycleHost, activate: true);
-            else if (args is ["--admin-real-worker-contracts", var realWorkerHost]) ViewerWindow.VerifyAdminUpgrade(app, realWorkerHost, activate: true, realWorker: true);
-            else if (args is ["--admin-uac-cancel-contracts", var cancelUacHost]) ViewerWindow.VerifyAdminUpgrade(app, cancelUacHost, activate: true, realWorker: true, cancelElevation: true);
-            else if (args is ["--admin-physical-lock-contracts", var lockedAdminHost]) ViewerWindow.VerifyAdminUpgrade(app, lockedAdminHost, activate: true, realWorker: true, physicalLock: true);
-            else if (args is ["--admin-physical-key-contracts", var keyAdminHost]) ViewerWindow.VerifyAdminUpgrade(app, keyAdminHost, activate: true, realWorker: true, physicalKey: true);
-            else if (args is ["--admin-physical-key-release-contracts", var releaseAdminHost]) ViewerWindow.VerifyAdminUpgrade(app, releaseAdminHost, activate: true, realWorker: true, physicalKey: true, holdProbeInput: true);
-            else if (args is ["--admin-physical-host-revoke-contracts", var revokeAdminHost]) ViewerWindow.VerifyAdminUpgrade(app, revokeAdminHost, activate: true, realWorker: true, physicalKey: true, holdProbeInput: true, revokeFromHost: true);
-            else if (args is ["--admin-physical-disconnect-contracts", var disconnectAdminHost]) ViewerWindow.VerifyAdminUpgrade(app, disconnectAdminHost, activate: true, realWorker: true, physicalKey: true, holdProbeInput: true, disconnectWithProbeHeld: true);
-            else if (args is ["--admin-physical-mouse-release-contracts", var mouseAdminHost]) ViewerWindow.VerifyAdminUpgrade(app, mouseAdminHost, activate: true, realWorker: true, physicalMouse: true, holdProbeInput: true);
-            else if (args is ["--admin-worker-loss-contracts", var workerLossHost]) ViewerWindow.VerifyAdminUpgrade(app, workerLossHost, activate: true, workerLoss: true);
             else if(args is ["--video-settings-contracts",var settingsHost,var settingsMode])ViewerWindow.VerifyVideoSettings(app,settingsHost,settingsMode);
             else if(args is ["--display-legacy-session-contracts",var legacyDisplayHost])ViewerWindow.VerifyDisplaySession(app,legacyDisplayHost,false,true);
             else if(args is ["--topology-race-contracts",var raceHost])ViewerWindow.VerifyDisplaySession(app,raceHost,false,false,true);
@@ -239,7 +228,7 @@ public sealed partial class ViewerWindow : Window
                 throw new IOException("Injected initial UDP connection failure");
             return WindowsQuicDatagrams.Connect(endpoint, certificate);
         }
-        using var connection = new SessionClient { RequestedFeatures = target.Features,RequestedMode=target.Mode,RequestAdminUpgrade=true,RequestWorkInputRevoke=true,RequestPointerCompression=true,RequestQuicRecovery=smoke is null || autoRecoveryTest,Network=target.Network,OpenDeviceKey=target.IdentifyWorkDevice ? WindowsDeviceKey.Open : null,ConnectQuic=canOfferUdp ? OpenQuic : null,RequestedDisplayVersion=target.DisplayVersion,RequestedVideoVersion=VideoSettingsProtocol.Version }; using var abort = cancellation.Token.Register(connection.Dispose);
+        using var connection = new SessionClient { RequestedFeatures = target.Features,RequestedMode=target.Mode,RequestWorkInputRevoke=true,RequestPointerCompression=true,RequestQuicRecovery=smoke is null || autoRecoveryTest,Network=target.Network,OpenDeviceKey=target.IdentifyWorkDevice ? WindowsDeviceKey.Open : null,ConnectQuic=canOfferUdp ? OpenQuic : null,RequestedDisplayVersion=target.DisplayVersion,RequestedVideoVersion=VideoSettingsProtocol.Version }; using var abort = cancellation.Token.Register(connection.Dispose);
         string attemptStage = "connect";
         connection.PhaseChanged+=phase=>{attemptStage=phase switch { ConnectionPhase.Authenticating=>"authenticating",ConnectionPhase.AwaitingApproval=>"awaiting-approval",ConnectionPhase.Negotiating=>"negotiating",ConnectionPhase.Connected=>"session-setup",_=>"connect" };if(ReferenceEquals(session,cancellation)&&!cancellation.IsCancellationRequested)SetConnectionPhase(phase);};
         ClipboardSynchronizer? clipboard = null;
@@ -342,8 +331,6 @@ public sealed partial class ViewerWindow : Window
             established=true;connectedAt=Stopwatch.GetTimestamp();onConnected();
             token.Clear();
             var permissionGate = new AccessGate(); permissionGate.Approve(connection.Features); sessionPermissions = permissionGate; inputVersion=connection.InputVersion;inputAuthorized=connection.InputAllowed;activeMode=target.Mode??SessionMode.Work;
-            adminUpgradeAvailable = connection.AdminUpgrade;
-            Volatile.Write(ref adminUpgradePending, 0);
             StartDisplaySession(connection);
             BeginVideoSettings(connection);
             await StartFileSession(connection,cancellation.Token);
@@ -392,7 +379,7 @@ public sealed partial class ViewerWindow : Window
             var control = Task.Run(() => Observe(async () =>
             {
                 long clipboardSequence = 0;
-                bool inputRevoked = false, adminActive = target.Mode == SessionMode.Admin, adminDesktopPaused = false;
+                bool inputRevoked = false;
                 while (true)
                 {
                     var packet = await SessionControl.Read(connection.Control, cancellation.Token);
@@ -428,60 +415,6 @@ public sealed partial class ViewerWindow : Window
                             });
                         }
                     }
-                    else if (packet == new Packet("admin-desktop-paused-v2"))
-                    {
-                        if (!connection.AdminUpgrade || Volatile.Read(ref adminUpgradePending) != 1 || adminDesktopPaused)
-                            throw new InvalidDataException("Unexpected administrator desktop pause");
-                        adminDesktopPaused = true;
-                        _ = Dispatcher.BeginInvoke(() =>
-                        {
-                            if (!ReferenceEquals(session, cancellation) || cancellation.IsCancellationRequested) return;
-                            sessionToolbar?.SetEndpoint($"Work · Host 正在准备管理员输入 · {host.Text}");
-                        });
-                    }
-                    else if (packet.Kind == "admin-input-ready-v2" || packet == new Packet("admin-input-denied-v2") ||
-                             packet == new Packet("admin-input-denied-v2", Text: "retry-disabled"))
-                    {
-                        if (!connection.AdminUpgrade || Interlocked.Exchange(ref adminUpgradePending, 0) != 1)
-                            throw new InvalidDataException("Unexpected administrator approval response");
-                        adminActive = packet.Kind == "admin-input-ready-v2";
-                        if (adminActive && (!Guid.TryParseExact(packet.Text, "N", out var challenge) || challenge == Guid.Empty ||
-                            packet != new Packet(packet.Kind, Text: packet.Text))) throw new InvalidDataException("Invalid administrator activation challenge");
-                        adminDesktopPaused = false;
-                        bool granted = adminActive;
-                        _ = Dispatcher.BeginInvoke(() =>
-                        {
-                            if (!ReferenceEquals(session, cancellation) || cancellation.IsCancellationRequested) return;
-                            if (granted && !outgoing.TryWrite(new("admin-input-activate-v2", ++sequence, Text: packet.Text))) { cancellation.Cancel(); return; }
-                            activeMode = granted ? SessionMode.Admin : SessionMode.Work;
-                            inputAuthorized = !inputRevoked;
-                            sessionToolbar?.SetEndpoint(SessionEndpoint);
-                            adminUpgradeAvailable = !inputRevoked && !granted && packet.Text != "retry-disabled";
-                            sessionToolbar?.SetAdminDowngrade(granted ? RequestAdminDowngrade : adminUpgradeAvailable ? RequestAdminUpgrade : null, upgrade: adminUpgradeAvailable);
-                            sessionToolbar?.SetRemoteShortcuts(inputAuthorized);
-                            sessionToolbar?.SetTextInput(inputAuthorized && inputVersion == 2 ? OpenTextInput : null);
-                        });
-                    }
-                    else if (adminActive && (packet == new Packet("admin-input-revoked-v2") ||
-                             connection.AdminUpgrade && packet == new Packet("admin-input-revoked-v2", Text: "retry-available")))
-                    {
-                        adminActive = false;
-                        _ = Dispatcher.BeginInvoke(() =>
-                        {
-                            if (!ReferenceEquals(session, cancellation) || cancellation.IsCancellationRequested) return;
-                            richHeld.ReleaseAll();
-                            heldInputs.ReleaseAll();
-                            CloseTextInput();
-                            if (!outgoing.TryWrite(new("work-input-ready-v2", ++sequence))) { cancellation.Cancel(); return; }
-                            activeMode = SessionMode.Work;
-                            inputAuthorized = !inputRevoked;
-                            sessionToolbar?.SetEndpoint(SessionEndpoint);
-                            adminUpgradeAvailable = !inputRevoked && packet.Text == "retry-available";
-                            sessionToolbar?.SetAdminDowngrade(adminUpgradeAvailable ? RequestAdminUpgrade : null, upgrade: adminUpgradeAvailable);
-                            sessionToolbar?.SetRemoteShortcuts(inputAuthorized);
-                            sessionToolbar?.SetTextInput(inputAuthorized && inputVersion == 2 ? OpenTextInput : null);
-                        });
-                    }
                     else if (!inputRevoked && connection.InputAllowed &&
                         (packet == new Packet("guest-input-revoked-v2") && target.Mode == SessionMode.Guest ||
                          packet == new Packet("work-input-revoked-v2") && connection.WorkInputRevoke))
@@ -491,9 +424,7 @@ public sealed partial class ViewerWindow : Window
                         {
                             if (!ReferenceEquals(session, cancellation) || cancellation.IsCancellationRequested) return;
                             inputAuthorized = false;
-                            adminUpgradeAvailable = false;
                             sessionToolbar?.SetEndpoint(SessionEndpoint);
-                            sessionToolbar?.SetAdminDowngrade(null);
                             richHeld.ReleaseAll();
                             heldInputs.ReleaseAll();
                             CloseTextInput();

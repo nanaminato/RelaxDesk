@@ -50,8 +50,6 @@ internal static class HostConnection
             throw new AuthenticationException("Invalid QUIC recovery capability");
         if (hello.PointerBrotli is not null && (hello.PointerBrotli != true || hello.Kind == "hello-v1"))
             throw new AuthenticationException("Invalid pointer compression request");
-        if (hello.AdminUpgrade is not null && (hello.AdminUpgrade != true || hello.Mode != SessionMode.Work || hello.InputVersion != InputProtocol.Version))
-            throw new AuthenticationException("Invalid administrator transition request");
         if (hello.InputAllowed is not null || hello.Kind == "hello-v1" && hello.Mode is not null ||
             hello.WorkInputRevoke is not null && (hello.WorkInputRevoke != true || hello.Mode != SessionMode.Work))
             throw new AuthenticationException("Invalid session access negotiation");
@@ -94,7 +92,7 @@ internal static class HostConnection
         if (hello.Kind is "hello-v2" or "request-v2")
         {
             await VideoHostSession.Run(listener, client, tls, identity, hello, backend, stop,
-                SessionCapabilities.Grant(requestedFeatures, AudioConsent.Base(approval) is "APPROVE_CLIPBOARD" or "APPROVE_ALL", selectedFileRoot is not null && AudioConsent.Base(approval) is "APPROVE_FILES" or "APPROVE_ALL",AudioConsent.AllowsAudio(approval)), shell?.ClipboardRevoked ?? default, selectedFileRoot, shell?.FilesRevoked ?? default,fileResumes,selectedDisplay,shell?.AudioRevoked??default,access,shell?.InputRevoked??default,elevated,shell?.AdminInputRevoked??default,shell?.Id,adminDisabled ? null : shell);
+                SessionCapabilities.Grant(requestedFeatures, AudioConsent.Base(approval) is "APPROVE_CLIPBOARD" or "APPROVE_ALL", selectedFileRoot is not null && AudioConsent.Base(approval) is "APPROVE_FILES" or "APPROVE_ALL",AudioConsent.AllowsAudio(approval)), shell?.ClipboardRevoked ?? default, selectedFileRoot, shell?.FilesRevoked ?? default,fileResumes,selectedDisplay,shell?.AudioRevoked??default,access,shell?.InputRevoked??default,elevated,shell?.AdminInputRevoked??default,shell?.Id);
             return;
         }
         listener.Stop();

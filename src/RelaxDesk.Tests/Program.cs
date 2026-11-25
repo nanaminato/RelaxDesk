@@ -76,31 +76,8 @@ using (var wrongSession = new MemoryStream())
 
 var modeGate = new AccessGate();
 modeGate.Approve();
-Check(!modeGate.AcceptControl(new("admin-input-stop-v2", 1)));
-Check(!modeGate.AcceptControl(new("admin-input-stop-v2", 1, Code: 65), adminTransition: true));
-Check(modeGate.AcceptControl(new("admin-input-stop-v2", 1), adminTransition: true));
-Check(!modeGate.AcceptControl(new("work-input-ready-v2", 1), adminTransition: true));
-Check(modeGate.AcceptControl(new("work-input-ready-v2", 2), adminTransition: true));
-var activation = new Packet("admin-input-activate-v2", 3, Text: Guid.NewGuid().ToString("N"));
-Check(!modeGate.AcceptControl(activation));
-Check(!modeGate.AcceptControl(activation with { Text = null }, adminTransition: true));
-Check(!modeGate.AcceptControl(activation with { Code = 65 }, adminTransition: true));
-Check(modeGate.AcceptControl(activation, adminTransition: true));
-Check(!modeGate.AcceptControl(activation, adminTransition: true));
-var adminRequestGate = new AccessGate();
-var adminRequestPacket = new Packet("admin-input-request-v2", 1);
-Check(!adminRequestGate.AcceptControl(adminRequestPacket, adminRequest: true));
-adminRequestGate.Approve();
-Check(!adminRequestGate.AcceptControl(adminRequestPacket, adminRequest: true));
-adminRequestGate.Approve(inputVersion: InputProtocol.Version, allowInput: false);
-Check(!adminRequestGate.AcceptControl(adminRequestPacket, adminRequest: true));
-adminRequestGate.Approve(inputVersion: InputProtocol.Version);
-Check(!adminRequestGate.AcceptControl(adminRequestPacket));
-Check(!adminRequestGate.AcceptControl(adminRequestPacket with { Code = 65 }, adminRequest: true));
-Check(adminRequestGate.AcceptControl(adminRequestPacket, adminRequest: true));
-Check(!adminRequestGate.AcceptControl(adminRequestPacket, adminRequest: true));
-adminRequestGate.RevokeInput();
-Check(!adminRequestGate.AcceptControl(adminRequestPacket with { Sequence = 2 }, adminRequest: true));
+foreach (string kind in new[] { "admin-input-request-v2", "admin-input-activate-v2", "admin-input-stop-v2", "work-input-ready-v2" })
+    Check(!modeGate.AcceptControl(new(kind, 1)));
 
 using (var device = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256))
 using (var publicDevice = DeviceIdentity.Import(DeviceIdentity.Export(device)))

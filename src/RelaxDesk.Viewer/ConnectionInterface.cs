@@ -82,37 +82,6 @@ public sealed partial class ViewerWindow
         host.Text = code.Host; port.Text = code.Port.ToString(); fingerprint.Text = code.Fingerprint; token.Password = code.Token;
         pinnedConnection.IsChecked = true;
     }
-    bool adminUpgradeAvailable;
-    int adminUpgradePending;
-
-    void RequestAdminUpgrade()
-    {
-        if (!adminUpgradeAvailable || activeMode != SessionMode.Work ||
-            session is not { IsCancellationRequested: false } current) return;
-        adminUpgradeAvailable = false;
-        ReleaseHeldInputs();
-        inputAuthorized = false;
-        CloseTextInput();
-        sessionToolbar?.SetAdminDowngrade(null);
-        sessionToolbar?.SetRemoteShortcuts(false);
-        sessionToolbar?.SetTextInput(null);
-        sessionToolbar?.SetEndpoint($"Work · 等待本机管理员授权 · {host.Text}");
-        Volatile.Write(ref adminUpgradePending, 1);
-        if (!outgoing.TryWrite(new("admin-input-request-v2", ++sequence))) current.Cancel();
-    }
-
-    void RequestAdminDowngrade()
-    {
-        if (activeMode != SessionMode.Admin || session is not { IsCancellationRequested: false } current) return;
-        ReleaseHeldInputs();
-        inputAuthorized = false;
-        sessionToolbar?.SetAdminDowngrade(null);
-        sessionToolbar?.SetRemoteShortcuts(false);
-        sessionToolbar?.SetTextInput(null);
-        sessionToolbar?.SetEndpoint($"Admin · 正在撤销高权限输入 · {host.Text}");
-        if (!outgoing.TryWrite(new("admin-input-stop-v2", ++sequence))) current.Cancel();
-    }
-
     internal void ShowConnectedView(bool connected)
     {
         connectionOverlay.Visibility = connected ? Visibility.Collapsed : Visibility.Visible;
@@ -123,8 +92,6 @@ public sealed partial class ViewerWindow
                 session is null ? null : SendShortcut,ReleaseHeldInputs);
             sessionToolbar.SetSession(SessionEndpoint, fullScreen);
             sessionToolbar.SetClipboard(sessionPermissions is{} clipboardGate&&ClipboardFormats.Granted(clipboardGate).Any, DisableClipboard);
-            sessionToolbar.SetAdminDowngrade(activeMode == SessionMode.Admin ? RequestAdminDowngrade :
-                adminUpgradeAvailable ? RequestAdminUpgrade : null, upgrade: adminUpgradeAvailable);
             sessionToolbar.SetRemoteShortcuts(inputAuthorized);
             sessionToolbar.SetTextInput(inputAuthorized&&inputVersion==2?OpenTextInput:null);
             RefreshFileToolbar();RefreshFileClipboardToolbar();RefreshDisplayMenu();RefreshAudioToolbar();RefreshStatisticsToolbar();RefreshVideoSettingsMenu();sessionToolbar.SetViewport(CurrentViewport,SetViewportZoom);

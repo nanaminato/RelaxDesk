@@ -25,8 +25,6 @@ internal sealed partial class HostWindow:Window
     };
     readonly TextBlock consentAccess = new() { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.SlateGray };
     readonly Button revokeAdminInput = new() { Content = "退出管理员模式", Visibility = Visibility.Collapsed };
-    readonly Border adminRequest;
-    string? displayedAdminRequestId;
     readonly Button revokeGuestInput = new() { Content = "停止键鼠控制", Visibility = Visibility.Collapsed };
     string activeMode = "Work";
     bool activeInput;
@@ -53,20 +51,6 @@ internal sealed partial class HostWindow:Window
         var content=new StackPanel{Margin=new(32,26,32,24)};Grid.SetColumn(content,1);
         content.Children.Add(Text("共享这台电脑",28,true));content.Children.Add(new TextBlock{Text=BuildIdentity.Display,FontSize=11,Foreground=Brushes.SlateGray,Margin=new(0,5,0,18),TextWrapping=TextWrapping.Wrap});
         var statusContent=new StackPanel();state.FontSize=19;state.FontWeight=FontWeights.SemiBold;state.Foreground=Brush("#17243A");statusContent.Children.Add(state);detail.Margin=new(0,8,0,0);detail.Foreground=Brushes.SlateGray;statusContent.Children.Add(detail);content.Children.Add(Card(statusContent));
-        var adminApproval = new StackPanel();
-        adminApproval.Children.Add(Text("申请进入管理员模式", 19, true));
-        adminApproval.Children.Add(Text("远程键鼠已暂停。仅在你同意对方操作管理员窗口时，批准并在本机确认后续 Windows 授权。"));
-        var adminActions = new WrapPanel();
-        var allowAdmin = new Button { Content = "允许管理员输入" };
-        var denyAdmin = new Button { Content = "继续使用 Work" };
-        adminActions.Children.Add(denyAdmin);
-        adminActions.Children.Add(allowAdmin);
-        adminApproval.Children.Add(adminActions);
-        adminRequest = Card(adminApproval);
-        adminRequest.Visibility = Visibility.Collapsed;
-        content.Children.Add(adminRequest);
-        allowAdmin.Click += async (_, _) => await DecideAdmin(true);
-        denyAdmin.Click += async (_, _) => await DecideAdmin(false);
         var settings=new StackPanel();settings.Children.Add(Text("连接信息",17,true));settings.Children.Add(Text("Viewer 只需填写下面的 IP 和端口",12,false,Brushes.SlateGray));
         var fields=new Grid{Margin=new(0,12,0,0)};fields.ColumnDefinitions.Add(new());fields.ColumnDefinitions.Add(new(){Width=new(135)});
         var ipField=new StackPanel{Margin=new(0,0,16,0)};ipField.Children.Add(Text("本机局域网 IP",12));ipField.Children.Add(ip);fields.Children.Add(ipField);
@@ -126,21 +110,6 @@ internal sealed partial class HostWindow:Window
         bool clipboard=accepted&&clipboardPermission.IsChecked==true;bool files=accepted&&filesPermission.IsChecked==true&&selectedFileRoot is not null;bool audio=accepted&&audioPermission.IsChecked==true;var remember=CaptureWorkTrust(accepted,clipboard,files,audio);activeInput=accepted&&(activeMode is "Work" or "Admin"||guestInputPermission.IsChecked==true);await Host.Decide(accepted,clipboard,files,id,audio,activeMode=="Guest"&&activeInput,activeMode=="Admin"&&accepted);if(displayedSessionId!=id)return;revokeGuestInput.Visibility=activeInput&&(activeMode=="Guest"||workInputRevoke)?Visibility.Visible:Visibility.Collapsed;revokeAudio.Visibility=audio?Visibility.Visible:Visibility.Collapsed;revokeClipboard.Visibility=clipboard?Visibility.Visible:Visibility.Collapsed;revokeFiles.Visibility=files?Visibility.Visible:Visibility.Collapsed;request.Visibility=Visibility.Collapsed;if(remember is not null)await SaveWorkTrust(remember);}
     internal async Task StopSharing(){CancelRecovery();stop.IsEnabled=false;try{await Host.Stop();}catch(Exception e){detail.Text=e.Message;}}
     internal Task DisconnectSession()=>displayedSessionId is {} id?Host.Disconnect(id):Task.CompletedTask;
-    internal bool AdminRequestVisible => adminRequest.Visibility == Visibility.Visible;
-
-    internal async Task DecideAdmin(bool allow)
-    {
-        if (displayedSessionId is not { } sessionId || displayedAdminRequestId is not { } requestId) return;
-        CloseAdminRequest();
-        await Host.DecideAdmin(allow, sessionId, requestId);
-    }
-
-    void CloseAdminRequest()
-    {
-        displayedAdminRequestId = null;
-        adminRequest.Visibility = Visibility.Collapsed;
-    }
-
     void Changed(HostEvent change)
     {
         if(change.Generation!=0&&change.Generation!=Host.Generation)return;
@@ -148,17 +117,7 @@ internal sealed partial class HostWindow:Window
         if ((kind is "admin-starting" or "admin-awaiting-viewer" or "admin-ready" or "admin-revoked" or "admin-denied" or "admin-deployment-unavailable" or
                 "ordinary-input-blocked" or "ordinary-input-restored") &&
             (displayedSessionId is null || change.SessionId != displayedSessionId)) return;
-        if (kind is "listening" or "approval-request" or "session-ended" or "ended" or "stopped") CloseAdminRequest();
         switch(kind){
-            case "admin-approval-request" when activeMode == "Work" && displayedSessionId is not null &&
-                change.SessionId == displayedSessionId && Guid.TryParseExact(change.RequestId, "N", out _):
-                displayedAdminRequestId = change.RequestId;
-                adminRequest.Visibility = Visibility.Visible;
-                adminRequest.BringIntoView();
-                break;
-            case "admin-approval-closed" when change.SessionId == displayedSessionId && change.RequestId == displayedAdminRequestId:
-                CloseAdminRequest();
-                break;
             case "listening":revokeAdminInput.Visibility=revokeGuestInput.Visibility=revokeAudio.Visibility=Visibility.Collapsed;request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=revokeFiles.Visibility=disconnectSession.Visibility=Visibility.Collapsed;displayedSessionId=null;state.Text="等待连接";detail.Text=ListeningDetail;break;
             case "desktop-unavailable":
                 if (change.DesktopReason == "host-input-token-denied") hostTokenDenied = true;

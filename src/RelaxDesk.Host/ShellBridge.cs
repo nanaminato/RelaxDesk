@@ -31,16 +31,10 @@ internal sealed class ShellBridge : IDisposable
                 if (line is null or "STOP") { stop.Cancel(); return; }
                 if (line.Length > 96) continue;
                 string[] parts = line.Split(' ');
-                if (parts.Length is not (2 or 3)) continue;
+                if (parts.Length != 2) continue;
                 lock (sync)
                 {
                     if (current is not { } scope || parts[1] != scope.Id) continue;
-                    if (parts.Length == 3)
-                    {
-                        if (parts[0] is "ALLOW_ADMIN_INPUT" or "DENY_ADMIN_INPUT")
-                            scope.DecideAdmin(parts[2], parts[0] == "ALLOW_ADMIN_INPUT");
-                        continue;
-                    }
                     switch (parts[0])
                     {
                         case "DISCONNECT": scope.Lifetime.Cancel(); break;
@@ -82,7 +76,6 @@ internal sealed class ShellBridge : IDisposable
         public bool GuestInput { get; internal set; }
         public bool WorkInputRevoke { get; private set; }
         bool disposed;
-        ConsentRequest? pendingAdmin;
         public string Id => Consent.Id;
         public CancellationToken Token => Lifetime.Token;
         public CancellationToken ClipboardRevoked => Clipboard.Token;
@@ -104,40 +97,6 @@ internal sealed class ShellBridge : IDisposable
                 return Consent.Decision.WaitAsync(cancellation);
             }
         }
-        // The caller must park remote input before exposing this prompt.
-        public async Task<bool> RequestAdmin(CancellationToken cancellation)
-        {
-            ConsentRequest request;
-            CancellationTokenSource deadline;
-            lock (owner.sync)
-            {
-                if (disposed || cancellation.IsCancellationRequested || Lifetime.IsCancellationRequested ||
-                    Mode != SessionMode.Work || pendingAdmin is not null ||
-                    !Consent.Decision.IsCompletedSuccessfully || Consent.Decision.Result == ConsentDecision.Deny)
-                    return false;
-                deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation, Lifetime.Token);
-                deadline.CancelAfter(TimeSpan.FromSeconds(30));
-                request = pendingAdmin = new ConsentRequest();
-            }
-            try
-            {
-                deadline.Token.ThrowIfCancellationRequested();
-                Emit("admin-approval-request", sessionId: Id, mode: SessionMode.Admin, requestId: request.Id);
-                var decision = await request.Decision.WaitAsync(deadline.Token);
-                return decision == ConsentDecision.ScreenAndInput && !deadline.IsCancellationRequested;
-            }
-            catch (OperationCanceledException) when (deadline.IsCancellationRequested) { return false; }
-            finally
-            {
-                lock (owner.sync) pendingAdmin = null;
-                deadline.Dispose();
-                request.Dispose();
-                Emit("admin-approval-closed", sessionId: Id, requestId: request.Id);
-            }
-        }
-
-        internal void DecideAdmin(string requestId, bool allow) =>
-            pendingAdmin?.TryDecide(requestId, allow ? ConsentDecision.ScreenAndInput : ConsentDecision.Deny);
         public void Dispose()
         {
             lock (owner.sync)

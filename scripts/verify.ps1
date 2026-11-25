@@ -219,12 +219,6 @@ try {
     }
     if($LargeFiles){Run-App $smokeDll $hostDll --file-resume-large (Join-Path $root 'build/file-resume-verification');if($LASTEXITCODE){throw '>1GiB production TLS file-resume verification failed'}}
     if ($Wpf) {
-        Run-App $viewer --admin-upgrade-contracts $hostDll
-        if ($LASTEXITCODE) { throw 'Viewer in-session administrator request checks failed' }
-        Run-App $viewer --admin-lifecycle-contracts $hostDll
-        if ($LASTEXITCODE) { throw 'Viewer administrator lifecycle checks failed' }
-        Run-App $viewer --admin-worker-loss-contracts $hostDll
-        if ($LASTEXITCODE) { throw 'Viewer administrator worker-loss recovery checks failed' }
         foreach($consent in @('granted','denied')) {
             Run-App $viewer --rich-clipboard-session-contracts $hostDll $consent
             if ($LASTEXITCODE) { throw "Viewer rich clipboard session failed: $consent" }

@@ -9,7 +9,6 @@ public record Packet(string Kind, long Sequence = 0, int Width = 0, int Height =
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? QuicTicket=null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] QuicSendStatistics? QuicSend=null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? DeviceKey=null,
-    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] bool? AdminUpgrade=null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] bool? QueryVideoQueue=null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] VideoQueueStatistics? VideoQueue=null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] bool? PointerBrotli=null,
@@ -94,45 +93,26 @@ public sealed class AccessGate
     {
         lock (sync)
         {
-            if(!inputAllowed||inputRevoked&&!discardRevoked||p.Mode is not null||p.InputAllowed is not null||p.AdminUpgrade is not null||p.WorkInputRevoke is not null||p.PointerBrotli is not null||p.Network is not null||p.QuicPort!=0||p.QuicTicket is not null||p.QuicSend is not null||p.DeviceKey is not null||p.QueryVideoQueue is not null||p.VideoQueue is not null||!VideoSettingsProtocol.Empty(p))return false;
+            if(!inputAllowed||inputRevoked&&!discardRevoked||p.Mode is not null||p.InputAllowed is not null||p.WorkInputRevoke is not null||p.PointerBrotli is not null||p.Network is not null||p.QuicPort!=0||p.QuicTicket is not null||p.QuicSend is not null||p.DeviceKey is not null||p.QueryVideoQueue is not null||p.VideoQueue is not null||!VideoSettingsProtocol.Empty(p))return false;
             if(p.Kind=="input-v2"){if(!approved||inputVersion!=InputProtocol.Version||p.Sequence<=sequence||!InputProtocol.ValidPacket(p,displayVersion!=0))return false;sequence=p.Sequence;return true;}
             if(p.Input is not null||p.InputVersion!=0||p.ClipboardTicket is not null||p.AudioTicket is not null||!DisplayProtocol.Empty(p)||displayVersion!=0)return false;
             if (!approved || p.Sequence <= sequence || p.Kind != "input" || p.Code < 0 || p.Code > 259 || p.X < 0 || p.X > 65535 || p.Y < 0 || p.Y > 65535) return false;
             sequence = p.Sequence; return true;
         }
     }
-    public bool AcceptControl(Packet p, bool adminTransition = false, bool adminRequest = false, bool discardRevokedAdminRequest = false)
+    public bool AcceptControl(Packet p)
     {
         lock (sync)
         {
             if (p.VideoQueue is not null || p.QueryVideoQueue is not null &&
                 p != new Packet("ping-v2", p.Sequence, QueryVideoQueue: true)) return false;
-            if(p.Mode is not null||p.InputAllowed is not null||p.AdminUpgrade is not null||p.WorkInputRevoke is not null||p.PointerBrotli is not null||p.Network is not null||p.QuicPort!=0||p.QuicTicket is not null||p.QuicSend is not null||p.DeviceKey is not null)return false;
+            if(p.Mode is not null||p.InputAllowed is not null||p.WorkInputRevoke is not null||p.PointerBrotli is not null||p.Network is not null||p.QuicPort!=0||p.QuicTicket is not null||p.QuicSend is not null||p.DeviceKey is not null)return false;
             if(p.Kind=="video-settings-v2"){if(!approved||videoVersion!=VideoSettingsProtocol.Version||p.Sequence<=sequence||!VideoSettingsProtocol.ValidCommand(p))return false;sequence=p.Sequence;return true;}
             if(!VideoSettingsProtocol.Empty(p))return false;
             if (p.Kind is "input" or "input-v2") return Accept(p);
             if(p.Kind is "display-select-v2" or "display-ready-v2" or "display-configured-v2")
             {if(!approved||displayVersion==0||p.Kind=="display-configured-v2"&&displayVersion!=DisplayProtocol.TopologyVersion||p.Sequence<=sequence||!DisplayProtocol.ValidCommand(p))return false;sequence=p.Sequence;return true;}
             if(p.Input is not null||p.InputVersion!=0||p.ClipboardTicket is not null||p.AudioTicket is not null||!DisplayProtocol.Empty(p))return false;
-            if (p.Kind == "admin-input-request-v2")
-            {
-                if (!approved || !adminRequest || !inputAllowed || inputRevoked && !discardRevokedAdminRequest || inputVersion != InputProtocol.Version ||
-                    p.Sequence <= sequence || !ValidStop(p)) return false;
-                sequence = p.Sequence;
-                return true;
-            }
-            if (p.Kind is "admin-input-stop-v2" or "work-input-ready-v2" or "admin-input-activate-v2")
-            {
-                if (!approved || !adminTransition || p.Sequence <= sequence) return false;
-                if (p.Kind == "admin-input-activate-v2")
-                {
-                    if (!Guid.TryParseExact(p.Text, "N", out Guid challenge) || challenge == Guid.Empty ||
-                        p != new Packet(p.Kind, p.Sequence, Text: p.Text)) return false;
-                }
-                else if (!ValidStop(p)) return false;
-                sequence = p.Sequence;
-                return true;
-            }
             if(p.Kind=="audio-state-v2")
             {
                 if(!approved||p.Sequence<=sequence||!originalFeatures.Contains(SessionCapabilities.SystemAudio)||!ValidStop(p))return false;

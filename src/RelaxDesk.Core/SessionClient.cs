@@ -128,8 +128,6 @@ public sealed class SessionClient : IDisposable
             return QuicRecoveryProtocol.Result(offer.Sequence, 0);
         }
     }
-    public bool RequestAdminUpgrade { get; init; }
-    public bool AdminUpgrade { get; private set; }
     public string[] RequestedFeatures { get; init; } = [];
     public string[] Features { get; private set; } = [];
     public int RequestedInputVersion {get;init;}=InputProtocol.Version;
@@ -189,7 +187,7 @@ public sealed class SessionClient : IDisposable
         if(!DisplayProtocol.Supported(RequestedDisplayVersion)||RequestedDisplayVersion!=0&&RequestedInputVersion!=InputProtocol.Version)throw new InvalidDataException("Unsupported requested display version");
         using var deviceKey = RequestedMode is null or SessionMode.Work ? OpenDeviceKey?.Invoke() : null;
         bool requestResume=RequestFileResume&&requestedFeatures.Contains(SessionCapabilities.FileTransfer);
-        await Wire.Write(Control, new Packet(approvalOnly ? "request-v2" : "hello-v2", Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], PointerBrotli: RequestPointerCompression ? true : null, WorkInputRevoke: RequestWorkInputRevoke && RequestedMode == SessionMode.Work ? true : null, Features: requestedFeatures.Length == 0 ? null : requestedFeatures,FileResume:requestResume,InputVersion:RequestedInputVersion,DisplayVersion:RequestedDisplayVersion,VideoVersion:RequestedVideoVersion, Mode:RequestedMode, Network:requestedNetwork, DeviceKey: deviceKey is null ? null : DeviceIdentity.Export(deviceKey), AdminUpgrade: RequestAdminUpgrade && RequestedMode == SessionMode.Work ? true : null, QuicRecovery: requestQuicRecovery ? true : null), ct);
+        await Wire.Write(Control, new Packet(approvalOnly ? "request-v2" : "hello-v2", Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], PointerBrotli: RequestPointerCompression ? true : null, WorkInputRevoke: RequestWorkInputRevoke && RequestedMode == SessionMode.Work ? true : null, Features: requestedFeatures.Length == 0 ? null : requestedFeatures,FileResume:requestResume,InputVersion:RequestedInputVersion,DisplayVersion:RequestedDisplayVersion,VideoVersion:RequestedVideoVersion, Mode:RequestedMode, Network:requestedNetwork, DeviceKey: deviceKey is null ? null : DeviceIdentity.Export(deviceKey), QuicRecovery: requestQuicRecovery ? true : null), ct);
         PhaseChanged?.Invoke(ConnectionPhase.AwaitingApproval);
         var approval = await Wire.Read(Control, ct);
         if (approval.Kind == "work-device-challenge-v2")
@@ -207,15 +205,12 @@ public sealed class SessionClient : IDisposable
         if (approval == new Packet("denied-v2")) throw new HostConsentRejectedException();
         if (approval.Kind != "approved-v2" || approval.Text is null || approval.Capabilities is not { Length: > 0 }) throw new AuthenticationException("Host approval/capabilities missing");
         if(approval.Input is not null||approval.InputVersion is not (0 or InputProtocol.Version)||approval.InputVersion!=0&&approval.InputVersion!=RequestedInputVersion)throw new AuthenticationException("Unrequested/invalid input version");
-        bool legacyWork = RequestedMode == SessionMode.Work && approval.Mode is null && approval.InputAllowed is null && approval.AdminUpgrade is null;
+        bool legacyWork = RequestedMode == SessionMode.Work && approval.Mode is null && approval.InputAllowed is null;
         if (!legacyWork && (approval.Mode != RequestedMode || (approval.InputAllowed is null) != (RequestedMode is null)) ||
             (!SessionAccess.Available(approval.Mode) && approval.Mode != SessionMode.Admin) ||
             (approval.Mode is SessionMode.Work or SessionMode.Admin) && approval.InputAllowed != true ||
             approval.Mode == SessionMode.Admin && approval.InputVersion != InputProtocol.Version)
             throw new AuthenticationException("Host did not confirm the requested session mode");
-        if (approval.AdminUpgrade is not null && (approval.AdminUpgrade != true || !RequestAdminUpgrade || RequestedMode != SessionMode.Work || approval.InputVersion != InputProtocol.Version))
-            throw new AuthenticationException("Unrequested administrator transition");
-        AdminUpgrade = approval.AdminUpgrade == true;
         if (approval.WorkInputRevoke is not null &&
             (approval.WorkInputRevoke != true || !RequestWorkInputRevoke || approval.Mode != SessionMode.Work))
             throw new AuthenticationException("Unrequested Work input revocation capability");
