@@ -81,15 +81,11 @@ internal sealed class ServiceSetupTransaction(ServiceFilePolicy files,IServiceRe
             files.EnsureRoot();var release=payload.CreateRelease();bool committed=false;
             var staged=new ServiceInstallState(1,owner,previous?.Current??release.Id,[..previous?.Releases??[],release],false);
             bool touched=false,stoppedExisting=false;bool wasRunning=before?.State==4;
+            bool includesWorker = release.Files.Any(entry => ServicePayload.IsWorkerFile(entry.Path));
             try
             {
                 payload.CopyTo(files,release,owner,Point);
-                if (release.Files.Any(entry => ServicePayload.IsWorkerFile(entry.Path)))
-                {
-                    // The ordinary coordinator verifies the parent ACL before reading the worker deployment.
-                    if (!files.Fixture) files.AllowOwnerParentInspection(owner);
-                    files.AllowOwnerRead(files.Root, owner);
-                }
+                if (includesWorker) files.AllowOwnerRead(files.Root, owner);
                 files.WriteState(staged);Point("after-state");
                 if(before is not null&&before.State!=1){stoppedExisting=true;services.Stop(before,ct).GetAwaiter().GetResult();before=services.Read()??throw new IOException("Service disappeared while updating");ValidateRegistration(before,staged);}
                 Point("after-stop");
@@ -98,6 +94,8 @@ internal sealed class ServiceSetupTransaction(ServiceFilePolicy files,IServiceRe
                 touched=true;services.Configure(current,Command(files,release.Id,owner),startup);Point("after-configure");
                 var ready=staged with{Current=release.Id,Ready=true};files.WriteState(ready);Point("after-commit");
                 if(start||wasRunning){var configured=services.Read()??throw new IOException("Service registration missing");ValidateRegistration(configured,ready);services.Start(configured,ct).GetAwaiter().GetResult();}
+                // Publish parent inspection only after the service update and an optional start have succeeded.
+                if (includesWorker && !files.Fixture) files.AllowOwnerParentInspection(owner);
                 committed=true;
                 var retained=new List<ServiceRelease>{release};
                 foreach(var old in previous?.Releases??[])if(!files.RemoveRelease(old))retained.Add(old);
