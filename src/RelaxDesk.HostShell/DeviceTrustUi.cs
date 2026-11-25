@@ -15,6 +15,7 @@ internal sealed partial class HostWindow
     };
     readonly ListBox trustedDevices = new() { MaxHeight = 125 };
     readonly Button forgetDevice = new() { Content = "撤销所选设备", IsEnabled = false };
+    readonly Button rememberConnectedDevice = new() { Content = "信任当前连接的设备", IsEnabled = false };
     readonly TextBlock trustNotice = new() { TextWrapping = TextWrapping.Wrap };
     string[] trusted = [];
     readonly HashSet<string> revokedDuringRun = new(StringComparer.Ordinal);
@@ -25,6 +26,7 @@ internal sealed partial class HostWindow
     {
         var panel = new StackPanel();
         panel.Children.Add(trustedDevices);
+        panel.Children.Add(rememberConnectedDevice);
         panel.Children.Add(forgetDevice);
         panel.Children.Add(trustNotice);
         settings.Children.Add(new Expander { Header = "受信任的设备", Content = panel });
@@ -33,8 +35,20 @@ internal sealed partial class HostWindow
         {
             if (trustedDevices.SelectedItem is ListBoxItem { Tag: string fingerprint }) await RevokeDevice(fingerprint);
         };
+        rememberConnectedDevice.Click += async (_, _) =>
+        {
+            if (rememberConnectedDevice.IsEnabled && activeDeviceFingerprint is { } fingerprint)
+            {
+                rememberConnectedDevice.IsEnabled = false;
+                await SaveDeviceTrust(fingerprint);
+                UpdateConnectedDeviceTrust();
+            }
+        };
         Loaded += async (_, _) => await LoadDeviceTrust();
     }
+
+    void UpdateConnectedDeviceTrust() => rememberConnectedDevice.IsEnabled = nativeApproval && activeInput && trustLoaded &&
+        !trustBusy && displayedSessionId is not null && activeDeviceFingerprint is { } fingerprint && !trusted.Contains(fingerprint);
 
     async Task LoadDeviceTrust()
     {

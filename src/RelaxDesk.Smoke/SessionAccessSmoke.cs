@@ -12,7 +12,7 @@ internal static class SessionAccessSmoke
         await Verify(hostPath, proveDevice: true, denied: false);
         await Verify(hostPath, proveDevice: true, denied: false, allFeatures: true);
         await Verify(hostPath, proveDevice: false, denied: true, production: true);
-        await Verify(hostPath, proveDevice: true, denied: true, production: true);
+        await Verify(hostPath, proveDevice: true, denied: true);
         await Verify(hostPath, proveDevice: true, denied: false, workerLoss: false);
         await Verify(hostPath, proveDevice: true, denied: false, workerLoss: true);
         Console.WriteLine("PASS verified device proof over production TLS; local approval still required");

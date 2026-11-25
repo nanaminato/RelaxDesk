@@ -21,6 +21,7 @@ internal sealed partial class HostWindow:Window
     readonly CheckBox clipboardPermission=new(){Content="允许双向文本剪贴板（可读取两端新复制的文本，最大64KiB）",IsChecked=false,Visibility=Visibility.Collapsed,Margin=new(0,10,0,0)};
     readonly TextBlock consentAccess = new() { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.SlateGray };
     bool fullControlRequest;
+    bool nativeApproval;
     bool activeInput;
     readonly Button revokeClipboard=new(){Content="停止剪贴板同步",Visibility=Visibility.Collapsed};
     readonly TextBox logs=new(){IsReadOnly=true,TextWrapping=TextWrapping.Wrap,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,MaxHeight=180,FontFamily=new("Consolas"),FontSize=11};
@@ -116,9 +117,15 @@ internal sealed partial class HostWindow:Window
     static AdminWorkerDeployment InspectInputDeployment()
     {
         using var identity = WindowsIdentity.GetCurrent();
-        return identity.User is { } owner
-            ? ServiceDeploymentTrust.InspectElevatedInput(owner.Value)
-            : AdminWorkerDeployment.RepairRequired;
+        if (identity.User is not { } owner) return AdminWorkerDeployment.RepairRequired;
+        try
+        {
+            AdminInputLauncher.CheckScheduledDeployment(owner.Value);
+            return AdminWorkerDeployment.Verified;
+        }
+        catch (UnauthorizedAccessException) { return AdminWorkerDeployment.AccessDenied; }
+        catch (Exception error) when (error is IOException or System.Security.SecurityException or System.Runtime.InteropServices.COMException or InvalidDataException)
+        { return AdminWorkerDeployment.RepairRequired; }
     }
     internal async Task Decide(bool accepted){string? id=displayedSessionId;if(id is null)return;allow.IsEnabled=deny.IsEnabled=false;
         bool legacyFeatures=accepted&&!fullControlRequest;bool clipboard=legacyFeatures&&clipboardPermission.IsChecked==true;bool files=legacyFeatures&&filesPermission.IsChecked==true&&selectedFileRoot is not null;bool audio=legacyFeatures&&audioPermission.IsChecked==true;var remember=CaptureDeviceTrust(accepted);activeInput=accepted;await Host.Decide(accepted,clipboard,files,id,audio);if(displayedSessionId!=id)return;var enabled = accepted && fullControlRequest ? fullControlFeatures : [];revokeAudio.Visibility=audio||enabled.Contains(SessionCapabilities.SystemAudio)?Visibility.Visible:Visibility.Collapsed;revokeClipboard.Visibility=clipboard||enabled.Any(SessionCapabilities.IsClipboard)?Visibility.Visible:Visibility.Collapsed;revokeFiles.Visibility=files||enabled.Contains(SessionCapabilities.FileTransfer)?Visibility.Visible:Visibility.Collapsed;request.Visibility=Visibility.Collapsed;if(remember is not null)await SaveDeviceTrust(remember);}
@@ -146,7 +153,20 @@ internal sealed partial class HostWindow:Window
                     _ => DesktopUnavailableNotice
                 };
                 break;
-            case "approval-request":desktopNotice=null;displayedSessionId=change.SessionId;disconnectSession.Visibility=Visibility.Visible;fullControlRequest = change.FullControl; activeInput = false;
+            case "native-approval-request":
+                desktopNotice = null;
+                displayedSessionId = change.SessionId;
+                disconnectSession.Visibility = Visibility.Visible;
+                nativeApproval = fullControlRequest = true;
+                activeInput = false;
+                fullControlFeatures = change.Features ?? [];
+                peer.Text = $"请求来源  {value}";
+                ApplyDeviceTrust(change);
+                request.Visibility = Visibility.Collapsed;
+                state.Text = "等待你的授权";
+                detail.Text = "请在本机安全输入窗口核对设备指纹并确认。";
+                break;
+            case "approval-request":desktopNotice=null;displayedSessionId=change.SessionId;disconnectSession.Visibility=Visibility.Visible;fullControlRequest = change.FullControl; activeInput = nativeApproval = false;
                 peer.Text = $"请求来源  {value}";
                 peer.TextWrapping = TextWrapping.Wrap;
                 if (change.DeviceFingerprint is { Length: 64 } device && device.All(char.IsAsciiHexDigit))
@@ -168,8 +188,8 @@ internal sealed partial class HostWindow:Window
                 state.Text="等待你的授权";detail.Text="还未共享桌面或开放输入。";break;
             case "admin-starting":
                 adminStartupNotice = null;
-                state.Text = "正在准备管理员输入";
-                detail.Text = "正在检查并启动管理员输入代理。如果 Windows 显示 UAC 提示，请在本机确认。";
+                state.Text = "等待本机批准";
+                detail.Text = "请在本机安全输入窗口核对设备指纹并确认。";
                 break;
             case "admin-ready":adminDeploymentUnavailable=false;state.Text="正在共享";detail.Text="管理员输入代理已连接。断开会话会撤销输入。";break;
             case "admin-deployment-unavailable":adminDeploymentUnavailable=true;detail.Text=AdminDeploymentNotice;break;
@@ -187,7 +207,15 @@ internal sealed partial class HostWindow:Window
             case "ordinary-input-restored" when activeInput && !fullControlRequest:
                 detail.Text = "普通桌面的键鼠操作已恢复。";
                 break;
-            case "approved":state.Text="正在建立共享";detail.Text="已允许本次连接，正在准备屏幕。";request.Visibility=Visibility.Collapsed;break;
+            case "approved":
+                if (nativeApproval && displayedSessionId == change.SessionId)
+                {
+                    activeInput = true;
+                    revokeClipboard.Visibility = fullControlFeatures.Any(SessionCapabilities.IsClipboard) ? Visibility.Visible : Visibility.Collapsed;
+                    revokeFiles.Visibility = fullControlFeatures.Contains(SessionCapabilities.FileTransfer) ? Visibility.Visible : Visibility.Collapsed;
+                    revokeAudio.Visibility = fullControlFeatures.Contains(SessionCapabilities.SystemAudio) ? Visibility.Visible : Visibility.Collapsed;
+                }
+                state.Text="正在建立共享";detail.Text="已允许本次连接，正在准备屏幕。";request.Visibility=Visibility.Collapsed;break;
             case "denied":state.Text="已拒绝连接";detail.Text="没有共享桌面。";break;
             case "streaming":state.Text="正在共享";detail.Text=fullControlRequest?"管理员输入代理已连接。断开会话会撤销输入。":activeInput?"对方可查看并操作普通桌面。":"键鼠输入未授权。";break;
             case "color":
@@ -204,6 +232,7 @@ internal sealed partial class HostWindow:Window
             case "session-ended":revokeAudio.Visibility=Visibility.Collapsed;request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=revokeFiles.Visibility=disconnectSession.Visibility=Visibility.Collapsed;displayedSessionId=null;state.Text="会话已结束";detail.Text="正在清理资源，随后继续等待新的连接。";break;
             case "ended":case "stopped":revokeAudio.Visibility=Visibility.Collapsed;displayedSessionId=null;disconnectSession.Visibility=Visibility.Collapsed;if(state.Text!="已拒绝连接")state.Text=kind=="stopped"?"已停止共享":"会话已结束";request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=Visibility.Collapsed;revokeFiles.Visibility=Visibility.Collapsed;ip.IsEnabled=port.IsEnabled=start.IsEnabled=true;SetFileConfigurationEnabled(true);SetDisplayConfigurationEnabled(true);stop.IsEnabled=false;break;
         }
+        UpdateConnectedDeviceTrust();
         UpdateServiceControls();
         RecoverWorker(change);
     }

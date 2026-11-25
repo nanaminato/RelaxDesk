@@ -59,7 +59,7 @@ internal sealed class HostProcess
                     string? address=data.RootElement.TryGetProperty("address",out var endpoint)?endpoint.GetString():null;
                     string? id=data.RootElement.TryGetProperty("sessionId",out var identity)?identity.GetString():null;
                     string[] features=data.RootElement.TryGetProperty("features",out var offered)&&offered.ValueKind==JsonValueKind.Array?offered.EnumerateArray().Select(feature=>feature.GetString()!).ToArray():[];
-                    if(type=="approval-request")
+                    if(type is "approval-request" or "native-approval-request")
                     {
                         if(id is not {Length:32}||!id.All(char.IsAsciiHexDigit))throw new IOException("Host request identity missing");
                         SessionId=id;ClipboardRequested=features.Any(RelaxDesk.Core.SessionCapabilities.IsClipboard);FilesRequested=features.Contains(RelaxDesk.Core.SessionCapabilities.FileTransfer);AudioRequested=features.Contains(RelaxDesk.Core.SessionCapabilities.SystemAudio);

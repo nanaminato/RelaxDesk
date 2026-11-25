@@ -81,6 +81,30 @@ internal sealed class AdminInputTask : IAdminInputTaskRegistration
         folder.DeleteTask(name, 0);
     }
 
+    public void CheckReady(string executable, string owner) => _ = Resolve(executable, owner);
+
+    public void Run(string executable, AdminInputLaunchRequest request, string fingerprint, int sessionId)
+    {
+        if (sessionId <= 0 || fingerprint is not { Length: 64 } ||
+            !fingerprint.All(c => char.IsAsciiDigit(c) || c is >= 'A' and <= 'F') ||
+            request.Display.Contains('"') || request.Display.EndsWith('\\'))
+            throw new SecurityException("Invalid scheduled input request");
+        dynamic task = Resolve(executable, request.Owner);
+        object[] arguments = [fingerprint, .. request.Arguments()];
+        const int UseSessionId = 4;
+        _ = task.RunEx(arguments, UseSessionId, sessionId, null);
+    }
+
+    static object Resolve(string executable, string owner)
+    {
+        owner = LocalAgentPipe.CanonicalUser(owner);
+        dynamic scheduler = Connect();
+        dynamic folder = scheduler.GetFolder("\\");
+        object task = Find(folder, Name(executable)) ?? throw new IOException("Elevated input task is not registered");
+        Validate((dynamic)task, executable, owner);
+        return task;
+    }
+
     static void Validate(dynamic task, string executable, string owner)
     {
         dynamic definition = task.Definition;

@@ -19,7 +19,12 @@ try
     using var startup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
     using var pipe = await LocalAgentPipe.ConnectAdmin(request.Grant, startup.Token);
     LocalAgentPipe.AuthenticateAdminCoordinator(pipe, request.CoordinatorPid, request.Owner);
-    if (fingerprint is not null && !LocalConnectionConsent.Confirm(fingerprint, pipe.SafePipeHandle)) return 5;
+    if (fingerprint is not null && !LocalConnectionConsent.Confirm(fingerprint, pipe.SafePipeHandle))
+    {
+        using var rejected = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await Wire.Write(pipe, new("admin-input-consent-denied", Origin: request.Grant.ToString("N")), rejected.Token);
+        return 5;
+    }
     // Readiness comes from the worker after it checks the administrator token
     // and the interactive desktop.
     await ElevatedInputWorker.Run(pipe, request.Grant, () => new WindowsDisplaySelection(request.Display), CancellationToken.None);

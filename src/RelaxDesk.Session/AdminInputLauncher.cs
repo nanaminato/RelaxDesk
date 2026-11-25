@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Security.Principal;
 
 namespace RelaxDesk.Session;
@@ -8,13 +9,54 @@ public sealed class AdminInputDeploymentException(Exception cause) : IOException
 
 public static class AdminInputLauncher
 {
-    // The caller must have obtained explicit local approval for this grant.
-    public static Task<AdminInputConnection> StartAfterLocalApproval(Guid grant, string display,
+    public static void CheckScheduledDeployment(string owner)
+    {
+        string executable = ServiceDeploymentTrust.ResolveElevatedInput(owner);
+        new AdminInputTask().CheckReady(executable, owner);
+    }
+
+    public static async Task<AdminInputConnection> StartScheduled(Guid grant, string display, string fingerprint,
         CancellationToken cancellation)
     {
         using var identity = WindowsIdentity.GetCurrent();
         string owner = identity.User?.Value ?? throw new IOException("Interactive owner SID unavailable");
-        return Start(grant, display, owner, ServiceDeploymentTrust.ResolveElevatedInput, Process.Start, cancellation);
+        using var coordinator = Process.GetCurrentProcess();
+        int sessionId = coordinator.SessionId;
+        var request = new AdminInputLaunchRequest(grant, coordinator.Id, owner, display);
+        using var startup = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        var startupToken = startup.Token;
+        var server = LocalAgentPipe.CreateAdminServer(grant, owner);
+        try
+        {
+            using var revoked = startupToken.Register(server.Dispose);
+            string executable;
+            try
+            {
+                executable = ServiceDeploymentTrust.ResolveElevatedInput(owner);
+                var task = Task.Run(() =>
+                {
+                    startupToken.ThrowIfCancellationRequested();
+                    new AdminInputTask().Run(executable, request, fingerprint, sessionId);
+                }, startupToken);
+                try { await task.WaitAsync(startupToken); }
+                catch (OperationCanceledException)
+                {
+                    _ = task.ContinueWith(static completed => _ = completed.Exception, CancellationToken.None,
+                        TaskContinuationOptions.ExecuteSynchronously | TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+                    throw;
+                }
+            }
+            catch (Exception error) when (error is IOException or System.Security.SecurityException or UnauthorizedAccessException or InvalidDataException or COMException)
+            {
+                throw new AdminInputDeploymentException(error);
+            }
+            return await AdminInputConnection.Accept(server, grant, null, startupToken, executable, owner);
+        }
+        catch
+        {
+            server.Dispose();
+            throw;
+        }
     }
 
     internal static async Task<AdminInputConnection> Start(Guid grant, string display, string owner,

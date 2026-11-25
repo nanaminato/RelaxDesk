@@ -4,6 +4,8 @@ using RelaxDesk.Core;
 
 namespace RelaxDesk.Session;
 
+public sealed class AdminInputConsentDeniedException() : IOException("Local connection consent was declined");
+
 // The caller creates the single-instance server before launching the installed
 // worker. It supplies the PID from the launched process, never from the peer.
 public sealed class AdminInputConnection : IAsyncDisposable
@@ -27,16 +29,18 @@ public sealed class AdminInputConnection : IAsyncDisposable
     public Task Completion => heartbeat;
 
     public static async Task<AdminInputConnection> Accept(NamedPipeServerStream server, Guid grant,
-        int workerPid, CancellationToken cancellation, string? workerImage = null)
+        int? workerPid, CancellationToken cancellation, string? workerImage = null, string? elevatedOwner = null)
     {
         try
         {
             if (grant == Guid.Empty) throw new ArgumentException("Administrator grant required", nameof(grant));
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-            deadline.CancelAfter(TimeSpan.FromSeconds(15));
+            deadline.CancelAfter(TimeSpan.FromSeconds(elevatedOwner is null ? 15 : 45));
             await server.WaitForConnectionAsync(deadline.Token);
-            LocalAgentPipe.AuthenticateAdminWorker(server, workerPid, workerImage);
+            LocalAgentPipe.AuthenticateAdminWorker(server, workerPid, workerImage, elevatedOwner);
             var ready = await Wire.Read(server, deadline.Token, 2048);
+            if (elevatedOwner is not null && ready == new Packet("admin-input-consent-denied", Origin: grant.ToString("N")))
+                throw new AdminInputConsentDeniedException();
             if (ready != new Packet(AdminInputChannel.Ready, Origin: grant.ToString("N")))
                 throw new SecurityException("Administrator worker readiness rejected");
             deadline.Token.ThrowIfCancellationRequested();

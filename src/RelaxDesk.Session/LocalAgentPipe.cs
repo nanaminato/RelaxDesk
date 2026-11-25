@@ -98,11 +98,12 @@ public static class LocalAgentPipe
         finally { Marshal.FreeHGlobal(buffer); }
     }
 
-    public static void AuthenticateAdminWorker(NamedPipeServerStream pipe, int expectedPid, string? expectedImage = null)
+    public static void AuthenticateAdminWorker(NamedPipeServerStream pipe, int? expectedPid, string? expectedImage = null, string? elevatedOwner = null)
     {
         Check(GetNamedPipeClientProcessId(pipe.SafePipeHandle, out uint pid));
         Check(GetNamedPipeClientSessionId(pipe.SafePipeHandle, out uint session));
-        RequirePeer(pid, session, expectedPid);
+        if (expectedPid is null && (expectedImage is null || elevatedOwner is null)) throw new SecurityException("Scheduled worker identity must be pinned");
+        RequirePeer(pid, session, expectedPid ?? checked((int)pid));
         if (expectedImage is null) return;
         using var process = OpenProcess(0x1000, false, pid); // PROCESS_QUERY_LIMITED_INFORMATION
         if (process.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
@@ -111,6 +112,15 @@ public static class LocalAgentPipe
         Check(QueryFullProcessImageName(process, 0, image, ref length));
         if (!image.AsSpan(0, checked((int)length)).Equals(expectedImage.AsSpan(), StringComparison.OrdinalIgnoreCase))
             throw new SecurityException("Administrator input worker image mismatch");
+        if (elevatedOwner is null) return;
+        Check(OpenProcessToken(process, 8, out var token));
+        using (token)
+        using (var identity = new WindowsIdentity(token.DangerousGetHandle()))
+        {
+            Check(GetTokenInformation(token, 20, out uint elevated, sizeof(uint), out uint size));
+            if (identity.User?.Value != CanonicalUser(elevatedOwner) || size != sizeof(uint) || elevated != 1 || CoordinatorIntegrity(token) < 0x3000)
+                throw new SecurityException("Scheduled worker owner or integrity mismatch");
+        }
     }
 
     static void RequirePeer(uint pid, uint session, int expectedPid)

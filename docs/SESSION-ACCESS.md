@@ -239,13 +239,14 @@ of extra runtime files in a fixture with real ACLs and simulated SCM. Actual
 machine installation, UAC launch and administrator-window input are separate
 verification steps.
 
-The coordinator launch entry resolves the installed worker, creates the grant
-pipe, and invokes the Windows shell `runas` verb after local approval. The
-worker disables managed startup hooks. Cancellation closes the rendezvous so
-a worker that starts after revocation cannot acquire the grant. A mock shell
-launch verifies argument binding and cleanup after local UAC cancellation.
-Full-control connections complete local UAC before attaching media and starting
-the active-session desktop watcher. Disconnect or worker failure ends the grant.
+The coordinator resolves the protected installed worker and opens a one-use
+grant pipe after verifying the Viewer. It starts the installed on-demand task
+in the interactive Windows session. The worker displays the local confirmation
+and returns its decision over the authenticated grant pipe. Media and input
+start only after approval. Cancellation closes the pipe so a late worker
+cannot acquire the grant. Disconnect or worker failure ends the grant.
+Windows setup authorizes the task once. The actual task launch, consent dialog
+and administrator-window input require separate Windows validation.
 The Host uses the existing display-generation barrier and sends ordered release
 and display-selection commands on the authenticated input pipe. The worker
 validates the requested monitor against its initial local display catalog and

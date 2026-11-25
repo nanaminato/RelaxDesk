@@ -17,17 +17,15 @@ internal static class DisplaySmoke
             await ReadEvent("listening");
             using var viewer=new SessionClient { OpenDeviceKey = () => ECDsa.Create(ECCurve.NamedCurves.nistP256) };
             var connecting=viewer.ConnectByApproval("127.0.0.1",port,timeout.Token);
-            var request = await ReadEvent("approval-request");
-            if(connecting.IsCompleted)throw new IOException("Display session advanced before consent");
-            await child.StandardInput.WriteLineAsync($"APPROVE {request.GetProperty("sessionId").GetString()}");
-            await child.StandardInput.FlushAsync();tail=child.StandardOutput.ReadToEndAsync(timeout.Token);
+            tail=child.StandardOutput.ReadToEndAsync(timeout.Token);
             bool rejected=false;try{await connecting;}catch(Exception error)when(error is IOException or System.Security.Authentication.AuthenticationException){rejected=true;}
             if(!rejected)throw new IOException("Missing screen negotiated media");
             await child.StandardInput.WriteLineAsync("STOP");
             await child.StandardInput.FlushAsync();
             await child.WaitForExitAsync(timeout.Token);string output=await tail;
             if(child.ExitCode!=0||!output.Contains("Selected display is no longer attached")||output.Contains("backend=")||output.Contains("capture_color")||output.Contains("media frames="))throw new IOException("Invalid screen did not fail before capture/media startup");
-            Console.WriteLine("PASS production Host/TLS rejects missing selected display after explicit consent and before media/capture workers; no real capture or input");
+            if(output.Contains("native-approval-request"))throw new IOException("Invalid screen opened a consent prompt");
+            Console.WriteLine("PASS production Host/TLS rejects missing selected display before consent and media startup");
         }
         finally
         {

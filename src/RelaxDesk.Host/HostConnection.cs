@@ -53,10 +53,10 @@ internal static class HostConnection
         string? deviceFingerprint = canVerifyDevice && hello.DeviceKey is not null
             ? await VerifyDeviceIdentity(tls, cert, hello.DeviceKey, stop) : null;
         bool authorizedHandshake = deviceFingerprint is not null || synthetic && hello.DeviceKey is null;
-        string? approval = authorizedHandshake
+        string? approval = synthetic && authorizedHandshake
             ? await RequestConsent(client, shell, requestedFeatures, deviceFingerprint is not null, deviceFingerprint, stop)
             : null;
-        if (approval is null || AudioConsent.Parse(approval) is null or ConsentDecision.Deny)
+        if (!authorizedHandshake || synthetic && (approval is null || AudioConsent.Parse(approval) is null or ConsentDecision.Deny))
         {
             if (shell is not null) ShellBridge.Emit("denied", sessionId: shell.Id);
             using var denied = CancellationTokenSource.CreateLinkedTokenSource(stop);
@@ -69,21 +69,35 @@ internal static class HostConnection
             WindowsInputPrivilege.EnsureOrdinaryProcess();
             WindowsSessionAccess.EnsureAllowed();
         }
-        if (!synthetic) selectedDisplay = new WindowsDisplaySelection(selectedDisplay).Device;
-        await using var elevated = !synthetic ? await StartAdmin(client, tls, shell!, selectedDisplay!, stop) :
+        if (!synthetic)
+        {
+            selectedDisplay = new WindowsDisplaySelection(selectedDisplay).Device;
+            ShellBridge.Emit("native-approval-request", address: client.Client.RemoteEndPoint?.ToString(),
+                sessionId: shell!.Id, fullControl: true, deviceFingerprint: deviceFingerprint,
+                features: SessionCapabilities.ForFullControl(requestedFeatures, selectedFileRoot is not null));
+        }
+        await using var elevated = !synthetic ? await StartAdmin(client, tls, shell!, selectedDisplay!, deviceFingerprint!, stop) :
             deviceFingerprint is not null && backend is ("test-admin-lifecycle" or "test-admin-worker-loss")
                 ? await AdminInputFixture.Start(backend == "test-admin-worker-loss", stop) : null;
         if (!synthetic && elevated is null) return;
         if (shell is not null) ShellBridge.Emit("approved", sessionId: shell.Id);
         var availableFeatures = deviceFingerprint is not null
             ? SessionCapabilities.ForFullControl(requestedFeatures, selectedFileRoot is not null)
-            : SessionCapabilities.Grant(requestedFeatures, AudioConsent.Base(approval) is "APPROVE_CLIPBOARD" or "APPROVE_ALL", selectedFileRoot is not null && AudioConsent.Base(approval) is "APPROVE_FILES" or "APPROVE_ALL", AudioConsent.AllowsAudio(approval));
+            : FixtureFeatures(requestedFeatures, selectedFileRoot is not null,
+                approval ?? throw new InvalidOperationException("Missing fixture approval"));
         await VideoHostSession.Run(listener, client, tls, identity, hello, backend, stop,
             availableFeatures, shell?.ClipboardRevoked ?? default, selectedFileRoot, shell?.FilesRevoked ?? default,fileResumes,selectedDisplay,shell?.AudioRevoked??default,elevated,shell?.Id);
     }
 
+    static string[] FixtureFeatures(string[] requested, bool fileScope, string approval)
+    {
+        string decision = AudioConsent.Base(approval);
+        return SessionCapabilities.Grant(requested, decision is "APPROVE_CLIPBOARD" or "APPROVE_ALL",
+            fileScope && decision is "APPROVE_FILES" or "APPROVE_ALL", AudioConsent.AllowsAudio(approval));
+    }
+
     static async Task<AdminInputConnection?> StartAdmin(TcpClient client, SslStream tls,
-        ShellBridge.Session shell, string display, CancellationToken stop)
+        ShellBridge.Session shell, string display, string fingerprint, CancellationToken stop)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop);
         deadline.CancelAfter(TimeSpan.FromSeconds(60));
@@ -104,9 +118,7 @@ internal static class HostConnection
         AdminInputConnection? worker = null;
         try
         {
-            if (!shell.Consent.Decision.IsCompletedSuccessfully || shell.Consent.Decision.Result == ConsentDecision.Deny)
-                throw new AuthenticationException("Administrator input requires local approval");
-            worker = await AdminInputLauncher.StartAfterLocalApproval(grant, display, deadline.Token);
+            worker = await AdminInputLauncher.StartScheduled(grant, display, fingerprint, deadline.Token);
             WindowsSessionAccess.EnsureAllowed();
             deadline.Token.ThrowIfCancellationRequested();
             ShellBridge.Emit("admin-ready", sessionId: shell.Id);
@@ -117,10 +129,11 @@ internal static class HostConnection
         {
             if (worker is not null) await worker.DisposeAsync();
             HostSessionLog.Write($"admin_start_failed type={error.GetType().Name}");
-            ShellBridge.Emit(error is AdminInputDeploymentException ? "admin-deployment-unavailable" : "admin-start-failed", sessionId: shell.Id);
+            bool denied = error is AdminInputConsentDeniedException;
+            ShellBridge.Emit(denied ? "denied" : error is AdminInputDeploymentException ? "admin-deployment-unavailable" : "admin-start-failed", sessionId: shell.Id);
             using var reply = CancellationTokenSource.CreateLinkedTokenSource(stop);
             reply.CancelAfter(TimeSpan.FromSeconds(2));
-            await Wire.Write(tls, new(FullControlProtocol.InputUnavailable), reply.Token);
+            await Wire.Write(tls, new(denied ? "denied-v2" : FullControlProtocol.InputUnavailable), reply.Token);
             return null;
         }
         finally { deadline.Cancel(); await peer; }
@@ -150,7 +163,7 @@ internal static class HostConnection
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop);
         deadline.CancelAfter(TimeSpan.FromSeconds(60));
-        if (shell is null && deviceFingerprint is not null) Console.WriteLine($"Work device SHA256: {deviceFingerprint}");
+        if (shell is null && deviceFingerprint is not null) Console.WriteLine($"Device SHA256: {deviceFingerprint}");
         Task<string?> decision = shell is null ? Console.In.ReadLineAsync(deadline.Token).AsTask() : ReadShell();
         async Task<string?> ReadShell()
         {
