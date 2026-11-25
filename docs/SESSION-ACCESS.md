@@ -4,12 +4,9 @@
 
 Production Host and Viewer use the v3 full-control handshake. The Viewer
 proves its device identity over TLS before the Host displays the local approval
-prompt. Approval enables the offered features within Host configuration. Older
-connection requests are rejected before approval. Host and Viewer must be
-updated together. There is no legacy connection fallback in production, and
-upgrading does not convert old device trust records. Media and auxiliary
-channel framing continue to use their existing versions. The v2 handshake
-remains available only to synthetic loopback regression fixtures.
+prompt. Approval enables the offered features within Host configuration. The
+production listener accepts only the full-control handshake. Media and auxiliary
+channel framing use their respective protocol versions.
 
 
 ## Current session behavior

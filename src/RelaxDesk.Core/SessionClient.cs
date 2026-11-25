@@ -206,7 +206,6 @@ public sealed class SessionClient : IDisposable
             approval = await Wire.Read(Control, ct);
         }
         if (approval == new Packet("denied-v2")) throw new HostConsentRejectedException();
-        if (approval == new Packet(FullControlProtocol.UpdateRequired) || FullControl && approval.Kind == "approved-v2") throw new FullControlVersionException();
         if (approval.Kind != (FullControl ? FullControlProtocol.Approved : "approved-v2") || approval.Text is null || approval.Capabilities is not { Length: > 0 }) throw new AuthenticationException("Host approval/capabilities missing");
         if(approval.Input is not null||approval.InputVersion is not (0 or InputProtocol.Version)||approval.InputVersion!=0&&approval.InputVersion!=RequestedInputVersion)throw new AuthenticationException("Unrequested/invalid input version");
         if (FullControl && (!deviceChallenged || approval.InputVersion != InputProtocol.Version))

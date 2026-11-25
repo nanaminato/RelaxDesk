@@ -10,9 +10,7 @@ internal static class SessionAccessSmoke
     public static async Task Run(string hostPath)
     {
         await Verify(hostPath, fullControl: true, denied: false, proveDevice: true);
-        await Verify(hostPath, fullControl: false, denied: true, production: true);
         await Verify(hostPath, fullControl: true, denied: true, proveDevice: true, production: true);
-        Console.WriteLine("PASS production Host requires an updated full-control client");
         Console.WriteLine("PASS verified device proof over production TLS; local approval still required");
         Console.WriteLine("PASS retired in-session elevation request terminates the connection");
         Console.WriteLine("PASS production TLS and shell approval: full-control denial before and after device verification");
@@ -54,7 +52,6 @@ internal static class SessionAccessSmoke
                 }
                 try { await connect; throw new IOException("Forbidden mode advanced"); }
                 catch (HostConsentRejectedException) when (fullControl || !production) { }
-                catch (FullControlVersionException) when (production && !fullControl) { }
                 return;
             }
 

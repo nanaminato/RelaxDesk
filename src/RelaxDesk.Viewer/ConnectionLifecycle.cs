@@ -64,7 +64,6 @@ public sealed partial class ViewerWindow
                     SetConnectionPhase(result.Error is RemoteSessionEndedException ? ConnectionPhase.Disconnected : ConnectionPhase.Failed);
                     status.Text = result.Error switch
                     {
-                        FullControlVersionException => "Host 与 Viewer 需要升级到支持完整控制的版本。",
                         HostConsentRejectedException => "Host 已拒绝本次连接，已停止自动重连。",
                         UdpMediaUnavailableException { Reason: UdpMediaFailure.LocalUnavailable } => "本机无法使用 UDP 媒体。请选择 Auto 或 TCP 后重试。",
                         UdpMediaUnavailableException { Reason: UdpMediaFailure.HostUnavailable } => "Host 未提供 UDP 媒体。请选择 Auto 或 TCP 后重试。",
