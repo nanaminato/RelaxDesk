@@ -9,35 +9,28 @@ internal static class SessionAccessSmoke
 {
     public static async Task Run(string hostPath)
     {
-        await Verify(hostPath, SessionMode.Guest, grantInput: false, guestOnly: false, denied: false);
-        await Verify(hostPath, SessionMode.Guest, grantInput: true, guestOnly: true, denied: false);
-        await Verify(hostPath, null, grantInput: true, guestOnly: false, denied: false);
-        await Verify(hostPath, null, grantInput: false, guestOnly: true, denied: true);
-        await Verify(hostPath, SessionMode.Admin, grantInput: false, guestOnly: false, denied: true);
-        await Verify(hostPath, SessionMode.Admin, grantInput: false, guestOnly: false, denied: true, testAdminConsent: true, proveDevice: true);
-        await Verify(hostPath, SessionMode.Work, grantInput: true, guestOnly: false, denied: false, proveDevice: true);
-        await Verify(hostPath, SessionMode.Work, grantInput: true, guestOnly: false, denied: false);
-        await Verify(hostPath, SessionMode.Work, grantInput: true, guestOnly: false, denied: false, adminDisabled: true);
-        await Verify(hostPath, SessionMode.Admin, grantInput: false, guestOnly: false, denied: true, adminDisabled: true);
-        await Verify(hostPath, SessionMode.Guest, grantInput: false, guestOnly: false, denied: true, workOnly: true);
-        await Verify(hostPath, SessionMode.Admin, grantInput: false, guestOnly: false, denied: true, workOnly: true);
-        await Verify(hostPath, SessionMode.Work, grantInput: true, guestOnly: false, denied: false, workOnly: true);
-        await Verify(hostPath, null, grantInput: true, guestOnly: false, denied: false, workOnly: true);
-        Console.WriteLine("PASS Work-only Host rejects Guest and Admin, and accepts explicit and legacy Work with local consent");
+        await Verify(hostPath, SessionMode.Guest, grantInput: false, denied: false);
+        await Verify(hostPath, SessionMode.Guest, grantInput: true, denied: false);
+        await Verify(hostPath, SessionMode.Work, grantInput: true, denied: false, proveDevice: true);
+        await Verify(hostPath, null, grantInput: false, denied: true, production: true);
+        await Verify(hostPath, SessionMode.Guest, grantInput: false, denied: true, production: true);
+        await Verify(hostPath, SessionMode.Work, grantInput: false, denied: true, proveDevice: true, production: true);
+        await Verify(hostPath, SessionMode.Admin, grantInput: false, denied: true, production: true);
+        await Verify(hostPath, SessionMode.Admin, grantInput: false, denied: true, testAdminConsent: true, proveDevice: true, production: true);
+        Console.WriteLine("PASS production Host rejects legacy session modes and full-control requests without device proof");
         Console.WriteLine("PASS verified Work device proof over production TLS; local approval still required");
         Console.WriteLine("PASS retired in-session elevation request terminates the connection");
-        Console.WriteLine("PASS production TLS and shell approval: Guest view/input/revoke, legacy Work policy, Guest-only and full-control denial before and after device verification");
+        Console.WriteLine("PASS production TLS and shell approval: Guest view/input/revoke, legacy Work policy, full-control denial before and after device verification");
     }
 
-    static async Task Verify(string hostPath, SessionMode? mode, bool grantInput, bool guestOnly, bool denied, bool testAdminConsent = false, bool proveDevice = false, bool adminDisabled = false, bool workOnly = false)
+    static async Task Verify(string hostPath, SessionMode? mode, bool grantInput, bool denied, bool testAdminConsent = false, bool proveDevice = false, bool production = false)
     {
         var reservation = new TcpListener(IPAddress.Loopback, 0);
         reservation.Start();
         int port = ((IPEndPoint)reservation.LocalEndpoint).Port;
         reservation.Stop();
-        string[] options = guestOnly ? ["--shell", "--guest-only"] : workOnly ? ["--shell", "--work-only"] : adminDisabled ? ["--shell", "--no-admin"] : ["--shell"];
-        string backend = mode == SessionMode.Admin ? "dxgi" : "test-displays";
-        using var host = Process.Start(ChildProcess.Create(hostPath, [..options, "127.0.0.1", port.ToString(), backend]))
+        string backend = production ? "dxgi" : "test-displays";
+        using var host = Process.Start(ChildProcess.Create(hostPath, ["--shell", "127.0.0.1", port.ToString(), backend]))
             ?? throw new IOException("Host launch failed");
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(18));
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);

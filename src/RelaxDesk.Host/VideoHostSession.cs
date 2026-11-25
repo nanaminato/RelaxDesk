@@ -25,7 +25,7 @@ internal static class VideoHostSession
         public TaskCompletionSource<Packet> Result { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
     public static async Task Run(TcpListener listener, TcpClient controlSocket, SslStream control, HostMediaIdentity identity,
-        Packet hello, string backend, CancellationToken stop, string[]? grantedFeatures = null, CancellationToken clipboardRevoked = default, string? selectedFileRoot = null, CancellationToken filesRevoked = default,FileTransferResumeStore? fileResumes=null,string? selectedDisplay=null,CancellationToken audioRevoked=default,SessionAccess? access=null,CancellationToken inputRevoked=default,AdminInputConnection? elevated=null,CancellationToken adminRevoked=default,string? shellSessionId=null)
+        Packet hello, string backend, CancellationToken stop, string[]? grantedFeatures = null, CancellationToken clipboardRevoked = default, string? selectedFileRoot = null, CancellationToken filesRevoked = default,FileTransferResumeStore? fileResumes=null,string? selectedDisplay=null,CancellationToken audioRevoked=default,SessionAccess? access=null,CancellationToken inputRevoked=default,AdminInputConnection? elevated=null,string? shellSessionId=null)
     {
         var certificate = identity.Certificate;
         access ??= SessionAccess.Approve(hello.Mode, false);
@@ -392,7 +392,6 @@ internal static class VideoHostSession
             await WriteControl(new(hello.Mode == SessionMode.Work ? "work-input-revoked-v2" : "guest-input-revoked-v2"));
         }
         Task inputRevocation = NotifyInputRevoked();
-        using var endOnWorkerRevocation = adminRevoked.Register(session.Cancel);
         bool elevatedInputForwarded = false;
         int ignoredDisplayInputs=0;
         bool ordinaryInputBlocked = false;

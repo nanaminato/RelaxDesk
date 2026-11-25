@@ -18,13 +18,7 @@ internal sealed partial class HostWindow:Window
     readonly Border request=new(){Visibility=Visibility.Collapsed};
     readonly CheckBox clipboardPermission=new(){Content="允许双向文本剪贴板（可读取两端新复制的文本，最大64KiB）",IsChecked=false,Visibility=Visibility.Collapsed,Margin=new(0,10,0,0)};
     readonly CheckBox guestInputPermission = new() { Content = "允许访客操作键盘和鼠标", Visibility = Visibility.Collapsed };
-    readonly ComboBox allowedModes = new()
-    {
-        ItemsSource = new[] { "访客、工作和管理员", "访客和工作", "仅访客", "仅工作" },
-        SelectedIndex = 0
-    };
     readonly TextBlock consentAccess = new() { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.SlateGray };
-    readonly Button revokeAdminInput = new() { Content = "退出管理员模式", Visibility = Visibility.Collapsed };
     readonly Button revokeGuestInput = new() { Content = "停止键鼠控制", Visibility = Visibility.Collapsed };
     string activeMode = "Work";
     bool activeInput;
@@ -36,7 +30,7 @@ internal sealed partial class HostWindow:Window
     bool hostTokenDenied;
     bool adminDeploymentUnavailable;
     string[] fullControlFeatures = [];
-    const string AdminDeploymentNotice = "管理员输入代理不可用。访客和工作模式仍可使用。要修复代理，请结束共享，在「系统服务」的「更多设置」中选择「更新／修复并应用设置（管理员）」。";
+    const string AdminDeploymentNotice = "完整远程控制不可用。要修复代理，请结束共享，在「系统服务」的「更多设置」中选择「更新／修复并应用设置（管理员）」。";
     const string DesktopUnavailableNotice="不支持当前会话或安全桌面控制。请回到原用户的普通桌面后重新连接并授权；Host 继续等待连接。";
     string? displayedSessionId;
     readonly Button disconnectSession=new(){Content="断开本次连接",Visibility=Visibility.Collapsed};
@@ -58,9 +52,9 @@ internal sealed partial class HostWindow:Window
         var portField=new StackPanel();portField.Children.Add(Text("端口",12));portField.Children.Add(port);Grid.SetColumn(portField,1);fields.Children.Add(portField);settings.Children.Add(fields);
         var addresses=Addresses();ip.Text=addresses.FirstOrDefault()??"127.0.0.1";
         if(addresses.Length>1){var options=new WrapPanel();foreach(string address in addresses){var pick=new Button{Content=address,Padding=new(10,5,10,5),FontSize=12};pick.Click+=(_,_)=>{if(!Host.Running&&!RestartPending)ip.Text=address;};options.Children.Add(pick);}settings.Children.Add(options);}
-        settings.Children.Add(Text("允许的会话模式", 12));settings.Children.Add(allowedModes);AddDisplaySettings(settings);AddFileSettings(settings);AddServiceSettings(settings);AddRecoverySettings(settings);BuildWorkTrust(settings);
+        AddDisplaySettings(settings);AddFileSettings(settings);AddServiceSettings(settings);AddRecoverySettings(settings);BuildWorkTrust(settings);
         var actions=new WrapPanel();start.Style=(Style)Resources["PrimaryButton"];stop.Style=(Style)Resources["DangerButton"];
-        actions.Children.Add(start);actions.Children.Add(stop);actions.Children.Add(disconnectSession);disconnectSession.Click+=async(_,_)=>await DisconnectSession();actions.Children.Add(revokeAdminInput);revokeAdminInput.Click+=async(_,_)=>await Host.RevokeAdminInput(displayedSessionId);actions.Children.Add(revokeGuestInput);revokeGuestInput.Click+=async(_,_)=>await StopSessionInput();actions.Children.Add(revokeClipboard);revokeClipboard.Click+=async(_,_)=>await StopClipboard();var copy=new Button{Content="复制地址"};copy.Click+=(_,_)=>Clipboard.SetText(ip.Text+":"+port.Text);actions.Children.Add(copy);settings.Children.Add(actions);color.Margin=new(4,12,0,0);color.TextWrapping=TextWrapping.Wrap;settings.Children.Add(color);var settingsCard=Card(settings);
+        actions.Children.Add(start);actions.Children.Add(stop);actions.Children.Add(disconnectSession);disconnectSession.Click+=async(_,_)=>await DisconnectSession();actions.Children.Add(revokeGuestInput);revokeGuestInput.Click+=async(_,_)=>await StopSessionInput();actions.Children.Add(revokeClipboard);revokeClipboard.Click+=async(_,_)=>await StopClipboard();var copy=new Button{Content="复制地址"};copy.Click+=(_,_)=>Clipboard.SetText(ip.Text+":"+port.Text);actions.Children.Add(copy);settings.Children.Add(actions);color.Margin=new(4,12,0,0);color.TextWrapping=TextWrapping.Wrap;settings.Children.Add(color);var settingsCard=Card(settings);
         var consent=new StackPanel();consent.Children.Add(Text("有人请求连接",19,true));peer.FontSize=16;peer.Margin=new(0,10,0,8);consent.Children.Add(peer);consent.Children.Add(consentAccess);var decision=new StackPanel{Orientation=Orientation.Horizontal,Margin=new(0,14,0,0)};allow.Style=(Style)Resources["PrimaryButton"];deny.Style=(Style)Resources["DangerButton"];decision.Children.Add(allow);decision.Children.Add(deny);consent.Children.Add(decision);request.Child=consent;request.Background=Brush("#EAF2FF");request.CornerRadius=new(12);request.Padding=new(22);request.Margin=new(0,0,0,16);content.Children.Add(request);content.Children.Add(settingsCard);
         consent.Children.Insert(3,clipboardPermission);consent.Children.Insert(4,filesPermission);consent.Children.Insert(5,filesScopeLabel);actions.Children.Add(revokeFiles);consent.Children.Insert(6,audioPermission);consent.Children.Insert(7,guestInputPermission);consent.Children.Insert(8,rememberWorkDevice);actions.Children.Add(revokeAudio);revokeAudio.Click+=async(_,_)=>await StopAudio();
         content.Children.Add(new Expander{Header="诊断与日志",Content=logs,Margin=new(0,4,0,0)});
@@ -100,8 +94,8 @@ internal sealed partial class HostWindow:Window
         if(ServiceSetupBusy)return;
         if(!recovering){if(RestartPending)return;restartBudget=new();restartBackend=backend;desktopNotice=null;hostTokenDenied=false;}
         if(ServiceRequired&&!ServiceReady){state.Text="服务协调不可用";detail.Text="请先连接已授权的系统服务；没有开始共享。";UpdateServiceControls();return;}
-        try{if(address is not null)ip.Text=address;if(number.HasValue)port.Text=number.Value.ToString();if(!int.TryParse(port.Text,out int selected))throw new ArgumentException("端口应为 1–65535");ip.IsEnabled=port.IsEnabled=start.IsEnabled=allowedModes.IsEnabled=false;SetFileConfigurationEnabled(false);SetDisplayConfigurationEnabled(false);stop.IsEnabled=true;state.Text="正在启动";await Host.Start(application,ip.Text.Trim(),selected,backend,selectedFileRoot,SelectedDisplay,guestOnly: allowedModes.SelectedIndex == 2, adminDisabled: allowedModes.SelectedIndex == 1, workOnly: allowedModes.SelectedIndex == 3);}
-        catch(Exception e){state.Text="无法开始共享";detail.Text=e.Message;ip.IsEnabled=port.IsEnabled=start.IsEnabled=allowedModes.IsEnabled=true;SetFileConfigurationEnabled(true);SetDisplayConfigurationEnabled(true);stop.IsEnabled=false;}
+        try{if(address is not null)ip.Text=address;if(number.HasValue)port.Text=number.Value.ToString();if(!int.TryParse(port.Text,out int selected))throw new ArgumentException("端口应为 1–65535");ip.IsEnabled=port.IsEnabled=start.IsEnabled=false;SetFileConfigurationEnabled(false);SetDisplayConfigurationEnabled(false);stop.IsEnabled=true;state.Text="正在启动";await Host.Start(application,ip.Text.Trim(),selected,backend,selectedFileRoot,SelectedDisplay);}
+        catch(Exception e){state.Text="无法开始共享";detail.Text=e.Message;ip.IsEnabled=port.IsEnabled=start.IsEnabled=true;SetFileConfigurationEnabled(true);SetDisplayConfigurationEnabled(true);stop.IsEnabled=false;}
         finally{UpdateServiceControls();}
     }
     internal async Task Decide(bool accepted){string? id=displayedSessionId;if(id is null)return;allow.IsEnabled=deny.IsEnabled=false;
@@ -112,11 +106,11 @@ internal sealed partial class HostWindow:Window
     {
         if(change.Generation!=0&&change.Generation!=Host.Generation)return;
         string kind=change.Kind;string? value=change.Address;
-        if ((kind is "admin-starting" or "admin-awaiting-viewer" or "admin-ready" or "admin-revoked" or "admin-denied" or "admin-deployment-unavailable" or
+        if ((kind is "admin-starting" or "admin-ready" or "admin-deployment-unavailable" or
                 "ordinary-input-blocked" or "ordinary-input-restored") &&
             (displayedSessionId is null || change.SessionId != displayedSessionId)) return;
         switch(kind){
-            case "listening":revokeAdminInput.Visibility=revokeGuestInput.Visibility=revokeAudio.Visibility=Visibility.Collapsed;request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=revokeFiles.Visibility=disconnectSession.Visibility=Visibility.Collapsed;displayedSessionId=null;state.Text="等待连接";detail.Text=ListeningDetail;break;
+            case "listening":revokeGuestInput.Visibility=revokeAudio.Visibility=Visibility.Collapsed;request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=revokeFiles.Visibility=disconnectSession.Visibility=Visibility.Collapsed;displayedSessionId=null;state.Text="等待连接";detail.Text=ListeningDetail;break;
             case "desktop-unavailable":
                 if (change.DesktopReason == "host-input-token-denied") hostTokenDenied = true;
                 detail.Text = desktopNotice = change.DesktopReason switch
@@ -131,7 +125,7 @@ internal sealed partial class HostWindow:Window
                 };
                 break;
             case "approval-request":desktopNotice=null;workInputRevoke=change.WorkInputRevoke;displayedSessionId=change.SessionId;disconnectSession.Visibility=Visibility.Visible;activeMode = change.Mode ?? "Work"; activeInput = false;
-                peer.Text = $"请求来源  {value} · {activeMode}";
+                peer.Text = $"请求来源  {value}";
                 peer.TextWrapping = TextWrapping.Wrap;
                 if (change.DeviceFingerprint is { Length: 64 } device && device.All(char.IsAsciiHexDigit))
                     peer.Text += $"\n已验证设备公钥 SHA-256  {device}";
@@ -156,13 +150,8 @@ internal sealed partial class HostWindow:Window
             case "admin-starting":
                 state.Text = activeMode == "Work" ? "正在共享 · Work" : "正在准备管理员输入";
                 detail.Text = "正在检查并启动管理员输入代理。如果 Windows 显示 UAC 提示，请在本机确认。";
-                revokeAdminInput.Content = "取消管理员授权";
-                revokeAdminInput.Visibility = Visibility.Visible;
                 break;
-            case "admin-awaiting-viewer":state.Text="等待 Viewer 确认";detail.Text="管理员输入代理已启动，正在等待 Viewer 确认。";revokeAdminInput.Content="取消管理员授权";revokeAdminInput.Visibility=Visibility.Visible;break;
-            case "admin-ready":revokeGuestInput.Visibility=Visibility.Collapsed;adminDeploymentUnavailable=false;activeMode="Admin";state.Text="正在共享 · Admin";detail.Text="管理员输入代理已连接。断开会话会撤销输入。";revokeAdminInput.Content="退出管理员模式";revokeAdminInput.Visibility=Visibility.Visible;break;
-            case "admin-revoked":revokeGuestInput.Visibility=workInputRevoke&&activeInput?Visibility.Visible:Visibility.Collapsed;activeMode="Work";state.Text="正在共享 · Work";detail.Text="管理员键鼠权限已撤销。";revokeAdminInput.Visibility=Visibility.Collapsed;break;
-            case "admin-denied":activeMode="Work";state.Text="正在共享 · Work";detail.Text="本次管理员申请未获授权。";revokeAdminInput.Visibility=Visibility.Collapsed;break;
+            case "admin-ready":revokeGuestInput.Visibility=Visibility.Collapsed;adminDeploymentUnavailable=false;activeMode="Admin";state.Text="正在共享";detail.Text="管理员输入代理已连接。断开会话会撤销输入。";break;
             case "admin-deployment-unavailable":adminDeploymentUnavailable=true;detail.Text=AdminDeploymentNotice;break;
             case "ordinary-input-blocked" when activeInput && activeMode != "Admin":
                 detail.Text = "Windows 暂时拒绝键鼠操作，画面仍在共享。请将焦点切回普通权限窗口。";
@@ -171,8 +160,8 @@ internal sealed partial class HostWindow:Window
                 detail.Text = "普通桌面的键鼠操作已恢复。";
                 break;
             case "approved":state.Text="正在建立共享";detail.Text="已允许本次连接，正在准备屏幕。";request.Visibility=Visibility.Collapsed;break;
-            case "denied":state.Text="已拒绝连接";detail.Text="没有共享桌面。";revokeAdminInput.Visibility=Visibility.Collapsed;break;
-            case "streaming":state.Text=$"正在共享 · {activeMode}";detail.Text=activeMode=="Admin"?"管理员输入代理已连接。断开会话会撤销输入。":activeInput?"对方可查看并操作普通桌面。":"键鼠输入未授权。";break;
+            case "denied":state.Text="已拒绝连接";detail.Text="没有共享桌面。";break;
+            case "streaming":state.Text=activeMode=="Admin"?"正在共享":$"正在共享 · {activeMode}";detail.Text=activeMode=="Admin"?"管理员输入代理已连接。断开会话会撤销输入。":activeInput?"对方可查看并操作普通桌面。":"键鼠输入未授权。";break;
             case "color":
                 try
                 {
@@ -184,8 +173,8 @@ internal sealed partial class HostWindow:Window
                     if(!info.GetProperty("white_level_known").GetBoolean()) color.Text+="（系统未提供白位，使用默认值）";
                 }
                 catch(JsonException){}break;
-            case "session-ended":revokeAdminInput.Visibility=revokeGuestInput.Visibility=revokeAudio.Visibility=Visibility.Collapsed;request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=revokeFiles.Visibility=disconnectSession.Visibility=Visibility.Collapsed;displayedSessionId=null;state.Text="会话已结束";detail.Text="正在清理资源，随后继续等待新的连接。";break;
-            case "ended":case "stopped":revokeAdminInput.Visibility=revokeGuestInput.Visibility=revokeAudio.Visibility=Visibility.Collapsed;displayedSessionId=null;disconnectSession.Visibility=Visibility.Collapsed;if(state.Text!="已拒绝连接")state.Text=kind=="stopped"?"已停止共享":"会话已结束";request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=Visibility.Collapsed;revokeFiles.Visibility=Visibility.Collapsed;ip.IsEnabled=port.IsEnabled=start.IsEnabled=allowedModes.IsEnabled=true;SetFileConfigurationEnabled(true);SetDisplayConfigurationEnabled(true);stop.IsEnabled=false;break;
+            case "session-ended":revokeGuestInput.Visibility=revokeAudio.Visibility=Visibility.Collapsed;request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=revokeFiles.Visibility=disconnectSession.Visibility=Visibility.Collapsed;displayedSessionId=null;state.Text="会话已结束";detail.Text="正在清理资源，随后继续等待新的连接。";break;
+            case "ended":case "stopped":revokeGuestInput.Visibility=revokeAudio.Visibility=Visibility.Collapsed;displayedSessionId=null;disconnectSession.Visibility=Visibility.Collapsed;if(state.Text!="已拒绝连接")state.Text=kind=="stopped"?"已停止共享":"会话已结束";request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=Visibility.Collapsed;revokeFiles.Visibility=Visibility.Collapsed;ip.IsEnabled=port.IsEnabled=start.IsEnabled=true;SetFileConfigurationEnabled(true);SetDisplayConfigurationEnabled(true);stop.IsEnabled=false;break;
         }
         UpdateServiceControls();
         RecoverWorker(change);

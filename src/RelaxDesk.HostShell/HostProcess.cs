@@ -26,7 +26,7 @@ internal sealed class HostProcess
     public readonly List<string> Lines = [];
     public string[] Snapshot(){lock(Lines)return Lines.ToArray();}
     public Task Finished => completion ?? Task.CompletedTask;
-    public async Task Start(string application,string ip,int port,string backend="dxgi",string? fileRoot=null,string? display=null, bool guestOnly=false, bool adminDisabled=false, bool workOnly=false)
+    public async Task Start(string application,string ip,int port,string backend="dxgi",string? fileRoot=null,string? display=null)
     {
         if(Running) throw new InvalidOperationException("共享已在运行");
         if(!IPAddress.TryParse(ip,out var address)||address.Equals(IPAddress.Any)||address.Equals(IPAddress.IPv6Any)||port is <1 or >65535)throw new ArgumentException("请选择有效的本机 IP 和端口");
@@ -34,9 +34,6 @@ internal sealed class HostProcess
         var start=new ProcessStartInfo(Path.GetExtension(application).Equals(".exe",StringComparison.OrdinalIgnoreCase)?application:"dotnet") {UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true};
         if(!application.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))start.ArgumentList.Add(application);
         start.ArgumentList.Add("--shell");
-        if (guestOnly) start.ArgumentList.Add("--guest-only");
-        if (adminDisabled) start.ArgumentList.Add("--no-admin");
-        if (workOnly) start.ArgumentList.Add("--work-only");
         fileRootConfigured=!string.IsNullOrWhiteSpace(fileRoot);
         if(fileRootConfigured){start.ArgumentList.Add("--file-root");start.ArgumentList.Add(Path.GetFullPath(fileRoot!));}
         if(display is not null){start.ArgumentList.Add("--display");start.ArgumentList.Add(display);}
@@ -97,7 +94,6 @@ internal sealed class HostProcess
     }
     public Task RevokeClipboard(string? expectedSessionId=null)=>SessionCommand("REVOKE_CLIPBOARD",expectedSessionId);
     public Task RevokeFiles(string? expectedSessionId=null)=>SessionCommand("REVOKE_FILES",expectedSessionId);
-    public Task RevokeAdminInput(string? expectedSessionId=null)=>SessionCommand("REVOKE_ADMIN_INPUT",expectedSessionId);
     public Task RevokeWorkInput(string? expectedSessionId=null)=>SessionCommand("REVOKE_WORK_INPUT",expectedSessionId);
     public Task RevokeGuestInput(string? expectedSessionId=null)=>SessionCommand("REVOKE_GUEST_INPUT",expectedSessionId);
     public Task RevokeAudio(string? expectedSessionId=null)=>SessionCommand("REVOKE_AUDIO",expectedSessionId);

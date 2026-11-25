@@ -41,11 +41,10 @@ internal sealed class ShellBridge : IDisposable
                         case "REVOKE_CLIPBOARD": scope.Clipboard.Cancel(); break;
                         case "REVOKE_FILES": scope.Files.Cancel(); break;
                         case "REVOKE_AUDIO":scope.Audio.Cancel();break;
-                        case "REVOKE_ADMIN_INPUT": if (scope.Mode is SessionMode.Admin or SessionMode.Work) scope.AdminInput.Cancel(); break;
                         case "REVOKE_GUEST_INPUT": if (scope.Mode == SessionMode.Guest && scope.GuestInput) scope.Input.Cancel(); break;
                         case "REVOKE_WORK_INPUT":
                             if (scope.WorkInputRevoke && scope.Consent.Decision.IsCompletedSuccessfully && scope.Consent.Decision.Result != ConsentDecision.Deny)
-                            { scope.Input.Cancel(); scope.AdminInput.Cancel(); }
+                            { scope.Input.Cancel(); }
                             break;
                         default:
                             if (!scope.Requested || scope.Consent.Decision.IsCompleted) break;
@@ -67,7 +66,7 @@ internal sealed class ShellBridge : IDisposable
     {
         readonly ShellBridge owner;
         internal readonly ConsentRequest Consent = new();
-        internal readonly CancellationTokenSource Lifetime, Clipboard = new(), Files = new(),Audio=new(),Input=new(),AdminInput=new();
+        internal readonly CancellationTokenSource Lifetime, Clipboard = new(), Files = new(),Audio=new(),Input=new();
         internal bool Requested;
         internal SessionMode? Mode;
         public bool GuestInput { get; internal set; }
@@ -78,7 +77,6 @@ internal sealed class ShellBridge : IDisposable
         public CancellationToken ClipboardRevoked => Clipboard.Token;
         public CancellationToken FilesRevoked => Files.Token;
         public CancellationToken AudioRevoked=>Audio.Token;
-        public CancellationToken AdminInputRevoked => AdminInput.Token;
         public CancellationToken InputRevoked => Input.Token;
         internal Session(ShellBridge owner, CancellationToken stop)
         { this.owner = owner; Lifetime = CancellationTokenSource.CreateLinkedTokenSource(stop); }
@@ -101,7 +99,7 @@ internal sealed class ShellBridge : IDisposable
                 if (disposed) return;
                 disposed = true;
                 if (ReferenceEquals(owner.current, this)) owner.current = null;
-                Consent.Dispose(); Lifetime.Cancel(); Lifetime.Dispose(); Clipboard.Dispose(); Files.Dispose();Audio.Dispose();Input.Dispose();AdminInput.Dispose();
+                Consent.Dispose(); Lifetime.Cancel(); Lifetime.Dispose(); Clipboard.Dispose(); Files.Dispose();Audio.Dispose();Input.Dispose();
             }
         }
     }

@@ -13,7 +13,7 @@ namespace RelaxDesk.Host;
 internal static class HostConnection
 {
     public static async Task Run(TcpListener listener, TcpClient client, HostMediaIdentity identity, string token,
-        string backend, string? selectedFileRoot, ShellBridge.Session? shell, CancellationToken stop,FileTransferResumeStore? fileResumes=null,string? selectedDisplay=null,bool guestOnly=false,bool adminDisabled=false,bool workOnly=false)
+        string backend, string? selectedFileRoot, ShellBridge.Session? shell, CancellationToken stop,FileTransferResumeStore? fileResumes=null,string? selectedDisplay=null)
     {
         var cert = identity.Certificate;
         Packet hello;
@@ -57,13 +57,12 @@ internal static class HostConnection
             Console.WriteLine("Guest defaults to view only. Append _INPUT to an approval command to allow ordinary input.");
         bool synthetic = backend.StartsWith("test-", StringComparison.Ordinal);
         bool administrator = hello.Mode == SessionMode.Admin;
-        bool adminEligible = !adminDisabled && administrator && shell is not null && !synthetic && hello.InputVersion == InputProtocol.Version;
+        bool adminEligible = administrator && shell is not null && !synthetic && hello.InputVersion == InputProtocol.Version;
         if (hello.DeviceKey is not null && (hello.Kind == "hello-v1" || hello.Mode == SessionMode.Guest))
             throw new AuthenticationException("Device identity is unavailable for this connection");
-        string? deviceFingerprint = hello.DeviceKey is not null && !guestOnly
+        string? deviceFingerprint = hello.DeviceKey is not null && (synthetic || adminEligible)
             ? await VerifyDeviceIdentity(tls, cert, hello.DeviceKey, stop) : null;
-        string? approval = (SessionAccess.Available(hello.Mode) || adminEligible && deviceFingerprint is not null) && (!guestOnly || hello.Mode == SessionMode.Guest) &&
-            (!workOnly || hello.Mode is null or SessionMode.Work)
+        string? approval = (synthetic ? SessionAccess.Available(hello.Mode) : adminEligible && deviceFingerprint is not null)
             ? await RequestConsent(client, shell, requestedFeatures, hello.Mode, deviceFingerprint, hello.WorkInputRevoke == true, stop)
             : null;
         bool guestInput = approval?.EndsWith("_INPUT", StringComparison.Ordinal) == true && hello.Mode == SessionMode.Guest;
@@ -94,7 +93,7 @@ internal static class HostConnection
                 ? SessionCapabilities.ForFullControl(requestedFeatures, selectedFileRoot is not null)
                 : SessionCapabilities.Grant(requestedFeatures, AudioConsent.Base(approval) is "APPROVE_CLIPBOARD" or "APPROVE_ALL", selectedFileRoot is not null && AudioConsent.Base(approval) is "APPROVE_FILES" or "APPROVE_ALL", AudioConsent.AllowsAudio(approval));
             await VideoHostSession.Run(listener, client, tls, identity, hello, backend, stop,
-                availableFeatures, shell?.ClipboardRevoked ?? default, selectedFileRoot, shell?.FilesRevoked ?? default,fileResumes,selectedDisplay,shell?.AudioRevoked??default,access,shell?.InputRevoked??default,elevated,shell?.AdminInputRevoked??default,shell?.Id);
+                availableFeatures, shell?.ClipboardRevoked ?? default, selectedFileRoot, shell?.FilesRevoked ?? default,fileResumes,selectedDisplay,shell?.AudioRevoked??default,access,shell?.InputRevoked??default,elevated,shell?.Id);
             return;
         }
         listener.Stop();
@@ -124,7 +123,7 @@ internal static class HostConnection
     static async Task<AdminInputConnection?> StartAdmin(TcpClient client, SslStream tls,
         ShellBridge.Session shell, string display, CancellationToken stop)
     {
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop, shell.AdminInputRevoked);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop);
         deadline.CancelAfter(TimeSpan.FromSeconds(60));
         Guid grant = Guid.NewGuid();
         ShellBridge.Emit("admin-starting", sessionId: shell.Id, mode: SessionMode.Admin);

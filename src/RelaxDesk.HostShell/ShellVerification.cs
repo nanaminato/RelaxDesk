@@ -10,32 +10,19 @@ namespace RelaxDesk.HostShell;
 
 internal sealed partial class HostWindow
 {
-    internal void SelectAllowedModesForVerification(string label)
-    {
-        allowedModes.SelectedItem = label;
-        if (allowedModes.SelectedItem is not string selected || selected != label)
-            throw new IOException("The requested session policy is missing in Host settings");
-    }
-
     internal void VerifyAdminStatusEvents()
     {
         const string current = "current-session";
         const string previous = "previous-session";
-        Changed(new("approval-request", SessionId: current, Mode: "Work"));
+        Changed(new("approval-request", SessionId: current, Mode: "Admin"));
         Changed(new("admin-ready", SessionId: previous));
-        if (activeMode != "Work" || revokeAdminInput.Visibility != Visibility.Collapsed)
-            throw new IOException("A stale administrator event modified the current session");
-        Changed(new("admin-awaiting-viewer", SessionId: current));
-        if (revokeAdminInput.Visibility != Visibility.Visible || state.Text != "等待 Viewer 确认")
-            throw new IOException("Pending administrator activation could not be cancelled");
+        if (state.Text != "等待你的授权") throw new IOException("A stale readiness event modified the current session");
         Changed(new("admin-ready", SessionId: current));
-        Changed(new("admin-revoked", SessionId: previous));
-        if (activeMode != "Admin" || !detail.Text.Contains("管理员输入代理已连接") || revokeAdminInput.Visibility != Visibility.Visible)
-            throw new IOException("Administrator activation status was missing or overwritten");
-        Changed(new("admin-revoked", SessionId: current));
-        if (activeMode != "Work" || revokeAdminInput.Visibility != Visibility.Collapsed)
-            throw new IOException("Administrator revocation did not restore Work status");
+        if (state.Text != "正在共享" || !detail.Text.Contains("管理员输入代理已连接"))
+            throw new IOException("Full-control readiness status was missing");
+        Changed(new("approval-request", SessionId: current, Mode: "Work"));
         activeInput = true;
+        Changed(new("streaming", SessionId: current));
         Changed(new("ordinary-input-blocked", SessionId: current));
         Changed(new("ordinary-input-restored", SessionId: previous));
         if (state.Text != "正在共享 · Work" || !detail.Text.Contains("暂时拒绝键鼠"))
@@ -44,7 +31,7 @@ internal sealed partial class HostWindow
         if (!detail.Text.Contains("键鼠操作已恢复")) throw new IOException("Ordinary input recovery notice missing");
         Changed(new("session-ended", SessionId: current));
         Changed(new("admin-ready", SessionId: current));
-        if (state.Text != "会话已结束" || revokeAdminInput.Visibility != Visibility.Collapsed)
+        if (state.Text != "会话已结束")
             throw new IOException("A delayed administrator event restored ended session controls");
         Changed(new("desktop-unavailable", DesktopReason: "expected-desktop-transition-expired"));
         if (DesktopStatusNotice?.Contains("已超时") != true)
@@ -74,7 +61,7 @@ internal static class ShellVerification
             try
             {
                 window.VerifyAdminStatusEvents();
-                Console.WriteLine("PASS WPF Host administrator status rejects stale session events and clears controls on revocation/end");
+                Console.WriteLine("PASS WPF Host administrator status rejects stale session events and clears controls on session end");
                 await Until(()=>window.DisplayEnumerationFinished);await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);Snapshot("host-idle.png");
                 if(!window.DisplayConfigurationEnabled||window.DisplayChoiceCount<2)throw new IOException("Physical display metadata choices missing");
                 int port=Port();await window.StartSharing("127.0.0.1",port,"test-hardware");await Until(()=>window.Status=="等待连接");
@@ -93,63 +80,6 @@ internal static class ShellVerification
                 if(window.Host.Running||window.Host.Pending)throw new IOException("Stop left child/session running");
                 if(!window.DisplayConfigurationEnabled)throw new IOException("Stopped Host did not restore display choice");
                 Console.WriteLine("PASS WPF Host display selection: real metadata choices, fixed scope while listening, settings restored after stop; synthetic video only, physical secondary capture pending");
-                window.SelectAllowedModesForVerification("仅工作");
-                port = Port();
-                await window.StartSharing("127.0.0.1", port, "test-displays");
-                await Until(() => window.Status == "等待连接");
-                using (var guest = new SessionClient { RequestedMode = SessionMode.Guest })
-                {
-                    try
-                    {
-                        await guest.ConnectByApproval("127.0.0.1", port, timeout.Token);
-                        throw new IOException("Host UI Work-only policy admitted a Guest");
-                    }
-                    catch (HostConsentRejectedException) { }
-                    if (window.RequestVisible) throw new IOException("Host UI requested approval for an excluded mode");
-                }
-                await window.StopSharing();
-                await window.Host.Finished;
-                port = Port();
-                await window.StartSharing("127.0.0.1", port, "test-displays");
-                await Until(() => window.Status == "等待连接");
-                using (var work = new SessionClient { RequestedMode = SessionMode.Work })
-                {
-                    var connecting = work.ConnectByApproval("127.0.0.1", port, timeout.Token);
-                    await Until(() => window.RequestVisible);
-                    if (connecting.IsCompleted) throw new IOException("Work-only policy skipped local consent");
-                    await window.Decide(true);
-                    await connecting;
-                    if (!work.InputAllowed || (await work.Video.Read(timeout.Token)).Data.Length == 0)
-                        throw new IOException("Host UI Work-only policy negotiated the wrong capabilities");
-                }
-                await window.StopSharing();
-                await window.Host.Finished;
-                Console.WriteLine("PASS WPF Host Work-only settings reject Guest and allow separately approved Work");
-                window.SelectAllowedModesForVerification("访客和工作");
-                port = Port();
-                await window.StartSharing("127.0.0.1", port, "test-displays");
-                await Until(() => window.Status == "等待连接");
-                using (var work = new SessionClient { RequestedMode = SessionMode.Work })
-                {
-                    var connecting = work.ConnectByApproval("127.0.0.1", port, timeout.Token);
-                    await Until(() => window.RequestVisible);
-                    await window.Decide(true);
-                    await connecting;
-                    if (!work.InputAllowed) throw new IOException("Disabling Admin affected the ordinary Work grant");
-                }
-                await Until(() => window.Status == "等待连接");
-                using (var guest = new SessionClient { RequestedMode = SessionMode.Guest })
-                {
-                    var connecting = guest.ConnectByApproval("127.0.0.1", port, timeout.Token);
-                    await Until(() => window.RequestVisible);
-                    await window.Decide(true);
-                    await connecting;
-                    if (guest.InputAllowed || (await guest.Video.Read(timeout.Token)).Data.Length == 0)
-                        throw new IOException("Disabling Admin changed the default Guest view-only grant");
-                }
-                await window.StopSharing();
-                await window.Host.Finished;
-                Console.WriteLine("PASS WPF no-Admin policy permits ordinary Work and Guest viewing");
                 port=Port();await window.StartSharing("127.0.0.1",port,"test-hardware");await Until(()=>window.Status=="等待连接");
                 using(var viewer=new SessionClient())
                 {
