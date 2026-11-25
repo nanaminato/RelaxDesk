@@ -16,8 +16,11 @@ public sealed partial class ViewerWindow
     [DllImport("user32.dll")] static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(nint window, out uint processId);
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(nint window);
+    [StructLayout(LayoutKind.Sequential)] struct ProbePoint { public int X, Y; }
+    [DllImport("user32.dll")] static extern bool GetCursorPos(out ProbePoint point);
+    [DllImport("user32.dll")] static extern nint WindowFromPoint(ProbePoint point);
 
-    internal static void VerifyAdminUpgrade(Application app, string hostApplication, bool activate = false, bool workerLoss = false, bool realWorker = false, bool cancelElevation = false, bool physicalLock = false, bool physicalKey = false, bool holdProbeKey = false)
+    internal static void VerifyAdminUpgrade(Application app, string hostApplication, bool activate = false, bool workerLoss = false, bool realWorker = false, bool cancelElevation = false, bool physicalLock = false, bool physicalKey = false, bool holdProbeInput = false, bool physicalMouse = false)
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
@@ -34,7 +37,7 @@ public sealed partial class ViewerWindow
         string backend = realWorker ? "dxgi" : workerLoss ? "test-admin-worker-loss" : activate ? "test-admin-lifecycle" : "test-displays";
         foreach (var arg in new[] { "--shell", "127.0.0.1", port.ToString(), backend }) start.ArgumentList.Add(arg);
         using var process = Process.Start(start) ?? throw new IOException("Could not start Host");
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(physicalLock || physicalKey ? 120 : realWorker ? 90 : 25));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(physicalLock || physicalKey || physicalMouse ? 120 : realWorker ? 90 : 25));
         var ct = timeout.Token;
         int released = 0;
         bool observedUacCancellation = false;
@@ -102,32 +105,40 @@ public sealed partial class ViewerWindow
                     SetForegroundWindow(window);
                 return ProbeForeground();
             }
-            void SendProbeKey(bool hold = false)
+            bool ProbeReady()
             {
-                if (!ProbeForeground()) throw new IOException("The owned elevated input probe is no longer the foreground window");
+                if (!FocusProbeFromVerifier()) return false;
+                if (!physicalMouse) return true;
+                keyProbe!.Refresh();
+                return keyProbe.MainWindowTitle.EndsWith(DesktopInputProbe.MouseReadySuffix, StringComparison.Ordinal) &&
+                    GetCursorPos(out var point) && GetWindowThreadProcessId(WindowFromPoint(point), out uint hitPid) != 0 && hitPid == (uint)keyProbe.Id;
+            }
+            void SendProbeInput(bool hold = false)
+            {
+                if (!ProbeReady()) throw new IOException("The owned elevated input probe no longer has focus or the required pointer position");
                 if (connection is null || connection.IsCompleted || viewer.displaySession is not { Ready: true } display)
                     throw new IOException("A ready display session is required for the elevated probe");
                 long generation = display.Generation;
-                var key = new RemoteInput("key", VirtualKey: 0x77, ScanCode: 0x42);
-                if (!viewer.outgoing.TryWrite(InputProtocol.Encode(key, ++viewer.sequence, generation)) ||
-                    !hold && !viewer.outgoing.TryWrite(InputProtocol.Encode(key with { Up = true }, ++viewer.sequence, generation)))
-                    throw new IOException("Could not queue the bounded F8 probe input");
+                var input = physicalMouse ? new RemoteInput("button", Button: 1) : new RemoteInput("key", VirtualKey: 0x77, ScanCode: 0x42);
+                if (!viewer.outgoing.TryWrite(InputProtocol.Encode(input, ++viewer.sequence, generation)) ||
+                    !hold && !viewer.outgoing.TryWrite(InputProtocol.Encode(input with { Up = true }, ++viewer.sequence, generation)))
+                    throw new IOException("Could not queue the bounded probe input");
             }
             async Task VerifyProbeExit(Process probe)
             {
                 await probe.WaitForExitAsync(ct);
                 if (probe.ExitCode != 0)
-                    throw new IOException($"Elevated probe did not receive a balanced F8 press and release (probe exit {probe.ExitCode})");
+                    throw new IOException($"Elevated probe did not receive a balanced input press and release (probe exit {probe.ExitCode})");
             }
             try
             {
-                if (physicalKey)
+                if (physicalKey || physicalMouse)
                 {
                     string executable = Environment.ProcessPath ?? throw new IOException("Viewer executable was not resolved");
                     if (!Path.GetFileName(executable).Equals("RelaxDesk.Viewer.exe", StringComparison.OrdinalIgnoreCase))
                         throw new IOException("Run the physical key test through the Viewer EXE");
                     var launchProbe = new ProcessStartInfo(executable) { UseShellExecute = true, Verb = "runas" };
-                    launchProbe.ArgumentList.Add("--elevated-key-probe");
+                    launchProbe.ArgumentList.Add(physicalMouse ? "--elevated-mouse-probe" : "--elevated-key-probe");
                     keyProbe = await Task.Run(() => Process.Start(launchProbe), ct) ?? throw new IOException("Elevated input probe did not start");
                 }
                 await Event("listening");
@@ -141,14 +152,14 @@ public sealed partial class ViewerWindow
                 if (menu.Visibility != Visibility.Visible || !viewer.inputAuthorized) throw new IOException("Work controls are incorrect");
                 if (keyProbe is not null)
                 {
-                    Console.WriteLine("READY Focus the RelaxDesk administrator input probe without pressing F8.");
-                    await Until(() => keyProbe.HasExited || connection.IsCompleted || viewer.displaySession?.Ready == true && FocusProbeFromVerifier());
-                    SendProbeKey();
-                    Console.WriteLine("Work sent the bounded F8 probe to the foreground test window");
+                    Console.WriteLine(physicalMouse ? "READY Move the pointer onto the elevated probe button without clicking." : "READY Focus the RelaxDesk administrator input probe without pressing F8.");
+                    await Until(() => keyProbe.HasExited || connection.IsCompleted || viewer.displaySession?.Ready == true && ProbeReady());
+                    SendProbeInput();
+                    Console.WriteLine("Work sent bounded input to the foreground test window");
                     await Task.Delay(1000, ct);
                     if (!ProbeForeground() || connection.IsCompleted)
                         throw new IOException("The Work input check did not retain the foreground probe and connection");
-                    Console.WriteLine("PASS the elevated probe stayed open after Work sent F8");
+                    Console.WriteLine("PASS the elevated probe stayed open after Work sent input");
                 }
                 if (activate)
                 {
@@ -231,19 +242,19 @@ public sealed partial class ViewerWindow
                         {
                             if (keyProbe is not null)
                             {
-                                Console.WriteLine("READY Admin is active. Focus the same elevated input probe without pressing F8.");
-                                await Until(() => keyProbe.HasExited || connection.IsCompleted || FocusProbeFromVerifier());
-                                SendProbeKey(holdProbeKey);
-                                Console.WriteLine("Admin sent the bounded F8 probe to the foreground test window");
+                                Console.WriteLine(physicalMouse ? "READY Admin is active. Keep the pointer on the probe button without clicking." : "READY Admin is active. Focus the same elevated input probe without pressing F8.");
+                                await Until(() => keyProbe.HasExited || connection.IsCompleted || ProbeReady());
+                                SendProbeInput(holdProbeInput);
+                                Console.WriteLine("Admin sent bounded input to the foreground test window");
                                 using var forwardDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                                 try { await WaitForLog("admin_input_first_forwarded ", forwardDeadline.Token); }
                                 catch (OperationCanceledException) when (forwardDeadline.IsCancellationRequested)
                                 { throw new IOException("Host did not report forwarding Admin input to the worker pipe"); }
                                 Console.WriteLine("Host forwarded the first Admin input over the authenticated worker pipe");
-                                if (holdProbeKey)
+                                if (holdProbeInput)
                                 {
                                     await Task.Delay(500, ct);
-                                    if (!ProbeForeground()) throw new IOException("The held-key probe did not remain foreground before downgrade");
+                                    if (!ProbeReady()) throw new IOException("The held-input probe lost focus or the pointer moved before downgrade");
                                 }
                                 else
                                 {
@@ -253,10 +264,12 @@ public sealed partial class ViewerWindow
                             }
                             menu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
                             await Event("admin-revoked");
-                            if (holdProbeKey && keyProbe is not null)
+                            if (holdProbeInput && keyProbe is not null)
                             {
                                 await VerifyProbeExit(keyProbe);
-                                Console.WriteLine("PASS the elevated target received F8 release on Admin downgrade without a Viewer key-up packet");
+                                Console.WriteLine(physicalMouse
+                                    ? "PASS the elevated target received one left press and a release on Admin downgrade without a Viewer button-up packet"
+                                    : "PASS the elevated target received F8 release on Admin downgrade without a Viewer key-up packet");
                             }
                             await Until(() => viewer.activeMode == SessionMode.Work && viewer.inputAuthorized);
                             if (connection.IsCompleted) throw new IOException("Downgrade ended the existing connection");

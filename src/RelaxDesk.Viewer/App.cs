@@ -38,18 +38,25 @@ public sealed class App : Application
         try
         {
             var app = new App();
-            if (args is ["--desktop-input-probe"] or ["--elevated-key-probe"])
+            if (args is ["--desktop-input-probe"] or ["--elevated-key-probe"] or ["--elevated-mouse-probe"])
             {
                 WindowsSessionAccess.EnsureAllowed();
                 bool keyProbe = args[0] == "--elevated-key-probe";
-                if (keyProbe) WindowsInputPrivilege.EnsureElevatedProcess();
-                var probe = new DesktopInputProbe(WindowsInputPrivilege.ReadProcessToken(), finishOnKey: keyProbe);
+                bool mouseProbe = args[0] == "--elevated-mouse-probe";
+                if (keyProbe || mouseProbe) WindowsInputPrivilege.EnsureElevatedProcess();
+                var probe = new DesktopInputProbe(WindowsInputPrivilege.ReadProcessToken(), finishOnKey: keyProbe, finishOnMouse: mouseProbe);
                 app.Run(probe);
                 Console.WriteLine(JsonSerializer.Serialize(probe.Result));
                 if (keyProbe) Environment.ExitCode = probe.Result switch
                 {
                     { KeyDowns: 1, KeyUps: 1 } => 0,
                     { KeyDowns: 0, KeyUps: 0 } => 1,
+                    _ => 2
+                };
+                if (mouseProbe) Environment.ExitCode = probe.Result switch
+                {
+                    { ButtonDowns: 1, ButtonUps: 1 } => 0,
+                    { ButtonDowns: 0, ButtonUps: 0 } => 1,
                     _ => 2
                 };
             }
@@ -72,7 +79,8 @@ public sealed class App : Application
             else if (args is ["--admin-uac-cancel-contracts", var cancelUacHost]) ViewerWindow.VerifyAdminUpgrade(app, cancelUacHost, activate: true, realWorker: true, cancelElevation: true);
             else if (args is ["--admin-physical-lock-contracts", var lockedAdminHost]) ViewerWindow.VerifyAdminUpgrade(app, lockedAdminHost, activate: true, realWorker: true, physicalLock: true);
             else if (args is ["--admin-physical-key-contracts", var keyAdminHost]) ViewerWindow.VerifyAdminUpgrade(app, keyAdminHost, activate: true, realWorker: true, physicalKey: true);
-            else if (args is ["--admin-physical-key-release-contracts", var releaseAdminHost]) ViewerWindow.VerifyAdminUpgrade(app, releaseAdminHost, activate: true, realWorker: true, physicalKey: true, holdProbeKey: true);
+            else if (args is ["--admin-physical-key-release-contracts", var releaseAdminHost]) ViewerWindow.VerifyAdminUpgrade(app, releaseAdminHost, activate: true, realWorker: true, physicalKey: true, holdProbeInput: true);
+            else if (args is ["--admin-physical-mouse-release-contracts", var mouseAdminHost]) ViewerWindow.VerifyAdminUpgrade(app, mouseAdminHost, activate: true, realWorker: true, physicalMouse: true, holdProbeInput: true);
             else if (args is ["--admin-worker-loss-contracts", var workerLossHost]) ViewerWindow.VerifyAdminUpgrade(app, workerLossHost, activate: true, workerLoss: true);
             else if(args is ["--video-settings-contracts",var settingsHost,var settingsMode])ViewerWindow.VerifyVideoSettings(app,settingsHost,settingsMode);
             else if(args is ["--display-legacy-session-contracts",var legacyDisplayHost])ViewerWindow.VerifyDisplaySession(app,legacyDisplayHost,false,true);
