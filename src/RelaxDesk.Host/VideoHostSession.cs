@@ -628,7 +628,15 @@ internal static class VideoHostSession
         // suspend a resumable transfer instead of looking like a file denial.
         fileSession.Cancel();
         gate.Revoke();
-        if (elevated is not null) await elevated.DisposeAsync();
+        if (elevated is not null)
+        {
+            try { await elevated.End(CancellationToken.None); }
+            catch (Exception error) when (error is IOException or OperationCanceledException or ObjectDisposedException or InvalidDataException)
+            {
+                HostSessionLog.Write($"admin_input_release_unconfirmed error_type={error.GetType().Name}");
+            }
+            finally { await elevated.DisposeAsync(); }
+        }
         if (stop.IsCancellationRequested || failure?.Error is WindowsSessionUnavailableException)
         {
             // Bounded terminal notice distinguishes local stop from network loss.

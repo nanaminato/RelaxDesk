@@ -80,6 +80,24 @@ using (var wrongSession = new MemoryStream())
     catch (InvalidDataException) { Check(released); }
 }
 
+using (var commands = new MemoryStream())
+{
+    Guid grant = Guid.NewGuid();
+    string binding = grant.ToString("N");
+    await Wire.Write(commands, new("admin-input", 1, Origin: binding, Input: new("move")));
+    await Wire.Write(commands, new("admin-input-end", 2, Origin: binding));
+    long end = commands.Position;
+    commands.Position = 0;
+    bool applied = false, released = false;
+    await AdminInputChannel.Run(commands, grant, _ => applied = true, () =>
+    {
+        Check(applied && commands.Length == end);
+        released = true;
+    }, CancellationToken.None);
+    commands.Position = end;
+    Check(released && await Wire.Read(commands, CancellationToken.None) == new Packet("admin-input-ended", 2, Origin: binding));
+}
+
 var modeGate = new AccessGate();
 modeGate.Approve();
 foreach (string kind in new[] { "admin-input-request-v2", "admin-input-activate-v2", "admin-input-stop-v2", "work-input-ready-v2" })
