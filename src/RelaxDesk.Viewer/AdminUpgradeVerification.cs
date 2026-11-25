@@ -20,7 +20,7 @@ public sealed partial class ViewerWindow
     [DllImport("user32.dll")] static extern bool GetCursorPos(out ProbePoint point);
     [DllImport("user32.dll")] static extern nint WindowFromPoint(ProbePoint point);
 
-    internal static void VerifyAdminUpgrade(Application app, string hostApplication, bool activate = false, bool workerLoss = false, bool realWorker = false, bool cancelElevation = false, bool physicalLock = false, bool physicalKey = false, bool holdProbeInput = false, bool physicalMouse = false, bool revokeFromHost = false)
+    internal static void VerifyAdminUpgrade(Application app, string hostApplication, bool activate = false, bool workerLoss = false, bool realWorker = false, bool cancelElevation = false, bool physicalLock = false, bool physicalKey = false, bool holdProbeInput = false, bool physicalMouse = false, bool revokeFromHost = false, bool disconnectWithProbeHeld = false)
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
@@ -282,6 +282,20 @@ public sealed partial class ViewerWindow
                                     await VerifyProbeExit(keyProbe);
                                     Console.WriteLine("PASS F8 reached the elevated window only in Admin; target received one press and one release");
                                 }
+                            }
+                            if (disconnectWithProbeHeld && keyProbe is not null)
+                            {
+                                viewer.StopConnection();
+                                await connection.WaitAsync(ct);
+                                await Event("session-ended");
+                                await VerifyProbeExit(keyProbe);
+                                if (viewer.inputAuthorized) throw new IOException("Viewer retained input authorization after disconnect");
+                                await Send("STOP");
+                                await process.WaitForExitAsync(ct);
+                                if (process.ExitCode != 0) throw new IOException("Host did not exit cleanly");
+                                Console.WriteLine("PASS the elevated target received F8 release on disconnect without a Viewer key-up packet");
+                                app.Shutdown();
+                                return;
                             }
                             if (revokeFromHost) await Send($"REVOKE_ADMIN_INPUT {id}");
                             else menu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
