@@ -135,6 +135,13 @@ if (args is ["--admin-input-diagnose"])
     Environment.ExitCode = readyForLocalApproval ? 0 : 2;
     return;
 }
+if (args is ["--dxgi-idle-sample", var sampleSeconds])
+{
+    if (!int.TryParse(sampleSeconds, out int sampleDuration) || sampleDuration is < 1 or > 60)
+        throw new ArgumentException("DXGI idle sample duration must be 1–60 seconds");
+    DxgiIdleSample.Run(TimeSpan.FromSeconds(sampleDuration));
+    return;
+}
 if (args is ["--capture-diagnose"])
 {
     try { Console.WriteLine(GraphicsDiagnostics.CaptureJson()); }

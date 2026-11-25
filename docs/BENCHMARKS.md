@@ -240,6 +240,14 @@ excludes QUIC framing, acknowledgments, IP overhead and the TLS control stream.
 
 ### Console regression after Auto recovery changes
 
+Run `RelaxDesk.Host --dxgi-idle-sample 15` from the ordinary console for a
+capture-only sample with no network listener, Viewer window, encoding or pixel
+readback. The JSON counts capture calls, timeouts, frames with dirty or move
+metadata, copied pixels and process CPU time as a percentage of one logical core.
+Check `desktopChanges` before treating the interval as static. A 2560 × 1440
+console run reported 626 changes in 15 seconds and 1.77% of one core, so it
+provides a capture-only activity sample and leaves the static baseline open.
+
 In 1,024 geometry checks on an already enumerated two-display fixture, the
 cached display lookup reduced managed allocations from 1,409,024 to 401,408
 bytes. The comparison includes topology validation on both paths and excludes
