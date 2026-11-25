@@ -405,7 +405,7 @@ public sealed partial class ViewerWindow : Window
                         _ = Dispatcher.BeginInvoke(() =>
                         {
                             if (!ReferenceEquals(session, cancellation) || cancellation.IsCancellationRequested) return;
-                            sessionToolbar?.SetEndpoint($"Work · 等待 Host 本机确认 Windows 授权 · {host.Text}");
+                            sessionToolbar?.SetEndpoint($"Work · Host 正在准备管理员输入 · {host.Text}");
                         });
                     }
                     else if (packet.Kind == "admin-input-ready-v2" || packet == new Packet("admin-input-denied-v2") ||

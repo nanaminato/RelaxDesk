@@ -88,6 +88,13 @@ failure and revocation path.
    [SendInput](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput)
    [UIAccess elevation policy](https://learn.microsoft.com/en-us/windows/security/threat-protection/security-policy-settings/user-account-control-allow-uiaccess-applications-to-prompt-for-elevation-without-using-the-secure-desktop)
    [WTSQueryUserToken](https://learn.microsoft.com/en-us/windows/win32/api/wtsapi32/nf-wtsapi32-wtsqueryusertoken)
+
+   UAC consent temporarily changes the input desktop. A high-integrity worker
+   on Default is eligible for administrator windows on that desktop. DXGI's
+   LocalSystem desktop-image prerequisite concerns capture and establishes no
+   input or session authorization. Sign-in and lock also have their own
+   desktop lifecycle. Validate those paths independently from UAC consent.
+   [How UAC works](https://learn.microsoft.com/en-us/windows/security/application-security/application-control/user-account-control/how-it-works)
 4. Work device grants use authenticated keys and a revocable Host list.
    While sharing from an eligible desktop, the operator can separately
    preapprove the next Work connection for one selected device within 15 minutes.
