@@ -3,7 +3,9 @@ using RelaxDesk.Core;
 using RelaxDesk.Session;
 using RelaxDesk.Windows;
 
-var request = AdminInputLaunchRequest.Parse(args);
+string? fingerprint = args is ["--local-consent", var device, ..] ? device : null;
+if (fingerprint is not null && !LocalConnectionConsent.ValidFingerprint(fingerprint)) return 2;
+var request = AdminInputLaunchRequest.Parse(fingerprint is null ? args : args[2..]);
 if (request is null) return 2;
 
 try { WindowsInputPrivilege.EnsureElevatedProcess(); }
@@ -17,6 +19,7 @@ try
     using var startup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
     using var pipe = await LocalAgentPipe.ConnectAdmin(request.Grant, startup.Token);
     LocalAgentPipe.AuthenticateAdminCoordinator(pipe, request.CoordinatorPid, request.Owner);
+    if (fingerprint is not null && !LocalConnectionConsent.Confirm(fingerprint, pipe.SafePipeHandle)) return 5;
     // Readiness comes from the worker after it checks the administrator token
     // and the interactive desktop.
     await ElevatedInputWorker.Run(pipe, request.Grant, () => new WindowsDisplaySelection(request.Display), CancellationToken.None);

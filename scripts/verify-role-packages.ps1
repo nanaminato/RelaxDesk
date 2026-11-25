@@ -104,6 +104,9 @@ try {
         } else {
             $workerExe=Join-Path $hostPackage.root 'ElevatedInput/RelaxDesk.ElevatedInput.exe'
             $null=Invoke-App 'ordinary-token-worker-rejection' $workerExe @([guid]::NewGuid().ToString('N'),[string]$PID,$identity.User.Value,'all') 10 4
+            $scope=@([guid]::NewGuid().ToString('N'),[string]$PID,$identity.User.Value,'all')
+            $null=Invoke-App 'ordinary-token-consent-rejection' $workerExe (@('--local-consent',('A'*64))+$scope) 10 4
+            $null=Invoke-App 'invalid-consent-fingerprint-rejection' $workerExe (@('--local-consent','invalid')+$scope) 10 2
         }
     } finally {$identity.Dispose()}
     if($SkipMachineServicePreview){

@@ -3,6 +3,7 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net11.0-windows</TargetFramework>
     <PlatformTarget>x64</PlatformTarget>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     <StartupHookSupport>false</StartupHookSupport>
   </PropertyGroup>
   <ItemGroup>
