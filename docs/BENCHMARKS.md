@@ -246,6 +246,14 @@ over four seconds after the initial frame. A manual refresh request in the test
 then delivered a decodable key frame on the same UDP path. The payload count
 excludes QUIC framing, acknowledgments, IP overhead and the TLS control stream.
 
+The `cpu-idle-long` timed benchmark at `91064af` delivered one synthetic
+1280 × 720 frame and five TLS control heartbeats over 25.63 seconds. Across
+18 resource samples per role, mean process CPU was 0.08% for the Host and
+0.28% for the Viewer, normalized across logical processors. Peak working sets
+were 108 MiB and 179 MiB. Sampled GPU engine utilization peaked at 0% for both
+roles. This single-frame fixture parks its producer and leaves physical static
+DXGI capture, visible scanout and NIC traffic for separate measurement.
+
 ### Console regression after Auto recovery changes
 
 Run `RelaxDesk.Host --dxgi-idle-sample 15` from the ordinary console for a
