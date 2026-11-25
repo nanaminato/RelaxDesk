@@ -162,6 +162,7 @@ internal sealed partial class HostWindow:Window
             case "desktop-unavailable":
                 detail.Text = desktopNotice = change.DesktopReason switch
                 {
+                    "host-input-token-denied" => "请使用普通 Windows 用户权限启动被控端，再开始共享。",
                     "session-locked" => "Windows 已锁屏。请在本机解锁后重新连接并授权。",
                     "physical-console-session-changed" => "Windows 已切换用户会话。请回到原用户桌面后重新连接并授权。",
                     "input-desktop-unavailable" => "Host 无法读取当前输入桌面。请回到普通桌面后重新连接并授权。",

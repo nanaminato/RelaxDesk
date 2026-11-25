@@ -174,7 +174,19 @@ if (args.Length is < 2 or > 3 || !IPAddress.TryParse(args[0], out var address) |
 { Console.WriteLine("Usage: RelaxDesk.Host [--listen] [--guest-only|--work-only] [--no-admin] [--file-root <local directory>] [--display <device name|all>] <specific LAN IP> <port> [backend]"); return; }
 string backend = args.Length == 3 ? args[2] : "auto";
 if (backend is not ("auto" or "dxgi" or "gdi" or "test-software" or "test-hardware" or "test-deflate" or "test-oversized-udp" or "test-udp-unavailable" or "test-resolution" or "test-idle" or "test-producer-failure" or "test-runtime-fallback" or "test-capture-recovery" or "test-capture-exhausted" or "test-clipboard" or "test-clipboard-failure" or "test-clipboard-rich" or "test-clipboard-rich-failure" or "test-clipboard-files" or "test-displays" or "test-topology" or "test-topology-init-race" or "test-session-unavailable" or "test-session-locked" or "test-session-switched" or "test-session-desktop" or "test-desktop-pause" or "test-admin-lifecycle" or "test-admin-worker-loss" or "test-audio" or "test-audio-failure" or "test-video-settings-static")) throw new ArgumentException("Unknown capture backend");
-if (backend.StartsWith("test-", StringComparison.Ordinal) && !IPAddress.IsLoopback(address)) throw new ArgumentException("Synthetic test is loopback-only");
+bool syntheticBackend = backend.StartsWith("test-", StringComparison.Ordinal);
+if (syntheticBackend && !IPAddress.IsLoopback(address)) throw new ArgumentException("Synthetic test is loopback-only");
+if (!syntheticBackend)
+{
+    try { WindowsInputPrivilege.EnsureOrdinaryProcess(); }
+    catch (IOException error)
+    {
+        if (shellMode) ShellBridge.Emit("desktop-unavailable", desktopReason: "host-input-token-denied");
+        Console.Error.WriteLine(error.Message);
+        Environment.ExitCode = 2;
+        return;
+    }
+}
 using var mediaIdentity = new HostMediaIdentity();
 var cert = mediaIdentity.Certificate;
 bool persistent = shellMode || listenMode || interactiveLaunch;

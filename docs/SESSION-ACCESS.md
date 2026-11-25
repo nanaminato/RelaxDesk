@@ -197,7 +197,9 @@ Run `RelaxDesk.Host --input-token-diagnose` from ordinary and elevated
 terminals to check the actual token without injecting input. Expected exit
 codes are 0 and 2, respectively. On a physical Windows Home console, pair two devices and exercise Guest view,
 Guest input grant and revoke, Work input and optional grants, then repeat with
-an elevated Host and confirm the coordinator refuses sharing. Record UAC,
+an elevated Host and confirm the coordinator refuses to open its listener.
+The console and HostShell report that ordinary Windows privileges are required.
+Record UAC,
 lock, sign-in, WTS switching and real window behavior as separate results.
 
 | Scope | Verified on the current development branch | Remaining evidence |
