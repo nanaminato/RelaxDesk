@@ -52,8 +52,9 @@ public sealed partial class ViewerWindow
                     var sample=actual();
                     return Volatile.Read(ref switchPath) switch
                     {
-                        1 => sample with { TransportRevision = sample.TransportRevision + 2 },
-                        2 => sample with { Transport = udp ? "TCP/TLS" : "UDP", Network = null },
+                        // Keep the injected intervals independent of real Auto recovery probes.
+                        1 => sample with { Transport = udp ? "UDP" : "TCP/TLS", TransportRevision = int.MaxValue - 1 },
+                        2 => sample with { Transport = udp ? "TCP/TLS" : "UDP", TransportRevision = int.MaxValue, Network = null },
                         _ => sample
                     };
                 };
