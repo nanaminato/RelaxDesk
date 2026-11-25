@@ -54,11 +54,28 @@ internal static class KeyboardFocusVerification
             try
             {
                 await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-                window.Activate(); SetForegroundWindow(new WindowInteropHelper(window).Handle);
+                var root = new WindowInteropHelper(window).Handle;
+                window.Activate(); SetForegroundWindow(root);
                 await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-                Check(GetForegroundWindow() == new WindowInteropHelper(window).Handle, "Owned test window must be foreground; otherwise keyboard routing must reject input");
+                if (GetForegroundWindow() != root)
+                {
+                    Console.WriteLine("Waiting up to 30 seconds for the owned keyboard verification window to receive focus.");
+                    using var focusDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                    try
+                    {
+                        while (GetForegroundWindow() != root) await Task.Delay(100, focusDeadline.Token);
+                    }
+                    catch (OperationCanceledException) when (focusDeadline.IsCancellationRequested) { }
+                }
+                Check(GetForegroundWindow() == root, "Owned test window must be foreground; otherwise keyboard routing must reject input");
                 nint click = (100 << 16) | 100;
+                int standaloneMoves = 0;
+                viewport.PointerMove = (_, _) => standaloneMoves++;
+                int legacyBefore = packets.Count;
+                SendMessage(viewport.Handle, 0x200, 0, click);
+                Check(standaloneMoves == 1 && packets.Count == legacyBefore, "Legacy standalone motion uses its independent queue path");
                 SendMessage(viewport.Handle,0x201,1,click); SendMessage(viewport.Handle,0x202,0,click);
+                Check(standaloneMoves == 1 && packets.Count == legacyBefore + 2, "Legacy button anchors stay on the reliable path");
                 Check(GetFocus()==viewport.Handle,"Click must focus native remote surface");
                 nint ime=ImmGetContext(viewport.Handle); if(ime!=0)ImmReleaseContext(viewport.Handle,ime);
                 Check(ime==0,"Local IME must be detached only from remote child");
@@ -94,6 +111,9 @@ internal static class KeyboardFocusVerification
                 Check(ComponentDispatcher.RaiseThreadMessage(ref raw),"Rich raw key consumed");
                 Check(rich.Count==3&&rich.All(key=>key is{VirtualKey:0xA3,ScanCode:29,Extended:true,Repeat:true})&&rich.Sum(key=>key.RepeatCount)==65,"Rich scan/extended/repeat metadata preserved exactly once");
                 nint point=(nint)((100<<16)|100);
+                int richBefore = rich.Count;
+                SendMessage(viewport.Handle, 0x200, 0, point);
+                Check(standaloneMoves == 2 && rich.Count == richBefore, "Rich standalone motion uses its independent queue path");
                 foreach(var (down,up,parameter,button) in new[]{(0x201,0x202,0,1),(0x204,0x205,0,2),(0x207,0x208,0,3),(0x20B,0x20C,1<<16,4),(0x20B,0x20C,2<<16,5)})
                 {
                     int before=rich.Count;SendMessage(viewport.Handle,down,parameter,point);
