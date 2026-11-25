@@ -596,8 +596,14 @@ internal static class VideoHostSession
                             {
                                 bool accepted = packet.Input is { } rich ? inputDesktop!.TryInjectOrdinary(rich) :
                                     inputDesktop!.TryInjectOrdinaryLegacy(packet.Code,packet.Up,packet.X,packet.Y);
-                                if (!accepted && !ordinaryInputBlocked) HostSessionLog.Write("ordinary_input_temporarily_blocked");
-                                ordinaryInputBlocked = !accepted;
+                                bool blocked = !accepted;
+                                if (blocked != ordinaryInputBlocked)
+                                {
+                                    ordinaryInputBlocked = blocked;
+                                    if (blocked) HostSessionLog.Write("ordinary_input_temporarily_blocked");
+                                    if (shellSessionId is not null)
+                                        ShellBridge.Emit(blocked ? "ordinary-input-blocked" : "ordinary-input-restored", sessionId: shellSessionId);
+                                }
                             }
                         }}
                         try{if(displays is null)Inject();else if(!displays.Switch.TryInput(packet.DisplayGeneration,Inject)&&Interlocked.Increment(ref ignoredDisplayInputs)==1)HostSessionLog.Write("display_input_ignored reason=stale-or-switching");}

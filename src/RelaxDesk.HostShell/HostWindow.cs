@@ -145,7 +145,8 @@ internal sealed partial class HostWindow:Window
     {
         if(change.Generation!=0&&change.Generation!=Host.Generation)return;
         string kind=change.Kind;string? value=change.Address;
-        if ((kind is "admin-starting" or "admin-awaiting-viewer" or "admin-ready" or "admin-revoked" or "admin-denied" or "admin-deployment-unavailable") &&
+        if ((kind is "admin-starting" or "admin-awaiting-viewer" or "admin-ready" or "admin-revoked" or "admin-denied" or "admin-deployment-unavailable" or
+                "ordinary-input-blocked" or "ordinary-input-restored") &&
             (displayedSessionId is null || change.SessionId != displayedSessionId)) return;
         if (kind is "ended" or "stopped" or "desktop-unavailable") ClearNextWork();
         if (kind is "listening" or "approval-request" or "session-ended" or "ended" or "stopped") CloseAdminRequest();
@@ -194,6 +195,12 @@ internal sealed partial class HostWindow:Window
             case "admin-revoked":revokeGuestInput.Visibility=workInputRevoke&&activeInput?Visibility.Visible:Visibility.Collapsed;activeMode="Work";state.Text="正在共享 · Work";detail.Text="管理员键鼠权限已撤销。";revokeAdminInput.Visibility=Visibility.Collapsed;break;
             case "admin-denied":activeMode="Work";state.Text="正在共享 · Work";detail.Text="本次管理员申请未获授权。";revokeAdminInput.Visibility=Visibility.Collapsed;break;
             case "admin-deployment-unavailable":adminDeploymentUnavailable=true;detail.Text=AdminDeploymentNotice;break;
+            case "ordinary-input-blocked" when activeInput && activeMode != "Admin":
+                detail.Text = "Windows 暂时拒绝键鼠操作，画面仍在共享。请将焦点切回普通权限窗口。";
+                break;
+            case "ordinary-input-restored" when activeInput && activeMode != "Admin":
+                detail.Text = "普通桌面的键鼠操作已恢复。";
+                break;
             case "approved":state.Text="正在建立共享";detail.Text="已允许本次连接，正在准备屏幕。";request.Visibility=Visibility.Collapsed;break;
             case "denied":state.Text="已拒绝连接";detail.Text="没有共享桌面。";revokeAdminInput.Visibility=Visibility.Collapsed;break;
             case "streaming":state.Text=$"正在共享 · {activeMode}";detail.Text=activeMode=="Admin"?"管理员输入代理已连接。断开会话会撤销输入。":activeInput?"对方可查看并操作普通桌面。":"键鼠输入未授权。";break;

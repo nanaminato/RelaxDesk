@@ -54,8 +54,9 @@ input directed at a higher-integrity window via UIPI.
 On the v2 ordinary-input route, a partial or rejected Windows input batch
 is discarded. The Host immediately attempts to release any accepted held input
 and retries an incomplete release before injecting the next action. Video and
-reliable control continue while the ordinary desktop remains eligible. The elevated worker retains its strict
-failure and revocation path.
+reliable control continue while the ordinary desktop remains eligible. HostShell
+reports ordinary input rejection and recovery without changing the session's
+mode. The elevated worker retains its strict failure and revocation path.
 [SendInput](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput)
 [Token information](https://learn.microsoft.com/windows/win32/api/securitybaseapi/nf-securitybaseapi-gettokeninformation)
 

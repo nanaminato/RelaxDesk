@@ -35,6 +35,13 @@ internal sealed partial class HostWindow
         Changed(new("admin-revoked", SessionId: current));
         if (activeMode != "Work" || revokeAdminInput.Visibility != Visibility.Collapsed)
             throw new IOException("Administrator revocation did not restore Work status");
+        activeInput = true;
+        Changed(new("ordinary-input-blocked", SessionId: current));
+        Changed(new("ordinary-input-restored", SessionId: previous));
+        if (state.Text != "正在共享 · Work" || !detail.Text.Contains("暂时拒绝键鼠"))
+            throw new IOException("Input rejection notice lost the current Work session or accepted a stale event");
+        Changed(new("ordinary-input-restored", SessionId: current));
+        if (!detail.Text.Contains("键鼠操作已恢复")) throw new IOException("Ordinary input recovery notice missing");
         Changed(new("session-ended", SessionId: current));
         Changed(new("admin-ready", SessionId: current));
         if (state.Text != "会话已结束" || revokeAdminInput.Visibility != Visibility.Collapsed)
