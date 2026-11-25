@@ -157,8 +157,8 @@ try {
         if ($PackageRoot) { $shell = Join-Path $root 'HostUi/RelaxDesk.HostShell.exe' }
         Run-App $shell --shell-contracts $hostDll (Join-Path $root 'build/host-shell-verification')
         if ($LASTEXITCODE) { throw 'WPF Host approval/stop contracts failed' }
-        Run-App $shell --work-trust-contracts $hostDll (Join-Path $root 'build/work-trust-verification')
-        if ($LASTEXITCODE) { throw 'WPF Work device trust contracts failed' }
+        Run-App $shell --device-trust-contracts $hostDll (Join-Path $root 'build/device-trust-verification')
+        if ($LASTEXITCODE) { throw 'WPF device trust contracts failed' }
         Run-App $shell --service-contracts $hostDll $serviceDll
         if($LASTEXITCODE){throw 'Service coordination failed'}
         Run-App $shell --recovery-contracts $hostDll

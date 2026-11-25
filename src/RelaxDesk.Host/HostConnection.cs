@@ -57,12 +57,12 @@ internal static class HostConnection
             Console.WriteLine("Guest defaults to view only. Append _INPUT to an approval command to allow ordinary input.");
         bool synthetic = backend.StartsWith("test-", StringComparison.Ordinal);
         bool administrator = hello.Mode == SessionMode.Admin;
-        bool adminEligible = administrator && shell is not null && !synthetic && hello.InputVersion == InputProtocol.Version;
+        bool adminEligible = administrator && shell is not null && hello.InputVersion == InputProtocol.Version;
         if (hello.DeviceKey is not null && (hello.Kind == "hello-v1" || hello.Mode == SessionMode.Guest))
             throw new AuthenticationException("Device identity is unavailable for this connection");
         string? deviceFingerprint = hello.DeviceKey is not null && (synthetic || adminEligible)
             ? await VerifyDeviceIdentity(tls, cert, hello.DeviceKey, stop) : null;
-        string? approval = (synthetic ? SessionAccess.Available(hello.Mode) : adminEligible && deviceFingerprint is not null)
+        string? approval = (adminEligible && deviceFingerprint is not null || synthetic && SessionAccess.Available(hello.Mode))
             ? await RequestConsent(client, shell, requestedFeatures, hello.Mode, deviceFingerprint, hello.WorkInputRevoke == true, stop)
             : null;
         bool guestInput = approval?.EndsWith("_INPUT", StringComparison.Ordinal) == true && hello.Mode == SessionMode.Guest;
@@ -82,9 +82,9 @@ internal static class HostConnection
             WindowsInputPrivilege.EnsureOrdinaryProcess();
             WindowsSessionAccess.EnsureAllowed();
         }
-        if (administrator) selectedDisplay = new WindowsDisplaySelection(selectedDisplay).Device;
-        await using var elevated = administrator ? await StartAdmin(client, tls, shell!, selectedDisplay!, stop) : null;
-        if (administrator && elevated is null) return;
+        if (administrator && !synthetic) selectedDisplay = new WindowsDisplaySelection(selectedDisplay).Device;
+        await using var elevated = administrator && !synthetic ? await StartAdmin(client, tls, shell!, selectedDisplay!, stop) : null;
+        if (administrator && !synthetic && elevated is null) return;
         var access = administrator ? new SessionAccess(SessionMode.Admin, true) : SessionAccess.Approve(hello.Mode, guestInput);
         if (shell is not null) ShellBridge.Emit("approved", sessionId: shell.Id);
         if (hello.Kind is "hello-v2" or "request-v2")

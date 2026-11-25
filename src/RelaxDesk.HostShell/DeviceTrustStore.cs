@@ -1,39 +1,36 @@
 using System.IO;
 using System.Text.Json;
-using RelaxDesk.Core;
 
 namespace RelaxDesk.HostShell;
 
-internal sealed record WorkTrustEntry(string Fingerprint, string[] Features, string? FileRoot);
-
-internal sealed class WorkTrustStore(string file, SemaphoreSlim? operationGate = null)
+internal sealed class DeviceTrustStore(string file, SemaphoreSlim? operationGate = null)
 {
     const int MaximumEntries = 32;
     const int MaximumBytes = 64 * 1024;
     readonly string path = Path.GetFullPath(file);
     readonly SemaphoreSlim operations = operationGate ?? new(1);
 
-    internal static WorkTrustStore CurrentUser() => new(Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RelaxDesk", "work-trust.json"));
+    internal static DeviceTrustStore CurrentUser() => new(Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RelaxDesk", "full-control-trust.json"));
 
     internal static bool IsFingerprint(string? value) =>
         value is { Length: 64 } && value.All(c => char.IsAsciiDigit(c) || c is >= 'A' and <= 'F');
 
-    public Task<WorkTrustEntry[]> Load() => Run(Read);
+    public Task<string[]> Load() => Run(Read);
 
-    public Task<WorkTrustEntry[]> Save(WorkTrustEntry item) => Run(() =>
+    public Task<string[]> Save(string fingerprint) => Run(() =>
     {
-        Validate(item);
-        var items = Read().Where(entry => entry.Fingerprint != item.Fingerprint).Prepend(item).ToArray();
+        Validate(fingerprint);
+        var items = Read().Where(entry => entry != fingerprint).Prepend(fingerprint).ToArray();
         if (items.Length > MaximumEntries) throw new IOException("Trusted device list is full");
         return Write(items);
     });
 
-    public Task<WorkTrustEntry[]> Remove(string fingerprint) => Run(() =>
+    public Task<string[]> Remove(string fingerprint) => Run(() =>
     {
         if (!IsFingerprint(fingerprint)) throw new ArgumentException("Invalid device fingerprint", nameof(fingerprint));
         var previous = Read();
-        var next = previous.Where(entry => entry.Fingerprint != fingerprint).ToArray();
+        var next = previous.Where(entry => entry != fingerprint).ToArray();
         return next.Length == previous.Length ? previous : Write(next);
     });
 
@@ -44,41 +41,37 @@ internal sealed class WorkTrustStore(string file, SemaphoreSlim? operationGate =
         finally { operations.Release(); }
     }
 
-    WorkTrustEntry[] Read()
+    string[] Read()
     {
         Guard();
         if (!File.Exists(path)) return [];
         using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-        if (input.Length is < 2 or > MaximumBytes) throw new InvalidDataException("Work trust file length invalid");
-        var result = JsonSerializer.Deserialize<WorkTrustEntry[]>(input) ?? throw new InvalidDataException("Missing Work trust records");
-        if (result.Length > MaximumEntries) throw new InvalidDataException("Too many Work trust records");
+        if (input.Length is < 2 or > MaximumBytes) throw new InvalidDataException("Device trust file length invalid");
+        var result = JsonSerializer.Deserialize<string[]>(input) ?? throw new InvalidDataException("Missing Device trust records");
+        if (result.Length > MaximumEntries) throw new InvalidDataException("Too many Device trust records");
         var fingerprints = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entry in result)
         {
             Validate(entry);
-            if (!fingerprints.Add(entry.Fingerprint)) throw new InvalidDataException("Duplicate Work device");
+            if (!fingerprints.Add(entry)) throw new InvalidDataException("Duplicate trusted device");
         }
         return result;
     }
 
-    static void Validate(WorkTrustEntry? entry)
+    static void Validate(string? fingerprint)
     {
-        if (entry is null || !IsFingerprint(entry.Fingerprint) || entry.Features is null ||
-            entry.Features.Contains(SessionCapabilities.FileTransfer) != (entry.FileRoot is not null) ||
-            entry.FileRoot is { } root && (root.Length > 2048 || !Path.IsPathFullyQualified(root)))
-            throw new InvalidDataException("Invalid Work trust record");
-        SessionCapabilities.Validate(entry.Features);
+        if (!IsFingerprint(fingerprint)) throw new InvalidDataException("Invalid trusted device fingerprint");
     }
 
-    WorkTrustEntry[] Write(WorkTrustEntry[] entries)
+    string[] Write(string[] entries)
     {
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(entries);
-        if (bytes.Length > MaximumBytes) throw new InvalidDataException("Work trust file too large");
+        if (bytes.Length > MaximumBytes) throw new InvalidDataException("Device trust file too large");
         Guard();
         string directory = Path.GetDirectoryName(path)!;
         Directory.CreateDirectory(directory);
         Guard();
-        string temporary = Path.Combine(directory, $"work-trust-{Guid.NewGuid():N}.tmp");
+        string temporary = Path.Combine(directory, $"full-control-trust-{Guid.NewGuid():N}.tmp");
         try
         {
             using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
@@ -95,13 +88,13 @@ internal sealed class WorkTrustStore(string file, SemaphoreSlim? operationGate =
 
     void Guard()
     {
-        if (Directory.Exists(path)) throw new IOException("Work trust path is a directory");
+        if (Directory.Exists(path)) throw new IOException("Device trust path is a directory");
         for (string? current = path; current is not null; current = Path.GetDirectoryName(current))
         {
             try
             {
                 if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
-                    throw new IOException("Work trust path is redirected");
+                    throw new IOException("Device trust path is redirected");
             }
             catch (FileNotFoundException) { }
             catch (DirectoryNotFoundException) { }

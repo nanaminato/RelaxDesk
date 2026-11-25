@@ -59,7 +59,7 @@ internal static class OfficeAcceptanceCases
             Add("office-viewer-rich-clipboard-" + mode, a.Viewer, "--rich-clipboard-session-contracts", a.Host, mode);
         foreach (string mode in new[] { "h264", "deflate", "audio", "static" })
             Add("office-viewer-video-settings-" + mode, a.Viewer, "--video-settings-contracts", a.Host, mode);
-        Add("office-work-trust", a.Shell, "--work-trust-contracts", a.Host, Folder("work-trust"));
+        Add("office-device-trust", a.Shell, "--device-trust-contracts", a.Host, Folder("device-trust"));
         Add("office-host-ui", a.Shell, "--shell-contracts", a.Host, Folder("host-ui"));
         Add("office-host-service-setup-ui",a.Shell,"--service-setup-ui-contracts",a.Host,Folder("service-setup-ui"));
         Add("office-host-service", a.Shell, "--service-contracts", a.Host, a.Service);
