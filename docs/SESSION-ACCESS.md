@@ -448,6 +448,8 @@ When sharing begins on the physical console, the watcher pins its session ID.
 A different console ID or a detached console terminates the sharing grant,
 including during an expected desktop pause. [Console session ID](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-wtsgetactiveconsolesessionid)
 
+Windows applies a restricted security descriptor to the Winlogon desktop used for protected UAC and sign-in. The broker uses a noninteractive LocalService identity. Windows requires a logged-on user's session and a highly trusted LocalSystem caller with `SE_TCB_NAME` for `WTSQueryUserToken`. The current broker's authorization consists of an authenticated lease for a registered interactive agent. Sharing still requires an eligible Default desktop and the appropriate Host approval. Pre-sign-in input, lock-screen input, and unattended Admin remain outside this authorization path. [Windows desktops](https://learn.microsoft.com/en-us/windows/win32/winstation/desktops) [Interactive services](https://learn.microsoft.com/en-us/windows/win32/services/interactive-services) [WTSQueryUserToken](https://learn.microsoft.com/en-us/windows/win32/api/wtsapi32/nf-wtsapi32-wtsqueryusertoken)
+
 In a negotiated Work session, the Viewer can retry an Admin request after
 denial or after returning to Work. A Host-side revocation disables further
 elevation for that connection. Each attempt requires a fresh local approval.
