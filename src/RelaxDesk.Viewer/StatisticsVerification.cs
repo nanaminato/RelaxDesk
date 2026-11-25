@@ -9,6 +9,8 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    static extern bool IsWindowEnabled(nint window);
     public static void VerifyStatistics(Application app,string hostApplication,string fixtures,bool udp=false,bool oversized=false,bool legacyAuto=false,bool hostWithoutUdp=false,bool viewerWithoutUdp=false)
     {
         if (SessionStatisticsWindow.FallbackDescription(null) != "" ||
@@ -64,6 +66,14 @@ public sealed partial class ViewerWindow
                 bar.ConnectionInfoButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 var panel=window.statisticsWindow??throw new IOException("Panel absent after clicking the toolbar readings");
                 await Until(()=>panel.Updates>=2&&!panel.DisplayText.Contains("控制往返（含排队）：未采集"));
+                if (panel.Owner != window || !panel.IsVisible ||
+                    IsWindowEnabled(new System.Windows.Interop.WindowInteropHelper(window).Handle))
+                    throw new IOException("Connection information did not open as an owned modal dialog");
+                foreach (string label in new[] { "采样时间（UTC）", "活动 ID", "本地系统", "可用带宽：未测量", "地址：127.0.0.1:", "共享物理桌面", "网关：直连" })
+                    if (!panel.DisplayText.Contains(label)) throw new IOException($"Connection details missing: {label}");
+                panel.DetailsExpanded = false;
+                if (!panel.IsVisible) throw new IOException("Collapsing details closed the connection dialog");
+                panel.DetailsExpanded = true;
                 if (!panel.DisplayText.Contains("Viewer 控制队列") || !panel.DisplayText.Contains("已合并鼠标移动") || !panel.DisplayText.Contains("队列满时丢弃移动：0 条"))
                     throw new IOException("Control queue depth and coalesced mouse moves were not displayed");
                 if(!panel.DisplayText.Contains("Present 调用不代表屏幕已显示")||!panel.DisplayText.Contains("不含 TLS")||!panel.DisplayText.Contains("P95 不相加")||!panel.DisplayText.Contains("控制往返"))throw new IOException("Statistics units/provenance missing");

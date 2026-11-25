@@ -342,7 +342,10 @@ public sealed partial class ViewerWindow : Window
             StartAudio(connection,permissionGate,cancellation.Token);
             long initialCoalescedMoves = outgoing.CoalescedMoves;
             long initialDroppedPointerMoves = Interlocked.Read(ref droppedPointerMoves);
-            BeginStatistics(()=>new(metrics.Snapshot(decoded.Dropped+Interlocked.Read(ref skipped),decoded.Depth),Volatile.Read(ref receivedFrames),Interlocked.Read(ref gpuFrames),Interlocked.Read(ref cpuFrames),Interlocked.Read(ref readbackBytes),Volatile.Read(ref rendererGenerations),connection.Video.TransportName,connection.VideoFallback,connection.ReadVideoNetworkStatistics(),connection.HostVideoQueue,outgoing.Depth,outgoing.CoalescedMoves-initialCoalescedMoves,connection.VideoTransportRevision,Interlocked.Read(ref droppedPointerMoves)-initialDroppedPointerMoves));
+            BeginStatistics(()=>new(metrics.Snapshot(decoded.Dropped+Interlocked.Read(ref skipped),decoded.Depth),Volatile.Read(ref receivedFrames),Interlocked.Read(ref gpuFrames),Interlocked.Read(ref cpuFrames),Interlocked.Read(ref readbackBytes),Volatile.Read(ref rendererGenerations),connection.Video.TransportName,connection.VideoFallback,connection.ReadVideoNetworkStatistics(),connection.HostVideoQueue,outgoing.Depth,outgoing.CoalescedMoves-initialCoalescedMoves,connection.VideoTransportRevision,Interlocked.Read(ref droppedPointerMoves)-initialDroppedPointerMoves,Volatile.Read(ref viewportVideoWidth),Volatile.Read(ref viewportVideoHeight)),
+                new(new IPEndPoint(IPAddress.Parse(target.Host), target.Port).ToString(), DateTimeOffset.UtcNow,
+                    DiagnosticCorrelation.Current, target.UserName is null ? "会话审批" : "用户名和密码",
+                    connection.InputVersion, connection.DisplayVersion, connection.VideoVersion, [.. connection.Features]));
             toolbarStatisticsSource = () => new(metrics.ReadCounters(), connection.Video.TransportName,
                 connection.VideoTransportRevision, Volatile.Read(ref latestControlRtt));
             if (connection.ClipboardData is null&&permissionGate.Allows(SessionCapabilities.ClipboardText))

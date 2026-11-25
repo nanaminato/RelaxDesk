@@ -210,9 +210,14 @@ internal sealed class SessionToolbar : IDisposable
         var readings = new StackPanel();
         readings.Children.Add(mediaRate);
         readings.Children.Add(connectionTiming);
+        var connectionButtonContent = new DockPanel();
+        var more = new TextBlock { Text = "更多", FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new(8, 0, 0, 0) };
+        DockPanel.SetDock(more, Dock.Right);
+        connectionButtonContent.Children.Add(more);
+        connectionButtonContent.Children.Add(readings);
         ConnectionInfoButton = new Button
         {
-            Content = readings, Focusable = false, Padding = new(8, 2, 8, 2), Margin = new(3),
+            Content = connectionButtonContent, Focusable = false, Padding = new(8, 2, 8, 2), Margin = new(3),
             Width = 183, Visibility = Visibility.Collapsed,
             ToolTip = "画面提交帧率 · 视频应用数据接收速率 · 控制往返时间（含排队）\n点击查看连接统计"
         };

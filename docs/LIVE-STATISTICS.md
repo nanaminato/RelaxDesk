@@ -14,7 +14,18 @@ gesture controls.
 
 After a v2 connection is authorized, move the pointer to the top-center tab in either windowed or full-screen mode. The floating bar shows submitted FPS, application video receive rate, media transport and the latest control RTT. Rates use roughly one-second intervals, and the bar shows a dash until it has a complete sample on the current transport. RTT comes from the existing heartbeat and includes queueing. The bar reads lightweight counters without collecting process information or computing percentiles.
 
-Click the readings or use the floating toolbar menu → Connection Statistics to open the read-only detailed window. Closing the window stops detailed sampling. Disconnect clears both displays, and reconnect starts a new sample. Legacy v1 and local preview leave this entry disabled. Opening the window releases locally held remote input.
+Click More (更多) in the floating bar or select Connection Statistics in the
+session menu to open the modal connection information dialog. It shows the
+connection and sample timestamps in UTC, the Viewer activity ID, client build
+and local Windows version, negotiated media transport, current control RTT,
+submitted FPS, application receive rate, and the remote endpoint and display
+size. RelaxDesk does not measure available link capacity, so the dialog marks
+it unmeasured. Expand or collapse the report and use Ctrl+C or the copy button
+to copy it. Login secrets are excluded.
+
+Opening the dialog releases locally held remote input. Closing it stops
+detailed sampling. Disconnect closes the dialog and clears both displays.
+Reconnect creates a new sample and activity ID. Local preview has no report.
 
 Detailed sampling runs approximately once per second while the window is open. Process queries, sample copying and percentile sorting run on a background worker. The Dispatcher formats and displays the copied snapshot. Sampling failures update the window's notice while the screen session continues.
 

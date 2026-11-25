@@ -5,7 +5,8 @@
         SizeToContent="Height" ResizeMode="NoResize" ShowInTaskbar="False"
         WindowStartupLocation="CenterOwner" Background="#F1F5FA"
         FontFamily="Segoe UI, Microsoft YaHei UI" FontSize="14">
-    <StackPanel Margin="18">
+    <Border Background="#F1F5FA" Padding="18">
+    <StackPanel>
         <Border Background="#17243A" CornerRadius="10" Padding="16,13">
             <StackPanel>
                 <TextBlock x:Name="EndpointLabel" Foreground="White" FontSize="17" FontWeight="SemiBold"
@@ -26,11 +27,12 @@
         <DockPanel Margin="0,12,0,0">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                 <Button Content="复制详情" Click="CopyDetails" />
-                <Button Content="确定" MinWidth="86" IsDefault="True" IsCancel="True"
+                <Button Content="确定" MinWidth="86" IsDefault="True" IsCancel="True" Click="CloseDetails"
                         Style="{DynamicResource PrimaryButton}" />
             </StackPanel>
             <TextBlock x:Name="CopyStatus" Text="Ctrl+C 复制详情" Foreground="#475569"
                        VerticalAlignment="Center" TextWrapping="Wrap" />
         </DockPanel>
     </StackPanel>
+    </Border>
 </Window>
