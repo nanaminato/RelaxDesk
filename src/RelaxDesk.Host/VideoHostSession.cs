@@ -352,8 +352,9 @@ internal static class VideoHostSession
             }
             await Task.Delay(Timeout.Infinite, session.Token);
         }
-        var desktopPause = new DesktopElevationPause();
-        bool simulatedPause = backend == "test-desktop-pause";
+        var pauseClock = backend == "test-desktop-pause-expiry" ? new TestDesktopPauseClock() : null;
+        var desktopPause = new DesktopElevationPause(pauseClock);
+        bool simulatedPause = backend == "test-desktop-pause" || pauseClock is not null;
         var firstFrameSent = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         int transitionPhase = 0;
         WindowsSessionSnapshot TestDesktop() =>
@@ -366,6 +367,12 @@ internal static class VideoHostSession
                 await desktopPause.Begin(TestDesktop()).WaitAsync(session.Token);
                 Volatile.Write(ref transitionPhase, 1);
                 await WriteControl(new("desktop-paused-v2"));
+                if (pauseClock is not null)
+                {
+                    pauseClock.Expire();
+                    await Task.Delay(Timeout.Infinite, session.Token);
+                    return;
+                }
                 await Task.Delay(1100, session.Token);
                 Volatile.Write(ref transitionPhase, 2);
                 await WriteControl(new("desktop-resumed-v2"));
@@ -877,6 +884,13 @@ internal static class VideoHostSession
             catch (Exception error) when (error is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException)
             { HostSessionLog.Write($"session_cleanup native_live_resources=unavailable error_type={error.GetType().Name} input_release_attempted=True"); }
         }
+    }
+    sealed class TestDesktopPauseClock : TimeProvider
+    {
+        long ticks;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => Interlocked.Read(ref ticks);
+        public void Expire() => Interlocked.Exchange(ref ticks, TimeSpan.FromSeconds(61).Ticks);
     }
 
     static async Task Observe(Task task, string worker, FirstSessionFailure failures, CancellationToken ct)

@@ -11,9 +11,10 @@ internal static class SessionUnavailableSmoke
         await Verify(application, "test-session-locked", SessionEndReason.WindowsLocked);
         await Verify(application, "test-session-switched", SessionEndReason.WindowsSessionChanged);
         await Verify(application, "test-session-desktop", SessionEndReason.WindowsDesktopUnavailable);
+        await Verify(application, "test-desktop-pause-expiry", SessionEndReason.WindowsDesktopUnavailable, expectPause: true);
     }
 
-    static async Task Verify(string application, string backend, SessionEndReason expectedReason)
+    static async Task Verify(string application, string backend, SessionEndReason expectedReason, bool expectPause = false)
     {
         var reservation=new TcpListener(IPAddress.Loopback,0);reservation.Start();int port=((IPEndPoint)reservation.LocalEndpoint).Port;reservation.Stop();
         using var host=Process.Start(ChildProcess.Create(application,"127.0.0.1",port.ToString(),backend))??throw new IOException("Host launch failed");
@@ -26,11 +27,16 @@ internal static class SessionUnavailableSmoke
             if(!(await host.StandardOutput.ReadLineAsync(deadline.Token)??"").Contains("APPROVE"))throw new IOException("Consent prompt absent");
             await host.StandardInput.WriteLineAsync("APPROVE");await host.StandardInput.FlushAsync();logs=host.StandardOutput.ReadToEndAsync(deadline.Token);await connecting;
             media=Task.Run(async()=>{try{while(true){_=await MediaProtocol.Read(client.Media,deadline.Token);Interlocked.Increment(ref frames);}}catch(EndOfStreamException){}catch(IOException){}},deadline.Token);
+            if (expectPause && await SessionControl.Read(client.Control, deadline.Token) != new Packet("desktop-paused-v2"))
+                throw new IOException("Expected desktop pause before expiry");
             var terminal=await SessionControl.Read(client.Control,deadline.Token);
             if(!ConnectionRecovery.IsExplicitEnd(terminal)||terminal.EndReason!=expectedReason||ConnectionRecovery.IsTransient(new RemoteSessionEndedException(terminal.EndReason)))throw new IOException($"Session loss did not terminate authorization with {expectedReason}");
             await host.WaitForExitAsync(deadline.Token);await media;string output=await logs;
             if(host.ExitCode!=0||frames==0||!output.Contains("worker=windows-session")||!output.Contains("WindowsSessionUnavailableException")||!output.Contains("native_live_resources=0"))throw new IOException("Session guard did not stop and clean the production pipeline: "+output);
-            Console.WriteLine($"PASS actual Host/TLS synthetic {expectedReason}: frames={frames}, terminal notice, no auto retry, native resources zero; no real desktop transition or SendInput");
+            if (expectPause && !output.Contains("expected-desktop-transition-expired", StringComparison.Ordinal))
+                throw new IOException("Host did not report desktop transition expiry");
+            string scenario = expectPause ? " after desktop pause expiry" : "";
+            Console.WriteLine($"PASS actual Host/TLS synthetic {expectedReason}{scenario}: frames={frames}, terminal notice, no auto retry, native resources zero; no real desktop transition or SendInput");
         }
         finally
         {
