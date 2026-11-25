@@ -80,4 +80,6 @@ deployment status and readiness separately from the consent and input
 results. During desktop transitions collect `RelaxDesk.Host --session-diagnose-watch 90`
 alongside the Viewer status. [Session acceptance details](SESSION-ACCESS.md#verification)
 
+The `b51c7af` candidate Host and Viewer EXEs passed `--admin-real-worker-contracts` on the development console. A locally confirmed UAC prompt started the protected worker, then Viewer downgrade restored Work input authorization and continued video on the same TLS connection. Keep the administrator-window key and button rows pending until their corresponding input counters are observed. The UAC secure-desktop row also requires its own suspension and recovery observations.
+
 Secure-desktop/logon control, reboot-persistent file resume and implicit access are unsupported. Optional microphone/printer/USB/camera/serial forwarding are unimplemented. Do not change RDP components, UAC or security policy to make a test pass. Synthetic capture/codec success, real capture success, decode success, Present API success and actual visible correctness must be recorded separately. A failure/skip is evidence to preserve, not a physical pass.
