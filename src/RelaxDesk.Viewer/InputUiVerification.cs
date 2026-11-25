@@ -59,6 +59,19 @@ public sealed partial class ViewerWindow
                 dialog.Editor.Text="unsent";dialog.Close();Check(dialog.Editor.Text.Length==0&&texts.Count==1);dialog=null;
                 window.OpenTextInput();Check(window.textInput is not null);window.textInput!.Editor.Text="do not replay";
                 window.ResetInputState();Check(window.textInput is null&&!window.inputAuthorized);
+                var probe = new DesktopInputProbe(new(false, false, 0x2000)) { Owner = window };
+                try
+                {
+                    probe.Show();
+                    var source = PresentationSource.FromVisual(probe) ?? throw new IOException("Input target did not create an HWND");
+                    probe.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.F7) { RoutedEvent = PreviewKeyDownEvent });
+                    probe.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.F8) { RoutedEvent = PreviewKeyDownEvent });
+                    probe.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.F8) { RoutedEvent = PreviewKeyUpEvent });
+                    probe.Target.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left) { RoutedEvent = PreviewMouseLeftButtonDownEvent });
+                    probe.Target.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left) { RoutedEvent = PreviewMouseLeftButtonUpEvent });
+                    Check(probe.Result == new DesktopInputProbeResult(false, 0x2000, 1, 1, 1, 1));
+                }
+                finally { probe.Close(); }
                 foreach (int version in new[] { 0, InputProtocol.Version })
                 {
                     using var overflowLifetime = new CancellationTokenSource();

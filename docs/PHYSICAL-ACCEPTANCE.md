@@ -26,9 +26,13 @@ on the Host PC. Launch one copy as the ordinary signed-in user and a second copy
 from a locally elevated terminal on the same Default desktop. The window title
 shows the process integrity RID. With each window focused, press F8 and click
 its test button from the remote Viewer. Record whether each counter advances
-in Work, in locally authorized Admin, and after returning to Work. Close the
-windows to emit their final counters on redirected standard output. The probe
-records only these two counts and its token elevation and integrity values.
+in Work, in locally authorized Admin, and after returning to Work. For cleanup,
+hold F8 or the left button on the probe and interrupt the connection from the
+Viewer device without changing foreground focus on the Host. Check that the
+matching release counter advances before reauthorizing. When using those counters
+for local revocation, keep the probe in the Host foreground during revocation.
+Close the windows to emit the down and
+up counts and token elevation and integrity values on redirected standard output.
 
 | Test | Required evidence | Result |
 | --- | --- | --- |

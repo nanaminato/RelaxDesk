@@ -41,7 +41,9 @@ public sealed class App : Application
             if (args is ["--desktop-input-probe"])
             {
                 WindowsSessionAccess.EnsureAllowed();
-                app.Run(new DesktopInputProbe(WindowsInputPrivilege.ReadProcessToken()));
+                var probe = new DesktopInputProbe(WindowsInputPrivilege.ReadProcessToken());
+                app.Run(probe);
+                Console.WriteLine(JsonSerializer.Serialize(probe.Result));
             }
             else if(args is ["--error-details-contracts",var errorFixtures])ViewerWindow.VerifyErrorDetails(app,errorFixtures);
             else if(args is ["--office-text-quality", "software" or "hardware"])OfficeTextQuality.Run(args[1] == "hardware");
