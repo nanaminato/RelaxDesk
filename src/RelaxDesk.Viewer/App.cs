@@ -228,7 +228,7 @@ public sealed partial class ViewerWindow : Window
                 throw new IOException("Injected initial UDP connection failure");
             return WindowsQuicDatagrams.Connect(endpoint, certificate);
         }
-        using var connection = new SessionClient { RequestedFeatures = target.Features,RequestedMode=target.Mode,RequestWorkInputRevoke=true,RequestPointerCompression=true,RequestQuicRecovery=smoke is null || autoRecoveryTest,Network=target.Network,OpenDeviceKey=target.IdentifyWorkDevice ? WindowsDeviceKey.Open : null,ConnectQuic=canOfferUdp ? OpenQuic : null,RequestedDisplayVersion=target.DisplayVersion,RequestedVideoVersion=VideoSettingsProtocol.Version }; using var abort = cancellation.Token.Register(connection.Dispose);
+        using var connection = new SessionClient { RequestedFeatures = target.Features,RequestedMode=target.Mode,RequestWorkInputRevoke=true,RequestPointerCompression=true,RequestQuicRecovery=smoke is null || autoRecoveryTest,Network=target.Network,OpenDeviceKey=target.IdentifyDevice ? WindowsDeviceKey.Open : null,ConnectQuic=canOfferUdp ? OpenQuic : null,RequestedDisplayVersion=target.DisplayVersion,RequestedVideoVersion=VideoSettingsProtocol.Version }; using var abort = cancellation.Token.Register(connection.Dispose);
         string attemptStage = "connect";
         connection.PhaseChanged+=phase=>{attemptStage=phase switch { ConnectionPhase.Authenticating=>"authenticating",ConnectionPhase.AwaitingApproval=>"awaiting-approval",ConnectionPhase.Negotiating=>"negotiating",ConnectionPhase.Connected=>"session-setup",_=>"connect" };if(ReferenceEquals(session,cancellation)&&!cancellation.IsCancellationRequested)SetConnectionPhase(phase);};
         ClipboardSynchronizer? clipboard = null;

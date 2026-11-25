@@ -58,18 +58,17 @@ internal static class HostConnection
         bool synthetic = backend.StartsWith("test-", StringComparison.Ordinal);
         bool administrator = hello.Mode == SessionMode.Admin;
         bool adminEligible = !adminDisabled && administrator && shell is not null && !synthetic && hello.InputVersion == InputProtocol.Version;
-        if (hello.DeviceKey is not null && (hello.Kind == "hello-v1" || hello.Mode is not (null or SessionMode.Work)))
-            throw new AuthenticationException("Device identity is restricted to Work sessions");
+        if (hello.DeviceKey is not null && (hello.Kind == "hello-v1" || hello.Mode == SessionMode.Guest))
+            throw new AuthenticationException("Device identity is unavailable for this connection");
         string? deviceFingerprint = hello.DeviceKey is not null && !guestOnly
             ? await VerifyDeviceIdentity(tls, cert, hello.DeviceKey, stop) : null;
-        string? approval = (SessionAccess.Available(hello.Mode) || adminEligible) && (!guestOnly || hello.Mode == SessionMode.Guest) &&
+        string? approval = (SessionAccess.Available(hello.Mode) || adminEligible && deviceFingerprint is not null) && (!guestOnly || hello.Mode == SessionMode.Guest) &&
             (!workOnly || hello.Mode is null or SessionMode.Work)
             ? await RequestConsent(client, shell, requestedFeatures, hello.Mode, deviceFingerprint, hello.WorkInputRevoke == true, stop)
             : null;
         bool guestInput = approval?.EndsWith("_INPUT", StringComparison.Ordinal) == true && hello.Mode == SessionMode.Guest;
         if (guestInput) approval = approval![..^6];
-        if (approval is null || AudioConsent.Parse(approval) is null or ConsentDecision.Deny ||
-            administrator && shell?.AdminConfirmed != true)
+        if (approval is null || AudioConsent.Parse(approval) is null or ConsentDecision.Deny)
         {
             if (shell is not null) ShellBridge.Emit("denied", sessionId: shell.Id);
             if (hello.Kind is "hello-v2" or "request-v2")
@@ -141,7 +140,7 @@ internal static class HostConnection
         AdminInputConnection? worker = null;
         try
         {
-            if (!shell.AdminConfirmed)
+            if (!shell.Consent.Decision.IsCompletedSuccessfully || shell.Consent.Decision.Result == ConsentDecision.Deny)
                 throw new AuthenticationException("Administrator input requires local approval");
             worker = await AdminInputLauncher.StartAfterLocalApproval(grant, display, deadline.Token);
             WindowsSessionAccess.EnsureAllowed();

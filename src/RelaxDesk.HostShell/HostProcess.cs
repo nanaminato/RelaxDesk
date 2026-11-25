@@ -88,12 +88,12 @@ internal sealed class HostProcess
         catch(Exception e) when(e is IOException or ObjectDisposedException or InvalidOperationException) { }
         finally {commands.Release();}
     }
-    public Task Decide(bool allow, bool allowClipboard = false, bool allowFiles = false, string? expectedSessionId = null,bool allowAudio=false,bool guestInput=false,bool adminConfirmed=false)
+    public Task Decide(bool allow, bool allowClipboard = false, bool allowFiles = false, string? expectedSessionId = null,bool allowAudio=false,bool guestInput=false)
     {
         var child=process;string? id=expectedSessionId??SessionId;if(child is null||!Pending||id is null||id!=SessionId)return Task.CompletedTask;
         bool clipboard=allowClipboard&&ClipboardRequested,files=allowFiles&&FilesRequested&&fileRootConfigured;
         string command=RelaxDesk.Core.AudioConsent.Command(allow,clipboard,files,allowAudio&&AudioRequested);
-        Pending=false;return Send(child,command+(allow&&adminConfirmed?"_ADMIN":allow&&guestInput?"_INPUT":"")+" "+id);
+        Pending=false;return Send(child,command+(allow&&guestInput?"_INPUT":"")+" "+id);
     }
     public Task RevokeClipboard(string? expectedSessionId=null)=>SessionCommand("REVOKE_CLIPBOARD",expectedSessionId);
     public Task RevokeFiles(string? expectedSessionId=null)=>SessionCommand("REVOKE_FILES",expectedSessionId);

@@ -50,10 +50,8 @@ internal sealed class ShellBridge : IDisposable
                         default:
                             if (!scope.Requested || scope.Consent.Decision.IsCompleted) break;
                             bool input = scope.Mode == SessionMode.Guest && parts[0].EndsWith("_INPUT", StringComparison.Ordinal);
-                            bool admin = scope.Mode == SessionMode.Admin && parts[0].EndsWith("_ADMIN", StringComparison.Ordinal);
-                            ConsentDecision? decision = AudioConsent.Parse(input || admin ? parts[0][..^6] : parts[0]);
+                            ConsentDecision? decision = AudioConsent.Parse(input ? parts[0][..^6] : parts[0]);
                             if (!decision.HasValue) break;
-                            scope.AdminConfirmed = admin && decision != ConsentDecision.Deny;
                             scope.GuestInput = input && decision != ConsentDecision.Deny;
                             scope.Consent.TryDecide(parts[1], decision.Value);
                             break;
@@ -72,7 +70,6 @@ internal sealed class ShellBridge : IDisposable
         internal readonly CancellationTokenSource Lifetime, Clipboard = new(), Files = new(),Audio=new(),Input=new(),AdminInput=new();
         internal bool Requested;
         internal SessionMode? Mode;
-        public bool AdminConfirmed { get; internal set; }
         public bool GuestInput { get; internal set; }
         public bool WorkInputRevoke { get; private set; }
         bool disposed;

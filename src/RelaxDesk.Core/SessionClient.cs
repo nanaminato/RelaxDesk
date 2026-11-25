@@ -185,14 +185,14 @@ public sealed class SessionClient : IDisposable
         if(!VideoSettingsProtocol.Supported(RequestedVideoVersion))throw new InvalidDataException("Unsupported video version request");
         if(RequestedInputVersion is not (0 or InputProtocol.Version))throw new InvalidDataException("Unsupported requested input version");
         if(!DisplayProtocol.Supported(RequestedDisplayVersion)||RequestedDisplayVersion!=0&&RequestedInputVersion!=InputProtocol.Version)throw new InvalidDataException("Unsupported requested display version");
-        using var deviceKey = RequestedMode is null or SessionMode.Work ? OpenDeviceKey?.Invoke() : null;
+        using var deviceKey = RequestedMode is SessionMode.Guest ? null : OpenDeviceKey?.Invoke();
         bool requestResume=RequestFileResume&&requestedFeatures.Contains(SessionCapabilities.FileTransfer);
         await Wire.Write(Control, new Packet(approvalOnly ? "request-v2" : "hello-v2", Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], PointerBrotli: RequestPointerCompression ? true : null, WorkInputRevoke: RequestWorkInputRevoke && RequestedMode == SessionMode.Work ? true : null, Features: requestedFeatures.Length == 0 ? null : requestedFeatures,FileResume:requestResume,InputVersion:RequestedInputVersion,DisplayVersion:RequestedDisplayVersion,VideoVersion:RequestedVideoVersion, Mode:RequestedMode, Network:requestedNetwork, DeviceKey: deviceKey is null ? null : DeviceIdentity.Export(deviceKey), QuicRecovery: requestQuicRecovery ? true : null), ct);
         PhaseChanged?.Invoke(ConnectionPhase.AwaitingApproval);
         var approval = await Wire.Read(Control, ct);
         if (approval.Kind == "work-device-challenge-v2")
         {
-            if (deviceKey is null || RequestedMode is (SessionMode.Guest or SessionMode.Admin) ||
+            if (deviceKey is null ||
                 approval.Data is not { Length: 32 } challenge ||
                 approval != new Packet("work-device-challenge-v2", Data: challenge))
                 throw new AuthenticationException("Invalid device challenge");

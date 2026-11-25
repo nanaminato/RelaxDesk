@@ -14,7 +14,7 @@ internal static class SessionAccessSmoke
         await Verify(hostPath, null, grantInput: true, guestOnly: false, denied: false);
         await Verify(hostPath, null, grantInput: false, guestOnly: true, denied: true);
         await Verify(hostPath, SessionMode.Admin, grantInput: false, guestOnly: false, denied: true);
-        await Verify(hostPath, SessionMode.Admin, grantInput: false, guestOnly: false, denied: true, testAdminConsent: true);
+        await Verify(hostPath, SessionMode.Admin, grantInput: false, guestOnly: false, denied: true, testAdminConsent: true, proveDevice: true);
         await Verify(hostPath, SessionMode.Work, grantInput: true, guestOnly: false, denied: false, proveDevice: true);
         await Verify(hostPath, SessionMode.Work, grantInput: true, guestOnly: false, denied: false);
         await Verify(hostPath, SessionMode.Work, grantInput: true, guestOnly: false, denied: false, adminDisabled: true);
@@ -26,7 +26,7 @@ internal static class SessionAccessSmoke
         Console.WriteLine("PASS Work-only Host rejects Guest and Admin, and accepts explicit and legacy Work with local consent");
         Console.WriteLine("PASS verified Work device proof over production TLS; local approval still required");
         Console.WriteLine("PASS retired in-session elevation request terminates the connection");
-        Console.WriteLine("PASS production TLS and shell approval: Guest view/input/revoke, legacy Work policy, Guest-only and Admin denial without independent consent");
+        Console.WriteLine("PASS production TLS and shell approval: Guest view/input/revoke, legacy Work policy, Guest-only and full-control denial before and after device verification");
     }
 
     static async Task Verify(string hostPath, SessionMode? mode, bool grantInput, bool guestOnly, bool denied, bool testAdminConsent = false, bool proveDevice = false, bool adminDisabled = false, bool workOnly = false)
@@ -36,7 +36,7 @@ internal static class SessionAccessSmoke
         int port = ((IPEndPoint)reservation.LocalEndpoint).Port;
         reservation.Stop();
         string[] options = guestOnly ? ["--shell", "--guest-only"] : workOnly ? ["--shell", "--work-only"] : adminDisabled ? ["--shell", "--no-admin"] : ["--shell"];
-        string backend = testAdminConsent || (adminDisabled || workOnly) && mode == SessionMode.Admin ? "dxgi" : "test-displays";
+        string backend = mode == SessionMode.Admin ? "dxgi" : "test-displays";
         using var host = Process.Start(ChildProcess.Create(hostPath, [..options, "127.0.0.1", port.ToString(), backend]))
             ?? throw new IOException("Host launch failed");
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(18));
@@ -58,8 +58,10 @@ internal static class SessionAccessSmoke
                     var adminRequest = await ReadEvent("approval-request");
                     if (adminRequest.GetProperty("mode").GetString() != "Admin")
                         throw new IOException("Administrator approval event omitted its mode");
+                    if (connect.IsCompleted || adminRequest.GetProperty("deviceFingerprint").GetString() != DeviceIdentity.Fingerprint(key))
+                        throw new IOException("Full-control request did not verify the device before local approval");
                     string? session = adminRequest.GetProperty("sessionId").GetString();
-                    await host.StandardInput.WriteLineAsync($"APPROVE {session}");
+                    await host.StandardInput.WriteLineAsync($"DENY {session}");
                     await host.StandardInput.FlushAsync();
                 }
                 try { await connect; throw new IOException("Forbidden mode advanced"); }

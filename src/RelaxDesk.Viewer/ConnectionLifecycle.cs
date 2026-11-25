@@ -10,7 +10,7 @@ public sealed partial class ViewerWindow
     CancellationTokenSource? connectionRun;
     ConnectionPhase connectionPhase;
     int connectionGeneration;
-    sealed record ConnectionTarget(string Host, int Port, bool Strict, string Pin, string Token, string[] Features, bool FullScreen = false,int DisplayVersion=DisplayProtocol.TopologyVersion,SessionMode? Mode=null,NetworkMode Network=NetworkMode.Auto,bool IdentifyWorkDevice=false)
+    sealed record ConnectionTarget(string Host, int Port, bool Strict, string Pin, string Token, string[] Features, bool FullScreen = false,int DisplayVersion=DisplayProtocol.TopologyVersion,SessionMode? Mode=null,NetworkMode Network=NetworkMode.Auto,bool IdentifyDevice=false)
     { public override string ToString() => "ConnectionTarget [credentials redacted]"; }
     sealed record AttemptResult(Exception? Error, bool Established, string Pin, string[] Features, bool FullScreen, bool Stable);
     void StopConnection() { connectionRun?.Cancel(); session?.Cancel(); }
@@ -35,7 +35,7 @@ public sealed partial class ViewerWindow
         ClearConnectionError();
         if (!IPAddress.TryParse(host.Text.Trim(), out var address) || address.Equals(IPAddress.Any) || address.Equals(IPAddress.IPv6Any) || !int.TryParse(port.Text, out int number) || number is < 1 or > 65535)
         { status.Text = "请输入有效的远程 IP 和端口。"; ShowConnectionError(new FormatException("Invalid endpoint"), "configuration"); return; }
-        var target = new ConnectionTarget(address.ToString(), number, pinnedConnection.IsChecked == true, fingerprint.Text, token.Password, RequestedFeatures(), fullScreen,requestTopology.IsChecked==true?DisplayProtocol.TopologyVersion:DisplayProtocol.Version,requestedMode.SelectedIndex switch { 1 => SessionMode.Guest, 2 => SessionMode.Admin, _ => SessionMode.Work }, networkMode.SelectedIndex switch { 1 => NetworkMode.Tcp, 2 => NetworkMode.Udp, _ => NetworkMode.Auto }, requestedMode.SelectedIndex == 0 && identifyWorkDevice.IsChecked == true);
+        var target = new ConnectionTarget(address.ToString(), number, pinnedConnection.IsChecked == true, fingerprint.Text, token.Password, RequestedFeatures(), fullScreen,requestTopology.IsChecked==true?DisplayProtocol.TopologyVersion:DisplayProtocol.Version,requestedMode.SelectedIndex switch { 1 => SessionMode.Guest, 2 => SessionMode.Admin, _ => SessionMode.Work }, networkMode.SelectedIndex switch { 1 => NetworkMode.Tcp, 2 => NetworkMode.Udp, _ => NetworkMode.Auto }, requestedMode.SelectedIndex == 2 || requestedMode.SelectedIndex == 0 && identifyWorkDevice.IsChecked == true);
         if (smoke?.RequireUdp == true) target = target with { Network = NetworkMode.Udp };
         using var lifetime = new CancellationTokenSource(); connectionRun = lifetime;
         connectionEnded = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -51,7 +51,7 @@ public sealed partial class ViewerWindow
                 if (result.Established)
                 {
                     approvedPin = result.Pin;
-                    target = target with { Token = "", Pin = approvedPin, Features = result.Features, FullScreen = result.FullScreen, Mode = target.Mode == SessionMode.Admin ? SessionMode.Work : target.Mode };
+                    target = target with { Token = "", Pin = approvedPin, Features = result.Features, FullScreen = result.FullScreen };
                     // Briefly successful handshakes must not permit endless reconnect loops.
                     if (result.Stable) { retry = 0; outage = null; }
                 }
