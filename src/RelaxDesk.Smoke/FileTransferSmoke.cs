@@ -23,7 +23,7 @@ internal static class FileTransferSmoke
         const int SharedDownstreamBytesPerSecond = 512 * 1024;
         using var budget = grant ? new NetworkImpairmentRelay.SharedBudget(SharedDownstreamBytesPerSecond) : null;
         await using var tcpRelay = budget is not null ? new NetworkImpairmentRelay(port, connections: exerciseAudio ? 4 : udp ? 2 : 3) : null;
-        NetworkImpairmentRelay.Link? mediaLink = null, fileLink = null;
+        NetworkImpairmentRelay.Link? mediaLink = null, fileLink = null, audioLink = null;
         using var client = new SessionClient
         {
             RequestedFeatures = exerciseAudio ? [SessionCapabilities.FileTransfer, SessionCapabilities.SystemAudio] : [SessionCapabilities.FileTransfer],
@@ -60,6 +60,11 @@ internal static class FileTransferSmoke
                 fileLink = await tcpRelay.Connected(udp ? 1 : 2, timeout.Token);
                 mediaLink?.ShareDownstream(budget);
                 fileLink.ShareDownstream(budget);
+                if (exerciseAudio)
+                {
+                    audioLink = await tcpRelay.Connected(3, timeout.Token);
+                    audioLink.ShareDownstream(budget);
+                }
             }
             if (client.Features.Contains(SessionCapabilities.FileTransfer) != grant || (client.Data is not null) != grant) throw new IOException("Independent file grant mismatch");
             logs = host.StandardOutput.ReadToEndAsync(timeout.Token);
@@ -115,7 +120,7 @@ internal static class FileTransferSmoke
             if (grant)
             {
                 await using var files = new FileTransferClient(client.Data!, running.Token, 2 * 1024 * 1024);
-                byte[] payload = new byte[(autoRecovery ? 8 : 2) * 1024 * 1024 + 17]; new Random(718).NextBytes(payload);
+                byte[] payload = new byte[(autoRecovery ? 5 : 2) * 1024 * 1024 + 17]; new Random(718).NextBytes(payload);
                 var pause = new TransferControl(); var paused = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); long reported = 0;
                 if (autoRecovery)
                 {
@@ -150,7 +155,9 @@ internal static class FileTransferSmoke
                 long VideoBytes() => (mediaLink?.DownstreamBytes ?? 0) + (relay?.DownstreamBytes ?? 0);
                 long videoBytesBeforeDownload = VideoBytes();
                 long fileBytesBeforeDownload = fileLink?.DownstreamBytes ?? 0;
+                long audioBytesBeforeDownload = audioLink?.DownstreamBytes ?? 0;
                 string initialDownloadTransport = client.Video.TransportName;
+                var downloadClock = Stopwatch.StartNew();
                 await files.Download("中文/日本語/data.bin", length => local.CreateUpload("下载/内容.bin", length, false), timeout.Token);
                 if (autoRecovery && (initialDownloadTransport != "TCP/TLS" || client.Video.TransportName != "UDP"))
                     throw new IOException("Auto did not switch from TCP to UDP during the same download");
@@ -164,8 +171,13 @@ internal static class FileTransferSmoke
                 {
                     long videoBytes = VideoBytes() - videoBytesBeforeDownload;
                     long fileBytes = fileLink.DownstreamBytes - fileBytesBeforeDownload;
+                    long audioBytes = (audioLink?.DownstreamBytes ?? 0) - audioBytesBeforeDownload;
                     if (videoBytes <= 0 || fileBytes < payload.Length) throw new IOException("Both streams did not traverse the shared budget");
+                    if (exerciseAudio && audioBytes <= 0) throw new IOException("Audio did not traverse the shared budget");
+                    if (videoBytes + fileBytes + audioBytes > downloadClock.Elapsed.TotalSeconds * SharedDownstreamBytesPerSecond + 16 * 1024)
+                        throw new IOException("Combined encrypted downstream traffic exceeded the shared budget");
                     Console.WriteLine($"PASS shared downstream cap={SharedDownstreamBytesPerSecond} B/s: active download video_transport={client.Video.TransportName}, video_forwarded_bytes={videoBytes}, file_tls_bytes={fileBytes}");
+                    if (exerciseAudio) Console.WriteLine($"PASS shared downstream included TLS audio: audio_tls_bytes={audioBytes}");
                 }
                 if (!SHA256.HashData(File.ReadAllBytes(Path.Combine(viewerRoot, "下载/内容.bin"))).SequenceEqual(SHA256.HashData(payload))) throw new IOException("Transferred file hash mismatch");
                 if (autoRecovery) Console.WriteLine("PASS Auto switched from TCP to UDP during the same download, file SHA-256 verified and TLS control kept alive");
