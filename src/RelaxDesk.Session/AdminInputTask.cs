@@ -90,7 +90,7 @@ internal sealed class AdminInputTask : IAdminInputTaskRegistration
             request.Display.Contains('"') || request.Display.EndsWith('\\'))
             throw new SecurityException("Invalid scheduled input request");
         dynamic task = Resolve(executable, request.Owner);
-        object[] arguments = [fingerprint, .. request.Arguments()];
+        string[] arguments = [fingerprint, .. request.Arguments()];
         const int UseSessionId = 4;
         _ = task.RunEx(arguments, UseSessionId, sessionId, null);
     }
