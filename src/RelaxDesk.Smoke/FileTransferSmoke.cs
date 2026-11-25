@@ -15,17 +15,18 @@ internal static class FileTransferSmoke
         Directory.CreateDirectory(hostRoot); Directory.CreateDirectory(viewerRoot);
         var local = new WindowsFileRoot(viewerRoot);
         var reservation = new TcpListener(IPAddress.Loopback, 0); reservation.Start(); int port = ((IPEndPoint)reservation.LocalEndpoint).Port; reservation.Stop();
-        using var host = Process.Start(ChildProcess.Create(hostPath, "--file-root", hostRoot, "127.0.0.1", port.ToString(), "test-hardware")) ?? throw new IOException("Host launch failed");
+        bool exerciseAudio = autoRecovery && grant;
+        using var host = Process.Start(ChildProcess.Create(hostPath, "--file-root", hostRoot, "127.0.0.1", port.ToString(), exerciseAudio ? "test-audio" : "test-hardware")) ?? throw new IOException("Host launch failed");
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(autoRecovery ? 90 : 45));
         UdpLossRelay? relay = null;
         int quicAttempts = 0;
         const int SharedDownstreamBytesPerSecond = 512 * 1024;
         using var budget = grant ? new NetworkImpairmentRelay.SharedBudget(SharedDownstreamBytesPerSecond) : null;
-        await using var tcpRelay = budget is not null ? new NetworkImpairmentRelay(port, connections: udp ? 2 : 3) : null;
+        await using var tcpRelay = budget is not null ? new NetworkImpairmentRelay(port, connections: exerciseAudio ? 4 : udp ? 2 : 3) : null;
         NetworkImpairmentRelay.Link? mediaLink = null, fileLink = null;
         using var client = new SessionClient
         {
-            RequestedFeatures = [SessionCapabilities.FileTransfer],
+            RequestedFeatures = exerciseAudio ? [SessionCapabilities.FileTransfer, SessionCapabilities.SystemAudio] : [SessionCapabilities.FileTransfer],
             Network = autoRecovery ? NetworkMode.Auto : udp ? NetworkMode.Udp : NetworkMode.Tcp,
             RequestQuicRecovery = autoRecovery,
             ConnectQuic = udp || autoRecovery ? (endpoint, certificate) =>
@@ -37,9 +38,10 @@ internal static class FileTransferSmoke
                 return WindowsQuicDatagrams.Connect(relay.Endpoint, certificate);
             } : null
         };
-        Task? media = null, control = null; Task<string>? logs = null;
+        Task? media = null, control = null, audio = null; Task<string>? logs = null;
         using var running = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
         var rtt = new ConcurrentBag<double>(); int frames = 0, udpDecoded = 0, keyFrameRequested = 0;
+        long audioSequence = 0, audioWhileVideoOnUdp = 0;
         try
         {
             string pin = (await host.StandardOutput.ReadLineAsync(timeout.Token) ?? throw new IOException("No pin")).Split(": ")[1];
@@ -47,7 +49,9 @@ internal static class FileTransferSmoke
             await Task.Delay(100, timeout.Token); var connecting = client.Connect("127.0.0.1", tcpRelay?.Port ?? port, pin, token, timeout.Token);
             if (!(await host.StandardOutput.ReadLineAsync(timeout.Token) ?? "").Contains("APPROVE")) throw new IOException("No consent prompt");
             if (!(await host.StandardOutput.ReadLineAsync(timeout.Token) ?? "").Contains("APPROVE_FILES")) throw new IOException("No separate file approval prompt");
-            await host.StandardInput.WriteLineAsync(grant ? "APPROVE_FILES" : "APPROVE"); await host.StandardInput.FlushAsync(); await connecting;
+            if (exerciseAudio && !(await host.StandardOutput.ReadLineAsync(timeout.Token) ?? "").Contains("APPROVE_AUDIO"))
+                throw new IOException("No separate audio approval prompt");
+            await host.StandardInput.WriteLineAsync(exerciseAudio ? "APPROVE_FILES_AUDIO" : grant ? "APPROVE_FILES" : "APPROVE"); await host.StandardInput.FlushAsync(); await connecting;
             if (client.Video.TransportName != (udp ? "UDP" : "TCP/TLS")) throw new IOException("Unexpected media transport");
             relay?.EnableShaping(budget);
             if (tcpRelay is not null && budget is not null)
@@ -59,6 +63,25 @@ internal static class FileTransferSmoke
             }
             if (client.Features.Contains(SessionCapabilities.FileTransfer) != grant || (client.Data is not null) != grant) throw new IOException("Independent file grant mismatch");
             logs = host.StandardOutput.ReadToEndAsync(timeout.Token);
+            if (exerciseAudio)
+            {
+                var audioStream = client.AudioData ?? throw new IOException("Approved audio channel missing");
+                audio = Task.Run(async () =>
+                {
+                    while (!running.IsCancellationRequested)
+                    {
+                        var sample = await AudioProtocol.Read(audioStream, running.Token);
+                        if (sample.Sequence <= Interlocked.Read(ref audioSequence)) throw new IOException("Audio sequence regressed during mixed transfer");
+                        Interlocked.Exchange(ref audioSequence, sample.Sequence);
+                        if (client.Video.TransportName == "UDP") Interlocked.Exchange(ref audioWhileVideoOnUdp, sample.Sequence);
+                    }
+                });
+                while (Interlocked.Read(ref audioSequence) == 0)
+                {
+                    if (audio.IsCompleted) await audio;
+                    await Task.Delay(20, running.Token);
+                }
+            }
             media = Task.Factory.StartNew(() =>
             {
                 using var decoder = new MediaDecoder(() => Interlocked.Exchange(ref keyFrameRequested, 1), preferHardware: false);
@@ -122,6 +145,7 @@ internal static class FileTransferSmoke
                 }
                 int beforeDownload = Volatile.Read(ref frames);
                 int udpBeforeDownload = Volatile.Read(ref udpDecoded);
+                long audioBeforeDownload = Interlocked.Read(ref audioSequence);
                 int controlBeforeDownload = rtt.Count;
                 long VideoBytes() => (mediaLink?.DownstreamBytes ?? 0) + (relay?.DownstreamBytes ?? 0);
                 long videoBytesBeforeDownload = VideoBytes();
@@ -134,6 +158,8 @@ internal static class FileTransferSmoke
                     throw new IOException("Media or control stalled during active download");
                 if ((udp || autoRecovery) && Volatile.Read(ref udpDecoded) <= udpBeforeDownload)
                     throw new IOException("No UDP frames decoded during active download");
+                if (exerciseAudio && Interlocked.Read(ref audioWhileVideoOnUdp) <= audioBeforeDownload)
+                    throw new IOException("Audio did not advance after UDP video recovery during active download");
                 if (fileLink is not null)
                 {
                     long videoBytes = VideoBytes() - videoBytesBeforeDownload;
@@ -143,6 +169,7 @@ internal static class FileTransferSmoke
                 }
                 if (!SHA256.HashData(File.ReadAllBytes(Path.Combine(viewerRoot, "下载/内容.bin"))).SequenceEqual(SHA256.HashData(payload))) throw new IOException("Transferred file hash mismatch");
                 if (autoRecovery) Console.WriteLine("PASS Auto switched from TCP to UDP during the same download, file SHA-256 verified and TLS control kept alive");
+                if (exerciseAudio) Console.WriteLine("PASS independently approved TLS audio advanced during the download and TCP-to-UDP video recovery");
                 using (var empty = new MemoryStream()) await files.Upload("empty.txt", empty, false, timeout.Token);
                 await files.Download("empty.txt", length=>local.CreateUpload("empty.txt",length,false), timeout.Token);
                 if (new FileInfo(Path.Combine(viewerRoot,"empty.txt")).Length!=0)throw new IOException("Empty file transfer failed");
@@ -177,7 +204,10 @@ internal static class FileTransferSmoke
             }
             if (media.IsFaulted) await media;
             if (control.IsFaulted) await control;
-            running.Cancel();client.Dispose();
+            if (audio?.IsFaulted == true) await audio;
+            running.Cancel();
+            if (audio is not null) try { await audio; } catch (OperationCanceledException) when (running.IsCancellationRequested) { }
+            client.Dispose();
             try{await Task.WhenAll(media,control);}catch(Exception)when(running.IsCancellationRequested){}
             await host.WaitForExitAsync(timeout.Token);string output=await logs;
             if(host.ExitCode!=0||!output.Contains("native_live_resources=0"))throw new IOException("Host transfer cleanup failed");
@@ -190,6 +220,7 @@ internal static class FileTransferSmoke
         {
             running.Cancel();client.Dispose();
             if(media is not null&&control is not null){try{await Task.WhenAll(media,control);}catch(Exception){}}
+            if (audio is not null) try { await audio; } catch (Exception) { }
             if(!host.HasExited)host.Kill(true);
             if (relay is not null) await relay.DisposeAsync();
         }

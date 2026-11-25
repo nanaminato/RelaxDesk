@@ -139,6 +139,7 @@ try {
         $quicSession.Contains('PASS loss relay drove the running H.264 encoder from 8 to 6 Mbit/s target')) 'Packaged Host measured UDP loss or bitrate adaptation evidence missing'
     $autoFiles = Invoke-App 'packaged-auto-files' $SmokeApplication @($hostExe, '--file-transfer-auto', (Join-Path $output 'auto-file-fixtures')) 150
     Confirm ($autoFiles.Contains('PASS Auto switched from TCP to UDP during the same download, file SHA-256 verified and TLS control kept alive')) 'Packaged Host file integrity during Auto recovery evidence missing'
+    Confirm ($autoFiles.Contains('PASS independently approved TLS audio advanced during the download and TCP-to-UDP video recovery')) 'Packaged Host concurrent audio evidence missing'
     $udpFiles = Invoke-App 'packaged-udp-files' $SmokeApplication @($hostExe, '--file-transfer-udp', (Join-Path $output 'udp-file-fixtures')) 150
     Confirm ($udpFiles -match '(?m)^PASS shared downstream cap=[1-9][0-9]* B/s: active download video_transport=UDP, video_forwarded_bytes=[1-9][0-9]*, file_tls_bytes=[1-9][0-9]*' -and
         $udpFiles.Contains('PASS concurrent video and files with UDP media capped')) 'Packaged Host shared UDP video and TLS file bandwidth evidence missing'
