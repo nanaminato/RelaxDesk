@@ -37,6 +37,18 @@ internal static class ServiceSetupSmoke
         public void Delete(ServiceRegistration expected){Expected(expected);Writes++;Current=Current! with{PendingDelete=true,State=1};}
         public async Task<bool> WaitDeleted(CancellationToken ct){await Task.Yield();ct.ThrowIfCancellationRequested();if(HoldDeletion)return false;Current=null;return true;}
     }
+    sealed class InputTaskFixture : IAdminInputTaskRegistration
+    {
+        public HashSet<string> Registered { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public void Register(string executable, string owner)
+        {
+            if (!File.Exists(executable) || !Registered.Add(executable)) throw new IOException("Invalid fixture task registration");
+        }
+
+        public void Remove(string executable, string owner) => Registered.Remove(executable);
+    }
+
     internal static async Task Run(string application,string output)
     {
         string parent=ServiceFilePolicy.FullPath(output);if(!parent.Contains("\\build\\",StringComparison.OrdinalIgnoreCase))throw new ArgumentException("Setup fixture must be in workspace build directory");
@@ -85,7 +97,8 @@ internal static class ServiceSetupSmoke
         Check(parentRule.AccessControlType == AccessControlType.Allow && parentRule.InheritanceFlags == InheritanceFlags.None &&
             parentRule.FileSystemRights == (FileSystemRights.ReadPermissions | FileSystemRights.ReadAttributes |
                 FileSystemRights.Traverse | FileSystemRights.Synchronize));
-        var setup=new ServiceSetupTransaction(files,services,()=>true,point=>{if(point==fault)throw new IOException("Injected "+point);});
+        var inputTasks = new InputTaskFixture();
+        var setup=new ServiceSetupTransaction(files,services,()=>true,point=>{if(point==fault)throw new IOException("Injected "+point);},inputTasks);
         var plan=await setup.Install(first,own,null,false,true,CancellationToken.None);
         Check(!plan.Changed&&plan.Startup==3&&!plan.Running&&!Directory.Exists(files.Root)&&services.Writes==0);
         await Reject(async()=>await new ServiceSetupTransaction(files,services,()=>false).Install(first,own,null,false,false,CancellationToken.None));Check(services.Writes==0&&!Directory.Exists(files.Root));
@@ -125,12 +138,13 @@ internal static class ServiceSetupSmoke
         files.WriteState(initial with{Ready=false});RejectPolicy(()=>ServiceDeploymentTrust.RequireRuntime(files,files.ReleasePath(initial.Current),own));files.WriteState(initial);
         string initialCommand=services.Current!.Command;Check(initialCommand.StartsWith('"')&&initialCommand.EndsWith("--owner-sid "+own,StringComparison.Ordinal));
         Check(initialCommand.Contains(" 中文 & (Service)",StringComparison.Ordinal));
-        foreach(string failure in new[]{"mid-copy","after-copy","after-state","after-stop","after-configure","after-commit"})
+        foreach(string failure in new[]{"mid-copy","after-copy","after-state","after-stop","after-configure","after-commit","after-input-task"})
         {
             int stops=services.Stops,starts=services.Starts;fault=failure;
             await Reject(async()=>await setup.Install(second,own,null,false,false,CancellationToken.None));
             Check(services.Current?.Command==initialCommand&&services.Current.State==4&&files.ReadState()!.Current==initial.Current);
             RejectPolicy(() => ServiceDeploymentTrust.ResolveElevatedInput(files, own));
+            Check(inputTasks.Registered.Count == 0);
             Check(Directory.EnumerateDirectories(files.Root).Count()==1);
             if(failure is "mid-copy" or "after-copy" or "after-state")Check(services.Stops==stops&&services.Starts==starts);
         }
@@ -141,6 +155,7 @@ internal static class ServiceSetupSmoke
         var owned=services.Current!;services.Current=owned with{Account="LocalSystem"};await Reject(async()=>await setup.Uninstall(own,false,CancellationToken.None));Check(services.Writes==before);services.Current=owned;
         var updated=await setup.Install(second,own,null,false,false,CancellationToken.None);Check(updated.Startup==2&&updated.Running&&files.ReadState()!.Current!=initial.Current&&!Directory.Exists(files.ReleasePath(initial.Current)));
         string protectedWorker = ServiceDeploymentTrust.ResolveElevatedInput(files, own);
+        Check(inputTasks.Registered.SetEquals([protectedWorker]));
         Check(protectedWorker == Path.Combine(files.ReleasePath(files.ReadState()!.Current), "ElevatedInput", "RelaxDesk.ElevatedInput.exe"));
         RejectPolicy(() => ServiceDeploymentTrust.ResolveElevatedInput(files, "S-1-5-21-1-2-3-99999"));
         string extraWorker = Path.Combine(Path.GetDirectoryName(protectedWorker)!, "unlisted.dll");
@@ -149,6 +164,7 @@ internal static class ServiceSetupSmoke
         File.Delete(extraWorker);
         Check(ServiceDeploymentTrust.ResolveElevatedInput(files, own) == protectedWorker);
         var manual=await setup.Install(first,own,false,false,false,CancellationToken.None);Check(manual.Startup==3&&services.Current?.Startup==3&&manual.Running);
+        Check(inputTasks.Registered.Count == 0);
         RejectPolicy(() => ServiceDeploymentTrust.ResolveElevatedInput(files, own));
         var removePlan=await setup.Uninstall(own,true,CancellationToken.None);Check(!removePlan.Changed&&Directory.Exists(files.Root)&&services.Current is not null);
         string junction=Path.Combine(files.ReleasePath(files.ReadState()!.Current),"unowned-junction");

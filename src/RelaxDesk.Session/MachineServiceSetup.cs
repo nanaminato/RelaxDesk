@@ -24,14 +24,19 @@ public static class MachineServiceSetup
         if(item.Type!=16||!item.Account.Equals(@"NT AUTHORITY\LocalService",StringComparison.OrdinalIgnoreCase)||item.Startup is not (2 or 3)||!item.Command.Equals(expected,StringComparison.OrdinalIgnoreCase))throw new SecurityException("Service does not match this user's broker configuration");
         return new(true,item.State,item.Startup,false);
     }
-    public static Task<ServiceSetupResult> Install(string package,string owner,bool? automatic,bool start,bool whatIf,CancellationToken ct)=>new ServiceSetupTransaction(new(ServiceFilePolicy.MachineRoot),new WindowsServiceRegistrationStore(),()=>WindowsServiceRegistrationStore.Administrator).Install(package,owner,automatic,start,whatIf,ct);
-    public static Task<ServiceSetupResult> Uninstall(string owner,bool whatIf,CancellationToken ct)=>new ServiceSetupTransaction(new(ServiceFilePolicy.MachineRoot),new WindowsServiceRegistrationStore(),()=>WindowsServiceRegistrationStore.Administrator).Uninstall(owner,whatIf,ct);
+    public static Task<ServiceSetupResult> Install(string package,string owner,bool? automatic,bool start,bool whatIf,CancellationToken ct)=>new ServiceSetupTransaction(new(ServiceFilePolicy.MachineRoot),new WindowsServiceRegistrationStore(),()=>WindowsServiceRegistrationStore.Administrator,inputTasks:new AdminInputTask()).Install(package,owner,automatic,start,whatIf,ct);
+    public static Task<ServiceSetupResult> Uninstall(string owner,bool whatIf,CancellationToken ct)=>new ServiceSetupTransaction(new(ServiceFilePolicy.MachineRoot),new WindowsServiceRegistrationStore(),()=>WindowsServiceRegistrationStore.Administrator,inputTasks:new AdminInputTask()).Uninstall(owner,whatIf,ct);
 }
 
-internal sealed class ServiceSetupTransaction(ServiceFilePolicy files,IServiceRegistrationStore services,Func<bool> administrator,Action<string>? checkpoint=null)
+internal sealed class ServiceSetupTransaction(ServiceFilePolicy files,IServiceRegistrationStore services,Func<bool> administrator,Action<string>? checkpoint=null,IAdminInputTaskRegistration? inputTasks=null)
 {
     void Point(string name)=>checkpoint?.Invoke(name);
     static string Command(ServiceFilePolicy files,string release,string owner)=>"\""+Path.Combine(files.ReleasePath(release),"RelaxDesk.Service.exe")+"\" --service --owner-sid "+LocalAgentPipe.CanonicalUser(owner);
+    string WorkerPath(ServiceRelease release) => Path.Combine(files.ReleasePath(release.Id), "ElevatedInput", "RelaxDesk.ElevatedInput.exe");
+    void RemoveWorkerTask(ServiceRelease release, string owner)
+    {
+        if (release.Files.Any(entry => ServicePayload.IsWorkerFile(entry.Path))) inputTasks?.Remove(WorkerPath(release), owner);
+    }
     void ValidateRegistration(ServiceRegistration registration,ServiceInstallState? state)
     {
         if(state is null)throw new SecurityException("Existing service has no owned machine installation");
@@ -82,6 +87,7 @@ internal sealed class ServiceSetupTransaction(ServiceFilePolicy files,IServiceRe
             var staged=new ServiceInstallState(1,owner,previous?.Current??release.Id,[..previous?.Releases??[],release],false);
             bool touched=false,stoppedExisting=false;bool wasRunning=before?.State==4;
             bool includesWorker = release.Files.Any(entry => ServicePayload.IsWorkerFile(entry.Path));
+            bool inputTaskRegistered = false;
             try
             {
                 payload.CopyTo(files,release,owner,Point);
@@ -96,9 +102,19 @@ internal sealed class ServiceSetupTransaction(ServiceFilePolicy files,IServiceRe
                 if(start||wasRunning){var configured=services.Read()??throw new IOException("Service registration missing");ValidateRegistration(configured,ready);services.Start(configured,ct).GetAwaiter().GetResult();}
                 // Publish parent inspection only after the service update and an optional start have succeeded.
                 if (includesWorker && !files.Fixture) files.AllowOwnerParentInspection(owner);
+                if (includesWorker && inputTasks is not null)
+                {
+                    inputTasks.Register(WorkerPath(release), owner);
+                    inputTaskRegistered = true;
+                }
+                Point("after-input-task");
                 committed=true;
                 var retained=new List<ServiceRelease>{release};
-                foreach(var old in previous?.Releases??[])if(!files.RemoveRelease(old))retained.Add(old);
+                foreach (var old in previous?.Releases ?? [])
+                {
+                    RemoveWorkerTask(old, owner);
+                    if (!files.RemoveRelease(old)) retained.Add(old);
+                }
                 files.WriteState(ready with{Releases=retained.ToArray()});
                 return new("install",true,files.Root,owner,payload.Version,startup,start||wasRunning,false,retained.Count>1);
             }
@@ -109,6 +125,7 @@ internal sealed class ServiceSetupTransaction(ServiceFilePolicy files,IServiceRe
                     using var recovery=new CancellationTokenSource(TimeSpan.FromSeconds(15));
                     try
                     {
+                        if (inputTaskRegistered) RemoveWorkerTask(release, owner);
                         var current=services.Read();
                         if(current is not null&&(touched||stoppedExisting))
                         {
@@ -155,7 +172,12 @@ internal sealed class ServiceSetupTransaction(ServiceFilePolicy files,IServiceRe
                 if(!registration.PendingDelete)services.Delete(registration);
                 if(!services.WaitDeleted(ct).GetAwaiter().GetResult())return new("uninstall",false,files.Root,owner,null,registration.Startup,false,true,true);
             }
-            var retained=new List<ServiceRelease>();foreach(var release in state.Releases)if(!files.RemoveRelease(release))retained.Add(release);
+            var retained=new List<ServiceRelease>();
+            foreach (var release in state.Releases)
+            {
+                RemoveWorkerTask(release, owner);
+                if (!files.RemoveRelease(release)) retained.Add(release);
+            }
             if(retained.Count>0)files.WriteState(state with{Ready=false,PendingDelete=false,Current=retained[0].Id,Releases=retained.ToArray()});
             else{string marker=Path.Combine(files.Root,"broker-install.json");files.Check(marker);File.Delete(marker);if(!Directory.EnumerateFileSystemEntries(files.Root).Any())Directory.Delete(files.Root);}
             return new("uninstall",true,files.Root,owner,null,3,false,false,Directory.Exists(files.Root));
