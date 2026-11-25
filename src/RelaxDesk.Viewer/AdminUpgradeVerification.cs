@@ -153,7 +153,7 @@ public sealed partial class ViewerWindow
                     keyProbe = await Task.Run(() => Process.Start(launchProbe), ct) ?? throw new IOException("Elevated input probe did not start");
                 }
                 await Event("listening");
-                if (physicalKey && keyProbe is not null)
+                if (keyProbe is not null)
                 {
                     viewer.requestedMode.SelectedIndex = 1;
                     connection = viewer.ConnectVideo();
