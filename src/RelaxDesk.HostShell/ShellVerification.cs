@@ -17,6 +17,12 @@ internal sealed partial class HostWindow
         Changed(new("approval-request", SessionId: current, FullControl: true));
         Changed(new("admin-ready", SessionId: previous));
         if (state.Text != "等待你的授权") throw new IOException("A stale readiness event modified the current session");
+        Changed(new("admin-start-failed", SessionId: previous));
+        if (state.Text != "等待你的授权") throw new IOException("A stale startup error modified the current session");
+        Changed(new("admin-start-failed", SessionId: current));
+        if (state.Text != "完整远程控制不可用" || !detail.Text.Contains("管理员输入代理未能就绪"))
+            throw new IOException("Input startup failure did not receive actionable status");
+        Changed(new("admin-starting", SessionId: current));
         Changed(new("admin-ready", SessionId: current));
         if (state.Text != "正在共享" || !detail.Text.Contains("管理员输入代理已连接"))
             throw new IOException("Full-control readiness status was missing");

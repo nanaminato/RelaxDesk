@@ -4,6 +4,7 @@ namespace RelaxDesk.Core;
 
 public enum ConnectionPhase { Idle, Connecting, Authenticating, AwaitingApproval, Negotiating, Connected, Reconnecting, Disconnected, Failed }
 public sealed class HostConsentRejectedException() : AuthenticationException("Host declined this connection");
+public sealed class FullControlInputUnavailableException() : AuthenticationException("Host could not start its administrator input worker");
 public enum UdpMediaFailure { LocalUnavailable, HostUnavailable, AttachmentFailed }
 public sealed class UdpMediaUnavailableException(UdpMediaFailure reason, Exception? cause = null) : IOException(
     reason switch

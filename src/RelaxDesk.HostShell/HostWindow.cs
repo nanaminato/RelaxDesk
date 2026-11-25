@@ -27,6 +27,7 @@ internal sealed partial class HostWindow:Window
     string? desktopNotice;
     bool hostTokenDenied;
     bool adminDeploymentUnavailable;
+    string? adminStartupNotice;
     string[] fullControlFeatures = [];
     const string AdminDeploymentNotice = "完整远程控制不可用。要修复代理，请结束共享，在「系统服务」的「更多设置」中选择「更新／修复并应用设置（管理员）」。";
     const string DesktopUnavailableNotice="不支持当前会话或安全桌面控制。请回到原用户的普通桌面后重新连接并授权；Host 继续等待连接。";
@@ -73,7 +74,7 @@ internal sealed partial class HostWindow:Window
     internal string Status=>state.Text;
     internal string? DesktopStatusNotice => detail.Text == desktopNotice ? desktopNotice : null;
     internal bool AdminDeploymentNoticeVisible => detail.Text == AdminDeploymentNotice;
-    string ListeningDetail => desktopNotice ?? (adminDeploymentUnavailable ? AdminDeploymentNotice : $"Viewer 可连接 {ip.Text}:{port.Text}，收到请求后由你确认。");
+    string ListeningDetail => desktopNotice ?? (adminDeploymentUnavailable ? AdminDeploymentNotice : adminStartupNotice ?? $"Viewer 可连接 {ip.Text}:{port.Text}，收到请求后由你确认。");
     internal async Task StartSharing(string? address=null,int? number=null,string backend="dxgi",bool recovering=false)
     {
         if(ServiceSetupBusy)return;
@@ -91,7 +92,7 @@ internal sealed partial class HostWindow:Window
     {
         if(change.Generation!=0&&change.Generation!=Host.Generation)return;
         string kind=change.Kind;string? value=change.Address;
-        if ((kind is "admin-starting" or "admin-ready" or "admin-deployment-unavailable" or
+        if ((kind is "admin-starting" or "admin-ready" or "admin-deployment-unavailable" or "admin-start-failed" or
                 "ordinary-input-blocked" or "ordinary-input-restored") &&
             (displayedSessionId is null || change.SessionId != displayedSessionId)) return;
         switch(kind){
@@ -130,11 +131,16 @@ internal sealed partial class HostWindow:Window
                 }
                 state.Text="等待你的授权";detail.Text="还未共享桌面或开放输入。";break;
             case "admin-starting":
+                adminStartupNotice = null;
                 state.Text = "正在准备管理员输入";
                 detail.Text = "正在检查并启动管理员输入代理。如果 Windows 显示 UAC 提示，请在本机确认。";
                 break;
             case "admin-ready":adminDeploymentUnavailable=false;state.Text="正在共享";detail.Text="管理员输入代理已连接。断开会话会撤销输入。";break;
             case "admin-deployment-unavailable":adminDeploymentUnavailable=true;detail.Text=AdminDeploymentNotice;break;
+            case "admin-start-failed":
+                state.Text = "完整远程控制不可用";
+                detail.Text = adminStartupNotice = "管理员输入代理未能就绪。请检查本机授权和系统服务，然后重新连接。";
+                break;
             case "ordinary-input-blocked" when activeInput && !fullControlRequest:
                 detail.Text = "Windows 暂时拒绝键鼠操作，画面仍在共享。请将焦点切回普通权限窗口。";
                 break;

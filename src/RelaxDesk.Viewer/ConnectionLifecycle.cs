@@ -65,6 +65,7 @@ public sealed partial class ViewerWindow
                     status.Text = result.Error switch
                     {
                         HostConsentRejectedException => "Host 已拒绝本次连接，已停止自动重连。",
+                        FullControlInputUnavailableException => "Host 的完整远程控制暂不可用。请在 Host 检查管理员输入组件后重新连接。",
                         UdpMediaUnavailableException { Reason: UdpMediaFailure.LocalUnavailable } => "本机无法使用 UDP 媒体。请选择 Auto 或 TCP 后重试。",
                         UdpMediaUnavailableException { Reason: UdpMediaFailure.HostUnavailable } => "Host 未提供 UDP 媒体。请选择 Auto 或 TCP 后重试。",
                         UdpMediaUnavailableException => "无法建立 UDP 媒体连接。请检查网络，或选择 Auto 后重试。",

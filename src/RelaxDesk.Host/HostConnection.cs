@@ -115,11 +115,10 @@ internal static class HostConnection
         {
             if (worker is not null) await worker.DisposeAsync();
             HostSessionLog.Write($"admin_start_failed type={error.GetType().Name}");
-            ShellBridge.Emit("denied", sessionId: shell.Id);
-            if (error is AdminInputDeploymentException) ShellBridge.Emit("admin-deployment-unavailable", sessionId: shell.Id);
+            ShellBridge.Emit(error is AdminInputDeploymentException ? "admin-deployment-unavailable" : "admin-start-failed", sessionId: shell.Id);
             using var reply = CancellationTokenSource.CreateLinkedTokenSource(stop);
             reply.CancelAfter(TimeSpan.FromSeconds(2));
-            await Wire.Write(tls, new("denied-v2"), reply.Token);
+            await Wire.Write(tls, new(FullControlProtocol.InputUnavailable), reply.Token);
             return null;
         }
         finally { deadline.Cancel(); await peer; }
