@@ -1,15 +1,10 @@
 using System.IO;
-using System.IO.Compression;
-using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
-using System.Net.Sockets;
 using System.Security.Authentication;
-using System.Security.Cryptography;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using System.Threading.Channels;
 using RelaxDesk.Core;
 using RelaxDesk.Windows;
@@ -110,7 +105,7 @@ public sealed partial class ViewerWindow : Window
     readonly Grid renderPanel = new();
     readonly CheckBox gpuRendering = new() { Content = "D3D11 GPU display", IsChecked = true };
     readonly CheckBox pinnedConnection = new() { Content = "使用固定指纹与凭证（可选高级方式）" };
-    readonly CheckBox requestClipboard = new() { Content = "请求双向文本剪贴板（Host 仍需单独允许）", IsChecked = false };
+    readonly CheckBox requestClipboard = new() { Content = "同步双向文本剪贴板", IsChecked = true };
     AccessGate? sessionPermissions;
     ClipboardTextUpdate? pendingClipboard;
     int clipboardDispatchPending;
@@ -118,7 +113,6 @@ public sealed partial class ViewerWindow : Window
     readonly PressedInputs heldInputs = new();
     TaskCompletionSource connectionEnded = new(TaskCreationOptions.RunContinuationsAsynchronously);
     bool closing;
-    readonly CheckBox legacy = new() { Content = "Legacy v1 GDI/JSON baseline" };
     readonly Button connect = new() { Content = "Connect" };
     readonly OutgoingControlQueue outgoing = new(256);
     CancellationTokenSource? session; long sequence;
@@ -134,9 +128,7 @@ public sealed partial class ViewerWindow : Window
             try
             {
                 ApplyInvitation();
-                if (legacy.IsChecked == true && requestedMode.SelectedIndex != 0)
-                { status.Text = "所选模式需要支持会话授权的 Host。请关闭旧协议兼容模式。"; return; }
-                if (legacy.IsChecked == true) await Connect(); else await ConnectVideo();
+                await ConnectVideo(fullControl: true);
             }
             catch (Exception error) { status.Text = error.Message; ShowConnectionError(error, "configuration"); }
         };
@@ -330,7 +322,7 @@ public sealed partial class ViewerWindow : Window
             }
             established=true;connectedAt=Stopwatch.GetTimestamp();onConnected();
             token.Clear();
-            var permissionGate = new AccessGate(); permissionGate.Approve(connection.Features); sessionPermissions = permissionGate; inputVersion=connection.InputVersion;inputAuthorized=connection.InputAllowed;activeMode=target.Mode??SessionMode.Work;
+            var permissionGate = new AccessGate(); permissionGate.Approve(connection.Features); sessionPermissions = permissionGate; inputVersion=connection.InputVersion;inputAuthorized=connection.InputAllowed;
             StartDisplaySession(connection);
             BeginVideoSettings(connection);
             await StartFileSession(connection,cancellation.Token);
@@ -629,43 +621,5 @@ public sealed partial class ViewerWindow : Window
             else Debug.WriteLine("viewer " + report);
         }
         return new(attemptError,established,connection.VerifiedFingerprint,retryFeatures,restoreFullScreen,established&&receivedFrames>0&&Stopwatch.GetElapsedTime(connectedAt)>=TimeSpan.FromSeconds(30));
-    }
-    async Task Connect()
-    {
-        using var diagnosticScope = DiagnosticCorrelation.Begin(); ClearConnectionError();
-        StopLocalPreview(); connectionCard.IsEnabled = false; disconnect.IsEnabled = true; connect.IsEnabled = false; using var cancellation = new CancellationTokenSource(); session = cancellation; sequence = 0; ResetInputState();
-        connectionEnded = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        while (outgoing.Reader.TryRead(out _)) { }
-        try
-        {
-            string expected = fingerprint.Text.Replace(" ", "").Replace(":", "").ToUpperInvariant();
-            if (expected.Length != 64 || !expected.All(Uri.IsHexDigit)) throw new InvalidDataException("A trusted SHA256 fingerprint is required");
-            using var client = new TcpClient { NoDelay = true }; using var abort = cancellation.Token.Register(() => client.Dispose());
-            await client.ConnectAsync(host.Text, int.Parse(port.Text), cancellation.Token);
-            using var tls = new SslStream(client.GetStream(), false, (_, cert, _, _) => cert is not null && cert.GetCertHashString(HashAlgorithmName.SHA256) == expected);
-            await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = "RelaxDesk", EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, cancellation.Token);
-            await Wire.Write(tls, new Packet("hello-v1", Text: token.Password), cancellation.Token); token.Clear(); status.Text = "Waiting for host approval";
-            if ((await Wire.Read(tls, cancellation.Token)).Kind != "approved-v1") throw new AuthenticationException("Host did not approve");
-            QueueConnectionHistory(host.Text,int.Parse(port.Text));
-            inputAuthorized=true;
-            activeMode=SessionMode.Work;
-            ShowConnectedView(true);
-            var writer = Task.Run(async () => { try { await foreach (var p in outgoing.Reader.ReadAllAsync(cancellation.Token)) await Wire.Write(tls, p, cancellation.Token); } finally { cancellation.Cancel(); } });
-            try
-            {
-                while (true)
-                {
-                    var packet = await Wire.Read(tls, cancellation.Token);
-                    if (packet.Kind != "frame-v1" || packet.Width <= 0 || packet.Height <= 0 || (long)packet.Width * packet.Height > 8_294_400 || packet.Data is null) throw new InvalidDataException("Invalid frame");
-                    var timer = System.Diagnostics.Stopwatch.StartNew(); byte[] pixels = new byte[checked(packet.Width * packet.Height * 4)];
-                    using var zip = new DeflateStream(new MemoryStream(packet.Data), CompressionMode.Decompress); zip.ReadExactly(pixels); if (zip.ReadByte() != -1) throw new InvalidDataException("Oversized frame");
-                    image.Source = BitmapSource.Create(packet.Width, packet.Height, 96, 96, PixelFormats.Bgr32, null, pixels, packet.Width * 4);SetViewportVideoSize(packet.Width,packet.Height);
-                    status.Text = $"Frame {packet.Sequence} | capture {packet.CaptureMs:F1} ms | encode {packet.EncodeMs:F1} ms | decode/update {timer.Elapsed.TotalMilliseconds:F1} ms";
-                }
-            }
-            finally { cancellation.Cancel(); client.Close(); try { await writer; } catch (Exception e) when (e is IOException or OperationCanceledException or ObjectDisposedException) { } }
-        }
-        catch (Exception e) { if(!cancellation.IsCancellationRequested){ShowConnectionError(e,"legacy");ViewerSessionLog.Record("legacy-connection-error",e);} status.Text = $"Disconnected: {e.Message}"; }
-        finally { ReleaseHeldInputs(); ResetInputState(); session = null; image.Source = null; connect.IsEnabled = true; connectionCard.IsEnabled = true; disconnect.IsEnabled = false; ShowConnectedView(false); connectionEnded.TrySetResult(); }
     }
 }

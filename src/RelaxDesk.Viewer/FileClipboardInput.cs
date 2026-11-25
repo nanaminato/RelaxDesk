@@ -8,7 +8,7 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
-    readonly CheckBox requestFileClipboard=new(){Content=new TextBlock{Text="请求文件剪贴板（需同时允许文件传输，传输前确认）",TextWrapping=TextWrapping.Wrap},IsChecked=false,IsEnabled=false,Margin=new(0,2,0,4)};
+    readonly CheckBox requestFileClipboard=new(){Content=new TextBlock{Text="同步文件剪贴板（传输前确认）",TextWrapping=TextWrapping.Wrap},IsChecked=true,Margin=new(0,2,0,4)};
     TaskCompletionSource<ILocalFileClipboard?>? localFileClipboard;
     CancellationTokenSource? fileClipboardLifetime;
     ClipboardFiles? remoteClipboardFiles;

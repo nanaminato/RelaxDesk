@@ -29,13 +29,13 @@ public sealed partial class ViewerWindow
             _ => status.Text
         };
     }
-    async Task ConnectVideo()
+    async Task ConnectVideo(bool fullControl = false)
     {
         if (connectionRun is not null) return;
         ClearConnectionError();
         if (!IPAddress.TryParse(host.Text.Trim(), out var address) || address.Equals(IPAddress.Any) || address.Equals(IPAddress.IPv6Any) || !int.TryParse(port.Text, out int number) || number is < 1 or > 65535)
         { status.Text = "请输入有效的远程 IP 和端口。"; ShowConnectionError(new FormatException("Invalid endpoint"), "configuration"); return; }
-        var target = new ConnectionTarget(address.ToString(), number, pinnedConnection.IsChecked == true, fingerprint.Text, token.Password, RequestedFeatures(), fullScreen,requestTopology.IsChecked==true?DisplayProtocol.TopologyVersion:DisplayProtocol.Version,requestedMode.SelectedIndex switch { 1 => SessionMode.Guest, 2 => SessionMode.Admin, _ => SessionMode.Work }, networkMode.SelectedIndex switch { 1 => NetworkMode.Tcp, 2 => NetworkMode.Udp, _ => NetworkMode.Auto }, requestedMode.SelectedIndex == 2 || requestedMode.SelectedIndex == 0 && identifyWorkDevice.IsChecked == true);
+        var target = new ConnectionTarget(address.ToString(), number, pinnedConnection.IsChecked == true, fingerprint.Text, token.Password, RequestedFeatures(), fullScreen,requestTopology.IsChecked==true?DisplayProtocol.TopologyVersion:DisplayProtocol.Version,fullControl ? SessionMode.Admin : SessionMode.Work, networkMode.SelectedIndex switch { 1 => NetworkMode.Tcp, 2 => NetworkMode.Udp, _ => NetworkMode.Auto }, fullControl);
         if (smoke?.RequireUdp == true) target = target with { Network = NetworkMode.Udp };
         using var lifetime = new CancellationTokenSource(); connectionRun = lifetime;
         connectionEnded = new(TaskCreationOptions.RunContinuationsAsynchronously);

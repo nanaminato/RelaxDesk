@@ -24,7 +24,6 @@ public sealed partial class ViewerWindow
         {
             if(connectionRun is not null||recentConnections.SelectedItem is not ConnectionEndpoint endpoint)return;
             host.Text=endpoint.Address;port.Text=endpoint.Port.ToString();token.Clear();fingerprint.Clear();invitation.Clear();
-            requestClipboard.IsChecked=requestClipboardImage.IsChecked=requestClipboardHtml.IsChecked=requestFiles.IsChecked=requestFileClipboard.IsChecked=requestAudio.IsChecked=false;
             historyNotice.Text=pinnedConnection.IsChecked==true?"已填写地址；固定指纹模式需重新填写指纹与凭证。":"已填写地址；仍需手动连接、重新选择可选功能并由 Host 授权。";
         };
         Loaded+=(_,_)=>HistoryOperation=LoadConnectionHistory();

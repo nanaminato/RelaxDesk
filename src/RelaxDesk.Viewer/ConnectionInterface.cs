@@ -8,12 +8,9 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
-    readonly CheckBox identifyWorkDevice = new() { Content = "在工作模式下向 Host 提供此设备身份" };
     readonly ComboBox networkMode = new() { ItemsSource = new[] { "Auto", "TCP", "UDP" }, SelectedIndex = 0 };
     readonly ComboBox fileRateLimit = new() { ItemsSource = new[] { "20 MiB/s（默认）", "4 MiB/s", "1 MiB/s", "256 KiB/s" }, SelectedIndex = 0 };
-    readonly ComboBox requestedMode = new() { ItemsSource = new[] { "Work（工作）", "Guest（访客）", "Admin（管理员）" }, SelectedIndex = 0 };
-    SessionMode activeMode = SessionMode.Work;
-    string SessionEndpoint => inputAuthorized ? $"{activeMode} · {host.Text}" : $"{activeMode} · 仅查看 · {host.Text}";
+    string SessionEndpoint => host.Text;
 
     void BuildInterface()
     {
@@ -40,8 +37,6 @@ public sealed partial class ViewerWindow
         form.Children.Add(new TextBlock { Text = "远程电脑 IP", Margin = new Thickness(0, 16, 0, 0) }); form.Children.Add(host);
         form.Children.Add(new TextBlock { Text = "端口" }); form.Children.Add(port);
         AddConnectionHistory(form);
-        form.Children.Add(new TextBlock { Text = "会话模式" });
-        form.Children.Add(requestedMode);
         requestClipboard.Margin = new Thickness(0, 10, 0, 4); form.Children.Add(requestClipboard);
         form.Children.Add(requestClipboardImage);form.Children.Add(requestClipboardHtml);
         requestFiles.Margin=new Thickness(0,2,0,4);form.Children.Add(requestFiles);form.Children.Add(requestFileClipboard);
@@ -50,12 +45,11 @@ public sealed partial class ViewerWindow
         void Field(string name, FrameworkElement control) { advanced.Children.Add(new TextBlock { Text = name }); advanced.Children.Add(control); }
         Field("媒体传输", networkMode);
         Field("文件传输限速（上传和下载）", fileRateLimit);
-        advanced.Children.Add(identifyWorkDevice);
         advanced.Children.Add(pinnedConnection);
         Field("固定指纹连接信息（可选）", invitation); Field("SHA256 指纹", fingerprint); Field("一次性凭证", token);
-        advanced.Children.Add(legacy); advanced.Children.Add(gpuRendering);advanced.Children.Add(requestTopology);
+        advanced.Children.Add(gpuRendering);advanced.Children.Add(requestTopology);
         advanced.Children.Add(new TextBlock { Text = "HDR 桌面由 Host 转为 SDR 后传输；屏幕观感仍需真机确认。", TextWrapping = TextWrapping.Wrap, Foreground = Brushes.DimGray, FontSize = 12 });
-        legacy.Content = "兼容模式（旧协议）"; gpuRendering.Content = "GPU 显示（不支持时回退）";
+        gpuRendering.Content = "GPU 显示（不支持时回退）";
         form.Children.Add(new Expander { Header = "手动填写与显示选项", Content = advanced, Margin = new Thickness(0, 4, 0, 12) });
         connect.Content = "连接远程桌面"; connect.Style = (Style)Resources["PrimaryButton"];
         form.Children.Add(connect);

@@ -49,7 +49,7 @@ public sealed partial class ViewerWindow
         });
         var window=new ViewerWindow{ShowActivated=false};MemoryFileClipboard? memory=null;Task? running=null;
         window.host.Text="127.0.0.1";window.port.Text=port.ToString();window.fingerprint.Text=pin;window.token.Password=token;window.pinnedConnection.IsChecked=true;window.gpuRendering.IsChecked=false;
-        if(window.requestFileClipboard.IsChecked!=false||window.requestFileClipboard.IsEnabled)throw new IOException("File clipboard default not off/dependent");
+        if(window.requestFileClipboard.IsChecked!=true||!window.requestFileClipboard.IsEnabled)throw new IOException("File clipboard unavailable by default");
         window.requestFiles.IsChecked=true;window.requestFileClipboard.IsChecked=true;window.fileClipboardVerificationFactory=callback=>memory=new MemoryFileClipboard(source,callback);
         async Task Until(Func<bool> condition){while(!condition())await Task.Delay(20,timeout.Token);}
         window.Loaded+=async(_,_)=>

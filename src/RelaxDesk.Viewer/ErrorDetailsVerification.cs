@@ -30,9 +30,6 @@ public sealed partial class ViewerWindow
                 window.host.Text = secret; window.token.Password = secret; window.fingerprint.Text = secret; window.invitation.Text = secret;
                 await window.ConnectVideo();
                 if (window.connectionError?.Stage != "configuration" || window.connectionRun is not null || window.errorReport.Text.Contains(secret)) throw new IOException("Configuration diagnostic missing or disclosed fields");
-                await window.Connect();
-                if (window.connectionError?.Stage != "legacy" || window.connectionError.CorrelationId == "none" || window.errorReport.Text.Contains(secret) || window.session is not null)
-                    throw new IOException("Legacy preflight diagnostic missing or disclosed fields");
                 using var scope = DiagnosticCorrelation.Begin();
                 var error = new IOException(secret, new InvalidDataException(secret)) { Source = secret, HelpLink = secret }; error.Data[secret] = secret;
                 window.ShowConnectionError(error, "cpu-decode"); string report = window.connectionError!.Report();
