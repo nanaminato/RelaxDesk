@@ -20,6 +20,13 @@ frames with zero full-frame readbacks and zero remaining native resources.
 The first TCP-to-first UDP submission interval was 4.692 seconds. Raw output
 is in `build/roles-58514fc-desktop-auto.log`.
 
+The same candidate Host passed a non-sparse 1,073,741,841-byte upload and
+download over the separately bound file TLS channel. The upload resumed at
+8,912,896 bytes and the download at 12,582,912 bytes. Both SHA-256 hashes
+matched, all four sessions required fresh approval, and all four reported
+zero remaining native resources. `build/roles-58514fc-large-resume.log` records
+the 19.71-second loopback result with the fixture's 256 MiB/s transfer ceiling.
+
 At `8c0cfe9`, `scripts/test-user-setup.ps1` passed 82 checks using real files, an isolated HKCU key and fixture shortcut directories. Its payload EXEs are placeholder files. The 46 actual Inno Setup lifecycle checks documented in [EXE installers](EXE-INSTALLERS.md#历史交付及证据) apply to the earlier `7e51e95` installer release.
 
 Use the [physical acceptance checklist](PHYSICAL-ACCEPTANCE.md) for results
