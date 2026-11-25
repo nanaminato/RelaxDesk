@@ -30,6 +30,7 @@ if(args is [var brokerApplication,"--broker-contracts"]){try{await SessionBroker
 if(args is ["--session-contracts"]){await RelaxDesk.Windows.WindowsSessionContracts.Run();return;}
 if(args is [var pausedHost,"--desktop-pause"]){await DesktopPauseSmoke.Run(pausedHost);return;}
 if(args is [var sessionHost,"--session-unavailable"]){await SessionUnavailableSmoke.Run(sessionHost);return;}
+if(args is [var lockHost,"--physical-lock-contract"]){await SessionUnavailableSmoke.VerifyPhysicalLock(lockHost);return;}
 if(args is [var topologyHost,"--topology-session",var topologyFixtures]){try{await TopologySmoke.Run(topologyHost,topologyFixtures);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is ["--viewport-contracts"]){try{RelaxDesk.Windows.ViewportContracts.Run();}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is [var switchHost,"--display-switch"]){try{await DisplaySwitchSmoke.Run(switchHost);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
