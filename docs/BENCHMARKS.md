@@ -265,6 +265,14 @@ released all tracked native resources. This run used forced UDP on one
 machine. Physical input-to-photon timing and two-device LAN results remain
 unmeasured.
 
+At `afe6322`, the 2560 × 1440 single-machine `desktop-gpu-auto-recovery`
+probe submitted 102 TCP and 108 UDP frames through D3D11 with no full-frame
+readback. The first UDP frame followed the first TCP frame by 4.656 seconds.
+TCP carried video during the recovery wait, so the elapsed time measures
+transport recovery. Two control heartbeats arrived and tracked native resources
+returned to zero. Application media traffic averaged 4.142 Mbit/s during this
+run.
+
 SDR BGRA capture can copy small dirty rectangles and move destinations from
 the current DXGI surface into the retained GPU texture. The WARP contract
 copied two pixels of a 4×4 surface and matched the full reference. It also
