@@ -28,6 +28,12 @@
 
 在当前 Windows 开发环境中，两个**实际交付 EXE**以临时目录运行，已通过 46 项真实当前用户安装生命周期检查：两个角色启动、桌面／开始菜单、应用列表、已安装目录服务只读预检查、重复安装、运行中拒绝升级／卸载、修改文件保护、两端独立卸载和未知文件保留。测试创建的用户快捷方式与注册项已清理。正常向导的鼠标点击、完成页自动打开、默认 LocalAppData 路径、不同版本升级、全新 Home 机器及真实 UAC/SCM 仍需最终操作者验收；未把静默测试当作这些通过。
 
+## 当前分支候选包
+
+提交 `b51c7af` 的两个候选 EXE 位于 `build/installers-b51c7af`。实测 SHA-256 与 `installers.json` 一致。相同提交的自包含角色 ZIP 通过 55 项断言，覆盖 TCP、UDP、Auto 恢复、媒体与文件并行、管理员代理故障及 Work 设备信任。该次运行显式跳过普通用户机器服务安装预检，原始预检曾返回拒绝访问。随后经 Windows UAC 单独执行同一候选包的 `--install-service --what-if`，退出码为 0，操作范围为只读预检。
+
+Viewer 候选 EXE 完成了当前用户静默安装、版本命令启动和静默卸载。安装后的 421 个文件均符合清单，卸载后已检查程序载荷、应用列表和两个快捷方式。Host 的当前用户应用登记和快捷方式已存在，双角色测试在写入前退出。Host 候选 EXE 的安装与卸载仍待使用空闲 Windows 用户配置文件验证。
+
 ## 开发者重现
 
 使用外部稳定 Inno Setup **7.1.1** 编译器；只将 RelaxDesk 自有 `.iss` 配方纳入仓库，不复制其第三方源码。官方编译工具通过 [官方下载](https://jrsoftware.org/inno-setup/downloads) 获取，按 [官方验证方法](https://jrsoftware.org/inno-setup/downloads/verify) 检查 Pyrsys B.V. 签名。官方支持 `/PORTABLE=1`，本次仅展开到 `build/installer-tools`，没有注册编译工具。其[第三方许可](https://raw.githubusercontent.com/jrsoftware/issrc/is-7_1_1/license.txt)保留在每个已安装版本的收据目录；未为 RelaxDesk 项目选择许可证。
