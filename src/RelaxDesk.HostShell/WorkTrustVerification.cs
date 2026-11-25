@@ -108,6 +108,15 @@ internal sealed partial class HostWindow
                 using (var afterLock = Viewer()) await MustAsk(afterLock, "Windows lock notification");
                 if (window.nextWorkFingerprint is not null) throw new IOException("Lock notification retained the grant");
 
+                if (!window.ArmNextWork(fingerprint)) throw new IOException("Could not arm restart fixture");
+                int oldGeneration = window.Host.Generation;
+                await window.StopSharing();
+                await window.Host.Finished;
+                await window.StartSharing("127.0.0.1", port, "test-clipboard");
+                await WaitFor(() => window.Host.Generation > oldGeneration && window.Status == "等待连接");
+                using (var afterRestart = Viewer()) await MustAsk(afterRestart, "prior Host generation");
+                if (window.nextWorkFingerprint is not null) throw new IOException("Host restart retained the one-use grant");
+
                 using (var expanded = Viewer(SessionCapabilities.ClipboardText, SessionCapabilities.ClipboardImage))
                 {
                     var connection = expanded.ConnectByApproval("127.0.0.1", port, ct);
@@ -176,7 +185,7 @@ internal sealed partial class HostWindow
                 try { await reconnect; throw new IOException("Deny did not stop a revoked Work device"); }
                 catch (HostConsentRejectedException) { }
                 Console.WriteLine("PASS WPF Work device trust: opt-in persistence, exact permission prefill, no capability expansion, live revocation and fresh consent over production TLS");
-                Console.WriteLine("PASS WPF one-use Work preapproval: optional grants excluded, Guest/Admin and wrong device denied, expiry, cancel and session notification invalidate the grant");
+                Console.WriteLine("PASS WPF one-use Work preapproval: optional grants excluded, Guest/Admin and wrong device denied, expiry, cancel, session notification and Host restart invalidate the grant");
             }
             catch (Exception error) { Console.Error.WriteLine(error); Environment.ExitCode = 1; }
             finally { await window.StopSharing(); window.Close(); }
