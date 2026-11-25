@@ -37,6 +37,8 @@ internal sealed class SessionToolbar : IDisposable
     int left, top, width, height;
     [StructLayout(LayoutKind.Sequential)] internal struct PixelPoint { public int X, Y; }
     [DllImport("user32.dll")] static extern bool GetCursorPos(out PixelPoint point);
+    [DllImport("user32.dll")] static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] static extern nint GetAncestor(nint hwnd, uint flags);
     [DllImport("user32.dll")] static extern bool SetWindowPos(nint hwnd, nint after, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] static extern nint GetStyle(nint hwnd, int index);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] static extern nint SetStyle(nint hwnd, int index, nint value);
@@ -189,7 +191,13 @@ internal sealed class SessionToolbar : IDisposable
         ShortcutMenu.Items.Add(statistics);statistics.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;openStatistics?.Invoke();};
         ShortcutMenu.Items.Add(videoSettings);
         clipboard.Click += (_, _) => { ShortcutMenu.IsOpen = false; disableClipboard?.Invoke(); };
-        ShortcutsButton.Click += (_, _) => { ShortcutMenu.PlacementTarget = ShortcutsButton; ShortcutMenu.IsOpen = true; Reveal(); };
+        ShortcutsButton.Click += (_, _) =>
+        {
+            Reveal();
+            ShortcutMenu.PlacementTarget = ShortcutsButton;
+            ShortcutMenu.IsOpen = true;
+        };
+        ShortcutMenu.Closed += (_, _) => keepUntil = DateTime.UtcNow.AddSeconds(1);
         var readings = new StackPanel();
         readings.Children.Add(mediaRate);
         readings.Children.Add(connectionTiming);
@@ -242,29 +250,51 @@ internal sealed class SessionToolbar : IDisposable
     {
         if (disposed) return;
         RefreshConnectionInfo();
-        if (!owner.IsVisible || owner.WindowState == WindowState.Minimized || !owner.IsActive)
-        { window.Hide(); return; }
-        if (!window.IsVisible) window.Show();
+        if (!owner.IsVisible || owner.WindowState == WindowState.Minimized || (!owner.IsActive && !MenuOwnsForeground()))
+        {
+            ShortcutMenu.IsOpen = false;
+            window.Hide();
+            return;
+        }
+        if (!window.IsVisible)
+        {
+            window.Show();
+            UpdatePosition(force: true);
+        }
+        if (ShortcutMenu.IsOpen) return;
         PixelPoint? pointer = TestPointer is null ? GetCursorPos(out var current) ? current : null : TestPointer();
         {
             bool inside = pointer is {} p && p.X >= left && p.X < left + width && p.Y >= top && p.Y < top + height;
             if (inside) { if (!expanded) Reveal(); keepUntil = DateTime.UtcNow.AddSeconds(1); }
-            else if (expanded && !ShortcutMenu.IsOpen && DateTime.UtcNow >= keepUntil) { expanded = false; UpdatePosition(); }
+            else if (expanded && DateTime.UtcNow >= keepUntil) expanded = false;
         }
         UpdatePosition();
     }
-    void UpdatePosition()
+    bool MenuOwnsForeground()
+    {
+        if (!ShortcutMenu.IsOpen) return false;
+        const uint RootOwner = 3;
+        nint foreground = GetForegroundWindow();
+        nint viewer = new WindowInteropHelper(owner).Handle;
+        nint popup = (PresentationSource.FromVisual(ShortcutMenu) as HwndSource)?.Handle ?? 0;
+        return foreground != 0 && (foreground == handle || foreground == popup ||
+            (viewer != 0 && GetAncestor(foreground, RootOwner) == viewer));
+    }
+    void UpdatePosition(bool force = false)
     {
         if (disposed || handle == 0 || !owner.IsLoaded || owner.WindowState == WindowState.Minimized) return;
         var content = (FrameworkElement)owner.Content;
         if (content.ActualWidth <= 0) return;
         Point origin = content.PointToScreen(new Point(0, 0));
         var dpi = VisualTreeHelper.GetDpi(owner);
-        width = (int)Math.Round(Math.Min(statisticsSource is null ? 560 : MaximumWidth, content.ActualWidth) * dpi.DpiScaleX);
-        height = (int)Math.Round((expanded ? 48 : 5) * dpi.DpiScaleY);
-        left = (int)Math.Round(origin.X + (content.ActualWidth * dpi.DpiScaleX - width) / 2); top = (int)Math.Round(origin.Y);
+        int nextWidth = (int)Math.Round(Math.Min(statisticsSource is null ? 560 : MaximumWidth, content.ActualWidth) * dpi.DpiScaleX);
+        int nextHeight = (int)Math.Round((expanded ? 48 : 5) * dpi.DpiScaleY);
+        int nextLeft = (int)Math.Round(origin.X + (content.ActualWidth * dpi.DpiScaleX - nextWidth) / 2);
+        int nextTop = (int)Math.Round(origin.Y);
+        if (!force && (left, top, width, height) == (nextLeft, nextTop, nextWidth, nextHeight)) return;
         ((Border)window.Content).Child.Visibility = expanded ? Visibility.Visible : Visibility.Hidden;
-        SetWindowPos(handle, 0, left, top, width, height, 0x14); // NOACTIVATE | NOZORDER
+        if (SetWindowPos(handle, 0, nextLeft, nextTop, nextWidth, nextHeight, 0x214)) // NOACTIVATE | NOZORDER | NOOWNERZORDER
+            (left, top, width, height) = (nextLeft, nextTop, nextWidth, nextHeight);
     }
     public void Dispose()
     {

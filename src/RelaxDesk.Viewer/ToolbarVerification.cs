@@ -81,11 +81,19 @@ internal static class ToolbarVerification
                     testBar.SetSession("new session", false);
                     if (testBar.MediaPathText != "等待首帧") throw new Exception("Reconnect retained a stale media path");
                     if(releaseRequests!=1||testBar.TextInputAction.IsEnabled)throw new Exception("Toolbar reveal must release input; text commit requires negotiation");
-                    testBar.ShortcutsButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(100);
-                    if (!testBar.ShortcutMenu.IsOpen) throw new Exception("Shortcut menu did not open");
+                    bar.FullScreenButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    testBar.TestPointer = () => null;
+                    testBar.ShortcutsButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    await Task.Delay(1800);
+                    if (!testBar.ShortcutMenu.IsOpen || !testBar.Expanded || !testBar.Surface.IsVisible ||
+                        releaseRequests != 1 || shortcuts.Count != 0)
+                        throw new Exception("Fullscreen shortcut menu did not stay open independently of remote actions");
                     foreach (var item in testBar.ShortcutMenu.Items.OfType<MenuItem>().Where(item => item.IsEnabled))
                         item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
                     if (!shortcuts.SequenceEqual(Enum.GetValues<RelaxDesk.Core.RemoteShortcut>())) throw new Exception("Shortcut menu misrouted/duplicated an action");
+                    await Task.Delay(1800);
+                    if (testBar.Expanded) throw new Exception("Toolbar did not contract after the menu closed");
+                    bar.FullScreenButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     if (testBar.ShortcutMenu.Items.OfType<MenuItem>().Single(item=>item.Header.ToString()!.Contains("Ctrl+Alt+End")).IsEnabled) throw new Exception("Secure attention sequence must be unavailable");
                     int stopped = 0; testBar.SetClipboard(true, () => stopped++);
                     if (!testBar.ClipboardAction.IsEnabled) throw new Exception("Granted clipboard stop action unavailable");
