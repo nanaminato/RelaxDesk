@@ -96,6 +96,8 @@ For elevated-window keyboard delivery, run `RelaxDesk.Viewer.exe --admin-physica
 
 `--admin-physical-key-release-contracts <Host.exe>` uses the same setup and sends only F8 down in Admin. The development-console run passed. The probe received the matching native release during Viewer-initiated Admin downgrade with no Viewer key-up packet. Work and video resumed on the same TLS connection.
 
+`--admin-physical-host-revoke-contracts <Host.exe>` sends only F8 down in Admin, then revokes the grant from the Host. The development-console run passed. The target received the release, Work and video resumed on the same connection, and the Viewer stopped offering Admin for that session.
+
 The keyboard verifier also tests an explicitly approved Guest session before Work. On the development console, Guest had input authorization and no Admin action. The foreground probe stayed open after Guest and Work each sent F8, then counted exactly one native pair during Admin.
 
 `--admin-physical-mouse-release-contracts <Host.exe>` uses a high-integrity button as the target. Move the pointer onto the test button when prompted and keep it there without clicking. The development-console run passed: the probe stayed open after the explicitly input-authorized Guest and Work tests, then counted exactly one left press and one release during the Admin test. The Viewer sent only the press before downgrade. Work and video resumed on the same TLS connection. Other buttons and held-input release during lock or worker failure remain separate checks.

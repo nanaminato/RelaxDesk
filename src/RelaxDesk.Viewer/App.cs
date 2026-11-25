@@ -80,6 +80,7 @@ public sealed class App : Application
             else if (args is ["--admin-physical-lock-contracts", var lockedAdminHost]) ViewerWindow.VerifyAdminUpgrade(app, lockedAdminHost, activate: true, realWorker: true, physicalLock: true);
             else if (args is ["--admin-physical-key-contracts", var keyAdminHost]) ViewerWindow.VerifyAdminUpgrade(app, keyAdminHost, activate: true, realWorker: true, physicalKey: true);
             else if (args is ["--admin-physical-key-release-contracts", var releaseAdminHost]) ViewerWindow.VerifyAdminUpgrade(app, releaseAdminHost, activate: true, realWorker: true, physicalKey: true, holdProbeInput: true);
+            else if (args is ["--admin-physical-host-revoke-contracts", var revokeAdminHost]) ViewerWindow.VerifyAdminUpgrade(app, revokeAdminHost, activate: true, realWorker: true, physicalKey: true, holdProbeInput: true, revokeFromHost: true);
             else if (args is ["--admin-physical-mouse-release-contracts", var mouseAdminHost]) ViewerWindow.VerifyAdminUpgrade(app, mouseAdminHost, activate: true, realWorker: true, physicalMouse: true, holdProbeInput: true);
             else if (args is ["--admin-worker-loss-contracts", var workerLossHost]) ViewerWindow.VerifyAdminUpgrade(app, workerLossHost, activate: true, workerLoss: true);
             else if(args is ["--video-settings-contracts",var settingsHost,var settingsMode])ViewerWindow.VerifyVideoSettings(app,settingsHost,settingsMode);

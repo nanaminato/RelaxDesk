@@ -20,7 +20,7 @@ public sealed partial class ViewerWindow
     [DllImport("user32.dll")] static extern bool GetCursorPos(out ProbePoint point);
     [DllImport("user32.dll")] static extern nint WindowFromPoint(ProbePoint point);
 
-    internal static void VerifyAdminUpgrade(Application app, string hostApplication, bool activate = false, bool workerLoss = false, bool realWorker = false, bool cancelElevation = false, bool physicalLock = false, bool physicalKey = false, bool holdProbeInput = false, bool physicalMouse = false)
+    internal static void VerifyAdminUpgrade(Application app, string hostApplication, bool activate = false, bool workerLoss = false, bool realWorker = false, bool cancelElevation = false, bool physicalLock = false, bool physicalKey = false, bool holdProbeInput = false, bool physicalMouse = false, bool revokeFromHost = false)
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
@@ -283,17 +283,20 @@ public sealed partial class ViewerWindow
                                     Console.WriteLine("PASS F8 reached the elevated window only in Admin; target received one press and one release");
                                 }
                             }
-                            menu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                            if (revokeFromHost) await Send($"REVOKE_ADMIN_INPUT {id}");
+                            else menu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
                             await Event("admin-revoked");
                             if (holdProbeInput && keyProbe is not null)
                             {
                                 await VerifyProbeExit(keyProbe);
                                 Console.WriteLine(physicalMouse
                                     ? "PASS the elevated target received one left press and a release on Admin downgrade without a Viewer button-up packet"
-                                    : "PASS the elevated target received F8 release on Admin downgrade without a Viewer key-up packet");
+                                    : $"PASS the elevated target received F8 release on {(revokeFromHost ? "Host revocation" : "Admin downgrade")} without a Viewer key-up packet");
                             }
                             await Until(() => viewer.activeMode == SessionMode.Work && viewer.inputAuthorized);
                             if (connection.IsCompleted) throw new IOException("Downgrade ended the existing connection");
+                            if (revokeFromHost && (viewer.adminUpgradeAvailable || menu.Visibility == Visibility.Visible))
+                                throw new IOException("Host revocation left the Admin request available");
                             break;
                         }
                         if (!viewer.outgoing.TryWrite(InputProtocol.Encode(new("move", X: 200, Y: 100), ++viewer.sequence, viewer.displaySession!.Generation)))
@@ -377,6 +380,8 @@ public sealed partial class ViewerWindow
                     if (process.ExitCode != 0) throw new IOException("Host did not exit cleanly");
                     Console.WriteLine(cancelElevation
                         ? "PASS UAC cancellation restored Work and video on the same TLS connection"
+                        : revokeFromHost
+                        ? "PASS Host revoked Admin and restored Work and video on the same TLS connection"
                         : realWorker
                         ? "PASS local UAC started the protected administrator worker; Viewer downgrade restored Work and video on the same TLS connection"
                         : workerLoss
