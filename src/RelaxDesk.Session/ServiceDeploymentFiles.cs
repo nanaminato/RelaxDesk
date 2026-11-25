@@ -132,10 +132,15 @@ internal sealed class ServiceFilePolicy
         security.AddAccessRule(new(new SecurityIdentifier(LocalServiceSid),FileSystemRights.ReadAndExecute,AccessControlType.Allow));
         new FileInfo(path).SetAccessControl(security);Check(path);
     }
-    internal void AllowOwnerRead(string path, string user)
+    internal void AllowOwnerParentInspection(string user) => AllowOwnerRead(Path.GetDirectoryName(Root)!, user,
+        FileSystemRights.ReadPermissions | FileSystemRights.ReadAttributes | FileSystemRights.Traverse);
+
+    internal void AllowOwnerRead(string path, string user) => AllowOwnerRead(path, user, FileSystemRights.ReadAndExecute);
+
+    void AllowOwnerRead(string path, string user, FileSystemRights rights)
     {
         Check(path);
-        var rule = new FileSystemAccessRule(new SecurityIdentifier(user), FileSystemRights.ReadAndExecute, AccessControlType.Allow);
+        var rule = new FileSystemAccessRule(new SecurityIdentifier(user), rights, AccessControlType.Allow);
         if (Directory.Exists(path))
         {
             var directory = new DirectoryInfo(path);

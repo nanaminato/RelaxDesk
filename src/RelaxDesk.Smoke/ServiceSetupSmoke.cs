@@ -77,6 +77,14 @@ internal static class ServiceSetupSmoke
             File.WriteAllText(Path.Combine(workerSource, member), "inert worker fixture " + member);
         Manifest(second);
         var files=new ServiceFilePolicy(Path.Combine(fixture,"broker 中文 & (Service)"),true);var services=new FakeServices();string fault="";
+        var parentReader = new SecurityIdentifier("S-1-5-21-1-2-3-99999");
+        files.AllowOwnerParentInspection(parentReader.Value);
+        var parentRule = new DirectoryInfo(fixture).GetAccessControl(AccessControlSections.Access)
+            .GetAccessRules(true, false, typeof(SecurityIdentifier)).OfType<FileSystemAccessRule>()
+            .Single(rule => rule.IdentityReference.Equals(parentReader));
+        Check(parentRule.AccessControlType == AccessControlType.Allow && parentRule.InheritanceFlags == InheritanceFlags.None &&
+            parentRule.FileSystemRights == (FileSystemRights.ReadPermissions | FileSystemRights.ReadAttributes |
+                FileSystemRights.Traverse | FileSystemRights.Synchronize));
         var setup=new ServiceSetupTransaction(files,services,()=>true,point=>{if(point==fault)throw new IOException("Injected "+point);});
         var plan=await setup.Install(first,own,null,false,true,CancellationToken.None);
         Check(!plan.Changed&&plan.Startup==3&&!plan.Running&&!Directory.Exists(files.Root)&&services.Writes==0);

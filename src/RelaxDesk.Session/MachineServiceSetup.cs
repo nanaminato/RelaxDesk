@@ -85,7 +85,11 @@ internal sealed class ServiceSetupTransaction(ServiceFilePolicy files,IServiceRe
             {
                 payload.CopyTo(files,release,owner,Point);
                 if (release.Files.Any(entry => ServicePayload.IsWorkerFile(entry.Path)))
+                {
+                    // The ordinary coordinator verifies the parent ACL before reading the worker deployment.
+                    if (!files.Fixture) files.AllowOwnerParentInspection(owner);
                     files.AllowOwnerRead(files.Root, owner);
+                }
                 files.WriteState(staged);Point("after-state");
                 if(before is not null&&before.State!=1){stoppedExisting=true;services.Stop(before,ct).GetAwaiter().GetResult();before=services.Read()??throw new IOException("Service disappeared while updating");ValidateRegistration(before,staged);}
                 Point("after-stop");

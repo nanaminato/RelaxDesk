@@ -214,7 +214,10 @@ lock, sign-in, WTS switching and real window behavior as separate results.
 `RelaxDesk.Host --admin-input-diagnose` checks the ordinary coordinator token,
 interactive desktop and current user's protected worker installation. It exits
 0 once those prerequisites pass or 2 if one is unavailable. It never launches
-the worker or triggers UAC.
+the worker or triggers UAC. Service installation or repair grants the selected
+owner non-inherited permission to inspect the RelaxDesk parent directory ACL
+and traverse that directory. The parent grant carries no listing or write
+rights. The coordinator still validates the parent ACL and worker payload.
 
 Run `RelaxDesk.Host --session-diagnose-watch 90` in a separate ordinary Host
 console during local transition tests. It writes a timestamped JSON snapshot
