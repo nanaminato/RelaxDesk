@@ -1,0 +1,9 @@
+<Window x:Class="RelaxDesk.HostShell.HostPanelWindow" x:ClassModifier="internal"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Width="620" Height="450" MinWidth="420" MinHeight="260"
+        ShowInTaskbar="False" WindowStartupLocation="CenterOwner">
+    <Border Padding="20">
+        <ScrollViewer x:Name="PanelScroll" VerticalScrollBarVisibility="Auto" />
+    </Border>
+</Window>

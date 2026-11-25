@@ -73,14 +73,14 @@ internal sealed class ServiceSetupTransaction(ServiceFilePolicy files,IServiceRe
         if(source.Equals(files.Root,StringComparison.OrdinalIgnoreCase)||ServiceFilePolicy.Child(source,files.Root)||ServiceFilePolicy.Child(files.Root,source))throw new SecurityException("Service source and machine destination overlap");
         var payload=ServicePayload.Read(source);
         var initial=files.ReadState();Preflight(initial,owner);var registration=services.Read();if(registration is not null)ValidateRegistration(registration,initial);
-        if(initial?.PendingDelete==true||registration?.PendingDelete==true)throw new IOException("Complete pending service removal before installation");
+        EnsureInstallable(initial, registration);
         uint startup=automatic is {} choice?(choice?2u:3u):registration?.Startup??3u;
         if(whatIf)return new("install",false,files.Root,owner,payload.Version,startup,start||registration?.State==4,false,false);
         using var mutex=Lock();
         try
         {
             var previous=files.ReadState();Preflight(previous,owner);var before=services.Read();if(before is not null)ValidateRegistration(before,previous);
-            if(previous?.PendingDelete==true||before?.PendingDelete==true)throw new IOException("Service deletion pending");
+            EnsureInstallable(previous, before);
             if(previous?.Releases.Length>=4)throw new IOException("Retained release limit reached; review/uninstall retained content first");
             startup=automatic is {} selected?(selected?2u:3u):before?.Startup??3u;
             files.EnsureRoot();var release=payload.CreateRelease();bool committed=false;
@@ -118,7 +118,7 @@ internal sealed class ServiceSetupTransaction(ServiceFilePolicy files,IServiceRe
                 files.WriteState(ready with{Releases=retained.ToArray()});
                 return new("install",true,files.Root,owner,payload.Version,startup,start||wasRunning,false,retained.Count>1);
             }
-            catch
+            catch (Exception installError)
             {
                 if(!committed)
                 {
@@ -145,12 +145,21 @@ internal sealed class ServiceSetupTransaction(ServiceFilePolicy files,IServiceRe
                         if(previous is null&&!Directory.EnumerateFileSystemEntries(files.Root).Any())Directory.Delete(files.Root);
                         if(wasRunning&&before is not null&&(touched||stoppedExisting)){var restored=services.Read()??throw new IOException("Previous service missing during recovery");ValidateRegistration(restored,previous);services.Start(restored,recovery.Token).GetAwaiter().GetResult();}
                     }
-                    catch(Exception recoveryError){throw new IOException("Service setup failed and rollback is incomplete; protected state/files were retained for explicit recovery",recoveryError);}
+                    catch(Exception recoveryError){throw new IOException("Service setup failed and rollback is incomplete; protected state/files were retained for explicit recovery",new AggregateException(installError,recoveryError));}
                 }
                 throw;
             }
         }
         finally{mutex.ReleaseMutex();}
+    }
+    static void EnsureInstallable(ServiceInstallState? state, ServiceRegistration? registration)
+    {
+        if (registration?.PendingDelete == true)
+            throw new IOException("Windows 服务仍在等待删除。关闭服务管理窗口，再到「服务设置」执行卸载。");
+        if (state?.PendingDelete != true) return;
+        throw new IOException(registration is null
+            ? "Windows 服务已删除，但上一次卸载留下了部署记录。请到「服务设置」执行「卸载服务（管理员）」完成清理，再启用服务。"
+            : "上一次服务卸载尚未完成。请到「服务设置」再次卸载，再启用服务。");
     }
     internal Task<ServiceSetupResult> Uninstall(string owner,bool whatIf,CancellationToken ct)=>
         Task.Run(()=>UninstallCore(owner,whatIf,ct),ct);

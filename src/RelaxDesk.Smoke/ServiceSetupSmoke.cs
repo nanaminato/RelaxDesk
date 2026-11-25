@@ -173,7 +173,19 @@ internal static class ServiceSetupSmoke
         services.HoldDeletion=true;var pending=await setup.Uninstall(own,false,CancellationToken.None);
         Check(pending.PendingDelete&&!pending.Changed&&Directory.Exists(files.Root)&&files.ReadState()!.PendingDelete);
         await Reject(async()=>await setup.Install(second,own,null,false,false,CancellationToken.None));
-        services.HoldDeletion=false;var removed=await setup.Uninstall(own,false,CancellationToken.None);Check(removed.Changed&&!removed.RetainedFiles&&!Directory.Exists(files.Root)&&services.Current is null);
+        services.HoldDeletion=false;
+        services.Current=null; // SCM finished deleting after the setup process exited.
+        before=services.Writes;
+        try
+        {
+            await setup.Install(second,own,null,false,true,CancellationToken.None);
+            Check(false);
+        }
+        catch (IOException error)
+        {
+            Check(error.Message.Contains("Windows 服务已删除") && services.Writes==before && files.ReadState()!.PendingDelete);
+        }
+        var removed=await setup.Uninstall(own,false,CancellationToken.None);Check(removed.Changed&&!removed.RetainedFiles&&!Directory.Exists(files.Root)&&services.Current is null);
         await setup.Install(first,own,null,false,false,CancellationToken.None);var retainedState=files.ReadState()!;string active=files.ReleasePath(retainedState.Current);
         string modified=Path.Combine(active,"ThirdParty","NOTICE.txt");File.WriteAllText(modified,"operator edit");string unknown=Path.Combine(active,"operator-empty-folder");Directory.CreateDirectory(unknown);
         RejectPolicy(()=>ServiceDeploymentTrust.RequireRuntime(files,active,own));

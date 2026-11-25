@@ -34,7 +34,7 @@ internal sealed partial class HostWindow:Window
     internal Func<AdminWorkerDeployment>? InputDeploymentForVerification { get; set; }
     string? adminStartupNotice;
     string[] fullControlFeatures = [];
-    const string AdminDeploymentNotice = "完整远程控制不可用。要修复代理，请结束共享，在「系统服务」的「更多设置」中选择「更新／修复并应用设置（管理员）」。";
+    const string AdminDeploymentNotice = "完整远程控制不可用。要修复代理，请结束共享，在「服务设置」中选择「安装／更新／修复（管理员）」。";
     const string DesktopUnavailableNotice="不支持当前会话或安全桌面控制。请回到原用户的普通桌面后重新连接并授权；Host 继续等待连接。";
     string? displayedSessionId;
     readonly Button disconnectSession=new(){Content="断开本次连接",Visibility=Visibility.Collapsed};
@@ -42,13 +42,11 @@ internal sealed partial class HostWindow:Window
     {
         deviceTrust = trustStore ?? DeviceTrustStore.CurrentUser();
         application=hostApplication??Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"..","Host","RelaxDesk.Host.exe"));
-        Title="RelaxDesk Host "+BuildIdentity.Display;Width=1040;Height=780;MinWidth=840;MinHeight=650;FontSize=14;FontFamily=new("Segoe UI, Microsoft YaHei UI");Background=Brush("#F1F5FA");
+        InitializeComponent();
+        serviceSettings = new ServiceSettingsView(serviceSetupNotice);
         RelaxDesk.Ui.ModernTheme.Apply(this);
-        var root=new Grid{Background=Background};root.ColumnDefinitions.Add(new(){Width=new(220)});root.ColumnDefinitions.Add(new());
-        var nav=new StackPanel{Margin=new(24,32,20,24)};nav.Children.Add(Text("RelaxDesk",26,true,Brushes.White));nav.Children.Add(Text("HOST  /  共享端",12,false,Brush("#8DA2C0")));nav.Children.Add(new Border{Height=1,Background=Brush("#2D405B"),Margin=new(0,26,0,24)});nav.Children.Add(Text("共享这台电脑",15,true,Brushes.White));nav.Children.Add(Text("Windows 局域网远程协助",12,false,Brush("#8DA2C0")));nav.Children.Add(new TextBlock{Text="只有你批准的连接\n才能查看屏幕与操作输入。",Foreground=Brush("#A8B8D0"),Margin=new(0,46,0,0),TextWrapping=TextWrapping.Wrap,LineHeight=23});
-        var sidebar=new Border{Background=Brush("#142238"),Child=nav};root.Children.Add(sidebar);
-        var content=new StackPanel{Margin=new(32,26,32,24)};Grid.SetColumn(content,1);
-        content.Children.Add(Text("共享这台电脑",28,true));content.Children.Add(new TextBlock{Text=BuildIdentity.Display,FontSize=11,Foreground=Brushes.SlateGray,Margin=new(0,5,0,18),TextWrapping=TextWrapping.Wrap});
+        BuildVersion.Text = BuildIdentity.Display;
+        var content = SharingContent;
         var statusContent=new StackPanel();state.FontSize=19;state.FontWeight=FontWeights.SemiBold;state.Foreground=Brush("#17243A");statusContent.Children.Add(state);detail.Margin=new(0,8,0,0);detail.Foreground=Brushes.SlateGray;statusContent.Children.Add(detail);content.Children.Add(Card(statusContent));
         var settings=new StackPanel();settings.Children.Add(Text("连接信息",17,true));settings.Children.Add(Text("Viewer 只需填写下面的 IP 和端口",12,false,Brushes.SlateGray));
         var fields=new Grid{Margin=new(0,12,0,0)};fields.ColumnDefinitions.Add(new());fields.ColumnDefinitions.Add(new(){Width=new(135)});
@@ -56,16 +54,39 @@ internal sealed partial class HostWindow:Window
         var portField=new StackPanel();portField.Children.Add(Text("端口",12));portField.Children.Add(port);Grid.SetColumn(portField,1);fields.Children.Add(portField);settings.Children.Add(fields);
         var addresses=Addresses();ip.Text=addresses.FirstOrDefault()??"127.0.0.1";
         if(addresses.Length>1){var options=new WrapPanel();foreach(string address in addresses){var pick=new Button{Content=address,Padding=new(10,5,10,5),FontSize=12};pick.Click+=(_,_)=>{if(!Host.Running&&!RestartPending)ip.Text=address;};options.Children.Add(pick);}settings.Children.Add(options);}
-        AddDisplaySettings(settings);AddFileSettings(settings);AddServiceSettings(settings);AddRecoverySettings(settings);BuildDeviceTrust(settings);
+        var sharingSettings = new StackPanel();
+        AddDisplaySettings(sharingSettings);
+        AddFileSettings(sharingSettings);
+        AddRecoverySettings(sharingSettings);
+        AddWindowButton(Navigation, "共享设置", sharingSettings);
+        var devices = new StackPanel();
+        BuildDeviceTrust(devices);
+        AddWindowButton(Navigation, "受信任的设备", devices);
+        AddWindowButton(Navigation, "诊断与日志", logs);
         var actions=new WrapPanel();start.Style=(Style)Resources["PrimaryButton"];stop.Style=(Style)Resources["DangerButton"];
         actions.Children.Add(start);actions.Children.Add(stop);actions.Children.Add(disconnectSession);disconnectSession.Click+=async(_,_)=>await DisconnectSession();actions.Children.Add(revokeClipboard);revokeClipboard.Click+=async(_,_)=>await StopClipboard();var copy=new Button{Content="复制地址"};copy.Click+=(_,_)=>Clipboard.SetText(ip.Text+":"+port.Text);actions.Children.Add(copy);settings.Children.Add(actions);color.Margin=new(4,12,0,0);color.TextWrapping=TextWrapping.Wrap;settings.Children.Add(color);var settingsCard=Card(settings);
         var consent=new StackPanel();consent.Children.Add(Text("有人请求连接",19,true));peer.FontSize=16;peer.Margin=new(0,10,0,8);consent.Children.Add(peer);consent.Children.Add(consentAccess);var decision=new StackPanel{Orientation=Orientation.Horizontal,Margin=new(0,14,0,0)};allow.Style=(Style)Resources["PrimaryButton"];deny.Style=(Style)Resources["DangerButton"];decision.Children.Add(allow);decision.Children.Add(deny);consent.Children.Add(decision);request.Child=consent;request.Background=Brush("#EAF2FF");request.CornerRadius=new(12);request.Padding=new(22);request.Margin=new(0,0,0,16);content.Children.Add(request);content.Children.Add(settingsCard);
         consent.Children.Insert(3,clipboardPermission);consent.Children.Insert(4,filesPermission);consent.Children.Insert(5,filesScopeLabel);actions.Children.Add(revokeFiles);consent.Children.Insert(6,audioPermission);consent.Children.Insert(7,rememberDevice);actions.Children.Add(revokeAudio);revokeAudio.Click+=async(_,_)=>await StopAudio();
-        content.Children.Add(new Expander{Header="诊断与日志",Content=logs,Margin=new(0,4,0,0)});
-        var scroll=new ScrollViewer{Content=content,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};Grid.SetColumn(scroll,1);root.Children.Add(scroll);Content=root;
+        var servicePanel = new StackPanel();
+        AddServiceSettings(servicePanel);
+        content.Children.Add(Card(servicePanel));
         start.Click+=async(_,_)=>await StartSharing();stop.Click+=async(_,_)=>await StopSharing();allow.Click+=async(_,_)=>await Decide(true);deny.Click+=async(_,_)=>await Decide(false);
         Host.Changed+=change=>Dispatcher.BeginInvoke(()=>Changed(change));Host.Diagnostic+=line=>Dispatcher.BeginInvoke(()=>{logs.Text=string.Join(Environment.NewLine,Host.Snapshot());if(line.StartsWith("producer_error")||line.StartsWith("Session ended:")||line.StartsWith("clipboard_")||line.StartsWith("file_transfer_disabled"))detail.Text=line;if(line.StartsWith("clipboard_disabled"))revokeClipboard.Visibility=Visibility.Collapsed;if(line.StartsWith("file_transfer_disabled"))revokeFiles.Visibility=Visibility.Collapsed;if(line.StartsWith("audio_disabled")){revokeAudio.Visibility=Visibility.Collapsed;detail.Text="声音传输已关闭；画面与输入仍可使用。";}});
         Closing+=async(_,e)=>{if(ServiceSetupBusy){e.Cancel=true;serviceSetupNotice.Text="正在处理系统服务，请等待完成后再关闭；如出现 Windows 授权，可在那里取消。";return;}CancelRecovery();if(!Host.Running&&serviceAgent is null&&serviceAttempt is null&&serviceWatch is null)return;e.Cancel=true;if(closing)return;closing=true;await DisconnectService();await StopSharing();Close();};
+    }
+    void AddWindowButton(Panel parent, string title, UIElement body)
+    {
+        var button = new Button { Content = title, Margin = new(0, 8, 0, 0) };
+        Window? dialog = null;
+        button.Click += (_, _) =>
+        {
+            if (dialog is not null) { dialog.Activate(); return; }
+            var window = new HostPanelWindow(this, title, body);
+            window.Closed += (_, _) => dialog = null;
+            dialog = window;
+            window.Show();
+        };
+        parent.Children.Add(button);
     }
     static SolidColorBrush Brush(string value)=>new((Color)ColorConverter.ConvertFromString(value));
     static TextBlock Text(string value,double size=14,bool bold=false,Brush? foreground=null)=>new(){Text=value,FontSize=size,FontWeight=bold?FontWeights.SemiBold:FontWeights.Normal,Foreground=foreground??Brush("#17243A"),TextWrapping=TextWrapping.Wrap,Margin=new(0,0,0,4)};

@@ -49,7 +49,7 @@ internal static class ServiceSetupVerification
         try
         {
             await ready.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            check(!Children<Expander>(window).Single(item=>item.Header?.ToString()=="更多设置").IsExpanded);
+            check(window.OwnedWindows.Count == 0);
             window.EnableServiceButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));await until(()=>backend.Runs==1);
             check(window.ServiceSetupBusy&&!window.EnableServiceButton.IsEnabled&&backend.Connections==0);
             await window.EnableSystemService();check(backend.Runs==1);
@@ -75,7 +75,7 @@ internal static class ServiceSetupVerification
                 window.Width=size.Item1;window.Height=size.Item2;window.UpdateLayout();Children<TextBlock>(window).Single(item=>item.Text==window.SetupNotice).BringIntoView();await Task.Delay(100);
                 var bitmap=new RenderTargetBitmap((int)window.ActualWidth,(int)window.ActualHeight,96,96,PixelFormats.Pbgra32);bitmap.Render(window);
                 var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));using var file=File.Create(Path.Combine(output,$"one-click-{size.Item1:0}x{size.Item2:0}.png"));png.Save(file);
-                check(!Children<Expander>(window).Single(item=>item.Header?.ToString()=="更多设置").IsExpanded);
+                check(window.OwnedWindows.Count == 0);
             }
         }
         finally{backend.Pending?.TrySetResult(1);await window.DisconnectService();window.ServiceRequired=false;server.RequestStop();await serving;}
@@ -150,14 +150,20 @@ internal static class ServiceSetupVerification
                 await window.StopSharing();await window.Host.Finished;await Until(()=>window.InstallServiceButton.IsEnabled);
                 await OneClick(window,identity.User!.Value,output,Check,Until);
                 Directory.CreateDirectory(output);
-                Children<Expander>(window).Single(item=>item.Header?.ToString()=="更多设置").IsExpanded=true;
+                var settings = Children<Button>(window).Single(item => Equals(item.Content, "服务设置"));
+                settings.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                var dialog = window.OwnedWindows.OfType<HostPanelWindow>().Single();
+                dialog.Close();
+                settings.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                dialog = window.OwnedWindows.OfType<HostPanelWindow>().Single();
                 foreach(var size in new[]{(1040d,780d),(840d,650d)})
                 {
-                    window.Width=size.Item1;window.Height=size.Item2;window.UpdateLayout();Children<TextBlock>(window).Single(item=>item.Text==window.SetupNotice).BringIntoView();await Task.Delay(100);
-                    var bitmap=new RenderTargetBitmap((int)window.ActualWidth,(int)window.ActualHeight,96,96,PixelFormats.Pbgra32);bitmap.Render(window);
+                    dialog.Width=size.Item1/1.5;dialog.Height=size.Item2/1.5;dialog.UpdateLayout();await Task.Delay(100);
+                    var bitmap=new RenderTargetBitmap((int)dialog.ActualWidth,(int)dialog.ActualHeight,96,96,PixelFormats.Pbgra32);bitmap.Render(dialog);
                     var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));using var file=File.Create(Path.Combine(output,$"service-setup-{size.Item1:0}x{size.Item2:0}.png"));png.Save(file);
                     Check(window.InstallServiceButton.ActualWidth>150&&window.UninstallServiceButton.ActualWidth>100);
                 }
+                dialog.Close();
                 Console.WriteLine($"PASS {checks} actual WPF service setup UI contracts: one-click enable and real test-pipe automatic connection, running-service fast path, issues-only helper results, original-user SID, advanced startup/removal, cancel/failure/pending/single flight, responsive UI and guarded close/sharing, stale queries and layouts. Fake privileged launcher and same-process test broker; no UAC prompt, native result dialog, installation or SCM mutation.");
             }
             catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}

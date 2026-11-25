@@ -17,8 +17,16 @@ internal static class SetupResultDialog
     }
     internal static void Failure(Exception error)
     {
-        string message=$"服务维护未成功完成。\n{error.GetType().Name} · 0x{error.HResult:X8}\n{error.Message}";
+        string message="服务维护未成功完成。\n"+Describe(error);
         if(message.Length>1800)message=message[..1800];
         MessageBox(0,message+"\n\n可能保留了恢复记录或已更改部分状态。请刷新服务状态并检查，不要直接删除服务目录。","RelaxDesk 服务维护失败",0x10010);
+    }
+    static string Describe(Exception error)
+    {
+        string details = $"{error.GetType().Name} · 0x{error.HResult:X8}\n{error.Message}";
+        if (error.InnerException is AggregateException failures)
+            return details + "\n\n安装错误\n" + Describe(failures.InnerExceptions[0])
+                + "\n\n回滚错误\n" + Describe(failures.InnerExceptions[1]);
+        return error.InnerException is { } cause ? details + "\n" + Describe(cause) : details;
     }
 }
