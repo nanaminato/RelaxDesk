@@ -120,6 +120,26 @@ public static class WindowsSessionContracts
         using var cancelled=new CancellationTokenSource();cancelled.Cancel();reads=0;
         try{await WindowsSessionAccess.Watch(cancelled.Token,()=>{reads++;return active;});throw new Exception("Watch ignored cancellation");}
         catch(OperationCanceledException){Check(reads==0);}
+        var listening = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        bool cleaned = false;
+        using (var guard = new CancellationTokenSource(TimeSpan.FromSeconds(2)))
+        {
+            try
+            {
+                await ElevatedInputWorker.WhileSessionAvailable(guard.Token, async ct =>
+                {
+                    listening.SetResult();
+                    try { await Task.Delay(Timeout.Infinite, ct); }
+                    finally { cleaned = true; }
+                }, async ct =>
+                {
+                    await listening.Task.WaitAsync(ct);
+                    throw new WindowsSessionUnavailableException("session-locked");
+                });
+                throw new IOException("Elevated worker ignored the Windows session guard");
+            }
+            catch (WindowsSessionUnavailableException error) { Check(error.Reason == "session-locked" && cleaned); }
+        }
         var timer=Stopwatch.StartNew();var actual=WindowsSessionAccess.Read();timer.Stop();
         Check(actual.SessionId is not null);Check(actual.ConnectionState is >=0 and <=9);
         Check(actual.ThreadDesktop is not null);Check(actual.VisibleWindowStation is not null);
