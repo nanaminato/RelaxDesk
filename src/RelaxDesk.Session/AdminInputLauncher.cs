@@ -26,6 +26,7 @@ public static class AdminInputLauncher
         try { executable = resolve(owner); }
         catch (Exception error) when (error is IOException or System.Security.SecurityException or UnauthorizedAccessException or InvalidDataException)
         { throw new AdminInputDeploymentException(error); }
+        cancellation.ThrowIfCancellationRequested();
         var start = CreateStartInfo(executable, grant, owner, display);
         var server = LocalAgentPipe.CreateAdminServer(grant, owner);
         try
@@ -33,7 +34,11 @@ public static class AdminInputLauncher
             // Close the rendezvous immediately if the approval is revoked while
             // Windows is still displaying its local consent prompt.
             using var revoked = cancellation.Register(server.Dispose);
-            using var process = await WaitForLaunch(Task.Run(() => launch(start), cancellation), cancellation)
+            using var process = await WaitForLaunch(Task.Run(() =>
+            {
+                cancellation.ThrowIfCancellationRequested();
+                return launch(start);
+            }, cancellation), cancellation)
                 ?? throw new IOException("Administrator input worker did not launch");
             cancellation.ThrowIfCancellationRequested();
             return await AdminInputConnection.Accept(server, grant, process.Id, cancellation);

@@ -159,6 +159,21 @@ internal static class SessionBrokerSmoke
             using var deniedPipe = LocalAgentPipe.CreateAdminServer(deniedGrant, own);
             Check(!deniedPipe.IsConnected);
         }
+        Guid revokedDuringInspection = Guid.NewGuid();
+        using (var existing = LocalAgentPipe.CreateAdminServer(revokedDuringInspection, own))
+        using (var revoked = new CancellationTokenSource())
+        {
+            try
+            {
+                _ = await AdminInputLauncher.Start(revokedDuringInspection, "all", own, _ =>
+                {
+                    revoked.Cancel();
+                    return fixtureExecutable;
+                }, _ => throw new IOException("Revoked grant reached process launch"), revoked.Token);
+                throw new IOException("Revoked administrator inspection continued");
+            }
+            catch (OperationCanceledException error) { Check(error.CancellationToken == revoked.Token && !existing.IsConnected); }
+        }
         bool intercepted = false;
         try
         {
