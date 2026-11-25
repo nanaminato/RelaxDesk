@@ -18,13 +18,24 @@ it. Credentials and settings are hidden throughout the connected session.
 ## Connected
 
 The window grows to 1100 × 750 DIPs, with the desktop filling the client area.
-A 460 × 30 DIP single-row blue owned-window connection bar shows the endpoint
+In full screen, a 460 × 30 DIP single-row blue owned-window connection bar shows the endpoint
 and icon controls for menu, minimize (full screen), full screen/restore and
 disconnect. Full screen also exposes a left pin. Text tooltips and accessibility
 names identify every icon. Media encoder/display information is in a tooltip;
 files, statistics and other functions remain in the session menu.
 
-Auto-hide, the four-DIP reveal strip, Ctrl+Alt+Home and Ctrl+Alt+Break remain.
+Windowed mode uses ordinary in-window session/full-screen/disconnect controls
+instead of a floating overlay. Full screen covers the entire selected monitor,
+including the local taskbar work-area reservation; the remote taskbar remains
+part of the shared desktop. Shell restore/activation cannot leave a full-screen
+session in a normal-sized borderless window. Exit restores prior bounds/style.
+
+The full-screen bar starts pinned. Unpinning enables a one-second leave grace;
+a two-physical-pixel strip at its current horizontal location reveals the bar
+after 200 ms of pointer dwell. Menu/captured click/drag keeps it open. Drag the
+endpoint area left/right; the whole bar stays within the monitor and pinned to
+the top. Pin/position survive bar recreation within this Viewer instance.
+Ctrl+Alt+Home and Ctrl+Alt+Break remain.
 Both bitmap and native renderers exclude local toolbar/menu pointer input,
 including captured drags. Disconnect restores the prior connection-window
 bounds and expanded/collapsed state. This changes Viewer presentation only.
@@ -55,4 +66,4 @@ and [mstsc display modes](https://learn.microsoft.com/en-us/windows-server/admin
 ## Validation
 
 See [2026-11-26 UI validation](../benchmarks/2026-11-26-viewer-ui-validation.md).
-No new installer has been produced for this source change.
+The follow-up full-screen fix and delivery evidence are in [full-screen validation](../benchmarks/2026-11-26-fullscreen-bar-validation.md).
