@@ -66,3 +66,9 @@ dotnet build/service-setup-final-artifacts/bin/RelaxDesk.Smoke/release/RelaxDesk
 Still required: actual elevated deployment/ACLs, Create/Change/SetSecurity/Delete/Start/Stop under SCM, LocalService effective read/query/impersonation permissions, final self-contained payload execution, manual/automatic boot behavior, pending-deletion handles, protected upgrade/uninstall under file locks/AV/power loss, cross-account denial and the Home physical session transition matrix. Logon launch/restart coordination and audio now have separate source contracts; their actual deployment/hardware acceptance remains pending. Do not count fixture runtime stand-ins or simulated service startup as those exits.
 
 API references: [CreateService and LocalService/startup policy](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-createservicew), [service security rights](https://learn.microsoft.com/en-us/windows/win32/services/service-security-and-access-rights), [setting service security](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-setserviceobjectsecurity), [deferred DeleteService semantics](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-scmr/6744cdb8-f162-4be0-bb31-98996b6495be), [atomic directory creation with security](https://learn.microsoft.com/en-us/dotnet/api/system.io.directoryinfo.create).
+
+## 本机 UAC 与管理员代理验收
+
+在普通权限 Windows 交互会话中，从仓库根目录运行 `dotnet <Viewer.dll> --admin-real-worker-contracts <Host.dll>`。需要已部署的受保护机器 Broker 及可用的 DXGI 捕获。测试连接本机 Host，发出独立的管理员申请，等待本机用户确认 Windows UAC，再从 Viewer 降级回 Work。成功要求普通输入授权恢复，且同一条 TLS 连接继续收到视频帧。
+
+本机实测通过。机器 Broker 修复退出码为 0，普通权限 Host 预检确认受保护代理已就绪，实机测试退出码为 0。该测试覆盖普通桌面的代理启动和降级。管理员窗口键鼠、UAC 安全桌面输入、锁屏及登录界面仍需各自验收。

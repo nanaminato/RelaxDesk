@@ -60,6 +60,7 @@ public sealed class App : Application
             else if(args is ["--statistics-contracts",var missingUdpHost,var missingUdpFixtures,"viewer-without-udp"])ViewerWindow.VerifyStatistics(app,missingUdpHost,missingUdpFixtures,viewerWithoutUdp:true);
             else if (args is ["--admin-upgrade-contracts", var adminHost]) ViewerWindow.VerifyAdminUpgrade(app, adminHost);
             else if (args is ["--admin-lifecycle-contracts", var lifecycleHost]) ViewerWindow.VerifyAdminUpgrade(app, lifecycleHost, activate: true);
+            else if (args is ["--admin-real-worker-contracts", var realWorkerHost]) ViewerWindow.VerifyAdminUpgrade(app, realWorkerHost, activate: true, realWorker: true);
             else if (args is ["--admin-worker-loss-contracts", var workerLossHost]) ViewerWindow.VerifyAdminUpgrade(app, workerLossHost, activate: true, workerLoss: true);
             else if(args is ["--video-settings-contracts",var settingsHost,var settingsMode])ViewerWindow.VerifyVideoSettings(app,settingsHost,settingsMode);
             else if(args is ["--display-legacy-session-contracts",var legacyDisplayHost])ViewerWindow.VerifyDisplaySession(app,legacyDisplayHost,false,true);

@@ -11,7 +11,7 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
-    internal static void VerifyAdminUpgrade(Application app, string hostApplication, bool activate = false, bool workerLoss = false)
+    internal static void VerifyAdminUpgrade(Application app, string hostApplication, bool activate = false, bool workerLoss = false, bool realWorker = false)
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
@@ -25,10 +25,10 @@ public sealed partial class ViewerWindow
             RedirectStandardInput = true, RedirectStandardOutput = true
         };
         if (managed) start.ArgumentList.Add(path);
-        string backend = workerLoss ? "test-admin-worker-loss" : activate ? "test-admin-lifecycle" : "test-displays";
+        string backend = realWorker ? "dxgi" : workerLoss ? "test-admin-worker-loss" : activate ? "test-admin-lifecycle" : "test-displays";
         foreach (var arg in new[] { "--shell", "127.0.0.1", port.ToString(), backend }) start.ArgumentList.Add(arg);
         using var process = Process.Start(start) ?? throw new IOException("Could not start Host");
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(realWorker ? 90 : 25));
         var ct = timeout.Token;
         int released = 0;
 
@@ -88,7 +88,7 @@ public sealed partial class ViewerWindow
                 if (activate)
                 {
                     string? prior = null;
-                    for (int attempt = 0; attempt < (workerLoss ? 1 : 2); attempt++)
+                    for (int attempt = 0; attempt < (workerLoss || realWorker ? 1 : 2); attempt++)
                     {
                         menu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
                         var request = await Event("admin-approval-request");
@@ -102,10 +102,18 @@ public sealed partial class ViewerWindow
                         if (viewer.inputAuthorized || viewer.sequence != pendingSequence || viewer.richHeld.Count != 0)
                             throw new IOException("Input entered the Viewer queue while local administrator approval was pending");
                         await Send($"ALLOW_ADMIN_INPUT {id} {requestId}");
-                        await Event("admin-ready");
+                        await Event("admin-ready", unexpected: "admin-denied");
                         await Until(() => viewer.activeMode == SessionMode.Admin && viewer.inputAuthorized && viewer.displaySession?.Ready == true);
                         if (viewer.Toolbar?.EndpointText.StartsWith("Admin · ", StringComparison.Ordinal) != true)
                             throw new IOException("Toolbar did not show the granted Admin mode");
+                        if (realWorker)
+                        {
+                            menu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                            await Event("admin-revoked");
+                            await Until(() => viewer.activeMode == SessionMode.Work && viewer.inputAuthorized);
+                            if (connection.IsCompleted) throw new IOException("Downgrade ended the existing connection");
+                            break;
+                        }
                         if (!viewer.outgoing.TryWrite(InputProtocol.Encode(new("move", X: 200, Y: 100), ++viewer.sequence, viewer.displaySession!.Generation)))
                             throw new IOException("Test input did not enter the Viewer control queue");
                         await WaitForLog("test_admin_input_routed");
@@ -185,7 +193,9 @@ public sealed partial class ViewerWindow
                     await Send("STOP");
                     await process.WaitForExitAsync(ct);
                     if (process.ExitCode != 0) throw new IOException("Host did not exit cleanly");
-                    Console.WriteLine(workerLoss
+                    Console.WriteLine(realWorker
+                        ? "PASS local UAC started the protected administrator worker; Viewer downgrade restored Work and video on the same TLS connection"
+                        : workerLoss
                         ? "PASS WPF administrator worker pipe loss: original grant ended, Viewer required fresh approval and restored Work on a new TLS connection"
                         : "PASS WPF Viewer twice entered Admin and routed input to protected non-injecting pipe workers; both Viewer exit and Host revoke released before Work resumed on the same TLS connection");
                     app.Shutdown();
