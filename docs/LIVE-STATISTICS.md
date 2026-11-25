@@ -12,10 +12,10 @@ Connection negotiation and consent, media framing/readers, and remote-input
 messages remain in RelaxDesk.Core for clients with their own display and
 gesture controls.
 
-The floating bar keeps the endpoint/media path, session menu, full-screen and
-disconnect actions. File transfer and Connection Statistics are in the session
+The single-row blue floating bar keeps the endpoint, session menu, full-screen
+and disconnect icons. The media path is available in its tooltip. File transfer and Connection Statistics are in the session
 menu; pin and minimize remain available in full screen. The bar is at most
-520 DIPs wide. Moving into it releases held remote input and mouse capture.
+460 DIPs wide and 30 DIPs high. Moving into it releases held remote input and mouse capture.
 Both bitmap and native video adapters reject pointer messages in its screen
 bounds, including captured drag messages and the collapsed reveal strip.
 While the session menu is open, remote pointer forwarding is paused.

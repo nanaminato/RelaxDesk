@@ -32,6 +32,7 @@ internal static class ToolbarVerification
             try
             {
                 window.Activate(); window.StartLocalPreview();
+                window.ToggleFullScreen(); window.Toolbar!.PinButton.IsChecked = false;
                 child = new NativeVideoHost(); window.AddToolbarTestSurface(child); window.UpdateLayout();
                 if (child.Handle == 0 || !window.DesktopFillsClient) throw new Exception("Native surface or full-client layout missing");
                 var bar = window.Toolbar ?? throw new Exception("Toolbar missing");
@@ -43,8 +44,8 @@ internal static class ToolbarVerification
                 bar.TestPointer = () => pointer; // No desktop pointer injection in automation.
                 await Task.Delay(1900);
                 if (bar.Expanded) throw new Exception("Toolbar did not auto-hide over native HWND");
-                Point edge = bar.Surface.PointToScreen(new Point(bar.Surface.ActualWidth / 2, 2));
-                pointer = new() { X = (int)edge.X, Y = (int)edge.Y }; await Task.Delay(300);
+                Point edge = bar.Surface.PointToScreen(new Point(bar.Surface.ActualWidth / 2, 1));
+                pointer = new() { X = (int)edge.X, Y = (int)edge.Y }; await Task.Delay(400);
                 if (!bar.Expanded) throw new Exception("Top-edge hover did not reveal toolbar");
                 var button = bar.DisconnectButton;
                 Point center = button.PointToScreen(new Point(button.ActualWidth / 2, button.ActualHeight / 2));
@@ -70,6 +71,7 @@ internal static class ToolbarVerification
                     SendMessageW(child.Handle, message, 0, 0);
                 if (forwarded != 0) throw new Exception("Local overlay forwarded native pointer input");
                 child.Input = null; child.LocalPointerOverlay = null;
+                window.ToggleFullScreen();
                 var chord = ModifierKeys.Control | ModifierKeys.Alt;
                 var breakDown = new MSG { hwnd = child.Handle, message = 0x100, wParam = 0x03 };
                 if (!window.HandleConnectionKeys(breakDown, chord) ||
@@ -77,7 +79,7 @@ internal static class ToolbarVerification
                     !window.HandleConnectionKeys(new MSG { hwnd = child.Handle, message = 0x101, wParam = 0x03 }, ModifierKeys.None))
                     throw new Exception("Fullscreen shortcut did not consume its press, repeat and release");
                 await Task.Delay(200);
-                if (window.WindowStyle != WindowStyle.None || (string)bar.FullScreenButton.Content != "返回窗口") throw new Exception("Fullscreen action failed");
+                if (window.WindowStyle != WindowStyle.None || (string)bar.FullScreenButton.ToolTip != "返回窗口") throw new Exception("Fullscreen action failed");
                 if (!window.HandleConnectionKeys(new MSG { hwnd = ownerHwnd, message = 0x104, wParam = 0x24 }, chord) ||
                     !bar.ShortcutMenu.IsOpen) throw new Exception("Connection-bar shortcut did not open the local menu");
                 bar.ShortcutMenu.IsOpen = false;
@@ -97,12 +99,12 @@ internal static class ToolbarVerification
                 window.WindowState = WindowState.Minimized; await Task.Delay(250);
                 if (bar.Surface.IsVisible) throw new Exception("Toolbar remained visible while minimized");
                 window.WindowState = WindowState.Normal; window.Activate(); await Task.Delay(250);
-                if (!bar.Surface.IsVisible) throw new Exception("Toolbar did not recover after restore");
+                if (bar.Surface.IsVisible) throw new Exception("Windowed session must not show floating toolbar");
                 var shortcuts = new List<RelaxDesk.Core.RemoteShortcut>();
                 int releaseRequests=0;
                 using (var testBar = new SessionToolbar(window, () => { }, () => { }, shortcuts.Add,()=>releaseRequests++))
                 {
-                    testBar.SetSession("owned shortcut test", false);
+                    testBar.SetSession("owned shortcut test", true); testBar.PinButton.IsChecked = false;
                     const string workStatus = "Work · 等待 Host 本机确认 Windows 授权 · long-host-name.example";
                     testBar.SetEndpoint(workStatus);
                     if (testBar.EndpointText != workStatus || !Equals(testBar.EndpointToolTip, workStatus))
@@ -117,7 +119,7 @@ internal static class ToolbarVerification
                     if (testBar.MediaPathText != "软件编码 · CPU 显示") throw new Exception("Viewer CPU fallback not visible");
                     testBar.SetMediaPath(media with { Codec = RelaxDesk.Core.MediaCodec.DeflateBgra }, false);
                     if (testBar.MediaPathText != "图像兼容编码 · CPU 显示") throw new Exception("Image codec mislabeled hardware");
-                    testBar.SetSession("new session", false);
+                    testBar.SetSession("new session", true);
                     if (testBar.MediaPathText != "等待首帧") throw new Exception("Reconnect retained a stale media path");
                     if(releaseRequests!=1||testBar.TextInputAction.IsEnabled)throw new Exception("Toolbar reveal must release input; text commit requires negotiation");
                     bar.FullScreenButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

@@ -37,7 +37,7 @@ public sealed partial class ViewerWindow
     bool BitmapPosition(Point point,bool dragging,bool standaloneMove=false)
     {
         var screen = videoPanel.PointToScreen(point);
-        if (sessionToolbar?.BlocksPointer(screen.X, screen.Y) == true)
+        if (IsLocalPointer(screen.X, screen.Y))
         {
             ReleaseHeldInputs();
             return false;
@@ -61,7 +61,7 @@ public sealed partial class ViewerWindow
         image.MouseUp+=(_,e)=>
         {
             if((Mouse.Captured==image||image.IsMouseOver) && BitmapPosition(e.GetPosition(videoPanel),Mouse.Captured==image))SendPointerButton(e.ChangedButton,true);
-            if(e.LeftButton==MouseButtonState.Released&&e.RightButton==MouseButtonState.Released&&e.MiddleButton==MouseButtonState.Released&&e.XButton1==MouseButtonState.Released&&e.XButton2==MouseButtonState.Released)Mouse.Capture(null);
+            if(e.LeftButton==MouseButtonState.Released&&e.RightButton==MouseButtonState.Released&&e.MiddleButton==MouseButtonState.Released&&e.XButton1==MouseButtonState.Released&&e.XButton2==MouseButtonState.Released && Mouse.Captured == image)Mouse.Capture(null);
             e.Handled=true;
         };
         image.LostMouseCapture+=(_,_)=>ReleaseMouseButtons();

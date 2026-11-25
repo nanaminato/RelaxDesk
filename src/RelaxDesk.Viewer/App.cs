@@ -78,6 +78,10 @@ public sealed class App : Application
             else if(args is ["--input-ui-contracts"])ViewerWindow.VerifyInputUi(app);
             else if (args is ["--hwnd-contracts"]) HwndLifecycleVerification.Run(app);
             else if (args is ["--toolbar-contracts"]) ToolbarVerification.Run(app);
+            else if (args is ["--interaction-preview", var interactionOutput]) ViewerWindow.RunInteractionPreview(app, interactionOutput);
+            else if (args is ["--fullscreen-contracts", var fullscreenOutput]) ViewerWindow.VerifyFullscreenInteraction(app, fullscreenOutput);
+            else if (args is ["--credential-contracts"]) ViewerWindow.VerifySavedCredentials(app);
+            else if (args is ["--design-contracts", var designOutput]) ViewerWindow.VerifyDesign(app, designOutput);
             else if (args is ["--keyboard-contracts"]) KeyboardFocusVerification.Run(app);
             else if (args is ["--ui-contracts"]) ViewerUiVerification.Run(app, null);
             else if (args is ["--ui-contracts", var output]) ViewerUiVerification.Run(app, output);
@@ -174,7 +178,8 @@ public sealed partial class ViewerWindow : Window
     {
         foreach(var input in richHeld.ReleaseAll())SendRich(input);
         foreach (int code in heldInputs.ReleaseAll()) Send(code, true);
-        Mouse.Capture(null); nativeView?.ReleaseInputCapture();
+        if (Mouse.Captured == image) Mouse.Capture(null);
+        nativeView?.ReleaseInputCapture();
     }
     void ExerciseWindow(int count)
     {
@@ -368,7 +373,7 @@ public sealed partial class ViewerWindow : Window
         {
             try
             {
-                nativeView = new() { LocalPointerOverlay = (x,y) => sessionToolbar?.BlocksPointer(x,y) == true, Input = Send, RichInput = inputVersion==2?SendRich:null, PointerMove = SendPointerMove, InputBacklogExceeded = ()=>cancellation.Cancel(), InputFocusLost = ReleaseHeldInputs, InputCaptureLost = ReleaseMouseButtons, RenderInvalidated = () => repaintSignal.Set() }; videoPanel.Children.Add(nativeView); nativeView.SetViewport(CurrentViewport);renderPanel.UpdateLayout();
+                nativeView = new() { LocalPointerOverlay = (x,y) => IsLocalPointer(x,y), Input = Send, RichInput = inputVersion==2?SendRich:null, PointerMove = SendPointerMove, InputBacklogExceeded = ()=>cancellation.Cancel(), InputFocusLost = ReleaseHeldInputs, InputCaptureLost = ReleaseMouseButtons, RenderInvalidated = () => repaintSignal.Set() }; videoPanel.Children.Add(nativeView); nativeView.SetViewport(CurrentViewport);renderPanel.UpdateLayout();
                 nativeView.SetFilesDrop(fileQueue?.Enabled==true?FilesDropped:null);
                 gpuViewportActive=true;hwnd = nativeView.Handle; if (hwnd == 0) throw new InvalidOperationException("Render child HWND not available");
                 image.Visibility = Visibility.Collapsed;

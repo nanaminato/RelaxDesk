@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using RelaxDesk.Core;
@@ -11,13 +12,20 @@ namespace RelaxDesk.Viewer;
 
 // A separate owned HWND is required: WPF overlays cannot cover HwndHost's
 // native D3D surface. This window does not activate or reserve desktop pixels.
+internal sealed class ConnectionBarPreferences
+{
+    public bool Pinned = true;
+    public double HorizontalPosition = .5;
+}
+
 internal sealed class SessionToolbar : IDisposable
 {
-    const double MaximumWidth = 520;
+    const double MaximumWidth = 460;
+    const double ExpandedHeight = 30;
     readonly Window owner, window;
     readonly Action? releaseInput;
     readonly StackPanel controls = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-    readonly TextBlock endpoint = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.White, Margin = new(14, 0, 12, 0), MaxWidth = 170, TextTrimming = TextTrimming.CharacterEllipsis };
+    readonly TextBlock endpoint = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.White, Margin = new(14, 0, 12, 0), MaxWidth = 170, TextTrimming = TextTrimming.CharacterEllipsis, TextAlignment = TextAlignment.Center };
     readonly TextBlock mediaPath = new() { FontSize = 11, Foreground = Brushes.LightGray, TextTrimming = TextTrimming.CharacterEllipsis };
     (MediaCodec Codec, bool Hardware, bool Gpu)? lastMediaPath;
     internal string MediaPathText => mediaPath.Text;
@@ -28,6 +36,7 @@ internal sealed class SessionToolbar : IDisposable
         lastMediaPath = current;
         string encoding = frame.Codec == MediaCodec.DeflateBgra ? "图像兼容编码" : frame.HardwareEncoded ? "硬件编码" : "软件编码";
         mediaPath.Text = encoding + " · " + (gpu ? "GPU 显示" : "CPU 显示");
+        window.ToolTip = mediaPath.Text;
         mediaPath.ToolTip = "Host 帧报告：" + encoding + "；Viewer 实际提交：" + (gpu ? "GPU 显示" : "CPU 兼容显示") + "。显示方式不代表解码器使用硬件；性能以实测为准。";
     }
     readonly Button full;
@@ -35,7 +44,16 @@ internal sealed class SessionToolbar : IDisposable
     readonly Button minimize = new() { Content = "最小化", Focusable = false, Padding = new(10, 6, 10, 6), Margin = new(3) };
     readonly MenuItem remoteKeys = new() { Header = "远程快捷键" };
     readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(100) };
+    readonly ConnectionBarPreferences preferences;
+    readonly Border dragRegion = new() { Background = Brushes.Transparent, Cursor = Cursors.SizeWE };
+    public FrameworkElement? WindowedMenuTarget { get; set; }
     DateTime keepUntil;
+    DateTime? edgeSince;
+    bool isFullScreen, dragging;
+    int dragStartX, dragStartLeft;
+    int anchorLeft, anchorWidth;
+    internal int ScreenLeft => left;
+    internal bool IsDragging => dragging;
     bool disposed, expanded, pointerInside;
     nint handle;
     int left, top, width, height;
@@ -50,8 +68,8 @@ internal sealed class SessionToolbar : IDisposable
     internal bool IsDisposed => disposed;
     internal Func<PixelPoint?>? TestPointer;
     public Window Surface => window;
-    internal bool BlocksPointer(double x, double y) => !disposed && window.IsVisible &&
-        (ShortcutMenu.IsOpen || (x >= left && x < left + width && y >= top && y < top + height));
+    internal bool BlocksPointer(double x, double y) => !disposed &&
+        (ShortcutMenu.IsOpen || (window.IsVisible && x >= left && x < left + width && y >= top && y < top + height));
     internal Button FullScreenButton => full;
     internal ToggleButton PinButton => pin;
     internal Button MinimizeButton => minimize;
@@ -167,25 +185,40 @@ internal sealed class SessionToolbar : IDisposable
     Action? disableClipboard;
     public void SetClipboard(bool enabled, Action? disable)
     { clipboard.Header = enabled ? "停止剪贴板同步（重新开启需重新授权）" : "剪贴板未授权 / 已关闭"; clipboard.IsEnabled = enabled; disableClipboard = disable; }
-    public SessionToolbar(Window owner, Action toggle, Action disconnect, Action<RemoteShortcut>? shortcut = null,Action? releaseInput=null)
+    public SessionToolbar(Window owner, Action toggle, Action disconnect, Action<RemoteShortcut>? shortcut = null,Action? releaseInput=null, ConnectionBarPreferences? preferences=null)
     {
         this.owner = owner;
+        this.preferences = preferences ?? new();
         this.releaseInput=releaseInput;
-        window = new Window { Owner = owner, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false, ShowActivated = false, Background = Brushes.Transparent, AllowsTransparency = true, Width = MaximumWidth, Height = 48, MinWidth = 0, MinHeight = 0, Focusable = false };
-        RelaxDesk.Ui.ModernTheme.Apply(window);
+        window = new Window { Owner = owner, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false, ShowActivated = false, Background = Brushes.Transparent, AllowsTransparency = true, Width = MaximumWidth, Height = ExpandedHeight, MinWidth = 0, MinHeight = 0, Focusable = false };
+        window.Resources.MergedDictionaries.Add((ResourceDictionary)System.Windows.Markup.XamlReader.Parse("""
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+ <Style TargetType="Button"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="White"/><Setter Property="BorderThickness" Value="0"/><Setter Property="FontFamily" Value="Segoe MDL2 Assets"/><Setter Property="FontSize" Value="12"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="Chrome" Background="{TemplateBinding Background}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="#447EAE"/></Trigger><Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Background" Value="#164871"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="White"/><Setter TargetName="Chrome" Property="BorderThickness" Value="1"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+ <Style TargetType="ToggleButton"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="White"/><Setter Property="BorderThickness" Value="0"/><Setter Property="FontFamily" Value="Segoe MDL2 Assets"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ToggleButton"><Border x:Name="Chrome" Background="{TemplateBinding Background}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="Chrome" Property="Background" Value="#164871"/></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="#447EAE"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+</ResourceDictionary>
+"""));
         full = new Button { Content = "全屏", Focusable = false, Padding = new(14, 6, 14, 6), Margin = new(3) };
-        DisconnectButton = new Button { Content = "断开", Focusable = false, Style = (Style)window.Resources["DangerButton"], Padding = new(14, 6, 14, 6), Margin = new(3) };
+        DisconnectButton = new Button { Content = "断开", Focusable = false, Padding = new(14, 6, 14, 6), Margin = new(3) };
+        SetToolbarIcon(full, "\uE922", "全屏");
+        SetToolbarIcon(DisconnectButton, "\uE8BB", "断开连接");
+        SetToolbarIcon(minimize, "\uE921", "最小化");
+        pin.Content = "\uE718"; pin.Width = 30; pin.Height = 28; pin.Margin = new Thickness(0); pin.Padding = new Thickness(0);
+        System.Windows.Automation.AutomationProperties.SetName(pin, "固定连接栏");
         full.Click += (_, _) => { toggle(); Reveal(); };
         full.ToolTip = "切换全屏和窗口（Ctrl+Alt+Break）";
-        pin.Checked += (_, _) => { pin.Content = "取消固定"; Reveal(); };
-        pin.Unchecked += (_, _) => { pin.Content = "固定"; Reveal(); };
+        pin.Checked += (_, _) => { pin.ToolTip = "取消固定连接栏"; Reveal(); };
+        pin.Unchecked += (_, _) => { pin.ToolTip = "固定连接栏"; Reveal(); };
         pin.ToolTip = "固定连接栏，关闭自动收起";
+        pin.IsChecked = this.preferences.Pinned;
+        pin.Checked += (_, _) => this.preferences.Pinned = true;
+        pin.Unchecked += (_, _) => this.preferences.Pinned = false;
         minimize.Click += (_, _) => owner.WindowState = WindowState.Minimized;
         minimize.ToolTip = "最小化连接端窗口，保持会话";
         DisconnectButton.Click += (_, _) => disconnect();
 
         ShortcutsButton = new Button { Content = "会话菜单", Focusable = false, Padding = new(12, 6, 12, 6), Margin = new(3), ToolTip = "远程快捷键、显示和连接设置" };
-        ShortcutMenu = new ContextMenu();
+        SetToolbarIcon(ShortcutsButton, "\uE712", "会话菜单");
+        ShortcutMenu = new ContextMenu { FontFamily = new FontFamily("Segoe UI, Microsoft YaHei UI"), FontSize = 13 };
         textInput.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;openTextInput?.Invoke();};
         foreach (var (label, action) in new[] {
             ("复制  Ctrl+C", RemoteShortcut.Copy), ("粘贴  Ctrl+V", RemoteShortcut.Paste),
@@ -218,18 +251,44 @@ internal sealed class SessionToolbar : IDisposable
         clipboard.Click += (_, _) => { ShortcutMenu.IsOpen = false; disableClipboard?.Invoke(); };
         ShortcutsButton.Click += (_, _) => OpenSessionMenu();
         ShortcutMenu.Closed += (_, _) => keepUntil = DateTime.UtcNow.AddSeconds(1);
-        var identity = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new(14, 0, 12, 0) };
-        endpoint.Margin = new(0); identity.Children.Add(endpoint); identity.Children.Add(mediaPath);
+        var identity = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new(8, 0, 8, 0) };
+        endpoint.Margin = new(0); endpoint.MaxWidth = 280; identity.Children.Add(endpoint);
         controls.Children.Add(ShortcutsButton);
-        controls.Children.Add(pin); controls.Children.Add(minimize); controls.Children.Add(full); controls.Children.Add(DisconnectButton);
+        controls.Children.Add(minimize); controls.Children.Add(full); controls.Children.Add(DisconnectButton);
         var bar = new DockPanel();
         DockPanel.SetDock(controls, Dock.Right);
+        DockPanel.SetDock(pin, Dock.Left); bar.Children.Add(pin);
         bar.Children.Add(controls);
-        bar.Children.Add(identity);
-        window.Content = new Border { Background = new SolidColorBrush(Color.FromRgb(23, 36, 58)), CornerRadius = new(0, 0, 10, 10), Child = bar, BorderBrush = new SolidColorBrush(Color.FromRgb(86, 126, 184)), BorderThickness = new(1, 0, 1, 1), ClipToBounds = true };
-        window.SourceInitialized += (_, _) => { handle = new WindowInteropHelper(window).Handle; SetStyle(handle, -20, GetStyle(handle, -20) | (nint)0x08000000); };
+        dragRegion.Child = identity;
+        dragRegion.ToolTip = "左右拖动连接栏";
+        dragRegion.MouseLeftButtonDown += (_, e) =>
+        {
+            if (GetCursorPos(out var point)) BeginDrag(point.X);
+            dragRegion.CaptureMouse(); e.Handled = true;
+        };
+        dragRegion.MouseMove += (_, _) => { if (dragging && GetCursorPos(out var point)) MoveDrag(point.X); };
+        dragRegion.MouseLeftButtonUp += (_, e) => { EndDrag(); e.Handled = true; };
+        dragRegion.LostMouseCapture += (_, _) => dragging = false;
+        bar.Children.Add(dragRegion);
+        window.Content = new Border { Background = new SolidColorBrush(Color.FromRgb(32, 91, 143)), CornerRadius = new(0, 0, 5, 5), Child = bar, BorderBrush = new SolidColorBrush(Color.FromRgb(86, 126, 184)), BorderThickness = new(1, 0, 1, 1), ClipToBounds = true };
+        window.SourceInitialized += (_, _) =>
+        {
+            handle = new WindowInteropHelper(window).Handle;
+            SetStyle(handle, -20, GetStyle(handle, -20) | (nint)0x08000000);
+            ((HwndSource)PresentationSource.FromVisual(window)).AddHook((nint hwnd, int message, nint wParam, nint lParam, ref bool handled) =>
+            {
+                if (message != 0x21) return 0;
+                handled = true; return 3; // MA_NOACTIVATE: retain the first click, never MA_*ANDEAT.
+            });
+        };
         owner.LocationChanged += OwnerChanged; owner.SizeChanged += OwnerChanged; owner.StateChanged += OwnerChanged; owner.Closed += OwnerClosed;
         timer.Tick += Tick;
+    }
+    static void SetToolbarIcon(Button button, string glyph, string name)
+    {
+        button.Content = glyph; button.Width = 30; button.Height = 28;
+        button.Margin = new Thickness(0); button.Padding = new Thickness(0); button.ToolTip = name;
+        System.Windows.Automation.AutomationProperties.SetName(button, name);
     }
     public void SetRemoteShortcuts(bool enabled)
     {
@@ -249,75 +308,119 @@ internal sealed class SessionToolbar : IDisposable
     public void SetSession(string address, bool fullScreen)
     {
         lastMediaPath = null; mediaPath.Text = "等待首帧"; mediaPath.ToolTip = null;
-        SetEndpoint(address); SetFullScreen(fullScreen);
-        if (!window.IsVisible) window.Show();
-        Reveal(); timer.Start();
+        SetEndpoint(address);
+        SetFullScreen(fullScreen);
+        timer.Start();
     }
     public void SetFullScreen(bool value)
     {
-        full.Content = value ? "返回窗口" : "全屏";
+        isFullScreen = value;
+        full.Content = value ? "\uE923" : "\uE922";
+        full.ToolTip = value ? "返回窗口" : "全屏";
+        System.Windows.Automation.AutomationProperties.SetName(full, value ? "返回窗口" : "全屏");
         pin.Visibility = minimize.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
-        Reveal();
+        EndDrag(); edgeSince = null;
+        if (value) { if (!window.IsVisible) window.Show(); Reveal(); }
+        else { ShortcutMenu.IsOpen = false; expanded = false; window.Hide(); }
     }
     internal void OpenSessionMenu()
     {
-        Reveal();
-        ShortcutMenu.PlacementTarget = ShortcutsButton;
+        releaseInput?.Invoke();
+        if (isFullScreen) Reveal();
+        ShortcutMenu.PlacementTarget = isFullScreen ? ShortcutsButton : WindowedMenuTarget ?? owner.Content as FrameworkElement;
+        ShortcutMenu.Placement = PlacementMode.Bottom;
         ShortcutMenu.IsOpen = true;
     }
     void OwnerChanged(object? sender, EventArgs e) => UpdatePosition();
     void OwnerClosed(object? sender, EventArgs e) => Dispose();
-    void Reveal() { if(!expanded)releaseInput?.Invoke();expanded = true; keepUntil = DateTime.UtcNow.AddSeconds(1.5); UpdatePosition(); }
+    void Reveal()
+    {
+        if (!expanded) releaseInput?.Invoke();
+        expanded = true; edgeSince = null; keepUntil = DateTime.UtcNow.AddSeconds(1);
+        UpdatePosition();
+    }
+    internal void BeginDrag(int screenX)
+    {
+        if (!isFullScreen) return;
+        releaseInput?.Invoke(); Reveal(); dragging = true;
+        dragStartX = screenX; dragStartLeft = left;
+    }
+    internal void MoveDrag(int screenX)
+    {
+        if (!dragging) return;
+        int available = Math.Max(0, anchorWidth - width);
+        preferences.HorizontalPosition = available == 0 ? .5 : Math.Clamp((double)(dragStartLeft + screenX - dragStartX - anchorLeft) / available, 0, 1);
+        UpdatePosition();
+    }
+    internal void EndDrag()
+    {
+        dragging = false;
+        if (Mouse.Captured == dragRegion) dragRegion.ReleaseMouseCapture();
+        keepUntil = DateTime.UtcNow.AddSeconds(1);
+    }
+    internal void Poll() => Tick(null, EventArgs.Empty);
     void Tick(object? sender, EventArgs e)
     {
         if (disposed) return;
         RefreshConnectionInfo();
-        if (!owner.IsVisible || owner.WindowState == WindowState.Minimized || (!owner.IsActive && !MenuOwnsForeground()))
+        if (!owner.IsVisible || owner.WindowState == WindowState.Minimized || !ViewerOwnsForeground())
         {
-            ShortcutMenu.IsOpen = false;
-            window.Hide();
+            EndDrag(); ShortcutMenu.IsOpen = false; window.Hide(); edgeSince = null;
             return;
         }
-        if (!window.IsVisible)
+        if (!isFullScreen) { window.Hide(); return; }
+        if (!window.IsVisible) { window.Show(); UpdatePosition(force: true); }
+        if (ShortcutMenu.IsOpen || dragging || window.IsMouseCaptureWithin)
         {
-            window.Show();
-            UpdatePosition(force: true);
+            keepUntil = DateTime.UtcNow.AddSeconds(1); return;
         }
-        if (ShortcutMenu.IsOpen) return;
         PixelPoint? pointer = TestPointer is null ? GetCursorPos(out var current) ? current : null : TestPointer();
+        bool inside = pointer is {} p && p.X >= left && p.X < left + width && p.Y >= top && p.Y < top + height;
+        var now = DateTime.UtcNow;
+        if (inside)
         {
-            bool inside = pointer is {} p && p.X >= left && p.X < left + width && p.Y >= top && p.Y < top + height;
-            if (inside) { if (!pointerInside) releaseInput?.Invoke(); if (!expanded) Reveal(); keepUntil = DateTime.UtcNow.AddSeconds(1); }
-            else if (expanded && (pin.Visibility != Visibility.Visible || pin.IsChecked != true) &&
-                DateTime.UtcNow >= keepUntil) expanded = false;
+            if (!pointerInside) releaseInput?.Invoke();
+            if (!expanded)
+            {
+                edgeSince ??= now;
+                if (now - edgeSince.Value >= TimeSpan.FromMilliseconds(200)) Reveal();
+            }
+            else keepUntil = now.AddSeconds(1);
         }
-        pointerInside = pointer is {} position && BlocksPointer(position.X, position.Y);
+        else
+        {
+            edgeSince = null;
+            if (expanded && pin.IsChecked != true && now >= keepUntil) expanded = false;
+        }
+        pointerInside = inside;
         UpdatePosition();
     }
-    bool MenuOwnsForeground()
+    bool ViewerOwnsForeground()
     {
-        if (!ShortcutMenu.IsOpen) return false;
-        const uint RootOwner = 3;
         nint foreground = GetForegroundWindow();
         nint viewer = new WindowInteropHelper(owner).Handle;
-        nint popup = (PresentationSource.FromVisual(ShortcutMenu) as HwndSource)?.Handle ?? 0;
-        return foreground != 0 && (foreground == handle || foreground == popup ||
-            (viewer != 0 && GetAncestor(foreground, RootOwner) == viewer));
+        const uint RootOwner = 3;
+        return owner.IsActive || (foreground != 0 &&
+            (foreground == handle || (viewer != 0 && GetAncestor(foreground, RootOwner) == viewer)));
     }
     void UpdatePosition(bool force = false)
     {
-        if (disposed || handle == 0 || !owner.IsLoaded || owner.WindowState == WindowState.Minimized) return;
+        if (disposed || handle == 0 || !isFullScreen || !owner.IsLoaded || owner.WindowState == WindowState.Minimized) return;
         var content = (FrameworkElement)owner.Content;
         if (content.ActualWidth <= 0) return;
         Point origin = content.PointToScreen(new Point(0, 0));
         var dpi = VisualTreeHelper.GetDpi(owner);
-        int nextWidth = (int)Math.Round(Math.Min(MaximumWidth, content.ActualWidth) * dpi.DpiScaleX);
-        int nextHeight = (int)Math.Round((expanded ? 48 : 5) * dpi.DpiScaleY);
-        int nextLeft = (int)Math.Round(origin.X + (content.ActualWidth * dpi.DpiScaleX - nextWidth) / 2);
+        anchorLeft = (int)Math.Round(origin.X);
+        anchorWidth = (int)Math.Round(content.ActualWidth * dpi.DpiScaleX);
+        int nextWidth = Math.Min((int)Math.Round(MaximumWidth * dpi.DpiScaleX), anchorWidth);
+        int nextHeight = expanded ? (int)Math.Round(ExpandedHeight * dpi.DpiScaleY) : 2;
+        int nextLeft = anchorLeft + (int)Math.Round(Math.Max(0, anchorWidth - nextWidth) * preferences.HorizontalPosition);
         int nextTop = (int)Math.Round(origin.Y);
         if (!force && (left, top, width, height) == (nextLeft, nextTop, nextWidth, nextHeight)) return;
         ((Border)window.Content).Child.Visibility = expanded ? Visibility.Visible : Visibility.Hidden;
-        if (SetWindowPos(handle, 0, nextLeft, nextTop, nextWidth, nextHeight, 0x214)) // NOACTIVATE | NOZORDER | NOOWNERZORDER
+        window.Width = nextWidth / dpi.DpiScaleX; window.Height = nextHeight / dpi.DpiScaleY;
+        window.UpdateLayout();
+        if (SetWindowPos(handle, 0, nextLeft, nextTop, nextWidth, nextHeight, 0x214))
             (left, top, width, height) = (nextLeft, nextTop, nextWidth, nextHeight);
     }
     public void Dispose()

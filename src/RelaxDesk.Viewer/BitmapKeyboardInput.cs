@@ -13,6 +13,7 @@ public sealed partial class ViewerWindow
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
+        InitializeFullscreenPresentation();
         // The bitmap fallback must also use the remote machine's IME and
         // consume commands before WPF focus navigation/command bindings.
         InputMethod.SetIsInputMethodEnabled(image, false);

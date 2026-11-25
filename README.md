@@ -2,6 +2,11 @@
 
 HDR capture uses an explicit FP16 Windows Graphics Capture frame pool on HDR monitors. [Capture policy and physical gray-ramp results](docs/HDR-CAPTURE.md).
 
+Viewer uses a compact MSTSC-style connection window, four option tabs and a thin
+blue session bar, with optional Windows-protected saved credentials. See
+[Viewer UI and validation](docs/VIEWER-UI.md). Source change; existing installers
+are unchanged.
+
 Current LAN sign-in uses the Host's configured username and password. The first
 connection verifies the Host certificate and requires local approval of the
 Viewer device. Returning devices and automatic reconnect use the same password,

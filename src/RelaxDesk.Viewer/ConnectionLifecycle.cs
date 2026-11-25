@@ -35,7 +35,7 @@ public sealed partial class ViewerWindow
         ClearConnectionError();
         if (!IPAddress.TryParse(host.Text.Trim(), out var address) || address.Equals(IPAddress.Any) || address.Equals(IPAddress.IPv6Any) || !int.TryParse(port.Text, out int number) || number is < 1 or > 65535)
         { status.Text = "请输入有效的远程 IP 和端口。"; ShowConnectionError(new FormatException("Invalid endpoint"), "configuration"); return; }
-        var target = new ConnectionTarget(address.ToString(), number, pinnedConnection.IsChecked == true, fingerprint.Text, token.Password, RequestedFeatures(), fullScreen,requestTopology.IsChecked==true?DisplayProtocol.TopologyVersion:DisplayProtocol.Version,networkMode.SelectedIndex switch { 1 => NetworkMode.Tcp, 2 => NetworkMode.Udp, _ => NetworkMode.Auto }, fullControl);
+        var target = new ConnectionTarget(address.ToString(), number, pinnedConnection.IsChecked == true, fingerprint.Text, token.Password, RequestedFeatures(), fullScreen || startFullScreen.IsChecked == true,requestTopology.IsChecked==true?DisplayProtocol.TopologyVersion:DisplayProtocol.Version,networkMode.SelectedIndex switch { 1 => NetworkMode.Tcp, 2 => NetworkMode.Udp, _ => NetworkMode.Auto }, fullControl);
         if (!App.VerificationMode || !IPAddress.IsLoopback(address) || loginName.Text.Length != 0)
         {
             string name = loginName.Text.Trim();
@@ -48,6 +48,7 @@ public sealed partial class ViewerWindow
             token.Clear();
         }
         if (smoke?.RequireUdp == true) target = target with { Network = NetworkMode.Udp };
+        bool remember = rememberCredentials.IsChecked == true, credentialSaved = false;
         using var lifetime = new CancellationTokenSource(); connectionRun = lifetime;
         connectionEnded = new(TaskCreationOptions.RunContinuationsAsynchronously);
         connect.IsEnabled = connectionCard.IsEnabled = false; disconnect.IsEnabled = true;
@@ -58,7 +59,17 @@ public sealed partial class ViewerWindow
         {
             while (true)
             {
-                var result = await ConnectVideoAttempt(target, approvedPin, retry > 0 ? recoveryBudget.Token : lifetime.Token, () => {recoveryBudget.CancelAfter(Timeout.InfiniteTimeSpan);QueueConnectionHistory(target.Host,target.Port);});
+                var result = await ConnectVideoAttempt(target, approvedPin,
+                    retry > 0 ? recoveryBudget.Token : lifetime.Token, () =>
+                    {
+                        recoveryBudget.CancelAfter(Timeout.InfiniteTimeSpan);
+                        QueueConnectionHistory(target.Host, target.Port);
+                        if (!credentialSaved)
+                        {
+                            SaveConnectedCredential(target, remember);
+                            credentialSaved = true;
+                        }
+                    });
                 if (result.Established)
                 {
                     approvedPin = result.Pin;
@@ -114,6 +125,7 @@ public sealed partial class ViewerWindow
         {
             lifetime.Cancel();await DiscardFileRecovery(); connectionRun = null;
             connect.IsEnabled = connectionCard.IsEnabled = true; disconnect.IsEnabled = false;
+            LoadSavedCredential(endpointChanged: false);
             connectionEnded.TrySetResult();
         }
     }

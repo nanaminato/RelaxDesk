@@ -102,7 +102,7 @@ public sealed partial class ViewerWindow
                 window.ShowConnectedView(true);
                 window.UpdateLayout();
                 var toolbar = window.sessionToolbar!;
-                var screenPoint = toolbar.Surface.PointToScreen(new Point(20, 20));
+                var screenPoint = window.windowedSessionControls.PointToScreen(new Point(20, 10));
                 var bitmapPoint = window.videoPanel.PointFromScreen(screenPoint);
                 foreach (int version in new[] { 0, InputProtocol.Version })
                 {
