@@ -1,8 +1,10 @@
 # Live Viewer statistics
 
-After a v2 connection is authorized, open the floating toolbar menu → Connection Statistics. The read-only owned window does not open automatically, reserve remote-desktop pixels or change permissions. Closing it stops sampling; disconnect/reconnect closes the old window and clears its source. Legacy v1 and local preview leave this entry disabled. Opening releases locally held remote input just like other local interaction; real mixed-DPI/focus behavior remains part of final physical testing.
+After a v2 connection is authorized, move the pointer to the top-center tab in either windowed or full-screen mode. The floating bar shows submitted FPS, application video receive rate, media transport and the latest control RTT. Rates use roughly one-second intervals, and the bar shows a dash until it has a complete sample on the current transport. RTT comes from the existing heartbeat and includes queueing. The bar reads lightweight counters without collecting process information or computing percentiles.
 
-Sampling is non-overlapping, approximately once per second while the window is open. Process queries, sample copying and percentile sorting run on a background worker; the Dispatcher only formats/displays an independent copied snapshot. A failed statistic updates that window's notice and keeps the screen session running. The window has no credential or input/clipboard/file-content fields, no automatic export/upload, and no extra network request type.
+Click the readings or use the floating toolbar menu → Connection Statistics to open the read-only detailed window. Closing the window stops detailed sampling. Disconnect clears both displays, and reconnect starts a new sample. Legacy v1 and local preview leave this entry disabled. Opening the window releases locally held remote input.
+
+Detailed sampling runs approximately once per second while the window is open. Process queries, sample copying and percentile sorting run on a background worker. The Dispatcher formats and displays the copied snapshot. Sampling failures update the window's notice while the screen session continues.
 
 ## Meanings and limits
 

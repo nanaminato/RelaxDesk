@@ -58,7 +58,11 @@ public sealed partial class ViewerWindow
                         _ => sample
                     };
                 };
-                window.sessionToolbar.StatisticsAction.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));var panel=window.statisticsWindow??throw new IOException("Panel absent");
+                var bar = window.sessionToolbar;
+                await Until(() => bar.ConnectionInfoButton.Visibility == Visibility.Visible &&
+                    !bar.MediaRateText.Contains('—') && bar.ConnectionTimingText.Contains(" ms"));
+                bar.ConnectionInfoButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                var panel=window.statisticsWindow??throw new IOException("Panel absent after clicking the toolbar readings");
                 await Until(()=>panel.Updates>=2&&!panel.DisplayText.Contains("控制往返（含排队）：未采集"));
                 if (!panel.DisplayText.Contains("Viewer 控制队列") || !panel.DisplayText.Contains("已合并鼠标移动") || !panel.DisplayText.Contains("队列满时丢弃移动：0 条"))
                     throw new IOException("Control queue depth and coalesced mouse moves were not displayed");
@@ -107,7 +111,7 @@ public sealed partial class ViewerWindow
                 panel.Close();await panel.Completion;int stopped=snapshots;await Task.Delay(1100,timeout.Token);if(snapshots!=stopped||window.statisticsWindow is not null)throw new IOException("Closed panel continued sampling");
                 window.statisticsSource=()=>throw new IOException("private statistics diagnostic fixture");window.OpenStatistics();var failed=window.statisticsWindow!;await Until(()=>failed.DisplayText.Contains("统计暂不可用"));int frames=window.smokeFrames;await Until(()=>window.smokeFrames>frames);failed.Close();await failed.Completion;
                 window.statisticsSource=actual;window.OpenStatistics();var last=window.statisticsWindow!;await Until(()=>last.Updates>0);window.StopConnection();await running;await last.Completion;
-                if(window.statisticsSource is not null||window.statisticsWindow is not null)throw new IOException("Statistics survived disconnect");
+                if(window.statisticsSource is not null||window.toolbarStatisticsSource is not null||window.statisticsWindow is not null)throw new IOException("Statistics survived disconnect");
                 Console.WriteLine("PASS actual WPF statistics/Host/TLS: explicit menu, live frame/byte/stage/RTT samples, labeled application vs physical timing, close stops sampling, diagnostic failure preserves video and disconnect joins owned panel; synthetic source/CPU renderer only");window.Close();app.Shutdown();
             }
             catch(Exception e){Console.Error.WriteLine(e);Environment.ExitCode=1;window.StopConnection();if(running is not null)try{await running;}catch{}window.Close();app.Shutdown(1);}

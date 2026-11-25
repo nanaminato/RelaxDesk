@@ -229,6 +229,7 @@ public sealed partial class ViewerWindow : Window
         var decoded = new LatestQueue<(DecodedMedia Frame, string? Transport)>(1); var cpu = new CpuBitmapRenderer(image);
         var metrics = new PipelineMetrics(); long readbackBytes = 0, gpuFrames = 0, cpuFrames = 0, skipped = 0; int resizeCount = 0, simulatedLosses = 0, keyframeRequests = 0, rendererGenerations = 0, idleRepaints = 0;
         var roundTrip=new ControlRoundTrip();
+        double latestControlRtt = -1;
         ulong hiddenPresents = 0, occludedPresents = 0, busyPresents = 0, lastHidden = 0, lastOccluded = 0, lastBusy = 0;
         bool preferGpu = gpuRendering.IsChecked == true; nint hwnd = 0;
         using var repaintSignal = new AutoResetEvent(false);
@@ -331,6 +332,8 @@ public sealed partial class ViewerWindow : Window
             long initialCoalescedMoves = outgoing.CoalescedMoves;
             long initialDroppedPointerMoves = Interlocked.Read(ref droppedPointerMoves);
             BeginStatistics(()=>new(metrics.Snapshot(decoded.Dropped+Interlocked.Read(ref skipped),decoded.Depth),Volatile.Read(ref receivedFrames),Interlocked.Read(ref gpuFrames),Interlocked.Read(ref cpuFrames),Interlocked.Read(ref readbackBytes),Volatile.Read(ref rendererGenerations),connection.Video.TransportName,connection.VideoFallback,connection.ReadVideoNetworkStatistics(),connection.HostVideoQueue,outgoing.Depth,outgoing.CoalescedMoves-initialCoalescedMoves,connection.VideoTransportRevision,Interlocked.Read(ref droppedPointerMoves)-initialDroppedPointerMoves));
+            toolbarStatisticsSource = () => new(metrics.ReadCounters(), connection.Video.TransportName,
+                connection.VideoTransportRevision, Volatile.Read(ref latestControlRtt));
             if (connection.ClipboardData is null&&permissionGate.Allows(SessionCapabilities.ClipboardText))
                 clipboard = new ClipboardSynchronizer(() => new WindowsTextClipboard(), permissionGate, QueueClipboardUpdate, cancellation.Token,
                     message => Dispatcher.BeginInvoke(() => { if (!ReferenceEquals(sessionPermissions, permissionGate) || cancellation.IsCancellationRequested) return; status.Text = message; if (!permissionGate.Allows(SessionCapabilities.ClipboardText)) DisableClipboard(); }));
@@ -375,7 +378,17 @@ public sealed partial class ViewerWindow : Window
                 {
                     var packet = await SessionControl.Read(connection.Control, cancellation.Token);
                     if(ConnectionRecovery.IsExplicitEnd(packet))throw new RemoteSessionEndedException(packet.EndReason);
-                    if (packet.Kind == "pong-v2") { Interlocked.Increment(ref heartbeatReplies);if(roundTrip.Reply(packet.Sequence) is{} rtt){connection.ObserveControlPong(packet);metrics.Add("control_rtt",rtt);}continue; }
+                    if (packet.Kind == "pong-v2")
+                    {
+                        Interlocked.Increment(ref heartbeatReplies);
+                        if (roundTrip.Reply(packet.Sequence) is { } rtt)
+                        {
+                            connection.ObserveControlPong(packet);
+                            metrics.Add("control_rtt", rtt);
+                            Volatile.Write(ref latestControlRtt, rtt);
+                        }
+                        continue;
+                    }
                     if (packet.Kind == QuicRecoveryProtocol.OfferKind)
                     {
                         if (!connection.SupportsQuicRecovery || !recoveryProbe.IsCompletedSuccessfully)

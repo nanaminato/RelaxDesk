@@ -3,12 +3,17 @@ namespace RelaxDesk.Core;
 
 public sealed record StageTiming(string Name,int Samples,double P50Milliseconds,double P95Milliseconds);
 public sealed record PipelineSnapshot(long Frames,long ApplicationBytes,double ElapsedSeconds,long Dropped,int QueueDepth,double? CpuPercent,long? WorkingSetBytes,long InvalidSamples,StageTiming[] Stages);
+public readonly record struct PipelineCounters(long Frames, long ApplicationBytes, double ElapsedSeconds);
 public sealed record PipelineRate(double FramesPerSecond,double ApplicationMegabitsPerSecond)
 {
     public static PipelineRate Between(PipelineSnapshot? previous,PipelineSnapshot current)
+        => BetweenCounters(new(previous?.Frames ?? 0, previous?.ApplicationBytes ?? 0, previous?.ElapsedSeconds ?? 0),
+            new(current.Frames, current.ApplicationBytes, current.ElapsedSeconds));
+
+    public static PipelineRate BetweenCounters(PipelineCounters previous, PipelineCounters current)
     {
-        double seconds=current.ElapsedSeconds-(previous?.ElapsedSeconds??0);
-        long frames=current.Frames-(previous?.Frames??0),bytes=current.ApplicationBytes-(previous?.ApplicationBytes??0);
+        double seconds=current.ElapsedSeconds-previous.ElapsedSeconds;
+        long frames=current.Frames-previous.Frames,bytes=current.ApplicationBytes-previous.ApplicationBytes;
         return seconds<=0||frames<0||bytes<0?new(0,0):new(frames/seconds,bytes*8d/seconds/1_000_000);
     }
 }
@@ -40,6 +45,8 @@ public sealed class PipelineMetrics
     }
     public void Traffic(long length){if(length<0){Interlocked.Increment(ref invalid);return;}Interlocked.Add(ref bytes,length);}
     public void Frame(int length) { if(length<0){Interlocked.Increment(ref invalid);return;}Interlocked.Increment(ref frames); Traffic(length); }
+    public PipelineCounters ReadCounters() => new(Interlocked.Read(ref frames), Interlocked.Read(ref bytes),
+        Math.Max(clock.GetElapsedTime(started).TotalSeconds, .001));
     public PipelineSnapshot Snapshot(long dropped,int depth)
     {
         double elapsed = Math.Max(clock.GetElapsedTime(started).TotalSeconds, .001);

@@ -5,6 +5,7 @@ using RelaxDesk.Core;
 namespace RelaxDesk.Viewer;
 
 internal sealed record ViewerStatistics(PipelineSnapshot Pipeline,long Received,long GpuFrames,long CpuFrames,long ReadbackBytes,int RendererGenerations,string Transport = "TCP/TLS", string? Fallback = null, VideoNetworkStatistics? Network = null, VideoQueueStatistics? HostQueue = null, int ControlDepth = 0, long CoalescedMoves = 0, int TransportRevision = 0, long DroppedPointerMoves = 0);
+internal readonly record struct ToolbarStatistics(PipelineCounters Counters, string Transport, int TransportRevision, double ControlRtt);
 
 internal sealed class SessionStatisticsWindow:Window
 {
@@ -85,12 +86,13 @@ internal sealed class SessionStatisticsWindow:Window
 public sealed partial class ViewerWindow
 {
     Func<ViewerStatistics>? statisticsSource;SessionStatisticsWindow? statisticsWindow;
+    Func<ToolbarStatistics>? toolbarStatisticsSource;
     void BeginStatistics(Func<ViewerStatistics> source){EndStatistics();statisticsSource=source;}
-    void EndStatistics(){statisticsSource=null;var window=statisticsWindow;statisticsWindow=null;window?.Close();}
+    void EndStatistics(){statisticsSource=null;toolbarStatisticsSource=null;RefreshStatisticsToolbar();var window=statisticsWindow;statisticsWindow=null;window?.Close();}
     void OpenStatistics()
     {
         if(statisticsSource is null)return;if(statisticsWindow is not null){statisticsWindow.Show();return;}
         ReleaseHeldInputs();var window=new SessionStatisticsWindow(this,statisticsSource);statisticsWindow=window;window.Closed+=(_,_)=>{if(ReferenceEquals(statisticsWindow,window))statisticsWindow=null;};window.Show();
     }
-    void RefreshStatisticsToolbar()=>sessionToolbar?.SetStatistics(statisticsSource is null?null:OpenStatistics);
+    void RefreshStatisticsToolbar()=>sessionToolbar?.SetStatistics(statisticsSource is null?null:OpenStatistics, toolbarStatisticsSource);
 }

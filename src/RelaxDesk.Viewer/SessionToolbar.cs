@@ -12,6 +12,7 @@ namespace RelaxDesk.Viewer;
 // native D3D surface. This window does not activate or reserve desktop pixels.
 internal sealed class SessionToolbar : IDisposable
 {
+    const double MaximumWidth = 650;
     readonly Window owner, window;
     readonly Action? releaseInput;
     readonly StackPanel controls = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -95,8 +96,40 @@ internal sealed class SessionToolbar : IDisposable
         videoSettings.Items.Add(new Separator());videoSettings.Items.Add(new MenuItem{Header="实际提交帧率与媒体流量见连接统计",IsEnabled=false});videoSettings.Items.Add(new MenuItem{Header="码率是目标参数；更高目标通常增加带宽",IsEnabled=false});
     }
     internal MenuItem StatisticsAction=>statistics;
+    readonly TextBlock mediaRate = new() { FontSize = 12, TextAlignment = TextAlignment.Center };
+    readonly TextBlock connectionTiming = new() { FontSize = 11, TextAlignment = TextAlignment.Center };
+    internal Button ConnectionInfoButton { get; }
+    internal string MediaRateText => mediaRate.Text;
+    internal string ConnectionTimingText => connectionTiming.Text;
     Action? openStatistics;
-    public void SetStatistics(Action? open){openStatistics=open;statistics.IsEnabled=open is not null;}
+    Func<ToolbarStatistics>? statisticsSource;
+    ToolbarStatistics? previousStatistics;
+    public void SetStatistics(Action? open, Func<ToolbarStatistics>? source)
+    {
+        openStatistics = open;
+        statistics.IsEnabled = open is not null;
+        statisticsSource = source;
+        previousStatistics = null;
+        ConnectionInfoButton.Visibility = source is null ? Visibility.Collapsed : Visibility.Visible;
+        RefreshConnectionInfo();
+    }
+
+    void RefreshConnectionInfo()
+    {
+        if (statisticsSource is null) return;
+        var sample = statisticsSource();
+        PipelineRate? rate = null;
+        if (previousStatistics is { } previous)
+        {
+            if (sample.Counters.ElapsedSeconds - previous.Counters.ElapsedSeconds < 0.95) return;
+            if (previous.Transport == sample.Transport && previous.TransportRevision == sample.TransportRevision)
+                rate = PipelineRate.BetweenCounters(previous.Counters, sample.Counters);
+        }
+        previousStatistics = sample;
+        mediaRate.Text = rate is null ? "— FPS   ·   — Mbit/s" : $"{rate.FramesPerSecond:F1} FPS   ·   {rate.ApplicationMegabitsPerSecond:F2} Mbit/s";
+        string rtt = sample.ControlRtt < 0 ? "—" : $"{sample.ControlRtt:F1} ms";
+        connectionTiming.Text = $"{sample.Transport}   ·   RTT {rtt}";
+    }
     internal MenuItem AudioAction=>audio;
     public void SetAudio(bool enabled,double volume,bool muted,Action<double,bool> adjust,Action stop)
     {
@@ -121,7 +154,7 @@ internal sealed class SessionToolbar : IDisposable
     {
         this.owner = owner;
         this.releaseInput=releaseInput;
-        window = new Window { Owner = owner, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false, ShowActivated = false, Background = Brushes.Transparent, AllowsTransparency = true, Width = 560, Height = 48, MinWidth = 0, MinHeight = 0, Focusable = false };
+        window = new Window { Owner = owner, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false, ShowActivated = false, Background = Brushes.Transparent, AllowsTransparency = true, Width = MaximumWidth, Height = 48, MinWidth = 0, MinHeight = 0, Focusable = false };
         RelaxDesk.Ui.ModernTheme.Apply(window);
         full = new Button { Content = "全屏", Focusable = false, Padding = new(14, 6, 14, 6), Margin = new(3) };
         DisconnectButton = new Button { Content = "断开", Focusable = false, Style = (Style)window.Resources["DangerButton"], Padding = new(14, 6, 14, 6), Margin = new(3) };
@@ -157,10 +190,25 @@ internal sealed class SessionToolbar : IDisposable
         ShortcutMenu.Items.Add(videoSettings);
         clipboard.Click += (_, _) => { ShortcutMenu.IsOpen = false; disableClipboard?.Invoke(); };
         ShortcutsButton.Click += (_, _) => { ShortcutMenu.PlacementTarget = ShortcutsButton; ShortcutMenu.IsOpen = true; Reveal(); };
-        var identity = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Width = 170, Margin = new(14, 0, 12, 0) };
+        var readings = new StackPanel();
+        readings.Children.Add(mediaRate);
+        readings.Children.Add(connectionTiming);
+        ConnectionInfoButton = new Button
+        {
+            Content = readings, Focusable = false, Padding = new(8, 2, 8, 2), Margin = new(3),
+            Width = 183, Visibility = Visibility.Collapsed,
+            ToolTip = "画面提交帧率 · 视频应用数据接收速率 · 控制往返时间（含排队）\n点击查看连接统计"
+        };
+        System.Windows.Automation.AutomationProperties.SetName(ConnectionInfoButton, "连接状态和详细统计");
+        ConnectionInfoButton.Click += (_, _) => openStatistics?.Invoke();
+        var identity = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new(14, 0, 12, 0) };
         endpoint.Margin = new(0); identity.Children.Add(endpoint); identity.Children.Add(mediaPath);
-        controls.Children.Add(identity); controls.Children.Add(FilesButton); controls.Children.Add(ShortcutsButton); controls.Children.Add(full); controls.Children.Add(DisconnectButton);
-        window.Content = new Border { Background = new SolidColorBrush(Color.FromRgb(23, 36, 58)), CornerRadius = new(0, 0, 10, 10), Child = controls, BorderBrush = new SolidColorBrush(Color.FromRgb(86, 126, 184)), BorderThickness = new(1, 0, 1, 1), ClipToBounds = true };
+        controls.Children.Add(ConnectionInfoButton); controls.Children.Add(FilesButton); controls.Children.Add(ShortcutsButton); controls.Children.Add(full); controls.Children.Add(DisconnectButton);
+        var bar = new DockPanel();
+        DockPanel.SetDock(controls, Dock.Right);
+        bar.Children.Add(controls);
+        bar.Children.Add(identity);
+        window.Content = new Border { Background = new SolidColorBrush(Color.FromRgb(23, 36, 58)), CornerRadius = new(0, 0, 10, 10), Child = bar, BorderBrush = new SolidColorBrush(Color.FromRgb(86, 126, 184)), BorderThickness = new(1, 0, 1, 1), ClipToBounds = true };
         window.SourceInitialized += (_, _) => { handle = new WindowInteropHelper(window).Handle; SetStyle(handle, -20, GetStyle(handle, -20) | (nint)0x08000000); };
         owner.LocationChanged += OwnerChanged; owner.SizeChanged += OwnerChanged; owner.StateChanged += OwnerChanged; owner.Closed += OwnerClosed;
         timer.Tick += Tick;
@@ -193,6 +241,7 @@ internal sealed class SessionToolbar : IDisposable
     void Tick(object? sender, EventArgs e)
     {
         if (disposed) return;
+        RefreshConnectionInfo();
         if (!owner.IsVisible || owner.WindowState == WindowState.Minimized || !owner.IsActive)
         { window.Hide(); return; }
         if (!window.IsVisible) window.Show();
@@ -211,10 +260,10 @@ internal sealed class SessionToolbar : IDisposable
         if (content.ActualWidth <= 0) return;
         Point origin = content.PointToScreen(new Point(0, 0));
         var dpi = VisualTreeHelper.GetDpi(owner);
-        width = (int)Math.Round(Math.Min(560, content.ActualWidth) * dpi.DpiScaleX);
+        width = (int)Math.Round(Math.Min(statisticsSource is null ? 560 : MaximumWidth, content.ActualWidth) * dpi.DpiScaleX);
         height = (int)Math.Round((expanded ? 48 : 5) * dpi.DpiScaleY);
         left = (int)Math.Round(origin.X + (content.ActualWidth * dpi.DpiScaleX - width) / 2); top = (int)Math.Round(origin.Y);
-        controls.Visibility = expanded ? Visibility.Visible : Visibility.Hidden;
+        ((Border)window.Content).Child.Visibility = expanded ? Visibility.Visible : Visibility.Hidden;
         SetWindowPos(handle, 0, left, top, width, height, 0x14); // NOACTIVATE | NOZORDER
     }
     public void Dispose()
