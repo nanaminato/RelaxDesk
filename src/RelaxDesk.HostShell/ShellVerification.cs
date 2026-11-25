@@ -39,6 +39,13 @@ internal sealed partial class HostWindow
         Changed(new("admin-ready", SessionId: current));
         if (state.Text != "会话已结束" || revokeAdminInput.Visibility != Visibility.Collapsed)
             throw new IOException("A delayed administrator event restored ended session controls");
+        RestartEnabled = true;
+        restartBudget = new();
+        Changed(new("desktop-unavailable", DesktopReason: "host-input-token-denied"));
+        Changed(new("ended", ExitCode:2));
+        if (RestartPending || !start.IsEnabled || DesktopStatusNotice?.Contains("普通 Windows 用户权限") != true)
+            throw new IOException("Host token rejection lost its notice, retried, or disabled manual start");
+        RestartEnabled = false;
         Changed(new("stopped"));
     }
 }

@@ -30,7 +30,7 @@ internal sealed partial class HostWindow
     }
     async void RecoverWorker(HostEvent change)
     {
-        if(change.Kind!="ended"||closing||restartBudget is null)return;
+        if(change.Kind!="ended"||closing||hostTokenDenied||restartBudget is null)return;
         if(RestartPending){deferredExit=change;return;}
         bool allowed=!ServiceSetupBusy&&(!ServiceRequired||ServiceReady);
         try{WindowsSessionAccess.EnsureAllowed();}catch{allowed=false;}

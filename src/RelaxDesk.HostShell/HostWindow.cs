@@ -35,6 +35,7 @@ internal sealed partial class HostWindow:Window
     readonly string application;
     bool closing;
     string? desktopNotice;
+    bool hostTokenDenied;
     bool adminDeploymentUnavailable;
     const string AdminDeploymentNotice = "管理员输入代理不可用。访客和工作模式仍可使用。要修复代理，请结束共享，在「系统服务」的「更多设置」中选择「更新／修复并应用设置（管理员）」。";
     const string DesktopUnavailableNotice="不支持当前会话或安全桌面控制。请回到原用户的普通桌面后重新连接并授权；Host 继续等待连接。";
@@ -112,7 +113,7 @@ internal sealed partial class HostWindow:Window
     internal async Task StartSharing(string? address=null,int? number=null,string backend="dxgi",bool recovering=false)
     {
         if(ServiceSetupBusy)return;
-        if(!recovering){if(RestartPending)return;restartBudget=new();restartBackend=backend;desktopNotice=null;}
+        if(!recovering){if(RestartPending)return;restartBudget=new();restartBackend=backend;desktopNotice=null;hostTokenDenied=false;}
         if(ServiceRequired&&!ServiceReady){state.Text="服务协调不可用";detail.Text="请先连接已授权的系统服务；没有开始共享。";UpdateServiceControls();return;}
         try{if(address is not null)ip.Text=address;if(number.HasValue)port.Text=number.Value.ToString();if(!int.TryParse(port.Text,out int selected))throw new ArgumentException("端口应为 1–65535");ip.IsEnabled=port.IsEnabled=start.IsEnabled=allowedModes.IsEnabled=false;SetFileConfigurationEnabled(false);SetDisplayConfigurationEnabled(false);stop.IsEnabled=true;state.Text="正在启动";await Host.Start(application,ip.Text.Trim(),selected,backend,selectedFileRoot,SelectedDisplay,guestOnly: allowedModes.SelectedIndex == 2, adminDisabled: allowedModes.SelectedIndex == 1, workOnly: allowedModes.SelectedIndex == 3);}
         catch(Exception e){state.Text="无法开始共享";detail.Text=e.Message;ip.IsEnabled=port.IsEnabled=start.IsEnabled=allowedModes.IsEnabled=true;SetFileConfigurationEnabled(true);SetDisplayConfigurationEnabled(true);stop.IsEnabled=false;}
@@ -160,6 +161,7 @@ internal sealed partial class HostWindow:Window
                 break;
             case "listening":revokeAdminInput.Visibility=revokeGuestInput.Visibility=revokeAudio.Visibility=Visibility.Collapsed;request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=revokeFiles.Visibility=disconnectSession.Visibility=Visibility.Collapsed;displayedSessionId=null;state.Text="等待连接";detail.Text=ListeningDetail;break;
             case "desktop-unavailable":
+                if (change.DesktopReason == "host-input-token-denied") hostTokenDenied = true;
                 detail.Text = desktopNotice = change.DesktopReason switch
                 {
                     "host-input-token-denied" => "请使用普通 Windows 用户权限启动被控端，再开始共享。",
