@@ -48,6 +48,39 @@ internal static class ServiceVerification
                         await broker.WaitForExitAsync(deadline.Token);string tail=await output;
                         if(!abrupt)Check(broker.ExitCode==0&&tail.Contains("broker_stopped active_agents=0",StringComparison.Ordinal));
                         Check(window.Host.Snapshot().Any(line=>line.Contains("native_live_resources=0",StringComparison.Ordinal)));
+                        if (abrupt)
+                        {
+                            using var replacement = Process.Start(startInfo) ?? throw new IOException("Replacement broker launch failed");
+                            try
+                            {
+                                Check(await replacement.StandardOutput.ReadLineAsync(deadline.Token) == "BROKER_READY");
+                                Check(!window.ServiceReady && !window.Host.Running);
+                                await window.ConnectService(ct => SessionAgentClient.ConnectTest(name, replacement.Id, ct));
+                                Check(window.ServiceReady && !window.Host.Running);
+                                await window.StartSharing("127.0.0.1", port, "test-hardware");
+                                await Until(() => window.Status == "等待连接");
+                                using var freshViewer = new SessionClient();
+                                var freshConnection = freshViewer.ConnectByApproval("127.0.0.1", port, deadline.Token);
+                                await Until(() => window.RequestVisible);
+                                Check(!freshConnection.IsCompleted);
+                                await window.Decide(true);
+                                await freshConnection;
+                                Check((await MediaProtocol.Read(freshViewer.Media, deadline.Token)).Data.Length > 0);
+                                await window.StopSharing();
+                                await window.Host.Finished;
+                                await window.DisconnectService();
+                                await replacement.StandardInput.WriteLineAsync("STOP");
+                                await replacement.StandardInput.FlushAsync(deadline.Token);
+                                await replacement.WaitForExitAsync(deadline.Token);
+                                Check(replacement.ExitCode == 0);
+                            }
+                            finally
+                            {
+                                if (!replacement.HasExited) replacement.Kill(true);
+                                await replacement.WaitForExitAsync();
+                            }
+                            Console.WriteLine("PASS replacement Broker required a new lease, explicit start and new Viewer consent");
+                        }
                         await window.DisconnectService();window.ServiceRequired=false;
                         await window.StartSharing("127.0.0.1",Port(),"test-hardware");await Until(()=>window.Status=="等待连接");Check(window.Host.Running);
                         await window.StopSharing();await window.Host.Finished;
