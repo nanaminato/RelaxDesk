@@ -220,7 +220,7 @@ public sealed partial class ViewerWindow : Window
                 throw new IOException("Injected initial UDP connection failure");
             return WindowsQuicDatagrams.Connect(endpoint, certificate);
         }
-        using var connection = new SessionClient { RequestedFeatures = target.Features,FullControl=target.FullControl,RequestedMode=target.FullControl ? null : SessionMode.Work,RequestWorkInputRevoke=!target.FullControl,RequestPointerCompression=true,RequestQuicRecovery=smoke is null || autoRecoveryTest,Network=target.Network,OpenDeviceKey=target.FullControl ? WindowsDeviceKey.Open : null,ConnectQuic=canOfferUdp ? OpenQuic : null,RequestedDisplayVersion=target.DisplayVersion,RequestedVideoVersion=VideoSettingsProtocol.Version }; using var abort = cancellation.Token.Register(connection.Dispose);
+        using var connection = new SessionClient { RequestedFeatures = target.Features,FullControl=target.FullControl,RequestedMode=target.FullControl ? null : SessionMode.Work,RequestPointerCompression=true,RequestQuicRecovery=smoke is null || autoRecoveryTest,Network=target.Network,OpenDeviceKey=target.FullControl ? WindowsDeviceKey.Open : null,ConnectQuic=canOfferUdp ? OpenQuic : null,RequestedDisplayVersion=target.DisplayVersion,RequestedVideoVersion=VideoSettingsProtocol.Version }; using var abort = cancellation.Token.Register(connection.Dispose);
         string attemptStage = "connect";
         connection.PhaseChanged+=phase=>{attemptStage=phase switch { ConnectionPhase.Authenticating=>"authenticating",ConnectionPhase.AwaitingApproval=>"awaiting-approval",ConnectionPhase.Negotiating=>"negotiating",ConnectionPhase.Connected=>"session-setup",_=>"connect" };if(ReferenceEquals(session,cancellation)&&!cancellation.IsCancellationRequested)SetConnectionPhase(phase);};
         ClipboardSynchronizer? clipboard = null;
@@ -371,7 +371,6 @@ public sealed partial class ViewerWindow : Window
             var control = Task.Run(() => Observe(async () =>
             {
                 long clipboardSequence = 0;
-                bool inputRevoked = false;
                 while (true)
                 {
                     var packet = await SessionControl.Read(connection.Control, cancellation.Token);
@@ -406,22 +405,6 @@ public sealed partial class ViewerWindow : Window
                                 else{RefreshDisplayMenu();if(!outgoing.TryWrite(new("keyframe-v2",++sequence)))cancellation.Cancel();}
                             });
                         }
-                    }
-                    else if (!inputRevoked && connection.InputAllowed &&
-                        packet == new Packet("work-input-revoked-v2") && connection.WorkInputRevoke)
-                    {
-                        inputRevoked = true;
-                        _ = Dispatcher.BeginInvoke(() =>
-                        {
-                            if (!ReferenceEquals(session, cancellation) || cancellation.IsCancellationRequested) return;
-                            inputAuthorized = false;
-                            sessionToolbar?.SetEndpoint(SessionEndpoint);
-                            richHeld.ReleaseAll();
-                            heldInputs.ReleaseAll();
-                            CloseTextInput();
-                            sessionToolbar?.SetRemoteShortcuts(false);
-                            sessionToolbar?.SetTextInput(null);
-                        });
                     }
                     else if (packet.Kind == "clipboard-text-v2")
                     {

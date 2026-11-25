@@ -21,10 +21,6 @@ using (var wire = new CountingWireStream())
 }
 await Reject([]); await Reject([1, 0, 0, 0]); await Reject([255, 255, 255, 255]); byte[] oversized = new byte[4]; BinaryPrimitives.WriteInt32LittleEndian(oversized, Wire.Limit + 1); await Reject(oversized); await Reject([5, 0, 0, 0, 123]); await Reject([2, 0, 0, 0, 123, 125, 0]);
 
-Check(!SessionAccess.Available(SessionMode.Admin) && !SessionAccess.Available((SessionMode)99));
-Check(SessionAccess.Approve(null, false) == new SessionAccess(SessionMode.Work, true));
-Check(!SessionAccess.Approve(SessionMode.Guest, false).InputAllowed);
-Check(SessionAccess.Approve(SessionMode.Guest, true).InputAllowed);
 var guest = new AccessGate();
 guest.Approve([SessionCapabilities.ClipboardText], InputProtocol.Version, allowInput: false);
 Check(!guest.TryExecuteInput(input, () => throw new Exception("Guest input executed")));

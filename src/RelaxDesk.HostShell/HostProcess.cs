@@ -4,7 +4,7 @@ using System.Net;
 using System.Text.Json;
 namespace RelaxDesk.HostShell;
 
-internal sealed record HostEvent(string Kind, string? Address = null, string? SessionId = null, string[]? Features = null,int? ExitCode=null,int Generation=0,string? Mode=null,string? DeviceFingerprint=null,string? RequestId=null,string? DesktopReason=null,bool WorkInputRevoke=false);
+internal sealed record HostEvent(string Kind, string? Address = null, string? SessionId = null, string[]? Features = null,int? ExitCode=null,int Generation=0,string? Mode=null,string? DeviceFingerprint=null,string? RequestId=null,string? DesktopReason=null);
 
 internal sealed class HostProcess
 {
@@ -66,7 +66,7 @@ internal sealed class HostProcess
                     }
                     Pending=type=="approval-request";
                     if(type is "session-ended" or "listening") {SessionId=null;ClipboardRequested=FilesRequested=AudioRequested=false;}
-                    if(type!="ended")Emit(new(type,address,id,features,Mode:data.RootElement.TryGetProperty("mode",out var mode)?mode.GetString():null,DeviceFingerprint:data.RootElement.TryGetProperty("deviceFingerprint",out var device)?device.GetString():null,RequestId:data.RootElement.TryGetProperty("requestId",out var request)?request.GetString():null,DesktopReason:data.RootElement.TryGetProperty("desktopReason",out var desktop)?desktop.GetString():null,WorkInputRevoke:data.RootElement.TryGetProperty("workInputRevoke",out var inputRevoke)&&inputRevoke.ValueKind==JsonValueKind.True));continue;
+                    if(type!="ended")Emit(new(type,address,id,features,Mode:data.RootElement.TryGetProperty("mode",out var mode)?mode.GetString():null,DeviceFingerprint:data.RootElement.TryGetProperty("deviceFingerprint",out var device)?device.GetString():null,RequestId:data.RootElement.TryGetProperty("requestId",out var request)?request.GetString():null,DesktopReason:data.RootElement.TryGetProperty("desktopReason",out var desktop)?desktop.GetString():null));continue;
                 }
                 lock(Lines){if(Lines.Count>=200)Lines.RemoveAt(0);Lines.Add(line);}
                 Diagnostic?.Invoke(line);
@@ -85,17 +85,15 @@ internal sealed class HostProcess
         catch(Exception e) when(e is IOException or ObjectDisposedException or InvalidOperationException) { }
         finally {commands.Release();}
     }
-    public Task Decide(bool allow, bool allowClipboard = false, bool allowFiles = false, string? expectedSessionId = null,bool allowAudio=false,bool guestInput=false)
+    public Task Decide(bool allow, bool allowClipboard = false, bool allowFiles = false, string? expectedSessionId = null,bool allowAudio=false)
     {
         var child=process;string? id=expectedSessionId??SessionId;if(child is null||!Pending||id is null||id!=SessionId)return Task.CompletedTask;
         bool clipboard=allowClipboard&&ClipboardRequested,files=allowFiles&&FilesRequested&&fileRootConfigured;
         string command=RelaxDesk.Core.AudioConsent.Command(allow,clipboard,files,allowAudio&&AudioRequested);
-        Pending=false;return Send(child,command+(allow&&guestInput?"_INPUT":"")+" "+id);
+        Pending=false;return Send(child,command+" "+id);
     }
     public Task RevokeClipboard(string? expectedSessionId=null)=>SessionCommand("REVOKE_CLIPBOARD",expectedSessionId);
     public Task RevokeFiles(string? expectedSessionId=null)=>SessionCommand("REVOKE_FILES",expectedSessionId);
-    public Task RevokeWorkInput(string? expectedSessionId=null)=>SessionCommand("REVOKE_WORK_INPUT",expectedSessionId);
-    public Task RevokeGuestInput(string? expectedSessionId=null)=>SessionCommand("REVOKE_GUEST_INPUT",expectedSessionId);
     public Task RevokeAudio(string? expectedSessionId=null)=>SessionCommand("REVOKE_AUDIO",expectedSessionId);
     public Task Disconnect(string? expectedSessionId=null)=>SessionCommand("DISCONNECT",expectedSessionId);
     Task SessionCommand(string command,string? expectedSessionId)

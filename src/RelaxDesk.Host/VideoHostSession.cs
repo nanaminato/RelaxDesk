@@ -25,10 +25,9 @@ internal static class VideoHostSession
         public TaskCompletionSource<Packet> Result { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
     public static async Task Run(TcpListener listener, TcpClient controlSocket, SslStream control, HostMediaIdentity identity,
-        Packet hello, string backend, CancellationToken stop, string[]? grantedFeatures = null, CancellationToken clipboardRevoked = default, string? selectedFileRoot = null, CancellationToken filesRevoked = default,FileTransferResumeStore? fileResumes=null,string? selectedDisplay=null,CancellationToken audioRevoked=default,SessionAccess? access=null,CancellationToken inputRevoked=default,AdminInputConnection? elevated=null,string? shellSessionId=null)
+        Packet hello, string backend, CancellationToken stop, string[]? grantedFeatures = null, CancellationToken clipboardRevoked = default, string? selectedFileRoot = null, CancellationToken filesRevoked = default,FileTransferResumeStore? fileResumes=null,string? selectedDisplay=null,CancellationToken audioRevoked=default,AdminInputConnection? elevated=null,string? shellSessionId=null)
     {
         var certificate = identity.Certificate;
-        access ??= SessionAccess.Approve(hello.Mode, false);
         string[] capabilities = (hello.Capabilities ?? []).Intersect(["h264", "deflate"]).ToArray();
         if (capabilities.Length == 0) throw new InvalidDataException("No common media codec");
         bool synthetic = backend.StartsWith("test-", StringComparison.Ordinal);
@@ -64,7 +63,7 @@ internal static class VideoHostSession
         var dataTicket = fileRoot is null ? null : new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15));
         var clipboardTicket=SessionCapabilities.RichClipboard(features)?new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15)):null;
         var audioTicket=features.Contains(SessionCapabilities.SystemAudio)?new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15)):null;
-        await Wire.Write(control, new Packet(FullControlProtocol.IsRequest(hello.Kind) ? FullControlProtocol.Approved : "approved-v2", Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features, DataTicket: dataTicket?.Value,FileResume:resumeFiles,FileScope:fileScope,InputVersion:hello.InputVersion,ClipboardTicket:clipboardTicket?.Value,DisplayVersion:displayVersion,DisplayState:displays?.Switch.Snapshot,AudioTicket:audioTicket?.Value,VideoVersion:video is null?0:VideoSettingsProtocol.Version,VideoSettings:video?.Current, Mode:hello.Mode, InputAllowed:hello.Mode is null ? null : access.InputAllowed, QuicPort:datagrams?.Port ?? 0, QuicTicket:quicTicket?.Value, QuicRecovery: hello.QuicRecovery, WorkInputRevoke: shellSessionId is not null ? hello.WorkInputRevoke : null), stop);
+        await Wire.Write(control, new Packet(FullControlProtocol.IsRequest(hello.Kind) ? FullControlProtocol.Approved : "approved-v2", Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features, DataTicket: dataTicket?.Value,FileResume:resumeFiles,FileScope:fileScope,InputVersion:hello.InputVersion,ClipboardTicket:clipboardTicket?.Value,DisplayVersion:displayVersion,DisplayState:displays?.Switch.Snapshot,AudioTicket:audioTicket?.Value,VideoVersion:video is null?0:VideoSettingsProtocol.Version,VideoSettings:video?.Current, Mode:hello.Mode, InputAllowed:hello.Mode is null ? null : true, QuicPort:datagrams?.Port ?? 0, QuicTicket:quicTicket?.Value, QuicRecovery: hello.QuicRecovery), stop);
         using var attach = CancellationTokenSource.CreateLinkedTokenSource(stop); attach.CancelAfter(TimeSpan.FromSeconds(15));
         int quicBudget = 0;
         if (datagrams is not null)
@@ -162,7 +161,7 @@ internal static class VideoHostSession
         listener.Stop();
         using var session = CancellationTokenSource.CreateLinkedTokenSource(stop);
         var queue = new LatestQueue<QueuedFrame>(QuicSendStatistics.HostVideoQueueCapacity);
-        var gate = new AccessGate(); gate.Approve(features,hello.InputVersion,displayVersion,hello.VideoVersion,access.InputAllowed);
+        var gate = new AccessGate(); gate.Approve(features,hello.InputVersion,displayVersion,hello.VideoVersion);
         using var controlWrite = new SemaphoreSlim(1);
         async Task WriteControl(Packet packet)
         {
@@ -378,26 +377,13 @@ internal static class VideoHostSession
         }
         var failures = new FirstSessionFailure();
         if(displaySelection is not null)HostSessionLog.Write($"capture_display device={displaySelection.Device} x={displaySelection.Bounds.X} y={displaySelection.Bounds.Y} width={displaySelection.Bounds.Width} height={displaySelection.Bounds.Height} compatibility_gdi={displaySelection.RequiresGdi}");
-        using var inputDesktop = synthetic || elevated is not null || !access.InputAllowed ? null : new WindowsInputSession(()=>displays?.Active??displaySelection!);
+        using var inputDesktop = synthetic || elevated is not null ? null : new WindowsInputSession(()=>displays?.Active??displaySelection!);
         string? elevatedDisplay = displaySelection?.Device;
         void ReleaseDisplayInput()
         {
             if (elevated is not null) elevated.Release(session.Token).GetAwaiter().GetResult();
             else inputDesktop?.ReleaseAll();
         }
-        using var revokeInput = CancellationTokenSource.CreateLinkedTokenSource(inputRevoked, session.Token);
-        using var revokeInputRegistration = inputRevoked.Register(gate.RevokeInput);
-        async Task NotifyInputRevoked()
-        {
-            try { await Task.Delay(Timeout.Infinite, revokeInput.Token); }
-            catch (OperationCanceledException) when (revokeInput.IsCancellationRequested) { }
-            if (!inputRevoked.IsCancellationRequested || session.IsCancellationRequested) return;
-            gate.RevokeInput();
-            try { inputDesktop?.ReleaseAll(); }
-            catch (IOException error) { HostSessionLog.Write($"input_cleanup_deferred error_type={error.GetType().Name}"); }
-            await WriteControl(new(hello.Mode == SessionMode.Work ? "work-input-revoked-v2" : "guest-input-revoked-v2"));
-        }
-        Task inputRevocation = NotifyInputRevoked();
         bool elevatedInputForwarded = false;
         int ignoredDisplayInputs=0;
         bool ordinaryInputBlocked = false;
@@ -614,13 +600,6 @@ internal static class VideoHostSession
             simulatedPause?WindowsSessionAccess.Watch(session.Token, TestDesktop, authorize:desktopPause.Check):
             synthetic?Task.Delay(Timeout.Infinite,session.Token):WindowsSessionAccess.Watch(session.Token, authorize:desktopPause.Check);
         Task observedSession=Observe(sessionWatch,"windows-session",failures,session.Token);
-        // Successful guest revocation leaves the session running. A failed notification is a control failure.
-        async Task WatchInputRevocation()
-        {
-            await inputRevocation;
-            await Task.Delay(Timeout.Infinite, session.Token);
-        }
-        Task observedInputRevocation = Observe(WatchInputRevocation(), "input-revocation", failures, session.Token);
         async Task WatchAdmin()
         {
             if (elevated is null) { await Task.Delay(Timeout.Infinite, session.Token); return; }
@@ -632,7 +611,7 @@ internal static class VideoHostSession
         Task networkQuality = Observe(WatchNetworkQuality(), "udp-network-quality", failures, session.Token);
         Task quicRecovery = Observe(WatchQuicRecovery(), "udp-recovery", failures, session.Token);
         Task simulatedTransition = Observe(SimulateLocalElevation(), "local-desktop-transition", failures, session.Token);
-        Task first = await Task.WhenAny(observedInput, observedSender, observedProducer, observedClipboard,observedSession,observedInputRevocation,observedAdmin,observedTcpFallback,networkQuality,quicRecovery,simulatedTransition);
+        Task first = await Task.WhenAny(observedInput, observedSender, observedProducer, observedClipboard,observedSession,observedAdmin,observedTcpFallback,networkQuality,quicRecovery,simulatedTransition);
         string worker = failures.First?.Worker ?? (first == observedInput ? "control-read" : first == observedSender ? "media-send" : "capture-encode");
         var failure = failures.First;
         HostSessionLog.Write($"session_end worker={worker} stage={failure?.Stage ?? "shutdown"} completed_frames={failure?.CompletedFrames ?? 0} state={first.Status} error_type={failure?.Error.GetType().Name ?? "none"} hresult=0x{failure?.Error.HResult ?? 0:X8} reason={failure?.Error.Message ?? "worker completed/cancelled"}");
@@ -677,7 +656,7 @@ internal static class VideoHostSession
         try { if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure.Error).Throw(); await first; }
         finally
         {
-            try { await Task.WhenAll(observedInput, observedSender, observedProducer, observedClipboard,observedSession,observedInputRevocation,observedAdmin,observedTcpFallback,networkQuality,quicRecovery,simulatedTransition); } catch (Exception) { /* Causal failure is reported above; join all workers. */ }
+            try { await Task.WhenAll(observedInput, observedSender, observedProducer, observedClipboard,observedSession,observedAdmin,observedTcpFallback,networkQuality,quicRecovery,simulatedTransition); } catch (Exception) { /* Causal failure is reported above; join all workers. */ }
             try { await fileWorker; } catch (Exception error) { HostSessionLog.Write($"file_worker_shutdown error_type={error.GetType().Name} hresult=0x{error.HResult:X8}"); }
             await audioWorker;
             if(fileResumes is not null&&(stop.IsCancellationRequested||failure?.Error is WindowsSessionUnavailableException||Volatile.Read(ref explicitFileRevocation)!=0))await fileResumes.Clear();

@@ -9,8 +9,6 @@ internal static class SessionAccessSmoke
 {
     public static async Task Run(string hostPath)
     {
-        await Verify(hostPath, SessionMode.Guest, grantInput: false, denied: false);
-        await Verify(hostPath, SessionMode.Guest, grantInput: true, denied: false);
         await Verify(hostPath, SessionMode.Work, grantInput: true, denied: false, proveDevice: true);
         await Verify(hostPath, null, grantInput: false, denied: true, production: true);
         await Verify(hostPath, SessionMode.Guest, grantInput: false, denied: true, production: true);
@@ -20,7 +18,7 @@ internal static class SessionAccessSmoke
         Console.WriteLine("PASS production Host requires an updated full-control client");
         Console.WriteLine("PASS verified Work device proof over production TLS; local approval still required");
         Console.WriteLine("PASS retired in-session elevation request terminates the connection");
-        Console.WriteLine("PASS production TLS and shell approval: Guest view/input/revoke, legacy Work policy, full-control denial before and after device verification");
+        Console.WriteLine("PASS production TLS and shell approval: full-control denial before and after device verification");
     }
 
     static async Task Verify(string hostPath, SessionMode? mode, bool grantInput, bool denied, bool testAdminConsent = false, bool proveDevice = false, bool production = false)
@@ -71,7 +69,7 @@ internal static class SessionAccessSmoke
                 request.GetProperty("deviceFingerprint").GetString() != DeviceIdentity.Fingerprint(key)))
                 throw new IOException("Work device fingerprint missing or skipped local approval");
             string? id = request.GetProperty("sessionId").GetString();
-            string command = mode == SessionMode.Guest && grantInput ? "APPROVE_INPUT" : "APPROVE";
+            const string command = "APPROVE";
             await host.StandardInput.WriteLineAsync($"{command} {id}");
             await host.StandardInput.FlushAsync();
             await connect;
@@ -95,19 +93,6 @@ internal static class SessionAccessSmoke
                 {
                     await Wire.Write(viewer.Control, new("admin-input-request-v2", 4), timeout.Token);
                     await ReadEvent("session-ended");
-                }
-                if (mode == SessionMode.Guest)
-                {
-                    await host.StandardInput.WriteLineAsync($"REVOKE_GUEST_INPUT {id}");
-                    await host.StandardInput.FlushAsync();
-                    if (await Wire.Read(viewer.Control, timeout.Token) != new Packet("guest-input-revoked-v2"))
-                        throw new IOException("Guest input revocation was not delivered");
-                    await Wire.Write(viewer.Control, InputProtocol.Encode(new("move"), 4, frame.DisplayGeneration), timeout.Token);
-                    await Wire.Write(viewer.Control, new("ping-v2", 5), timeout.Token);
-                    if (await Wire.Read(viewer.Control, timeout.Token) != new Packet("pong-v2", 5))
-                        throw new IOException("Guest revocation interrupted reliable control");
-                    var next = await MediaProtocol.Read(viewer.Media, timeout.Token, displayGeneration: true);
-                    if (next.Sequence <= frame.Sequence) throw new IOException("Media did not advance after guest input revocation");
                 }
             }
         }

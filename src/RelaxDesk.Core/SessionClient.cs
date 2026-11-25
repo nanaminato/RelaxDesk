@@ -85,8 +85,6 @@ public sealed class SessionClient : IDisposable
     public bool FullControl { get; init; }
     public Func<ECDsa>? OpenDeviceKey { get; init; }
     public bool InputAllowed { get; private set; }
-    public bool RequestWorkInputRevoke { get; init; }
-    public bool WorkInputRevoke { get; private set; }
     public bool RequestPointerCompression { get; init; }
     public bool RequestQuicRecovery { get; init; }
     public bool SupportsQuicRecovery { get; private set; }
@@ -192,7 +190,7 @@ public sealed class SessionClient : IDisposable
             ? approvalOnly ? FullControlProtocol.Request : FullControlProtocol.PinnedRequest
             : approvalOnly ? "request-v2" : "hello-v2";
         bool requestResume=RequestFileResume&&requestedFeatures.Contains(SessionCapabilities.FileTransfer);
-        await Wire.Write(Control, new Packet(requestKind, Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], PointerBrotli: RequestPointerCompression ? true : null, WorkInputRevoke: !FullControl && RequestWorkInputRevoke && RequestedMode == SessionMode.Work ? true : null, Features: requestedFeatures.Length == 0 ? null : requestedFeatures,FileResume:requestResume,InputVersion:RequestedInputVersion,DisplayVersion:RequestedDisplayVersion,VideoVersion:RequestedVideoVersion, Mode:FullControl ? null : RequestedMode, Network:requestedNetwork, DeviceKey: deviceKey is null ? null : DeviceIdentity.Export(deviceKey), QuicRecovery: requestQuicRecovery ? true : null), ct);
+        await Wire.Write(Control, new Packet(requestKind, Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], PointerBrotli: RequestPointerCompression ? true : null, Features: requestedFeatures.Length == 0 ? null : requestedFeatures,FileResume:requestResume,InputVersion:RequestedInputVersion,DisplayVersion:RequestedDisplayVersion,VideoVersion:RequestedVideoVersion, Mode:FullControl ? null : RequestedMode, Network:requestedNetwork, DeviceKey: deviceKey is null ? null : DeviceIdentity.Export(deviceKey), QuicRecovery: requestQuicRecovery ? true : null), ct);
         PhaseChanged?.Invoke(ConnectionPhase.AwaitingApproval);
         var approval = await Wire.Read(Control, ct);
         string challengeKind = FullControl ? FullControlProtocol.DeviceChallenge : "work-device-challenge-v2";
@@ -218,14 +216,10 @@ public sealed class SessionClient : IDisposable
         var mode = FullControl ? null : RequestedMode;
         bool legacyWork = mode == SessionMode.Work && approval.Mode is null && approval.InputAllowed is null;
         if (!legacyWork && (approval.Mode != mode || (approval.InputAllowed is null) != (mode is null)) ||
-            (!SessionAccess.Available(approval.Mode) && approval.Mode != SessionMode.Admin) ||
+            approval.Mode is not (null or SessionMode.Guest or SessionMode.Work or SessionMode.Admin) ||
             (approval.Mode is SessionMode.Work or SessionMode.Admin) && approval.InputAllowed != true ||
             approval.Mode == SessionMode.Admin && approval.InputVersion != InputProtocol.Version)
             throw new AuthenticationException("Host did not confirm the requested session mode");
-        if (approval.WorkInputRevoke is not null &&
-            (approval.WorkInputRevoke != true || !RequestWorkInputRevoke || approval.Mode != SessionMode.Work))
-            throw new AuthenticationException("Unrequested Work input revocation capability");
-        WorkInputRevoke = approval.WorkInputRevoke == true;
         InputAllowed = approval.InputAllowed ?? true;
         InputVersion=approval.InputVersion;
         if(!DisplayProtocol.Supported(approval.DisplayVersion)||approval.DisplayVersion!=0&&(approval.DisplayVersion>RequestedDisplayVersion||InputVersion!=InputProtocol.Version)||approval.DisplayId is not null||approval.DisplayGeneration!=0||approval.DisplayVersion==0&&approval.DisplayState is not null||approval.DisplayVersion!=0&&approval.DisplayState is null)throw new AuthenticationException("Unrequested or invalid display negotiation");

@@ -39,7 +39,7 @@ internal static class HostConnection
             await Wire.Write(tls, new(FullControlProtocol.UpdateRequired), versionReply.Token);
             return;
         }
-        if (administrator && (hello.Mode is not null || hello.WorkInputRevoke is not null))
+        if (administrator && hello.Mode is not null)
             throw new AuthenticationException("Legacy session fields are invalid on a full-control request");
         if (shell is null && hello.Kind is not ("request-v2" or FullControlProtocol.Request)) Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests a desktop session. Type APPROVE to allow this session:");
         if(hello.AudioTicket is not null||hello.ClipboardTicket is not null||hello.Input is not null||hello.InputVersion is not (0 or InputProtocol.Version)||hello.Kind=="hello-v1"&&hello.InputVersion!=0)throw new AuthenticationException("Invalid input negotiation request");
@@ -61,21 +61,16 @@ internal static class HostConnection
             throw new AuthenticationException("Invalid QUIC recovery capability");
         if (hello.PointerBrotli is not null && (hello.PointerBrotli != true || hello.Kind == "hello-v1"))
             throw new AuthenticationException("Invalid pointer compression request");
-        if (hello.InputAllowed is not null || hello.Kind == "hello-v1" && hello.Mode is not null ||
-            hello.WorkInputRevoke is not null && (hello.WorkInputRevoke != true || hello.Mode != SessionMode.Work))
+        if (hello.InputAllowed is not null || hello.Kind == "hello-v1" && hello.Mode is not null)
             throw new AuthenticationException("Invalid session access negotiation");
-        if (shell is null && hello.Mode == SessionMode.Guest)
-            Console.WriteLine("Guest defaults to view only. Append _INPUT to an approval command to allow ordinary input.");
         bool adminEligible = administrator && shell is not null && hello.InputVersion == InputProtocol.Version;
         if (hello.DeviceKey is not null && (hello.Kind == "hello-v1" || hello.Mode == SessionMode.Guest))
             throw new AuthenticationException("Device identity is unavailable for this connection");
         string? deviceFingerprint = hello.DeviceKey is not null && (synthetic || adminEligible)
             ? await VerifyDeviceIdentity(tls, cert, hello.DeviceKey, administrator, stop) : null;
-        string? approval = (adminEligible && deviceFingerprint is not null || synthetic && SessionAccess.Available(hello.Mode))
-            ? await RequestConsent(client, shell, requestedFeatures, administrator ? SessionMode.Admin : hello.Mode, deviceFingerprint, hello.WorkInputRevoke == true, stop)
+        string? approval = (adminEligible && deviceFingerprint is not null || synthetic && hello.Mode is null or SessionMode.Work)
+            ? await RequestConsent(client, shell, requestedFeatures, administrator ? SessionMode.Admin : hello.Mode, deviceFingerprint, stop)
             : null;
-        bool guestInput = approval?.EndsWith("_INPUT", StringComparison.Ordinal) == true && hello.Mode == SessionMode.Guest;
-        if (guestInput) approval = approval![..^6];
         if (approval is null || AudioConsent.Parse(approval) is null or ConsentDecision.Deny)
         {
             if (shell is not null) ShellBridge.Emit("denied", sessionId: shell.Id);
@@ -94,7 +89,6 @@ internal static class HostConnection
         if (administrator && !synthetic) selectedDisplay = new WindowsDisplaySelection(selectedDisplay).Device;
         await using var elevated = administrator && !synthetic ? await StartAdmin(client, tls, shell!, selectedDisplay!, stop) : null;
         if (administrator && !synthetic && elevated is null) return;
-        var access = administrator ? new SessionAccess(SessionMode.Admin, true) : SessionAccess.Approve(hello.Mode, guestInput);
         if (shell is not null) ShellBridge.Emit("approved", sessionId: shell.Id);
         if (hello.Kind is "hello-v2" or "request-v2" || administrator)
         {
@@ -102,7 +96,7 @@ internal static class HostConnection
                 ? SessionCapabilities.ForFullControl(requestedFeatures, selectedFileRoot is not null)
                 : SessionCapabilities.Grant(requestedFeatures, AudioConsent.Base(approval) is "APPROVE_CLIPBOARD" or "APPROVE_ALL", selectedFileRoot is not null && AudioConsent.Base(approval) is "APPROVE_FILES" or "APPROVE_ALL", AudioConsent.AllowsAudio(approval));
             await VideoHostSession.Run(listener, client, tls, identity, hello, backend, stop,
-                availableFeatures, shell?.ClipboardRevoked ?? default, selectedFileRoot, shell?.FilesRevoked ?? default,fileResumes,selectedDisplay,shell?.AudioRevoked??default,access,shell?.InputRevoked??default,elevated,shell?.Id);
+                availableFeatures, shell?.ClipboardRevoked ?? default, selectedFileRoot, shell?.FilesRevoked ?? default,fileResumes,selectedDisplay,shell?.AudioRevoked??default,elevated,shell?.Id);
             return;
         }
         listener.Stop();
@@ -194,7 +188,7 @@ internal static class HostConnection
     }
 
     static async Task<string?> RequestConsent(TcpClient client, ShellBridge.Session? shell, string[] features, SessionMode? mode,
-        string? deviceFingerprint, bool workInputRevoke, CancellationToken stop)
+        string? deviceFingerprint, CancellationToken stop)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop);
         deadline.CancelAfter(TimeSpan.FromSeconds(60));
@@ -202,8 +196,8 @@ internal static class HostConnection
         Task<string?> decision = shell is null ? Console.In.ReadLineAsync(deadline.Token).AsTask() : ReadShell();
         async Task<string?> ReadShell()
         {
-            var decision = await shell!.Request(client.Client.RemoteEndPoint?.ToString() ?? "unknown", features, mode, deviceFingerprint, deadline.Token, workInputRevoke);
-            return AudioConsent.Command(decision) + (shell.GuestInput ? "_INPUT" : "");
+            var decision = await shell!.Request(client.Client.RemoteEndPoint?.ToString() ?? "unknown", features, mode, deviceFingerprint, deadline.Token);
+            return AudioConsent.Command(decision);
         }
         async Task WatchPeer()
         {
