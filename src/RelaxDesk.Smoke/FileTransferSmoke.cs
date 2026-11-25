@@ -39,7 +39,7 @@ internal static class FileTransferSmoke
         };
         Task? media = null, control = null; Task<string>? logs = null;
         using var running = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
-        var rtt = new ConcurrentBag<double>(); int frames = 0;
+        var rtt = new ConcurrentBag<double>(); int frames = 0, udpDecoded = 0, keyFrameRequested = 0;
         try
         {
             string pin = (await host.StandardOutput.ReadLineAsync(timeout.Token) ?? throw new IOException("No pin")).Split(": ")[1];
@@ -59,12 +59,24 @@ internal static class FileTransferSmoke
             }
             if (client.Features.Contains(SessionCapabilities.FileTransfer) != grant || (client.Data is not null) != grant) throw new IOException("Independent file grant mismatch");
             logs = host.StandardOutput.ReadToEndAsync(timeout.Token);
-            media = Task.Run(async () => { while (true) { await client.Video.Read(running.Token); Interlocked.Increment(ref frames); } });
+            media = Task.Factory.StartNew(() =>
+            {
+                using var decoder = new MediaDecoder(() => Interlocked.Exchange(ref keyFrameRequested, 1), preferHardware: false);
+                while (!running.IsCancellationRequested)
+                {
+                    var frame = client.Video.Read(running.Token).GetAwaiter().GetResult();
+                    if (decoder.Decode(frame) is null) continue;
+                    Interlocked.Increment(ref frames);
+                    if (client.Video.TransportName == "UDP") Interlocked.Increment(ref udpDecoded);
+                }
+            }, running.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
             control = Task.Run(async () =>
             {
                 long sequence = 0;
                 while (true)
                 {
+                    if (Interlocked.Exchange(ref keyFrameRequested, 0) != 0)
+                        await Wire.Write(client.Control, new("keyframe-v2", ++sequence), running.Token);
                     var timer = Stopwatch.StartNew(); await Wire.Write(client.Control, new("ping-v2", ++sequence), running.Token);
                     var reply = await Wire.Read(client.Control, running.Token);
                     while (reply.Kind == QuicRecoveryProtocol.OfferKind && autoRecovery)
@@ -109,6 +121,7 @@ internal static class FileTransferSmoke
                         throw new IOException("Media or control stalled during active upload");
                 }
                 int beforeDownload = Volatile.Read(ref frames);
+                int udpBeforeDownload = Volatile.Read(ref udpDecoded);
                 int controlBeforeDownload = rtt.Count;
                 long VideoBytes() => (mediaLink?.DownstreamBytes ?? 0) + (relay?.DownstreamBytes ?? 0);
                 long videoBytesBeforeDownload = VideoBytes();
@@ -119,6 +132,8 @@ internal static class FileTransferSmoke
                     throw new IOException("Auto did not switch from TCP to UDP during the same download");
                 if (Volatile.Read(ref frames) <= beforeDownload || rtt.Count <= controlBeforeDownload)
                     throw new IOException("Media or control stalled during active download");
+                if ((udp || autoRecovery) && Volatile.Read(ref udpDecoded) <= udpBeforeDownload)
+                    throw new IOException("No UDP frames decoded during active download");
                 if (fileLink is not null)
                 {
                     long videoBytes = VideoBytes() - videoBytesBeforeDownload;
@@ -160,6 +175,8 @@ internal static class FileTransferSmoke
                 if (relay.Shaped < 16 || relay.ReorderedPairs == 0) throw new IOException("UDP media shaping was not exercised");
                 Console.WriteLine($"PASS concurrent video and files with UDP media capped at {UdpLossRelay.ShapedBytesPerSecond} B/s, shaped_packets={relay.Shaped}, reordered_pairs={relay.ReorderedPairs}");
             }
+            if (media.IsFaulted) await media;
+            if (control.IsFaulted) await control;
             running.Cancel();client.Dispose();
             try{await Task.WhenAll(media,control);}catch(Exception)when(running.IsCancellationRequested){}
             await host.WaitForExitAsync(timeout.Token);string output=await logs;
