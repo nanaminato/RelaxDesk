@@ -81,10 +81,8 @@ public sealed class SessionClient : IDisposable
     public SslStream? ClipboardData{get;private set;}
     public SslStream? Data { get; private set; }
     public string[] Capabilities { get; private set; } = [];
-    public SessionMode? RequestedMode { get; init; }
     public bool FullControl { get; init; }
     public Func<ECDsa>? OpenDeviceKey { get; init; }
-    public bool InputAllowed { get; private set; }
     public bool RequestPointerCompression { get; init; }
     public bool RequestQuicRecovery { get; init; }
     public bool SupportsQuicRecovery { get; private set; }
@@ -184,13 +182,13 @@ public sealed class SessionClient : IDisposable
         if(!VideoSettingsProtocol.Supported(RequestedVideoVersion))throw new InvalidDataException("Unsupported video version request");
         if(RequestedInputVersion is not (0 or InputProtocol.Version))throw new InvalidDataException("Unsupported requested input version");
         if(!DisplayProtocol.Supported(RequestedDisplayVersion)||RequestedDisplayVersion!=0&&RequestedInputVersion!=InputProtocol.Version)throw new InvalidDataException("Unsupported requested display version");
-        using var deviceKey = FullControl || RequestedMode is not SessionMode.Guest ? OpenDeviceKey?.Invoke() : null;
+        using var deviceKey = OpenDeviceKey?.Invoke();
         if (FullControl && deviceKey is null) throw new AuthenticationException("Full control requires a device identity");
         string requestKind = FullControl
             ? approvalOnly ? FullControlProtocol.Request : FullControlProtocol.PinnedRequest
             : approvalOnly ? "request-v2" : "hello-v2";
         bool requestResume=RequestFileResume&&requestedFeatures.Contains(SessionCapabilities.FileTransfer);
-        await Wire.Write(Control, new Packet(requestKind, Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], PointerBrotli: RequestPointerCompression ? true : null, Features: requestedFeatures.Length == 0 ? null : requestedFeatures,FileResume:requestResume,InputVersion:RequestedInputVersion,DisplayVersion:RequestedDisplayVersion,VideoVersion:RequestedVideoVersion, Mode:FullControl ? null : RequestedMode, Network:requestedNetwork, DeviceKey: deviceKey is null ? null : DeviceIdentity.Export(deviceKey), QuicRecovery: requestQuicRecovery ? true : null), ct);
+        await Wire.Write(Control, new Packet(requestKind, Text: approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token, Capabilities: ["h264", "deflate"], PointerBrotli: RequestPointerCompression ? true : null, Features: requestedFeatures.Length == 0 ? null : requestedFeatures,FileResume:requestResume,InputVersion:RequestedInputVersion,DisplayVersion:RequestedDisplayVersion,VideoVersion:RequestedVideoVersion, Network:requestedNetwork, DeviceKey: deviceKey is null ? null : DeviceIdentity.Export(deviceKey), QuicRecovery: requestQuicRecovery ? true : null), ct);
         PhaseChanged?.Invoke(ConnectionPhase.AwaitingApproval);
         var approval = await Wire.Read(Control, ct);
         string challengeKind = FullControl ? FullControlProtocol.DeviceChallenge : "work-device-challenge-v2";
@@ -213,14 +211,6 @@ public sealed class SessionClient : IDisposable
         if(approval.Input is not null||approval.InputVersion is not (0 or InputProtocol.Version)||approval.InputVersion!=0&&approval.InputVersion!=RequestedInputVersion)throw new AuthenticationException("Unrequested/invalid input version");
         if (FullControl && (!deviceChallenged || approval.InputVersion != InputProtocol.Version))
             throw new AuthenticationException("Incomplete full-control handshake");
-        var mode = FullControl ? null : RequestedMode;
-        bool legacyWork = mode == SessionMode.Work && approval.Mode is null && approval.InputAllowed is null;
-        if (!legacyWork && (approval.Mode != mode || (approval.InputAllowed is null) != (mode is null)) ||
-            approval.Mode is not (null or SessionMode.Guest or SessionMode.Work or SessionMode.Admin) ||
-            (approval.Mode is SessionMode.Work or SessionMode.Admin) && approval.InputAllowed != true ||
-            approval.Mode == SessionMode.Admin && approval.InputVersion != InputProtocol.Version)
-            throw new AuthenticationException("Host did not confirm the requested session mode");
-        InputAllowed = approval.InputAllowed ?? true;
         InputVersion=approval.InputVersion;
         if(!DisplayProtocol.Supported(approval.DisplayVersion)||approval.DisplayVersion!=0&&(approval.DisplayVersion>RequestedDisplayVersion||InputVersion!=InputProtocol.Version)||approval.DisplayId is not null||approval.DisplayGeneration!=0||approval.DisplayVersion==0&&approval.DisplayState is not null||approval.DisplayVersion!=0&&approval.DisplayState is null)throw new AuthenticationException("Unrequested or invalid display negotiation");
         DisplayVersion=approval.DisplayVersion;DisplayState=approval.DisplayState is null?null:DisplayProtocol.Validate(approval.DisplayState);

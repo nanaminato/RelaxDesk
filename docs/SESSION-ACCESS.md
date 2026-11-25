@@ -5,53 +5,26 @@
 Production Host and Viewer use the v3 full-control handshake. The Viewer
 proves its device identity over TLS before the Host displays the local approval
 prompt. Approval enables the offered features within Host configuration. Older
-connection requests receive a client-update response. Media and auxiliary
-channel framing continue to use their existing versions.
+connection requests are rejected before approval. Host and Viewer must be
+updated together. There is no legacy connection fallback in production, and
+upgrading does not convert old device trust records. Media and auxiliary
+channel framing continue to use their existing versions. The v2 handshake
+remains available only to synthetic loopback regression fixtures.
 
 
 ## Current session behavior
 
-| Mode | Host decision | Input | Optional features |
-| --- | --- | --- | --- |
-| Guest | Fresh local consent | Off by default. Host can grant it separately and revoke it during the session. | Clipboard, scoped files and audio use the existing independent local grants. |
-| Work | Fresh local consent | Ordinary-desktop input. With a compatible Viewer, HostShell can revoke it without ending video. | Existing independent grants and shared display scope |
-| Admin | Initial HostShell approval, independent confirmation, local UAC and worker readiness | High-integrity input on the approved Default desktop | Existing independent grants |
+The operator previews the authenticated device fingerprint and available
+features, then approves or denies the entire connection. Approved connections
+permit keyboard and mouse input on the eligible Default desktop, including
+administrator windows when the protected input worker is ready. Clipboard,
+audio and scoped files remain configurable features. File access requires a
+Host-selected directory and stays within it. Disconnect ends the entire grant.
 
-HostShell can permit all modes, Guest and Work, Guest only, or Work only. The CLI
-`--no-admin` rejects initial Admin requests and omits upgrade negotiation in
-Work sessions. The Guest-only CLI option is
-`RelaxDesk.Host --listen --guest-only <specific LAN IP> <port> dxgi`.
-Use `--work-only` in the same position to accept Work and legacy Work
-connections and disable Admin upgrades.
-The CLI approves a Guest with ordinary input via `APPROVE_INPUT`; optional
-grants retain their existing commands, with `_INPUT` appended for Guest input.
-Work uses fresh consent on reconnect. The Viewer can opt in to a persistent
-per-Windows-user signing key. The Host verifies possession and shows the
-public key fingerprint to the local operator. The Host can remember the exact optional grants for a verified key and revoke
-the record from the Work device list.
-
-The v2 hello can carry `Mode`. The authenticated approval echoes the requested
-mode and provides `InputAllowed`. An explicit request requires a matching
-approval before any Viewer channel attaches. The default Work flow omits both
-fields for backward compatibility. An earlier Host cannot silently downgrade a
-Guest request into a Work session. The Host rejects unsupported Admin requests, unknown modes and
-approval-only fields in a hello. The approved input protocol version remains
-independent of the input grant so display readiness and switching still work in
-view-only sessions.
-
-Host input authorization takes place before injection under the session gate.
-
-The optional `WorkInputRevoke` flag is offered by an explicit Work client and
-echoed by HostShell. After `work-input-revoked-v2`, the session remains Work
-with video and independently granted features. Keyboard, mouse and Admin
-upgrade are disabled for that session. Old peers can still connect and are
-managed through the existing disconnect action.
-Revocation serializes with an in-flight injection, releases the tracked inputs,
-and notifies the Viewer over the authenticated control channel. Subsequent
-structurally valid inputs from the previously authorized Guest are discarded
-with sequence validation while media and control remain connected. Input from
-a Guest that never received a grant is a protocol violation. Re-enabling
-Guest input requires a fresh approval.
+The Host can remember the device fingerprint after local approval. Saved
+devices still require a fresh approval on every connection, and revoking trust
+ends the matching active connection. The identity-only store does not import
+old mode-scoped records.
 
 The coordinator refuses real sharing if its effective process token is
 elevated, above medium integrity, or has UIAccess, or if it is impersonating.

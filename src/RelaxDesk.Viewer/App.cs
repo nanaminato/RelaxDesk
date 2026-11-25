@@ -220,7 +220,7 @@ public sealed partial class ViewerWindow : Window
                 throw new IOException("Injected initial UDP connection failure");
             return WindowsQuicDatagrams.Connect(endpoint, certificate);
         }
-        using var connection = new SessionClient { RequestedFeatures = target.Features,FullControl=target.FullControl,RequestedMode=target.FullControl ? null : SessionMode.Work,RequestPointerCompression=true,RequestQuicRecovery=smoke is null || autoRecoveryTest,Network=target.Network,OpenDeviceKey=target.FullControl ? WindowsDeviceKey.Open : null,ConnectQuic=canOfferUdp ? OpenQuic : null,RequestedDisplayVersion=target.DisplayVersion,RequestedVideoVersion=VideoSettingsProtocol.Version }; using var abort = cancellation.Token.Register(connection.Dispose);
+        using var connection = new SessionClient { RequestedFeatures = target.Features,FullControl=target.FullControl,RequestPointerCompression=true,RequestQuicRecovery=smoke is null || autoRecoveryTest,Network=target.Network,OpenDeviceKey=target.FullControl ? WindowsDeviceKey.Open : null,ConnectQuic=canOfferUdp ? OpenQuic : null,RequestedDisplayVersion=target.DisplayVersion,RequestedVideoVersion=VideoSettingsProtocol.Version }; using var abort = cancellation.Token.Register(connection.Dispose);
         string attemptStage = "connect";
         connection.PhaseChanged+=phase=>{attemptStage=phase switch { ConnectionPhase.Authenticating=>"authenticating",ConnectionPhase.AwaitingApproval=>"awaiting-approval",ConnectionPhase.Negotiating=>"negotiating",ConnectionPhase.Connected=>"session-setup",_=>"connect" };if(ReferenceEquals(session,cancellation)&&!cancellation.IsCancellationRequested)SetConnectionPhase(phase);};
         ClipboardSynchronizer? clipboard = null;
@@ -322,7 +322,7 @@ public sealed partial class ViewerWindow : Window
             }
             established=true;connectedAt=Stopwatch.GetTimestamp();onConnected();
             token.Clear();
-            var permissionGate = new AccessGate(); permissionGate.Approve(connection.Features); sessionPermissions = permissionGate; inputVersion=connection.InputVersion;inputAuthorized=connection.InputAllowed;
+            var permissionGate = new AccessGate(); permissionGate.Approve(connection.Features); sessionPermissions = permissionGate; inputVersion=connection.InputVersion;inputAuthorized=true;
             StartDisplaySession(connection);
             BeginVideoSettings(connection);
             await StartFileSession(connection,cancellation.Token);

@@ -14,18 +14,18 @@ internal sealed partial class HostWindow
     {
         const string current = "current-session";
         const string previous = "previous-session";
-        Changed(new("approval-request", SessionId: current, Mode: "Admin"));
+        Changed(new("approval-request", SessionId: current, FullControl: true));
         Changed(new("admin-ready", SessionId: previous));
         if (state.Text != "等待你的授权") throw new IOException("A stale readiness event modified the current session");
         Changed(new("admin-ready", SessionId: current));
         if (state.Text != "正在共享" || !detail.Text.Contains("管理员输入代理已连接"))
             throw new IOException("Full-control readiness status was missing");
-        Changed(new("approval-request", SessionId: current, Mode: "Work"));
+        Changed(new("approval-request", SessionId: current));
         activeInput = true;
         Changed(new("streaming", SessionId: current));
         Changed(new("ordinary-input-blocked", SessionId: current));
         Changed(new("ordinary-input-restored", SessionId: previous));
-        if (state.Text != "正在共享 · Work" || !detail.Text.Contains("暂时拒绝键鼠"))
+        if (state.Text != "正在共享" || !detail.Text.Contains("暂时拒绝键鼠"))
             throw new IOException("Input rejection notice lost the current Work session or accepted a stale event");
         Changed(new("ordinary-input-restored", SessionId: current));
         if (!detail.Text.Contains("键鼠操作已恢复")) throw new IOException("Ordinary input recovery notice missing");
@@ -74,7 +74,7 @@ internal static class ShellVerification
                     await window.Decide(true);await connection;
                     var frame=await MediaProtocol.Read(viewer.Media,timeout.Token);
                     if(frame.Data.Length==0||frame.Codec!=MediaCodec.H264||window.RequestVisible)throw new IOException("Shell-approved video missing");
-                    await Until(()=>window.Status=="正在共享 · Work");Snapshot("host-sharing.png");
+                    await Until(()=>window.Status=="正在共享");Snapshot("host-sharing.png");
                     await window.StopSharing();await window.Host.Finished.WaitAsync(TimeSpan.FromSeconds(10));
                 }
                 if(window.Host.Running||window.Host.Pending)throw new IOException("Stop left child/session running");
@@ -90,7 +90,7 @@ internal static class ShellVerification
                     if(window.Host.Snapshot().Any(l=>l.StartsWith("backend=")||l.StartsWith("media frames=")))throw new IOException("Denied session started capture/media");
                 }
                 // Same process accepts another independently approved session after denial.
-                using(var next=new SessionClient { RequestedMode = SessionMode.Work })
+                using(var next=new SessionClient())
                 {
                     var connecting=next.ConnectByApproval("127.0.0.1",port,timeout.Token);await Until(()=>window.RequestVisible);
                     await window.Decide(true);await connecting;_=await MediaProtocol.Read(next.Media,timeout.Token);
@@ -153,7 +153,7 @@ internal static class ShellVerification
                 foreach (bool allowClipboard in new[] { false, true })
                 {
                     port=Port();await window.StartSharing("127.0.0.1",port,"test-clipboard");await Until(()=>window.Status=="等待连接");
-                    using var viewer=new SessionClient{RequestedMode = SessionMode.Work, RequestedFeatures=[SessionCapabilities.ClipboardText]};
+                    using var viewer=new SessionClient{RequestedFeatures=[SessionCapabilities.ClipboardText]};
                     var connecting=viewer.ConnectByApproval("127.0.0.1",port,timeout.Token);await Until(()=>window.RequestVisible);
                     if(!window.ClipboardChoiceVisible||window.ClipboardAllowed)throw new IOException("Clipboard choice missing or pre-approved");
                     Snapshot("host-clipboard-request.png");window.ClipboardAllowed=allowClipboard;await window.Decide(true);await connecting;

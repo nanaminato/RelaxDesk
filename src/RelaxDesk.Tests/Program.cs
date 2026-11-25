@@ -25,7 +25,7 @@ var guest = new AccessGate();
 guest.Approve([SessionCapabilities.ClipboardText], InputProtocol.Version, allowInput: false);
 Check(!guest.TryExecuteInput(input, () => throw new Exception("Guest input executed")));
 Check(guest.Allows(SessionCapabilities.ClipboardText));
-Check(!guest.AcceptControl(new Packet("ping-v2", 1, Mode: SessionMode.Admin, InputAllowed: true)));
+Check(!guest.AcceptControl(new Packet("ping-v2", 1, DeviceKey: "unexpected")));
 Check(guest.AcceptControl(new Packet("ping-v2", 1)));
 var revokedInput = new AccessGate();
 string[] offeredFullControl = [SessionCapabilities.ClipboardText, SessionCapabilities.ClipboardFiles,

@@ -9,19 +9,16 @@ internal static class SessionAccessSmoke
 {
     public static async Task Run(string hostPath)
     {
-        await Verify(hostPath, SessionMode.Work, grantInput: true, denied: false, proveDevice: true);
-        await Verify(hostPath, null, grantInput: false, denied: true, production: true);
-        await Verify(hostPath, SessionMode.Guest, grantInput: false, denied: true, production: true);
-        await Verify(hostPath, SessionMode.Work, grantInput: false, denied: true, proveDevice: true, production: true);
-        await Verify(hostPath, SessionMode.Admin, grantInput: false, denied: true, production: true);
-        await Verify(hostPath, SessionMode.Admin, grantInput: false, denied: true, testAdminConsent: true, proveDevice: true, production: true);
+        await Verify(hostPath, fullControl: true, denied: false, proveDevice: true);
+        await Verify(hostPath, fullControl: false, denied: true, production: true);
+        await Verify(hostPath, fullControl: true, denied: true, proveDevice: true, production: true);
         Console.WriteLine("PASS production Host requires an updated full-control client");
-        Console.WriteLine("PASS verified Work device proof over production TLS; local approval still required");
+        Console.WriteLine("PASS verified device proof over production TLS; local approval still required");
         Console.WriteLine("PASS retired in-session elevation request terminates the connection");
         Console.WriteLine("PASS production TLS and shell approval: full-control denial before and after device verification");
     }
 
-    static async Task Verify(string hostPath, SessionMode? mode, bool grantInput, bool denied, bool testAdminConsent = false, bool proveDevice = false, bool production = false)
+    static async Task Verify(string hostPath, bool fullControl, bool denied, bool proveDevice = false, bool production = false)
     {
         var reservation = new TcpListener(IPAddress.Loopback, 0);
         reservation.Start();
@@ -34,8 +31,7 @@ internal static class SessionAccessSmoke
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         using var viewer = new SessionClient
         {
-            RequestedMode = mode,
-            FullControl = testAdminConsent,
+            FullControl = fullControl,
             RequestedDisplayVersion = DisplayProtocol.Version,
             OpenDeviceKey = proveDevice ? () => ECDsa.Create(key.ExportParameters(true)) : null
         };
@@ -45,10 +41,10 @@ internal static class SessionAccessSmoke
             Task connect = viewer.ConnectByApproval("127.0.0.1", port, timeout.Token);
             if (denied)
             {
-                if (testAdminConsent)
+                if (fullControl)
                 {
                     var adminRequest = await ReadEvent("approval-request");
-                    if (adminRequest.GetProperty("mode").GetString() != "Admin")
+                    if (!adminRequest.GetProperty("fullControl").GetBoolean())
                         throw new IOException("Administrator approval event omitted its mode");
                     if (connect.IsCompleted || adminRequest.GetProperty("deviceFingerprint").GetString() != DeviceIdentity.Fingerprint(key))
                         throw new IOException("Full-control request did not verify the device before local approval");
@@ -57,43 +53,35 @@ internal static class SessionAccessSmoke
                     await host.StandardInput.FlushAsync();
                 }
                 try { await connect; throw new IOException("Forbidden mode advanced"); }
-                catch (HostConsentRejectedException) when (testAdminConsent || !production) { }
-                catch (FullControlVersionException) when (production && !testAdminConsent) { }
+                catch (HostConsentRejectedException) when (fullControl || !production) { }
+                catch (FullControlVersionException) when (production && !fullControl) { }
                 return;
             }
 
             JsonElement request = await ReadEvent("approval-request");
-            if (request.GetProperty("mode").GetString() != mode?.ToString())
+            if (request.GetProperty("fullControl").GetBoolean() != fullControl)
                 throw new IOException("Incorrect mode displayed for approval");
             if (proveDevice && (connect.IsCompleted ||
                 request.GetProperty("deviceFingerprint").GetString() != DeviceIdentity.Fingerprint(key)))
-                throw new IOException("Work device fingerprint missing or skipped local approval");
+                throw new IOException("Device fingerprint missing or skipped local approval");
             string? id = request.GetProperty("sessionId").GetString();
             const string command = "APPROVE";
             await host.StandardInput.WriteLineAsync($"{command} {id}");
             await host.StandardInput.FlushAsync();
             await connect;
-            if (viewer.InputAllowed != grantInput) throw new IOException("Incorrect granted input");
             var frame = await viewer.Video.Read(timeout.Token);
             if (frame.Data.Length == 0) throw new IOException("No media delivered");
 
             await Wire.Write(viewer.Control, new("display-ready-v2", 1, DisplayGeneration: frame.DisplayGeneration), timeout.Token);
             await Wire.Write(viewer.Control, InputProtocol.Encode(new("move"), 2, frame.DisplayGeneration), timeout.Token);
-            if (!grantInput)
+            await Wire.Write(viewer.Control, new("ping-v2", 3), timeout.Token);
+            var reply = await Wire.Read(viewer.Control, timeout.Token);
+            if (reply.Kind != "pong-v2" || reply.Sequence != 3)
+                throw new IOException("Input grant failed to keep the control stream open");
+            if (proveDevice)
             {
+                await Wire.Write(viewer.Control, new("admin-input-request-v2", 4), timeout.Token);
                 await ReadEvent("session-ended");
-            }
-            else
-            {
-                await Wire.Write(viewer.Control, new("ping-v2", 3), timeout.Token);
-                var reply = await Wire.Read(viewer.Control, timeout.Token);
-                if (reply.Kind != "pong-v2" || reply.Sequence != 3)
-                    throw new IOException("Input grant failed to keep the control stream open");
-                if (proveDevice)
-                {
-                    await Wire.Write(viewer.Control, new("admin-input-request-v2", 4), timeout.Token);
-                    await ReadEvent("session-ended");
-                }
             }
         }
         finally

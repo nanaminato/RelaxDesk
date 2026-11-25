@@ -4,7 +4,7 @@ using System.Net;
 using System.Text.Json;
 namespace RelaxDesk.HostShell;
 
-internal sealed record HostEvent(string Kind, string? Address = null, string? SessionId = null, string[]? Features = null,int? ExitCode=null,int Generation=0,string? Mode=null,string? DeviceFingerprint=null,string? RequestId=null,string? DesktopReason=null);
+internal sealed record HostEvent(string Kind, string? Address = null, string? SessionId = null, string[]? Features = null,int? ExitCode=null,int Generation=0,bool FullControl=false,string? DeviceFingerprint=null,string? RequestId=null,string? DesktopReason=null);
 
 internal sealed class HostProcess
 {
@@ -66,7 +66,7 @@ internal sealed class HostProcess
                     }
                     Pending=type=="approval-request";
                     if(type is "session-ended" or "listening") {SessionId=null;ClipboardRequested=FilesRequested=AudioRequested=false;}
-                    if(type!="ended")Emit(new(type,address,id,features,Mode:data.RootElement.TryGetProperty("mode",out var mode)?mode.GetString():null,DeviceFingerprint:data.RootElement.TryGetProperty("deviceFingerprint",out var device)?device.GetString():null,RequestId:data.RootElement.TryGetProperty("requestId",out var request)?request.GetString():null,DesktopReason:data.RootElement.TryGetProperty("desktopReason",out var desktop)?desktop.GetString():null));continue;
+                    if(type!="ended")Emit(new(type,address,id,features,FullControl:data.RootElement.TryGetProperty("fullControl",out var fullControl)&&fullControl.ValueKind==JsonValueKind.True,DeviceFingerprint:data.RootElement.TryGetProperty("deviceFingerprint",out var device)?device.GetString():null,RequestId:data.RootElement.TryGetProperty("requestId",out var request)?request.GetString():null,DesktopReason:data.RootElement.TryGetProperty("desktopReason",out var desktop)?desktop.GetString():null));continue;
                 }
                 lock(Lines){if(Lines.Count>=200)Lines.RemoveAt(0);Lines.Add(line);}
                 Diagnostic?.Invoke(line);

@@ -67,7 +67,7 @@ internal static class QuicMediaAttachmentChecks
         Check(!QuicRecoveryProtocol.IsOffer(offer, 2));
         Check(!QuicRecoveryProtocol.IsOffer(offer with { QuicPort = 0 }, 1));
         Check(!QuicRecoveryProtocol.IsOffer(offer with { QuicTicket = "1234" }, 1));
-        Check(!QuicRecoveryProtocol.IsOffer(offer with { InputAllowed = true }, 1));
+        Check(!QuicRecoveryProtocol.IsOffer(offer with { DeviceKey = "unexpected" }, 1));
         Check(QuicRecoveryProtocol.ReadResult(QuicRecoveryProtocol.Result(2, 1100), 2, 1100) == 1100);
         Check(QuicRecoveryProtocol.ReadResult(QuicRecoveryProtocol.Result(2, 0), 2, 1100) == 0);
         foreach (var invalid in new[] { QuicRecoveryProtocol.Result(1, 1100), QuicRecoveryProtocol.Result(2, 1200), QuicRecoveryProtocol.Result(2, 1100) with { Code = 1 } })

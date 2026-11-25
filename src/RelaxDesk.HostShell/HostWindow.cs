@@ -18,7 +18,7 @@ internal sealed partial class HostWindow:Window
     readonly Border request=new(){Visibility=Visibility.Collapsed};
     readonly CheckBox clipboardPermission=new(){Content="允许双向文本剪贴板（可读取两端新复制的文本，最大64KiB）",IsChecked=false,Visibility=Visibility.Collapsed,Margin=new(0,10,0,0)};
     readonly TextBlock consentAccess = new() { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.SlateGray };
-    string activeMode = "Work";
+    bool fullControlRequest;
     bool activeInput;
     readonly Button revokeClipboard=new(){Content="停止剪贴板同步",Visibility=Visibility.Collapsed};
     readonly TextBox logs=new(){IsReadOnly=true,TextWrapping=TextWrapping.Wrap,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,MaxHeight=180,FontFamily=new("Consolas"),FontSize=11};
@@ -84,7 +84,7 @@ internal sealed partial class HostWindow:Window
         finally{UpdateServiceControls();}
     }
     internal async Task Decide(bool accepted){string? id=displayedSessionId;if(id is null)return;allow.IsEnabled=deny.IsEnabled=false;
-        bool legacyFeatures=accepted&&activeMode!="Admin";bool clipboard=legacyFeatures&&clipboardPermission.IsChecked==true;bool files=legacyFeatures&&filesPermission.IsChecked==true&&selectedFileRoot is not null;bool audio=legacyFeatures&&audioPermission.IsChecked==true;var remember=CaptureDeviceTrust(accepted);activeInput=accepted;await Host.Decide(accepted,clipboard,files,id,audio);if(displayedSessionId!=id)return;var enabled = accepted && activeMode == "Admin" ? fullControlFeatures : [];revokeAudio.Visibility=audio||enabled.Contains(SessionCapabilities.SystemAudio)?Visibility.Visible:Visibility.Collapsed;revokeClipboard.Visibility=clipboard||enabled.Any(SessionCapabilities.IsClipboard)?Visibility.Visible:Visibility.Collapsed;revokeFiles.Visibility=files||enabled.Contains(SessionCapabilities.FileTransfer)?Visibility.Visible:Visibility.Collapsed;request.Visibility=Visibility.Collapsed;if(remember is not null)await SaveDeviceTrust(remember);}
+        bool legacyFeatures=accepted&&!fullControlRequest;bool clipboard=legacyFeatures&&clipboardPermission.IsChecked==true;bool files=legacyFeatures&&filesPermission.IsChecked==true&&selectedFileRoot is not null;bool audio=legacyFeatures&&audioPermission.IsChecked==true;var remember=CaptureDeviceTrust(accepted);activeInput=accepted;await Host.Decide(accepted,clipboard,files,id,audio);if(displayedSessionId!=id)return;var enabled = accepted && fullControlRequest ? fullControlFeatures : [];revokeAudio.Visibility=audio||enabled.Contains(SessionCapabilities.SystemAudio)?Visibility.Visible:Visibility.Collapsed;revokeClipboard.Visibility=clipboard||enabled.Any(SessionCapabilities.IsClipboard)?Visibility.Visible:Visibility.Collapsed;revokeFiles.Visibility=files||enabled.Contains(SessionCapabilities.FileTransfer)?Visibility.Visible:Visibility.Collapsed;request.Visibility=Visibility.Collapsed;if(remember is not null)await SaveDeviceTrust(remember);}
     internal async Task StopSharing(){CancelRecovery();stop.IsEnabled=false;try{await Host.Stop();}catch(Exception e){detail.Text=e.Message;}}
     internal Task DisconnectSession()=>displayedSessionId is {} id?Host.Disconnect(id):Task.CompletedTask;
     void Changed(HostEvent change)
@@ -109,14 +109,14 @@ internal sealed partial class HostWindow:Window
                     _ => DesktopUnavailableNotice
                 };
                 break;
-            case "approval-request":desktopNotice=null;displayedSessionId=change.SessionId;disconnectSession.Visibility=Visibility.Visible;activeMode = change.Mode ?? "Work"; activeInput = false;
+            case "approval-request":desktopNotice=null;displayedSessionId=change.SessionId;disconnectSession.Visibility=Visibility.Visible;fullControlRequest = change.FullControl; activeInput = false;
                 peer.Text = $"请求来源  {value}";
                 peer.TextWrapping = TextWrapping.Wrap;
                 if (change.DeviceFingerprint is { Length: 64 } device && device.All(char.IsAsciiHexDigit))
                     peer.Text += $"\n已验证设备公钥 SHA-256  {device}";
-                consentAccess.Text = activeMode == "Admin" ? "允许后，对方可控制此桌面并操作管理员权限窗口。请核对设备指纹后再批准。" : "允许后共享画面，并允许普通桌面的键鼠操作。";
+                consentAccess.Text = fullControlRequest ? "允许后，对方可控制此桌面并操作管理员权限窗口。请核对设备指纹后再批准。" : "允许后共享画面，并允许普通桌面的键鼠操作。";
                 request.Visibility=Visibility.Visible;allow.IsEnabled=deny.IsEnabled=true;clipboardPermission.IsChecked=false;clipboardPermission.Content=new TextBlock{Text="允许双向剪贴板："+SessionCapabilities.ClipboardDescription(change.Features??[])+"（读取/替换两端新复制的内容）",TextWrapping=TextWrapping.Wrap};clipboardPermission.Visibility=(change.Features??[]).Any(SessionCapabilities.IsClipboard)?Visibility.Visible:Visibility.Collapsed;ShowFileRequest((change.Features??[]).Contains(SessionCapabilities.FileTransfer));ShowAudioRequest(change.Features);ApplyDeviceTrust(change);
-                if (activeMode == "Admin")
+                if (fullControlRequest)
                 {
                     fullControlFeatures = SessionCapabilities.ForFullControl(change.Features, selectedFileRoot is not null);
                     clipboardPermission.Visibility = filesPermission.Visibility = audioPermission.Visibility = Visibility.Collapsed;
@@ -130,20 +130,20 @@ internal sealed partial class HostWindow:Window
                 }
                 state.Text="等待你的授权";detail.Text="还未共享桌面或开放输入。";break;
             case "admin-starting":
-                state.Text = activeMode == "Work" ? "正在共享 · Work" : "正在准备管理员输入";
+                state.Text = "正在准备管理员输入";
                 detail.Text = "正在检查并启动管理员输入代理。如果 Windows 显示 UAC 提示，请在本机确认。";
                 break;
-            case "admin-ready":adminDeploymentUnavailable=false;activeMode="Admin";state.Text="正在共享";detail.Text="管理员输入代理已连接。断开会话会撤销输入。";break;
+            case "admin-ready":adminDeploymentUnavailable=false;state.Text="正在共享";detail.Text="管理员输入代理已连接。断开会话会撤销输入。";break;
             case "admin-deployment-unavailable":adminDeploymentUnavailable=true;detail.Text=AdminDeploymentNotice;break;
-            case "ordinary-input-blocked" when activeInput && activeMode != "Admin":
+            case "ordinary-input-blocked" when activeInput && !fullControlRequest:
                 detail.Text = "Windows 暂时拒绝键鼠操作，画面仍在共享。请将焦点切回普通权限窗口。";
                 break;
-            case "ordinary-input-restored" when activeInput && activeMode != "Admin":
+            case "ordinary-input-restored" when activeInput && !fullControlRequest:
                 detail.Text = "普通桌面的键鼠操作已恢复。";
                 break;
             case "approved":state.Text="正在建立共享";detail.Text="已允许本次连接，正在准备屏幕。";request.Visibility=Visibility.Collapsed;break;
             case "denied":state.Text="已拒绝连接";detail.Text="没有共享桌面。";break;
-            case "streaming":state.Text=activeMode=="Admin"?"正在共享":$"正在共享 · {activeMode}";detail.Text=activeMode=="Admin"?"管理员输入代理已连接。断开会话会撤销输入。":activeInput?"对方可查看并操作普通桌面。":"键鼠输入未授权。";break;
+            case "streaming":state.Text="正在共享";detail.Text=fullControlRequest?"管理员输入代理已连接。断开会话会撤销输入。":activeInput?"对方可查看并操作普通桌面。":"键鼠输入未授权。";break;
             case "color":
                 try
                 {

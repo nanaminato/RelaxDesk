@@ -57,7 +57,7 @@ internal sealed partial class HostWindow
 
     void ApplyDeviceTrust(HostEvent requestEvent)
     {
-        activeDeviceFingerprint = activeMode == "Admin" && DeviceTrustStore.IsFingerprint(requestEvent.DeviceFingerprint)
+        activeDeviceFingerprint = requestEvent.FullControl && DeviceTrustStore.IsFingerprint(requestEvent.DeviceFingerprint)
             ? requestEvent.DeviceFingerprint : null;
         rememberDevice.IsChecked = false;
         bool known = trustLoaded && !trustBusy && activeDeviceFingerprint is { } fingerprint &&
