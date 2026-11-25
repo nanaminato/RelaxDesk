@@ -17,7 +17,7 @@ public sealed partial class ViewerWindow
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(nint window, out uint processId);
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(nint window);
 
-    internal static void VerifyAdminUpgrade(Application app, string hostApplication, bool activate = false, bool workerLoss = false, bool realWorker = false, bool cancelElevation = false, bool physicalLock = false, bool physicalKey = false)
+    internal static void VerifyAdminUpgrade(Application app, string hostApplication, bool activate = false, bool workerLoss = false, bool realWorker = false, bool cancelElevation = false, bool physicalLock = false, bool physicalKey = false, bool holdProbeKey = false)
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
@@ -102,7 +102,7 @@ public sealed partial class ViewerWindow
                     SetForegroundWindow(window);
                 return ProbeForeground();
             }
-            void SendProbeKey()
+            void SendProbeKey(bool hold = false)
             {
                 if (!ProbeForeground()) throw new IOException("The owned elevated input probe is no longer the foreground window");
                 if (connection is null || connection.IsCompleted || viewer.displaySession is not { Ready: true } display)
@@ -110,8 +110,14 @@ public sealed partial class ViewerWindow
                 long generation = display.Generation;
                 var key = new RemoteInput("key", VirtualKey: 0x77, ScanCode: 0x42);
                 if (!viewer.outgoing.TryWrite(InputProtocol.Encode(key, ++viewer.sequence, generation)) ||
-                    !viewer.outgoing.TryWrite(InputProtocol.Encode(key with { Up = true }, ++viewer.sequence, generation)))
+                    !hold && !viewer.outgoing.TryWrite(InputProtocol.Encode(key with { Up = true }, ++viewer.sequence, generation)))
                     throw new IOException("Could not queue the bounded F8 probe input");
+            }
+            async Task VerifyProbeExit(Process probe)
+            {
+                await probe.WaitForExitAsync(ct);
+                if (probe.ExitCode != 0)
+                    throw new IOException($"Elevated probe did not receive a balanced F8 press and release (probe exit {probe.ExitCode})");
             }
             try
             {
@@ -227,20 +233,31 @@ public sealed partial class ViewerWindow
                             {
                                 Console.WriteLine("READY Admin is active. Focus the same elevated input probe without pressing F8.");
                                 await Until(() => keyProbe.HasExited || connection.IsCompleted || FocusProbeFromVerifier());
-                                SendProbeKey();
+                                SendProbeKey(holdProbeKey);
                                 Console.WriteLine("Admin sent the bounded F8 probe to the foreground test window");
                                 using var forwardDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                                 try { await WaitForLog("admin_input_first_forwarded ", forwardDeadline.Token); }
                                 catch (OperationCanceledException) when (forwardDeadline.IsCancellationRequested)
                                 { throw new IOException("Host did not report forwarding Admin input to the worker pipe"); }
                                 Console.WriteLine("Host forwarded the first Admin input over the authenticated worker pipe");
-                                await keyProbe.WaitForExitAsync(ct);
-                                if (keyProbe.ExitCode != 0)
-                                    throw new IOException($"Elevated probe did not receive a balanced F8 press and release (probe exit {keyProbe.ExitCode})");
-                                Console.WriteLine("PASS F8 reached the elevated window only in Admin; target received one press and one release");
+                                if (holdProbeKey)
+                                {
+                                    await Task.Delay(500, ct);
+                                    if (!ProbeForeground()) throw new IOException("The held-key probe did not remain foreground before downgrade");
+                                }
+                                else
+                                {
+                                    await VerifyProbeExit(keyProbe);
+                                    Console.WriteLine("PASS F8 reached the elevated window only in Admin; target received one press and one release");
+                                }
                             }
                             menu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
                             await Event("admin-revoked");
+                            if (holdProbeKey && keyProbe is not null)
+                            {
+                                await VerifyProbeExit(keyProbe);
+                                Console.WriteLine("PASS the elevated target received F8 release on Admin downgrade without a Viewer key-up packet");
+                            }
                             await Until(() => viewer.activeMode == SessionMode.Work && viewer.inputAuthorized);
                             if (connection.IsCompleted) throw new IOException("Downgrade ended the existing connection");
                             break;
