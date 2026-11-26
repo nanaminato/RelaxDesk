@@ -1,4 +1,3 @@
-using System.Windows.Controls;
 using RelaxDesk.Core;
 using RelaxDesk.Windows;
 
@@ -6,21 +5,16 @@ namespace RelaxDesk.HostShell;
 
 internal sealed partial class HostWindow
 {
-    readonly CheckBox restartWorker=new(){Content="Host 异常退出后重启等待连接（最多三次，仍需重新授权）"};
     CancellationTokenSource? restartWait;
     WorkerRestartBudget? restartBudget;
+    WindowsSessionSnapshot? restartOrigin;
     string restartBackend="dxgi";
     HostEvent? deferredExit;
-    internal bool RestartEnabled{get=>restartWorker.IsChecked==true;set=>restartWorker.IsChecked=value;}
+    internal Func<WindowsSessionSnapshot> ReadRecoveryDesktop { get; set; } = WindowsSessionAccess.Read;
     internal bool RestartPending=>restartWait is not null;
-    void AddRecoverySettings(Panel settings)
-    {
-        settings.Children.Add(new Expander{Header="异常恢复（默认关闭）",Content=restartWorker});
-        restartWorker.Unchecked+=(_,_)=>CancelRecovery();
-    }
     void CancelRecovery()
     {
-        restartBudget?.Cancel();restartBudget=null;restartWait?.Cancel();
+        restartBudget?.Cancel();restartBudget=null;restartOrigin=null;restartWait?.Cancel();
     }
     void UpdateRecoveryControls()
     {
@@ -30,19 +24,27 @@ internal sealed partial class HostWindow
     }
     async void RecoverWorker(HostEvent change)
     {
-        if(change.Kind!="ended"||closing||hostTokenDenied||restartBudget is null)return;
+        if(change.Kind!="ended"||closing||hostTokenDenied||restartBudget is null||restartOrigin is not {} original)return;
         if(RestartPending){deferredExit=change;return;}
         bool allowed=!ServiceSetupBusy&&(!ServiceRequired||ServiceReady);
-        try{WindowsSessionAccess.EnsureAllowed();}catch{allowed=false;}
-        var delay=restartBudget.Next(RestartEnabled,change.ExitCode,allowed);
+        try{ReadRecoveryDesktop().EnsureBrokerLeaseAllowedFrom(original);}catch{allowed=false;}
+        var delay=restartBudget.Next(change.ExitCode,allowed);
         if(delay is null)return;
         using var wait=new CancellationTokenSource();restartWait=wait;UpdateServiceControls();
-        state.Text="等待重启 Host";detail.Text=$"{delay.Value.TotalSeconds} 秒后重新等待连接；旧授权不会恢复。";
+        state.Text="正在恢复共享";detail.Text="共享进程异常退出，正在尝试重新启动。";
         try
         {
             await Task.Delay(delay.Value,wait.Token);
-            WindowsSessionAccess.EnsureAllowed();wait.Token.ThrowIfCancellationRequested();
-            if(closing||!RestartEnabled||Host.Running||(ServiceRequired&&!ServiceReady))return;
+            while (true)
+            {
+                wait.Token.ThrowIfCancellationRequested();
+                if(closing||Host.Running||ServiceSetupBusy||(ServiceRequired&&!ServiceReady))return;
+                var current = ReadRecoveryDesktop();
+                current.EnsureBrokerLeaseAllowedFrom(original);
+                if (!current.TemporaryInputDesktopUnavailable) break;
+                detail.Text="返回 Windows 普通桌面后将自动恢复共享。";
+                await Task.Delay(250,wait.Token);
+            }
             await StartSharing(backend:restartBackend,recovering:true);
         }
         catch(OperationCanceledException){}

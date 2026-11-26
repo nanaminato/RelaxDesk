@@ -54,9 +54,14 @@ internal sealed partial class HostWindow
         SessionAgentClient? candidate=null;
         try
         {
-            WindowsSessionAccess.EnsureAllowed();candidate=await connect(serviceAttempt.Token);WindowsSessionAccess.EnsureAllowed();
+            var original = WindowsSessionAccess.Read();
+            original.EnsureAllowed();
+            candidate=await connect(serviceAttempt.Token);
+            var current = WindowsSessionAccess.Read();
+            current.EnsureBrokerLeaseAllowedFrom(original);
+            current.EnsureAllowed();
             if(generation!=serviceGeneration||closing||!ServiceRequired)throw new OperationCanceledException();
-            serviceAgent=candidate;candidate=null;serviceWatch?.Dispose();serviceWatch=new();serviceObserver=ObserveService(serviceAgent,generation,serviceWatch.Token);
+            serviceAgent=candidate;candidate=null;serviceWatch?.Dispose();serviceWatch=new();serviceObserver=ObserveService(serviceAgent,generation,original,serviceWatch.Token);
             if(serviceAgent?.Healthy==true)serviceStatus.Text="系统服务协调已连接。仍需手动开始共享，并逐次允许 Viewer。";
         }
         catch(Exception error)
@@ -64,7 +69,7 @@ internal sealed partial class HostWindow
         finally
         {if(candidate is not null)await candidate.DisposeAsync();serviceAttempt.Dispose();serviceAttempt=null;serviceConnecting=false;UpdateServiceControls();}
     }
-    async Task ObserveService(SessionAgentClient agent,int generation,CancellationToken ct)
+    async Task ObserveService(SessionAgentClient agent,int generation,WindowsSessionSnapshot original,CancellationToken ct)
     {
         try
         {
@@ -72,7 +77,8 @@ internal sealed partial class HostWindow
             {
                 ct.ThrowIfCancellationRequested();
                 if(agent.Completion.IsCompleted){await agent.Completion;throw new IOException("Agent lease completed");}
-                WindowsSessionAccess.EnsureAllowed();await Task.Delay(250,ct);
+                WindowsSessionAccess.Read().EnsureBrokerLeaseAllowedFrom(original);
+                await Task.Delay(250,ct);
             }
         }
         catch(Exception error)
@@ -80,7 +86,8 @@ internal sealed partial class HostWindow
             if(ct.IsCancellationRequested||generation!=serviceGeneration||!ReferenceEquals(serviceAgent,agent))return;
             serviceCleaning=true;serviceAgent=null;UpdateServiceControls();
             serviceStatus.Text="系统服务协调已中断，正在停止共享…";
-            logs.AppendText($"service_lease_ended error_type={error.GetType().Name}\n");
+            string reason = error is WindowsSessionUnavailableException desktop ? " reason=" + desktop.Reason : "";
+            logs.AppendText($"service_lease_ended error_type={error.GetType().Name}{reason}\n");
             try{await StopSharing();await agent.DisposeAsync();}
             finally
             {serviceCleaning=false;serviceStatus.Text="系统服务连接已中断，共享已停止。";if(!ServiceSetupBusy)serviceSetupNotice.Text="点击“启用系统服务”重试；随后重新开始共享和授权。";UpdateServiceControls();}

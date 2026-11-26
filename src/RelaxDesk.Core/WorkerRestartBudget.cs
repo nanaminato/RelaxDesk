@@ -6,9 +6,9 @@ public sealed class WorkerRestartBudget
     public const int MaximumAttempts=3;
     public int Attempts{get;private set;}
     bool cancelled;
-    public TimeSpan? Next(bool enabled,int? exitCode,bool contextAllowed)
+    public TimeSpan? Next(int? exitCode,bool contextAllowed)
     {
-        if(cancelled||!enabled||exitCode is null or 0||!contextAllowed||Attempts>=MaximumAttempts)return null;
+        if(cancelled||exitCode is null or 0||!contextAllowed||Attempts>=MaximumAttempts)return null;
         return TimeSpan.FromSeconds(1<<Attempts++);
     }
     public void Cancel()=>cancelled=true;

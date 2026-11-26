@@ -13,7 +13,7 @@ internal sealed partial class HostWindow
     bool savingLogin, passwordLoginRequest;
     PasswordVerifier? loginVerifierForTests;
 
-    void AddLoginSettings(Panel navigation)
+    StackPanel BuildLoginSettings()
     {
         var name = new TextBox { MaxLength = PasswordVerifier.MaximumUserNameLength };
         var password = new PasswordBox { MaxLength = PasswordVerifier.MaximumPasswordLength };
@@ -27,7 +27,6 @@ internal sealed partial class HostWindow
         panel.Children.Add(Text("受控端 TLS 指纹", 14, true));
         panel.Children.Add(loginFingerprint);
         loginFingerprint.Text = "开始共享后显示。首次连接时请核对两端指纹。";
-        AddWindowButton(navigation, "登录设置", panel);
         Loaded += (_, _) =>
         {
             try { name.Text = PasswordLoginSettings.Read()?.UserName ?? ""; }
@@ -51,5 +50,6 @@ internal sealed partial class HostWindow
             { loginNotice.Text = error.Message; }
             finally { savingLogin = false; UpdateServiceControls(); }
         };
+        return panel;
     }
 }

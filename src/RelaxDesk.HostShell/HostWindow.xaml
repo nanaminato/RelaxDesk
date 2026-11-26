@@ -15,12 +15,13 @@
                 <StackPanel x:Name="Navigation" Margin="0,24,0,0" />
             </StackPanel>
         </Border>
-        <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer x:Name="MainScroll" Grid.Column="1" VerticalScrollBarVisibility="Auto">
             <StackPanel Margin="28,24">
-                <TextBlock Text="共享这台电脑" FontSize="28" FontWeight="SemiBold" Foreground="#17243A" />
+                <TextBlock x:Name="PageTitle" Text="共享这台电脑" FontSize="28" FontWeight="SemiBold" Foreground="#17243A" />
                 <TextBlock x:Name="BuildVersion" FontSize="11" Foreground="SlateGray"
                            Margin="0,5,0,18" TextWrapping="Wrap" />
                 <StackPanel x:Name="SharingContent" />
+                <StackPanel x:Name="SettingsContent" Visibility="Collapsed" />
             </StackPanel>
         </ScrollViewer>
     </Grid>

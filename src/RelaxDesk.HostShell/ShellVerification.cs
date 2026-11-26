@@ -42,13 +42,13 @@ internal sealed partial class HostWindow
         Changed(new("desktop-unavailable", DesktopReason: "expected-desktop-transition-expired"));
         if (DesktopStatusNotice?.Contains("已超时") != true)
             throw new IOException("The expired desktop transition had no actionable notice");
-        RestartEnabled = true;
+        restartOrigin = ReadRecoveryDesktop();
         restartBudget = new();
         Changed(new("desktop-unavailable", DesktopReason: "host-input-token-denied"));
         Changed(new("ended", ExitCode:2));
         if (RestartPending || !start.IsEnabled || DesktopStatusNotice?.Contains("普通 Windows 用户权限") != true)
             throw new IOException("Host token rejection lost its notice, retried, or disabled manual start");
-        RestartEnabled = false;
+        CancelRecovery();
         Changed(new("stopped"));
     }
 }
@@ -60,12 +60,15 @@ internal static class ShellVerification
         var window=new HostWindow(Path.GetFullPath(host)){ShowActivated=false};
         async Task Until(Func<bool> condition){using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(15));while(!condition())await Task.Delay(20,timeout.Token);await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);}
         int Port(){var r=new TcpListener(IPAddress.Loopback,0);r.Start();int p=((IPEndPoint)r.LocalEndpoint).Port;r.Stop();return p;}
-        void Snapshot(string name){Directory.CreateDirectory(output);window.UpdateLayout();var root=(FrameworkElement)window.Content;var image=new RenderTargetBitmap((int)root.ActualWidth,(int)root.ActualHeight,96,96,PixelFormats.Pbgra32);image.Render(root);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(image));using var file=File.Create(Path.Combine(output,name));encoder.Save(file);}
+        void Snapshot(string name, Window? surface = null){Directory.CreateDirectory(output);surface??=window;surface.UpdateLayout();var root=(FrameworkElement)surface.Content;var image=new RenderTargetBitmap((int)root.ActualWidth,(int)root.ActualHeight,96,96,PixelFormats.Pbgra32);image.Render(root);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(image));using var file=File.Create(Path.Combine(output,name));encoder.Save(file);}
         window.Loaded+=async(_,_)=>
         {
             using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(60));
             try
             {
+                if (!window.Navigation.Children.OfType<System.Windows.Controls.Button>()
+                    .Select(item => item.Content as string).SequenceEqual(["连接", "设置"]))
+                    throw new IOException("The host navigation must contain only Connection and Settings");
                 window.VerifyAdminStatusEvents();
                 window.InputDeploymentForVerification = () => RelaxDesk.Session.AdminWorkerDeployment.RepairRequired;
                 await window.StartSharing("127.0.0.1", Port());
@@ -83,7 +86,9 @@ internal static class ShellVerification
                 {
                     var connection=viewer.ConnectByApproval("127.0.0.1",port,timeout.Token);
                     await Until(()=>window.RequestVisible);await Task.Delay(150,timeout.Token);
-                    if(connection.IsCompleted)throw new IOException("Host shell advanced before operator approval");Snapshot("host-request.png");
+                    if(connection.IsCompleted)throw new IOException("Host shell advanced before operator approval");var popup = window.OwnedWindows.OfType<HostPanelWindow>().Single();
+                    if (!popup.IsVisible || popup.Owner != window) throw new IOException("Approval was not shown in its own owned window");
+                    Snapshot("host-request.png", popup);
                     await window.Decide(true);await connection;
                     var frame=await MediaProtocol.Read(viewer.Media,timeout.Token);
                     if(frame.Data.Length==0||frame.Codec!=MediaCodec.H264||window.RequestVisible)throw new IOException("Shell-approved video missing");
@@ -98,7 +103,7 @@ internal static class ShellVerification
                 port=Port();await window.StartSharing("127.0.0.1",port,"test-hardware");await Until(()=>window.Status=="等待连接");
                 using(var viewer=new SessionClient())
                 {
-                    var denied=viewer.ConnectByApproval("127.0.0.1",port,timeout.Token);await Until(()=>window.RequestVisible);await window.Decide(false);
+                    var denied=viewer.ConnectByApproval("127.0.0.1",port,timeout.Token);await Until(()=>window.RequestVisible);window.OwnedWindows.OfType<HostPanelWindow>().Single().Close();
                     bool rejected=false;try{await denied;}catch(Exception e)when(e is IOException or System.Security.Authentication.AuthenticationException){rejected=true;}
                     if(!rejected)throw new IOException("Shell denial accepted a session");await Until(()=>window.Status=="等待连接");
                     if(!window.Host.Running||window.Host.Pending)throw new IOException("Denial terminated persistent Host");
@@ -227,7 +232,7 @@ internal static class ShellVerification
                     port=Port();await window.StartSharing("127.0.0.1",port,"test-hardware");await Until(()=>window.Status=="等待连接");
                     using var viewer=new SessionClient{RequestedFeatures=[SessionCapabilities.FileTransfer]};var connecting=viewer.ConnectByApproval("127.0.0.1",port,timeout.Token);await Until(()=>window.RequestVisible);
                     if(!window.FilesChoiceVisible||!window.FilesChoiceEnabled||window.FilesAllowed)throw new IOException("File permission missing/pre-approved");
-                    window.FilesAllowed=allowFiles;Snapshot("host-file-request.png");await window.Decide(true);await connecting;
+                    window.FilesAllowed=allowFiles;Snapshot("host-file-request.png", window.OwnedWindows.OfType<HostPanelWindow>().Single());await window.Decide(true);await connecting;
                     if((viewer.Data is not null)!=allowFiles)throw new IOException("Separate file permission not honored");
                     _=await MediaProtocol.Read(viewer.Media,timeout.Token);
                     if(allowFiles)

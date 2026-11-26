@@ -7,7 +7,10 @@ internal sealed partial class HostPanelWindow : Window
     internal HostPanelWindow(Window owner, string title, UIElement body)
     {
         InitializeComponent();
-        Owner = owner;
+        if (owner.WindowState == WindowState.Minimized)
+            WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        else
+            Owner = owner;
         Title = title;
         Background = owner.Background;
         FontSize = owner.FontSize;

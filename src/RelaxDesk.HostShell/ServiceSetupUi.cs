@@ -32,9 +32,8 @@ internal sealed partial class HostWindow
         var shortcuts = new WrapPanel();
         shortcuts.Children.Add(enableService);
         panel.Children.Add(shortcuts);
-        panel.Children.Add(serviceSetupNotice);
         enableService.Click+=async(_,_)=>await EnableSystemService();
-        AddWindowButton(shortcuts, "服务设置", serviceSettings);
+        panel.Children.Add(serviceSettings);
         installService.Click+=async(_,_)=>await RunServiceSetup(false);
         uninstallService.Click+=async(_,_)=>await RunServiceSetup(true);
         refreshService.Click+=async(_,_)=>await InspectServiceInstallation();

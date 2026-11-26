@@ -19,6 +19,24 @@ public static class WindowsSessionContracts
         Check((active with { Locked = true }).Denial == "session-locked");
         Check((active with { InputDesktop = null }).Denial == "input-desktop-unavailable");
         Check((active with { InputDesktop = "Winlogon" }).Denial == "input-desktop-unsupported");
+        var physical = active with { ConsoleSessionId = 1 };
+        foreach (var secure in new[] { physical with { InputDesktop = null, InputDesktopOpenError = 5 },
+                                      physical with { InputDesktop = "Winlogon" } })
+        {
+            secure.EnsureBrokerLeaseAllowedFrom(physical);
+            Check(secure.TemporaryInputDesktopUnavailable && secure.Denial is not null);
+        }
+        foreach (var (snapshot, reason) in new[]
+        {
+            (physical with { InputDesktop = null, Locked = true }, "session-locked"),
+            (physical with { InputDesktop = null, ConnectionState = 4 }, "session-not-active"),
+            (physical with { InputDesktop = null, ConsoleSessionId = 2 }, "physical-console-session-changed"),
+            (physical with { InputDesktop = null, SessionId = 2 }, "physical-console-session-changed")
+        })
+        {
+            try { snapshot.EnsureBrokerLeaseAllowedFrom(physical); throw new IOException("Broker lease survived a session boundary"); }
+            catch (WindowsSessionUnavailableException error) { Check(error.Reason == reason); }
+        }
         foreach(var denied in new[]{active with{SessionId=null},active with{SessionId=0},active with{ConnectionState=null},active with{ConnectionState=4},active with{VisibleWindowStation=null},active with{VisibleWindowStation=false},active with{ThreadDesktop=null},active with{ThreadDesktop="Winlogon"},active with{InputDesktop=null},active with{InputDesktop="Winlogon"},active with{InputDesktop="default"}})
         {
             Check(denied.Denial is not null);

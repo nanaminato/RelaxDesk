@@ -13,6 +13,16 @@ public sealed record WindowsSessionSnapshot(uint? SessionId, int? ConnectionStat
         InputDesktop != "Default" ? "input-desktop-unsupported" : null;
     public void EnsureAllowed() { if (Denial is {} reason) throw new WindowsSessionUnavailableException(reason); }
 
+    public bool TemporaryInputDesktopUnavailable =>
+        Denial is "input-desktop-unavailable" or "input-desktop-unsupported";
+
+    public void EnsureBrokerLeaseAllowedFrom(WindowsSessionSnapshot original)
+    {
+        if (SessionChangeFrom(original) is { } change)
+            throw new WindowsSessionUnavailableException(change);
+        if (!TemporaryInputDesktopUnavailable) EnsureAllowed();
+    }
+
     public string? SessionChangeFrom(WindowsSessionSnapshot original) => SessionId is null ? "session-query-failed" :
         SessionId != original.SessionId || original.ConsoleSessionId == original.SessionId && ConsoleSessionId != original.ConsoleSessionId
             ? "physical-console-session-changed" : null;
