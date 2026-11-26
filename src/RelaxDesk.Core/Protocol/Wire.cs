@@ -84,22 +84,20 @@ public sealed class AccessGate
     readonly object sync = new();
     bool approved, inputAllowed, inputRevoked;
     readonly HashSet<string> features = [];
-    readonly HashSet<string> originalFeatures = [];
     public bool Approved { get { lock (sync) return approved; } }
     private long sequence;
     int inputVersion;
     int displayVersion;
     int videoVersion;
-    static bool ValidStop(Packet packet)=>VideoSettingsProtocol.Empty(packet)&&packet.Code==0&&!packet.Up&&packet.Text is null&&packet.Data is null&&packet.Features is null&&packet.Capabilities is null&&packet.Origin is null&&packet.Revision==0&&packet.DataTicket is null&&!packet.FileResume&&packet.FileScope is null&&packet.X==0&&packet.Y==0&&packet.Width==0&&packet.Height==0&&packet.CaptureMs==0&&packet.EncodeMs==0&&packet.Input is null&&packet.InputVersion==0&&packet.ClipboardTicket is null&&packet.AudioTicket is null&&DisplayProtocol.Empty(packet);
     public void Approve(IEnumerable<string>? grantedFeatures = null,int inputVersion=0,int displayVersion=0,int videoVersion=0, bool allowInput=true)
     {
         if(inputVersion is not (0 or InputProtocol.Version))throw new InvalidDataException("Unsupported input version");
         if(!DisplayProtocol.Supported(displayVersion)||displayVersion!=0&&inputVersion!=InputProtocol.Version)throw new InvalidDataException("Unsupported display version");
         if(!VideoSettingsProtocol.Supported(videoVersion))throw new InvalidDataException("Unsupported video version");
         var grants = SessionCapabilities.Validate(grantedFeatures?.ToArray());
-        lock (sync) { approved = true;inputAllowed=allowInput;inputRevoked=false;this.inputVersion=inputVersion;this.displayVersion=displayVersion;this.videoVersion=videoVersion; sequence = 0; features.Clear(); originalFeatures.Clear(); foreach (string feature in grants) { features.Add(feature); originalFeatures.Add(feature); } }
+        lock (sync) { approved = true;inputAllowed=allowInput;inputRevoked=false;this.inputVersion=inputVersion;this.displayVersion=displayVersion;this.videoVersion=videoVersion; sequence = 0; features.Clear(); foreach (string feature in grants) { features.Add(feature); } }
     }
-    public void Revoke() { lock (sync) { approved = false;inputAllowed=false;inputVersion=0; features.Clear(); originalFeatures.Clear(); } }
+    public void Revoke() { lock (sync) { approved = false;inputAllowed=false;inputVersion=0; features.Clear(); } }
     public void RevokeFeature(string feature) { lock (sync) features.Remove(feature); }
     public bool Allows(string feature) { lock (sync) return approved && features.Contains(feature); }
     public void RevokeInput()
@@ -133,22 +131,6 @@ public sealed class AccessGate
             if(p.Kind is "display-select-v2" or "display-ready-v2" or "display-configured-v2")
             {if(!approved||displayVersion==0||p.Kind=="display-configured-v2"&&displayVersion!=DisplayProtocol.TopologyVersion||p.Sequence<=sequence||!DisplayProtocol.ValidCommand(p))return false;sequence=p.Sequence;return true;}
             if(p.Input is not null||p.InputVersion!=0||p.ClipboardTicket is not null||p.AudioTicket is not null||!DisplayProtocol.Empty(p))return false;
-            if(p.Kind=="audio-state-v2")
-            {
-                if(!approved||p.Sequence<=sequence||!originalFeatures.Contains(SessionCapabilities.SystemAudio)||!ValidStop(p))return false;
-                sequence=p.Sequence;return true;
-            }
-            if (p.Kind == "file-state-v2")
-            {
-                if (!approved || p.Sequence <= sequence || !originalFeatures.Contains(SessionCapabilities.FileTransfer) || !ValidStop(p)) return false;
-                sequence = p.Sequence; return true;
-            }
-            if (p.Kind is "clipboard-text-v2" or "clipboard-state-v2")
-            {
-                if (!approved || p.Sequence <= sequence || !(p.Kind == "clipboard-state-v2" ? originalFeatures.Any(SessionCapabilities.IsClipboard) : features.Contains(SessionCapabilities.ClipboardText))) return false;
-                if (p.Kind == "clipboard-text-v2" ? !ClipboardTextProtocol.IsValid(p) : !ValidStop(p)) return false;
-                sequence = p.Sequence; return true;
-            }
             if (!approved || p.Sequence <= sequence || p.Kind is not ("keyframe-v2" or "ping-v2")) return false;
             sequence = p.Sequence; return true;
         }

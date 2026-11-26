@@ -1,3 +1,4 @@
+using RelaxDesk.SharedUI;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -34,9 +35,9 @@ public sealed partial class ViewerWindow
         resetPin.Click += (_, _) =>
         {
             if (!System.Net.IPAddress.TryParse(host.Text.Trim(), out var address) || !int.TryParse(port.Text, out int number) || number is < 1 or > 65535) return;
-            if (MessageBox.Show(this, "清除后，下次登录前需要重新核对受控端证书指纹。", "清除证书记录", MessageBoxButton.OKCancel) != MessageBoxResult.OK) return;
+            if (MessageBox.Show(this, Strings.Get("Ui.ViewerWindow.Text376"), Strings.Get("Ui.ViewerWindow.Text378"), MessageBoxButton.OKCancel) != MessageBoxResult.OK) return;
             try { PasswordLoginSettings.SaveServerPin(new System.Net.IPEndPoint(address, number).ToString(), null); }
-            catch (Exception error) when (error is System.IO.IOException or UnauthorizedAccessException or System.Security.SecurityException) { status.Text = "无法清除证书记录。"; }
+            catch (Exception error) when (error is System.IO.IOException or UnauthorizedAccessException or System.Security.SecurityException) { LocalizedText.Bind(status,"Text","Ui.ViewerWindow.Text289"); }
         };
         ConfigureSavedCredentials();
         ConfigurePreferences();
@@ -50,16 +51,17 @@ public sealed partial class ViewerWindow
         languageSelector.SelectedValue = manager.CurrentLanguageCode;
         languageSelector.SelectionChanged += (_, _) =>
         {
-            if (languageSelector.SelectedItem is LanguageOption option)
+            if (languageSelector.SelectedItem is LanguageOption option && !string.Equals(option.Code, manager.CurrentLanguageCode, StringComparison.OrdinalIgnoreCase))
                 manager.SetLanguage(option.Code);
         };
         manager.LanguageChanged += (_, _) =>
         {
             Dispatcher.BeginInvoke(() =>
             {
-                optionsButton.Content = Strings.Get(optionsExpanded ? "Viewer.HideOptions" : "Viewer.ShowOptions");
+                LocalizedText.Bind(optionsButton,"Content",optionsExpanded ? "Viewer.HideOptions" : "Viewer.ShowOptions");
                 if (!string.Equals(languageSelector.SelectedValue as string, manager.CurrentLanguageCode, StringComparison.OrdinalIgnoreCase))
                     languageSelector.SelectedValue = manager.CurrentLanguageCode;
+                videoMenuState=null;RefreshVideoSettingsMenu();RefreshDisplayMenu();
                 UpdateViewTitle();
             });
         };
@@ -74,7 +76,7 @@ public sealed partial class ViewerWindow
         connectionOptions.SelectedIndex = 0;
         connectionOptions.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
         basicConnection.Visibility = expanded ? Visibility.Collapsed : Visibility.Visible;
-        optionsButton.Content = Strings.Get(expanded ? "Viewer.HideOptions" : "Viewer.ShowOptions");
+        LocalizedText.Bind(optionsButton,"Content",expanded ? "Viewer.HideOptions" : "Viewer.ShowOptions");
         Height = Math.Min(expanded ? 610 : 480, SystemParameters.WorkArea.Height);
     }
     SessionToolbar? sessionToolbar;
@@ -88,8 +90,8 @@ public sealed partial class ViewerWindow
     {
         cancellation.ThrowIfCancellationRequested();
         bool accepted = MessageBox.Show(this,
-            $"请将下方指纹与受控端「登录设置」中的 TLS 指纹核对。\n\n{pin}\n\n仅在完全一致时继续，密码将在确认后发送。",
-            "核对受控端身份", MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK;
+            Strings.Format("Ui.ViewerWindow.Text457",pin),
+            Strings.Get("Ui.ViewerWindow.Text344"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK;
         cancellation.ThrowIfCancellationRequested();
         return Task.FromResult(accepted);
     }
@@ -116,13 +118,10 @@ public sealed partial class ViewerWindow
         {
             sessionToolbar ??= new SessionToolbar(this, ToggleFullScreen, () => disconnect.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)),
                 session is null ? null : SendShortcut,ReleaseHeldInputs, connectionBarPreferences);
-            sessionToolbar.FilesAction.Visibility = smoke?.FileTransfer == true || smoke?.ReconnectTest == true ? Visibility.Visible : Visibility.Collapsed;
-            sessionToolbar.FileClipboardAction.Visibility = fileClipboardVerificationFactory is not null ? Visibility.Visible : Visibility.Collapsed;
             sessionToolbar.SetSession(SessionEndpoint, fullScreen);
-            sessionToolbar.SetClipboard(sessionPermissions is{} clipboardGate&&ClipboardFormats.Granted(clipboardGate).Any, DisableClipboard);
             sessionToolbar.SetRemoteShortcuts(inputAuthorized);
             sessionToolbar.SetTextInput(inputAuthorized&&inputVersion==2?OpenTextInput:null);
-            RefreshFileToolbar();RefreshFileClipboardToolbar();RefreshDisplayMenu();RefreshAudioToolbar();RefreshStatisticsToolbar();RefreshVideoSettingsMenu();sessionToolbar.SetViewport(CurrentViewport,SetViewportZoom);
+            RefreshDisplayMenu();RefreshAudioToolbar();RefreshStatisticsToolbar();RefreshVideoSettingsMenu();sessionToolbar.SetViewport(CurrentViewport,SetViewportZoom);
         }
         else
         {
@@ -145,7 +144,7 @@ public sealed partial class ViewerWindow
     }
     void UpdateViewTitle()
     {
-        Title = desktopView ? previewing ? "RelaxDesk — 本机预览" : $"{host.Text} - RelaxDesk 远程桌面" : "RelaxDesk 远程桌面连接";
+        Title = desktopView ? previewing ? Strings.Get("Ui.ViewerWindow.Text044") : Strings.Format("Ui.ViewerWindow.Text058",host.Text) : Strings.Get("Viewer.WindowTitle");
         if (desktopView && !previewing && fileClipboardStatus.Length > 0)
             Title += " · " + fileClipboardStatus;
     }
@@ -158,14 +157,14 @@ public sealed partial class ViewerWindow
         {
             image.Source = BitmapSource.Create(960, 540, 96, 96, PixelFormats.Bgr32, null, CodecVerification.Pattern(960, 540, frame++ % 200), 960 * 4);
             SetViewportVideoSize(960,540);
-            status.Text = "本机预览 · 无网络连接 · 输入不会发往其他电脑";
+            LocalizedText.Bind(status,"Text","Ui.ViewerWindow.Text335");
         }
         Draw(); previewTimer = new() { Interval = TimeSpan.FromMilliseconds(100) }; previewTimer.Tick += (_, _) => Draw(); previewTimer.Start();
     }
     internal void StopLocalPreview()
     {
         if (!previewing) return;
-        previewTimer?.Stop(); previewTimer = null; previewing = false;EndViewport(); image.Source = null; disconnect.IsEnabled = false; ShowConnectedView(false); status.Text = "预览已结束，准备连接";
+        previewTimer?.Stop(); previewTimer = null; previewing = false;EndViewport(); image.Source = null; disconnect.IsEnabled = false; ShowConnectedView(false); LocalizedText.Bind(status,"Text","Ui.ViewerWindow.Text506");
     }
     bool IsLocalPointer(double x, double y) => sessionToolbar?.BlocksPointer(x, y) == true;
     internal void ToggleFullScreen()

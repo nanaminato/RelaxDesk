@@ -7,8 +7,8 @@ operator stops sharing or closes the window. One controller is admitted at a tim
 The Viewer verifies the Host TLS certificate before sending the configured
 username and password. The Host verifies the password and challenges the Viewer
 to prove possession of its device key. The operator must approve a new device
-before the Host opens a desktop, input or optional feature channel. Approving
-records that device and the selected permissions. A recognized device still
+before the Host opens a desktop, input or auxiliary channel. Approving
+records that device for the complete desktop profile. A recognized device still
 requires the correct password. Passwords are not written to Viewer history.
 Changing the Host password clears device approvals.
 
@@ -17,8 +17,7 @@ Changing the Host password clears device approvals.
 Local IPC commands name the current session. Delayed commands cannot approve,
 revoke or disconnect another session. Disconnect ends the current session and
 returns to listening. Stop Sharing closes the listener. Revoking a device ends
-its active session and removes its unattended approval. Optional permissions
-are granted only within the operator's selection and current file scope.
+its active session and removes its unattended approval. File copy, clipboard and system audio have no separate approval or revoke commands.
 
 ## Recovery
 
@@ -31,8 +30,8 @@ prompt. Invalid credentials, revoked devices, certificate changes, operator
 cancellation and a received Host termination notice stop retry.
 
 Each attempt uses fresh media and data tickets. The Viewer releases input,
-clears its old queue and requests a keyframe on reconnection. File resume
-requires an approved scope and confirmation. See [file resume](FILE-RESUME.md)
+clears its old queue and requests a keyframe on reconnection. Interrupted copies must be copied again after reconnecting. Internal byte resume
+requires a current advertised scope. See [file resume](FILE-RESUME.md)
 and [display topology](DISPLAY-TOPOLOGY.md).
 
 ## Validation

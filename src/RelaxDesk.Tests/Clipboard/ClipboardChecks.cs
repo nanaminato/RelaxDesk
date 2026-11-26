@@ -8,10 +8,7 @@ internal static class ClipboardChecks
         int count = 0;
         void Check(bool value) { if (!value) throw new InvalidDataException($"Clipboard assertion {count + 1}"); count++; }
         void Reject(Action action) { try { action(); throw new Exception("Invalid clipboard operation accepted"); } catch (InvalidDataException) { count++; } }
-        Check(SessionCapabilities.Grant([SessionCapabilities.ClipboardText], false).Length == 0);
-        Check(SessionCapabilities.Grant(null, true).Length == 0);
-        Check(SessionCapabilities.Grant([SessionCapabilities.ClipboardText], true).SequenceEqual(new[] { SessionCapabilities.ClipboardText }));
-        Check(SessionCapabilities.ValidateGrant([SessionCapabilities.ClipboardText], null).Length == 0); // old v2 Host
+        Check(SessionCapabilities.RequireAll(SessionCapabilities.All).Length == 6);
         Reject(() => SessionCapabilities.ValidateGrant([], [SessionCapabilities.ClipboardText]));
         Reject(() => SessionCapabilities.Validate(["unknown.extension"]));
         Reject(() => SessionCapabilities.Validate([SessionCapabilities.ClipboardText, SessionCapabilities.ClipboardText]));
@@ -39,12 +36,12 @@ internal static class ClipboardChecks
             Check(!ClipboardTextProtocol.IsValid(invalid));
         var access = new AccessGate();
         Check(!access.AcceptControl(valid)); access.Approve(); Check(!access.AcceptControl(valid));
-        access.Approve([SessionCapabilities.ClipboardText]); Check(access.AcceptControl(valid)); Check(!access.AcceptControl(valid));
+        access.Approve([SessionCapabilities.ClipboardText]); Check(!access.AcceptControl(valid)); Check(!access.AcceptControl(valid));
         Check(!access.AcceptControl(valid with { Sequence = 2, Text = new string('中', 23000) }));
         Check(access.AcceptControl(new("ping-v2", 2)));
         access.RevokeFeature(SessionCapabilities.ClipboardText);
         Check(!access.AcceptControl(valid with { Sequence = 3 })); Check(access.AcceptControl(new("ping-v2", 3)));
-        Check(access.AcceptControl(new("clipboard-state-v2", 4)) && access.AcceptControl(new("clipboard-state-v2", 5))); // idempotent stop, no regrant
+        Check(!access.AcceptControl(new("clipboard-state-v2", 4)) && !access.AcceptControl(new("clipboard-state-v2", 5)));
         Check(!access.AcceptControl(new("clipboard-state-v2", 6, Code: 1)));
         Check(!access.TryExecuteFeature(SessionCapabilities.ClipboardText, () => throw new Exception("Revoked callback executed")));
         access.Revoke(); Check(!access.AcceptControl(new("ping-v2", 4)));

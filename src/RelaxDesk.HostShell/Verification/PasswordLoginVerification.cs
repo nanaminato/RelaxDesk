@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Windows;
 using RelaxDesk.Core;
+using RelaxDesk.Core.Localization;
 
 namespace RelaxDesk.HostShell;
 
@@ -53,7 +54,7 @@ internal sealed partial class HostWindow
                 client.ConnectWithPassword("127.0.0.1", port, pin, userName, password, Confirm, ct, reconnect);
             async Task Listening()
             {
-                await WaitFor(() => window.Status == "等待连接");
+                await WaitFor(() => window.Status == Strings.Get("Ui.HostWindow.Text408"));
                 Check(!window.RequestVisible, "Approval UI remained visible");
             }
             try
@@ -85,6 +86,7 @@ internal sealed partial class HostWindow
                     Check(window.RequestVisible && !login.IsCompleted, "First valid device did not wait for approval");
                     await window.Decide(true);
                     await login;
+                    Check(SessionCapabilities.All.All(first.Features.Contains), "Approval did not grant every capability");
                     pin = first.VerifiedFingerprint;
                 }
                 await Listening();
@@ -92,7 +94,7 @@ internal sealed partial class HostWindow
                     "Approved device identity was not persisted or certificate was not confirmed");
                 using (var retry = Client(known)) await Connect(retry, secret, reconnect: true);
                 await Listening();
-                using (var returning = Client(known)) await Connect(returning, secret);
+                using (var returning = Client(known)) { await Connect(returning, secret); Check(SessionCapabilities.All.All(returning.Features.Contains), "Returning device lost capabilities"); }
                 await Listening();
                 using (var wrongDevice = Client(unknown))
                     await Expect<HostConsentRejectedException>(Connect(wrongDevice, secret, reconnect: true));

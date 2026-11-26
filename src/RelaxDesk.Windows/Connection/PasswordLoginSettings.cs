@@ -1,3 +1,4 @@
+using RelaxDesk.Core.Localization;
 using System.Text.Json;
 using Microsoft.Win32;
 using RelaxDesk.Core;
@@ -14,7 +15,7 @@ public static class PasswordLoginSettings
         using var key = Registry.CurrentUser.OpenSubKey(HostKey);
         if (key?.GetValue("Verifier") is not string json) return null;
         if (json.Length > 1024 || JsonSerializer.Deserialize<PasswordVerifier>(json) is not { IsValid: true } verifier)
-            throw new InvalidDataException("受控端登录配置无效，请重新设置密码。");
+            throw new InvalidDataException(Strings.Get("Ui.PasswordLoginSettings.Text151"));
         return verifier;
     }
 
@@ -37,19 +38,4 @@ public static class PasswordLoginSettings
         else key.SetValue(endpoint, pin, RegistryValueKind.String);
     }
 
-    public sealed record DeviceGrant(string[] ClipboardFormats, bool Audio, string? FileRoot);
-
-    public static DeviceGrant ReadDeviceGrant(string fingerprint)
-    {
-        using var key = Registry.CurrentUser.OpenSubKey(HostKey + @"\Devices");
-        return key?.GetValue(fingerprint) is string { Length: <= 4096 } json
-            ? JsonSerializer.Deserialize<DeviceGrant>(json) ?? new([], false, null)
-            : new([], false, null);
-    }
-
-    public static void SaveDeviceGrant(string fingerprint, DeviceGrant grant)
-    {
-        using var key = Registry.CurrentUser.CreateSubKey(HostKey + @"\Devices");
-        key.SetValue(fingerprint, JsonSerializer.Serialize(grant), RegistryValueKind.String);
-    }
 }

@@ -1,3 +1,4 @@
+using RelaxDesk.SharedUI;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -23,7 +24,7 @@ public sealed partial class ViewerWindow
         clearConnections.Click+=(_,_)=>HistoryOperation=ClearConnectionHistory();
         Closed+=(_,_)=>{historyLifetime.Cancel();_=HistoryOperation.ContinueWith(_=>historyLifetime.Dispose(),TaskScheduler.Default);};
     }
-    void SetHistory(ConnectionEndpoint[] entries){recentConnections.ItemsSource=entries;recentConnections.SelectedIndex=-1;recentConnections.IsEnabled=entries.Length>0;connectionHistoryPanel.Header=$"最近连接（{entries.Length}）";}
+    void SetHistory(ConnectionEndpoint[] entries){recentConnections.ItemsSource=entries;recentConnections.SelectedIndex=-1;recentConnections.IsEnabled=entries.Length>0;LocalizedText.Bind(connectionHistoryPanel,"Header","Ui.ConnectionHistoryUi.Text307",entries.Length);}
     async Task LoadConnectionHistory()
     {
         if(historyStore is null&&!App.VerificationMode)historyStore=new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RelaxDesk","preferences","connections.json"));
@@ -56,10 +57,10 @@ public sealed partial class ViewerWindow
     async Task ClearConnectionHistory()
     {
         if(historyStore is null)return;++historyGeneration;clearConnections.IsEnabled=false;
-        try{await historyStore.Clear(historyLifetime.Token);SetHistory([]);historyNotice.Text="连接历史已清空。";}
+        try{await historyStore.Clear(historyLifetime.Token);SetHistory([]);LocalizedText.Bind(historyNotice,"Text","Ui.ConnectionHistoryUi.Text483");}
         catch(OperationCanceledException){}
         catch(Exception e){HistoryError(e);}
         finally{clearConnections.IsEnabled=true;}
     }
-    void HistoryError(Exception error){historyNotice.Text="无法读取历史。可清空历史后重试。";_=Task.Run(()=>ViewerSessionLog.Record("connection-history-unavailable",error));}
+    void HistoryError(Exception error){LocalizedText.Bind(historyNotice,"Text","Ui.ConnectionHistoryUi.Text290");_=Task.Run(()=>ViewerSessionLog.Record("connection-history-unavailable",error));}
 }

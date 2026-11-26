@@ -30,8 +30,8 @@ public sealed partial class ViewerWindow
             throw new IOException("Matching saved user and verified certificate pin required");
         var window = new ViewerWindow { ShowActivated = false };
         window.host.Text = address; window.port.Text = number.ToString(); window.loginName.Text = userName; window.token.Password = saved.Password;
-        window.requestClipboard.IsChecked = window.requestClipboardImage.IsChecked = window.requestClipboardHtml.IsChecked = window.requestFileClipboard.IsChecked = false;
-        window.requestAudio.IsChecked = true; window.gpuRendering.IsChecked = false; window.startFullScreen.IsChecked = false; window.networkMode.SelectedIndex = 1;
+
+         window.gpuRendering.IsChecked = false; window.startFullScreen.IsChecked = false; window.networkMode.SelectedIndex = 1;
         MeasuredAudioSink? sink = null;
         window.AudioSinkForVerification = () => sink = new();
         window.Loaded += async (_, _) =>

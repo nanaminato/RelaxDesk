@@ -23,8 +23,8 @@ public sealed partial class ViewerWindow
         {
             string? line;while((line=await host.StandardOutput.ReadLineAsync(timeout.Token)) is not null)
             {
-                if(mode=="audio"?!line.StartsWith("Optional system output mix requested",StringComparison.Ordinal):!line.Contains("Type APPROVE",StringComparison.Ordinal))continue;
-                await host.StandardInput.WriteLineAsync(mode=="audio"?"APPROVE_AUDIO":"APPROVE");await host.StandardInput.FlushAsync();break;
+                if(!line.Contains("Type APPROVE",StringComparison.Ordinal))continue;
+                await host.StandardInput.WriteLineAsync("APPROVE");await host.StandardInput.FlushAsync();break;
             }
             return await host.StandardOutput.ReadToEndAsync(timeout.Token);
         });
@@ -37,7 +37,7 @@ public sealed partial class ViewerWindow
         }
         if(mode=="remember")window.preferences=window.preferences with{FramesPerSecond=60,Bitrate=20_000_000};
         window.host.Text="127.0.0.1";window.port.Text=number.ToString();window.fingerprint.Text=pin;window.token.Password=token;window.pinnedConnection.IsChecked=true;window.gpuRendering.IsChecked=false;
-        if(mode=="audio"){window.requestAudio.IsChecked=true;window.AudioSinkForVerification=()=>audio=new(()=>0,0);}
+        if(mode=="audio"){window.AudioSinkForVerification=()=>audio=new(()=>0,0);}
         async Task Until(Func<bool> condition){while(!condition()){if(running?.IsCompleted==true)throw new IOException("Viewer ended: "+window.status.Text);await Task.Delay(20,timeout.Token);}}
         void Click(int category,string label)=>((MenuItem)window.sessionToolbar!.VideoSettingsAction.Items[category]).Items.OfType<MenuItem>().Single(item=>Equals(item.Header,label)).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
         window.Loaded+=async(_,_)=>

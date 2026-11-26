@@ -1,3 +1,4 @@
+using RelaxDesk.Core.Localization;
 using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Text;
@@ -20,14 +21,14 @@ public sealed record PasswordVerifier(string UserName, byte[] Salt, byte[] Hash)
     public static byte[] EncodePassword(string password)
     {
         if (!ValidPasswordLength(password.Length))
-            throw new ArgumentException($"密码长度须为 {MinimumPasswordLength} 至 {MaximumPasswordLength} 个字符。");
+            throw new ArgumentException(Strings.Format("Ui.PasswordLogin.Text179",MinimumPasswordLength,MaximumPasswordLength));
         return Encoding.UTF8.GetBytes(password);
     }
 
     public static PasswordVerifier Create(string name, string password)
     {
         if (name.Length < MinimumNewUserNameLength || !ValidUserName(name))
-            throw new ArgumentException($"请输入 {MinimumNewUserNameLength} 至 {MaximumUserNameLength} 个字符的用户名。");
+            throw new ArgumentException(Strings.Format("Ui.PasswordLogin.Text460",MinimumNewUserNameLength,MaximumUserNameLength));
         byte[] bytes = EncodePassword(password);
         try
         {

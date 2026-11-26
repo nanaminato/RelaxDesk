@@ -1,3 +1,4 @@
+using RelaxDesk.SharedUI;
 using System.IO;
 using System.Windows.Controls;
 using RelaxDesk.Windows;
@@ -17,7 +18,7 @@ public sealed partial class ViewerWindow
             preferencesStore = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RelaxDesk", "preferences", "viewer.json"));
         try { if (preferencesStore is not null) preferences = preferencesStore.Load(); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or System.Security.SecurityException)
-        { status.Text = "无法读取连接设置，已使用默认值。"; }
+        { LocalizedText.Bind(status,"Text","Ui.ViewerPreferencesUi.Text294"); }
         ConfigureVideoPreferenceChoices();
         ApplyPreferences();
         foreach (var check in PreferenceChecks())
@@ -31,15 +32,13 @@ public sealed partial class ViewerWindow
         videoBitrate.SelectionChanged += (_, _) => SavePreferences();
         Closing += (_, _) => { SavePreferences(); preferencesOperation.GetAwaiter().GetResult(); };
     }
-    CheckBox[] PreferenceChecks() => [startFullScreen, gpuRendering, requestTopology, requestClipboard,
-        requestClipboardImage, requestClipboardHtml, requestFileClipboard, requestAudio, rememberConnections, autoConnectionQuality];
+    CheckBox[] PreferenceChecks()=>[startFullScreen,gpuRendering,rememberConnections,autoConnectionQuality];
     void ApplyPreferences()
     {
         loadingPreferences = true;
         try
         {
-            bool[] values = [preferences.FullScreen, preferences.Gpu, preferences.Topology, preferences.ClipboardText,
-                preferences.ClipboardImage, preferences.ClipboardHtml, preferences.FileClipboard, preferences.Audio, preferences.RememberConnections, preferences.AutomaticVideoQuality];
+            bool[] values=[preferences.FullScreen,preferences.Gpu,preferences.RememberConnections,preferences.AutomaticVideoQuality];
             var controls = PreferenceChecks();
             for (int i = 0; i < controls.Length; i++) controls[i].IsChecked = values[i];
             networkMode.SelectedIndex = preferences.Network; fileRateLimit.SelectedIndex = preferences.FileRate;
@@ -51,9 +50,9 @@ public sealed partial class ViewerWindow
     void ConfigureVideoPreferenceChoices()
     {
         foreach (int fps in new[] { 15, 30, 60, 120, 144 })
-            videoFrameRate.Items.Add(new ComboBoxItem { Content = $"{fps} FPS", Tag = fps });
+            videoFrameRate.Items.Add(new ComboBoxItem { Content = $"{fps} FPS",Tag = fps });
         foreach (int rate in new[] { 2, 8, 20, 40, 60, 100 })
-            videoBitrate.Items.Add(new ComboBoxItem { Content = $"{rate} Mbit/s", Tag = rate * 1_000_000 });
+            videoBitrate.Items.Add(new ComboBoxItem { Content = $"{rate} Mbit/s",Tag = rate * 1_000_000 });
     }
     void ApplyVideoPreferenceValues()
     {
@@ -63,7 +62,7 @@ public sealed partial class ViewerWindow
             void Select(ComboBox combo, int value, string label)
             {
                 if (!combo.Items.OfType<ComboBoxItem>().Any(item => Equals(item.Tag, value)))
-                    combo.Items.Add(new ComboBoxItem { Content = label, Tag = value });
+                    combo.Items.Add(new ComboBoxItem { Content = label,Tag = value });
                 combo.SelectedValue = value;
             }
             Select(videoFrameRate, preferences.FramesPerSecond, $"{preferences.FramesPerSecond} FPS");
@@ -79,9 +78,6 @@ public sealed partial class ViewerWindow
         preferences = preferences with
         {
             FullScreen = startFullScreen.IsChecked == true, Gpu = gpuRendering.IsChecked == true,
-            Topology = requestTopology.IsChecked == true, ClipboardText = requestClipboard.IsChecked == true,
-            ClipboardImage = requestClipboardImage.IsChecked == true, ClipboardHtml = requestClipboardHtml.IsChecked == true,
-            FileClipboard = requestFileClipboard.IsChecked == true, Audio = requestAudio.IsChecked == true,
             RememberConnections = rememberConnections.IsChecked == true, Network = Math.Max(0, networkMode.SelectedIndex),
             FileRate = Math.Max(0, fileRateLimit.SelectedIndex), Zoom = CurrentViewport.Zoom,
             FramesPerSecond = videoFrameRate.SelectedValue is int fps ? fps : preferences.FramesPerSecond,

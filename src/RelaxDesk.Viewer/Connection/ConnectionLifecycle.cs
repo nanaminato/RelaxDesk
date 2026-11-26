@@ -1,3 +1,5 @@
+using RelaxDesk.SharedUI;
+using RelaxDesk.Core.Localization;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
@@ -18,30 +20,30 @@ public sealed partial class ViewerWindow
     {
         connectionPhase = phase;
         if (phase == ConnectionPhase.Connected) ClearConnectionError();
-        status.Text = phase switch
+        LocalizedText.Bind(status,"Text",()=>phase switch
         {
-            ConnectionPhase.Connecting => "正在连接远程电脑…",
-            ConnectionPhase.Authenticating => "正在验证加密连接…",
-            ConnectionPhase.AwaitingApproval => "验证设备，首次连接需受控端审批…",
-            ConnectionPhase.Negotiating => "正在建立已授权的桌面通道…",
-            ConnectionPhase.Connected => "已获授权，正在接收桌面…",
-            ConnectionPhase.Disconnected => "已断开连接",
+            ConnectionPhase.Connecting => Strings.Get("Ui.ConnectionLifecycle.Text367"),
+            ConnectionPhase.Authenticating => Strings.Get("Ui.ConnectionLifecycle.Text369"),
+            ConnectionPhase.AwaitingApproval => Strings.Get("Ui.ConnectionLifecycle.Text508"),
+            ConnectionPhase.Negotiating => Strings.Get("Ui.ConnectionLifecycle.Text356"),
+            ConnectionPhase.Connected => Strings.Get("Viewer.StatusAuthorized"),
+            ConnectionPhase.Disconnected => Strings.Get("Ui.App.Text223"),
             _ => status.Text
-        };
+        });
     }
     async Task ConnectVideo(bool fullControl = false)
     {
         if (connectionRun is not null) return;
         ClearConnectionError();
         if (!IPAddress.TryParse(host.Text.Trim(), out var address) || address.Equals(IPAddress.Any) || address.Equals(IPAddress.IPv6Any) || !int.TryParse(port.Text, out int number) || number is < 1 or > 65535)
-        { status.Text = "请输入有效的远程 IP 和端口。"; ShowConnectionError(new FormatException("Invalid endpoint"), "configuration"); return; }
-        var target = new ConnectionTarget(address.ToString(), number, pinnedConnection.IsChecked == true, fingerprint.Text, token.Password, RequestedFeatures(), fullScreen || startFullScreen.IsChecked == true,requestTopology.IsChecked==true?DisplayProtocol.TopologyVersion:DisplayProtocol.Version,networkMode.SelectedIndex switch { 1 => NetworkMode.Tcp, 2 => NetworkMode.Udp, _ => NetworkMode.Auto }, fullControl);
+        { LocalizedText.Bind(status,"Text","Ui.ConnectionLifecycle.Text461"); ShowConnectionError(new FormatException("Invalid endpoint"), "configuration"); return; }
+        var target = new ConnectionTarget(address.ToString(), number, pinnedConnection.IsChecked == true, fingerprint.Text, token.Password, RequestedFeatures(), fullScreen || startFullScreen.IsChecked == true,DisplayProtocol.TopologyVersion,networkMode.SelectedIndex switch { 1 => NetworkMode.Tcp, 2 => NetworkMode.Udp, _ => NetworkMode.Auto }, fullControl);
         if (!App.VerificationMode || !IPAddress.IsLoopback(address) || loginName.Text.Length != 0)
         {
             string name = loginName.Text.Trim();
             if (!PasswordVerifier.ValidUserName(name) || !PasswordVerifier.ValidPasswordLength(target.Token.Length))
             {
-                status.Text = $"请输入用户名和 {PasswordVerifier.MinimumPasswordLength} 至 {PasswordVerifier.MaximumPasswordLength} 个字符的密码。";
+                LocalizedText.Bind(status,"Text","Ui.ConnectionLifecycle.Text462",PasswordVerifier.MinimumPasswordLength,PasswordVerifier.MaximumPasswordLength);
                 return;
             }
             target = target with { UserName = name, Pin = RelaxDesk.Windows.PasswordLoginSettings.ReadServerPin(new IPEndPoint(address, number).ToString()) ?? "", FullControl = true };
@@ -79,51 +81,51 @@ public sealed partial class ViewerWindow
                 }
                 if (lifetime.IsCancellationRequested) { SetConnectionPhase(ConnectionPhase.Disconnected); break; }
                 if (recoveryBudget.IsCancellationRequested)
-                { SetConnectionPhase(ConnectionPhase.Failed); status.Text = "自动重连已超时，请检查网络后手动连接。"; break; }
+                { SetConnectionPhase(ConnectionPhase.Failed); LocalizedText.Bind(status,"Text","Ui.ConnectionLifecycle.Text433"); break; }
                 if (result.Error is null) { SetConnectionPhase(ConnectionPhase.Disconnected); break; }
                 if (approvedPin is null || !PipelineAllowsReconnect || !ConnectionRecovery.IsTransient(result.Error) || (smoke is not null && !smoke.ReconnectTest))
                 {
                     SetConnectionPhase(result.Error is RemoteSessionEndedException ? ConnectionPhase.Disconnected : ConnectionPhase.Failed);
-                    status.Text = result.Error switch
+                    LocalizedText.Bind(status,"Text",()=>result.Error switch
                     {
-                        HostConsentRejectedException => "Host 已拒绝本次连接，已停止自动重连。",
-                        PasswordLoginRejectedException => "受控端拒绝登录，请检查用户名和密码。",
-                        FullControlInputUnavailableException => "Host 的完整远程控制暂不可用。请在 Host 检查管理员输入组件后重新连接。",
-                        UdpMediaUnavailableException { Reason: UdpMediaFailure.LocalUnavailable } => "本机无法使用 UDP 媒体。请选择 Auto 或 TCP 后重试。",
-                        UdpMediaUnavailableException { Reason: UdpMediaFailure.HostUnavailable } => "Host 未提供 UDP 媒体。请选择 Auto 或 TCP 后重试。",
-                        UdpMediaUnavailableException => "无法建立 UDP 媒体连接。请检查网络，或选择 Auto 后重试。",
-                        RemoteSessionEndedException { Reason: SessionEndReason.WindowsLocked } => "Host 已锁屏，本次授权已结束。请在 Host 解锁后重新连接。",
-                        RemoteSessionEndedException { Reason: SessionEndReason.WindowsSessionChanged } => "Host 已切换 Windows 会话。重新连接需要本机再次授权。",
-                        RemoteSessionEndedException { Reason: SessionEndReason.WindowsDesktopUnavailable } => "Host 的输入桌面已不可用。请回到原用户的普通桌面后重新连接。",
-                        RemoteSessionEndedException { Reason: SessionEndReason.InputWorkerUnavailable } => "Host 的管理员输入组件已断开。请检查 Host 状态后重新连接。",
-                        RemoteSessionEndedException { Reason: SessionEndReason.WindowsSessionUnavailable } => "Host 的 Windows 会话已不可用，本次授权已结束。",
-                        RemoteSessionEndedException => "Host 已结束本次连接。",
-                        System.Security.Authentication.AuthenticationException => "无法验证 Host 身份，已停止连接；请重新核对指纹。",
-                        InvalidDataException => "会话协议数据无效，已停止自动重连。",
-                        _ => "连接已结束：" + result.Error.Message
-                    };
+                        HostConsentRejectedException => Strings.Get("Ui.ConnectionLifecycle.Text028"),
+                        PasswordLoginRejectedException => Strings.Get("Ui.ConnectionLifecycle.Text150"),
+                        FullControlInputUnavailableException => Strings.Get("Ui.ConnectionLifecycle.Text036"),
+                        UdpMediaUnavailableException { Reason: UdpMediaFailure.LocalUnavailable } => Strings.Get("Ui.ConnectionLifecycle.Text333"),
+                        UdpMediaUnavailableException { Reason: UdpMediaFailure.HostUnavailable } => Strings.Get("Ui.ConnectionLifecycle.Text034"),
+                        UdpMediaUnavailableException => Strings.Get("Ui.ConnectionLifecycle.Text286"),
+                        RemoteSessionEndedException { Reason: SessionEndReason.WindowsLocked } => Strings.Get("Ui.ConnectionLifecycle.Text031"),
+                        RemoteSessionEndedException { Reason: SessionEndReason.WindowsSessionChanged } => Strings.Get("Ui.ConnectionLifecycle.Text027"),
+                        RemoteSessionEndedException { Reason: SessionEndReason.WindowsDesktopUnavailable } => Strings.Get("Ui.ConnectionLifecycle.Text038"),
+                        RemoteSessionEndedException { Reason: SessionEndReason.InputWorkerUnavailable } => Strings.Get("Ui.ConnectionLifecycle.Text037"),
+                        RemoteSessionEndedException { Reason: SessionEndReason.WindowsSessionUnavailable } => Strings.Get("Ui.ConnectionLifecycle.Text035"),
+                        RemoteSessionEndedException => Strings.Get("Ui.ConnectionLifecycle.Text029"),
+                        System.Security.Authentication.AuthenticationException => Strings.Get("Ui.ConnectionLifecycle.Text296"),
+                        InvalidDataException => Strings.Get("Ui.ConnectionLifecycle.Text088"),
+                        _ => Strings.Get("Ui.ConnectionLifecycle.Text485") + result.Error.Message
+                    });
                     if (result.Error is not RemoteSessionEndedException && PipelineFailureText is { } pipelineText) status.Text = pipelineText;
                     break;
                 }
                 if (outage is null) outage = Stopwatch.StartNew();
                 var delay = ConnectionRecovery.Delay(++retry, outage.Elapsed, Random.Shared.NextDouble());
                 if (delay is null || recoveryBudget.IsCancellationRequested)
-                { SetConnectionPhase(ConnectionPhase.Failed); status.Text = "自动重连已达到限制，请检查网络后手动连接。"; break; }
+                { SetConnectionPhase(ConnectionPhase.Failed); LocalizedText.Bind(status,"Text","Ui.ConnectionLifecycle.Text434"); break; }
                 var remaining = ConnectionRecovery.RecoveryWindow - outage.Elapsed;
                 if (remaining <= TimeSpan.Zero)
-                { SetConnectionPhase(ConnectionPhase.Failed); status.Text = "自动重连已超时，请检查网络后手动连接。"; break; }
+                { SetConnectionPhase(ConnectionPhase.Failed); LocalizedText.Bind(status,"Text","Ui.ConnectionLifecycle.Text433"); break; }
                 recoveryBudget.CancelAfter(remaining);
                 SetConnectionPhase(ConnectionPhase.Reconnecting);
-                status.Text = $"连接意外中断，{delay.Value.TotalSeconds:F1} 秒后自动重连（{retry}/{ConnectionRecovery.MaximumRetries}）。";
+                LocalizedText.Bind(status,"Text","Ui.ConnectionLifecycle.Text486",delay.Value.TotalSeconds,retry,ConnectionRecovery.MaximumRetries);
                 ViewerSessionLog.Record("reconnect-wait");
                 await Task.Delay(delay.Value, recoveryBudget.Token);
             }
         }
         catch (OperationCanceledException)
-        { SetConnectionPhase(lifetime.IsCancellationRequested ? ConnectionPhase.Disconnected : ConnectionPhase.Failed); if (!lifetime.IsCancellationRequested) status.Text = "自动重连已超时，请检查网络后手动连接。"; }
+        { SetConnectionPhase(lifetime.IsCancellationRequested ? ConnectionPhase.Disconnected : ConnectionPhase.Failed); if (!lifetime.IsCancellationRequested) LocalizedText.Bind(status,"Text","Ui.ConnectionLifecycle.Text433"); }
         finally
         {
-            lifetime.Cancel();await DiscardFileRecovery(); connectionRun = null;
+            lifetime.Cancel(); connectionRun = null;
             connect.IsEnabled = connectionCard.IsEnabled = true; disconnect.IsEnabled = false;
             LoadSavedCredential(endpointChanged: false);
             connectionEnded.TrySetResult();

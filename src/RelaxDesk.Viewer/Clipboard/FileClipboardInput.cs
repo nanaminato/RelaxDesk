@@ -1,3 +1,4 @@
+using RelaxDesk.Core.Localization;
 using System.IO;
 using System.Windows.Controls;
 using RelaxDesk.Core;
@@ -9,10 +10,8 @@ public sealed partial class ViewerWindow
 {
     TaskCompletionSource<ILocalFileClipboard?>? localFileClipboard;
     CancellationTokenSource? fileClipboardLifetime;
-    ClipboardFiles? remoteClipboardFiles;
     FileClipboardTransfer? fileClipboardTransfer;
-    FileClipboardWindow? fileClipboardWindow;
-    Func<Action<ClipboardFiles?>,IContentClipboard>? fileClipboardVerificationFactory;
+    Func<Action<LocalClipboardFiles>,Action<ClipboardFiles,long>,IContentClipboard>? fileClipboardVerificationFactory=null;
     Task? automaticClipboardCopy;
     CancellationTokenSource? activeClipboardCopy;
     Func<FileClipboardTransfer,CancellationToken,Task>? pendingClipboardCopy;
@@ -52,46 +51,34 @@ public sealed partial class ViewerWindow
             activeClipboardCopy=current;
             try
             {
-                SetFileClipboardStatus("正在准备文件…");
+                SetFileClipboardStatus(Strings.Get("Ui.FileClipboardInput.Text347"));
                 var flow=await FileClipboardFlow(current.Token);
                 fileQueue!.ClearFinished();
                 await copy(flow,current.Token);
-                if(!current.IsCancellationRequested)SetFileClipboardStatus("文件已就绪，可以粘贴。");
+                if(!current.IsCancellationRequested)SetFileClipboardStatus(Strings.Get("Ui.FileClipboardInput.Text266"));
             }
             catch(OperationCanceledException) when(current.IsCancellationRequested){}
             catch(Exception error) when(error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or NotSupportedException or ObjectDisposedException or OperationCanceledException)
             {
-                if(!current.IsCancellationRequested)SetFileClipboardStatus("文件复制未完成，请重新复制。");
+                if(!current.IsCancellationRequested)SetFileClipboardStatus(Strings.Get("Ui.FileClipboardInput.Text263"));
                 ViewerSessionLog.Record("file-clipboard-copy",error);
             }
             finally{activeClipboardCopy=null;}
         }
     }
     bool FileClipboardAllowed=>sessionPermissions is{} gate&&ClipboardFormats.Granted(gate).Files&&fileQueue?.Enabled==true&&fileClient?.SupportsClipboardFiles==true&&richClipboardSession is not null;
-    void ReceiveFileOffer(ClipboardFiles? files,AccessGate gate,CancellationToken ct)
-    {
-        var owned=files?.Own();Dispatcher.BeginInvoke(()=>
-        {if(!ReferenceEquals(sessionPermissions,gate)||ct.IsCancellationRequested)return;remoteClipboardFiles=FileClipboardAllowed?owned:null;fileClipboardWindow?.SetRemote(remoteClipboardFiles);RefreshFileClipboardToolbar();});
-    }
-    void RefreshFileClipboardToolbar()=>sessionToolbar?.SetFileClipboard(fileClipboardVerificationFactory is not null&&FileClipboardAllowed?OpenFileClipboard:null,remoteClipboardFiles is not null);
     async Task<ILocalFileClipboard> LocalFileClipboard(CancellationToken ct)
-    {if(!FileClipboardAllowed||localFileClipboard is null)throw new IOException("文件剪贴板未授权");return await localFileClipboard.Task.WaitAsync(ct)??throw new IOException("文件剪贴板不可用");}
+    {if(!FileClipboardAllowed||localFileClipboard is null)throw new IOException(Strings.Get("Ui.FileClipboardInput.Text259"));return await localFileClipboard.Task.WaitAsync(ct)??throw new IOException(Strings.Get("Ui.FileClipboardInput.Text257"));}
     async Task<FileClipboardTransfer> FileClipboardFlow(CancellationToken ct)
     {if(fileClipboardTransfer is not null)return fileClipboardTransfer;var local=await LocalFileClipboard(ct);return fileClipboardTransfer??=new(fileClient!,fileQueue!,local,()=>FileClipboardAllowed);}
-    void OpenFileClipboard()
-    {
-        if(!FileClipboardAllowed||fileClipboardLifetime is null)return;ReleaseHeldInputs();
-        fileClipboardWindow??=new FileClipboardWindow(this,LocalFileClipboard,FileClipboardFlow,()=>_ = OpenFilePanel(),fileClipboardLifetime.Token);
-        fileClipboardWindow.SetRemote(remoteClipboardFiles);fileClipboardWindow.Show();fileClipboardWindow.Activate();
-    }
     void StopFileClipboard()
-    {fileClipboardLifetime?.Cancel();SetFileClipboardStatus("");remoteClipboardFiles=null;fileClipboardWindow?.SetRemote(null);fileClipboardWindow?.DisablePermission();sessionToolbar?.SetFileClipboard(null,false);}
+    {fileClipboardLifetime?.Cancel();SetFileClipboardStatus("");}
     async Task EndFileClipboard()
     {
         StopFileClipboard();localFileClipboard?.TrySetResult(null);localFileClipboard=null;
         pendingClipboardCopy=null;
         if(automaticClipboardCopy is {} copy){await copy;automaticClipboardCopy=null;}
-        if(fileClipboardWindow is{} window){fileClipboardWindow=null;await window.CloseForSession();}fileClipboardTransfer=null;
+        fileClipboardTransfer=null;
         fileClipboardLifetime?.Dispose();fileClipboardLifetime=null;
     }
 }

@@ -1,3 +1,4 @@
+using RelaxDesk.SharedUI;
 using System.ComponentModel;
 using System.Net;
 using System.Windows;
@@ -33,7 +34,7 @@ public sealed partial class ViewerWindow
             {
                 if (credentialStore.Read(endpoint)?.UserName == loginName.Text.Trim()) credentialStore.Delete(endpoint);
             }
-            catch (Exception error) when (CredentialError(error)) { status.Text = "无法删除保存的凭据，请在 Windows 凭据管理器中移除。"; }
+            catch (Exception error) when (CredentialError(error)) { LocalizedText.Bind(status,"Text","Ui.SavedCredentials.Text284"); }
         };
         Loaded += (_, _) => LoadSavedCredential(endpointChanged: true);
     }
@@ -54,7 +55,7 @@ public sealed partial class ViewerWindow
             if ((!endpointChanged || remembered is not null) && loginName.Text.Trim() != saved.UserName) return;
             loginName.Text = saved.UserName; token.Password = saved.Password; rememberCredentials.IsChecked = true;
         }
-        catch (Exception error) when (CredentialError(error)) { status.Text = "保存的凭据暂不可用，请手动输入。"; }
+        catch (Exception error) when (CredentialError(error)) { LocalizedText.Bind(status,"Text","Ui.SavedCredentials.Text099"); }
         finally { loadingCredential = false; }
     }
     void SaveConnectedCredential(ConnectionTarget target, bool remember)

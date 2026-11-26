@@ -1,3 +1,5 @@
+using RelaxDesk.SharedUI;
+using RelaxDesk.Core.Localization;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
@@ -40,30 +42,31 @@ internal sealed partial class HostWindow
     void UpdateServiceSetupControls()
     {
         bool idle=!Host.Running&&!checkingInputDeployment&&!RestartPending&&!serviceConnecting&&!serviceCleaning&&!closing&&!ServiceSetupBusy;
-        enableService.IsEnabled=idle&&!ServiceReady;enableService.Content=ServiceReady?"系统服务已启用":ServiceSetupBusy?"正在处理…":"启用系统服务";
+        enableService.IsEnabled=idle&&!ServiceReady;LocalizedText.Bind(enableService,"Content",ServiceReady?"Ui.ServiceSetupUi.Text419":ServiceSetupBusy?"Ui.ServiceSetupUi.Text352":"Ui.ServiceSetupUi.Text156");
         installService.IsEnabled=uninstallService.IsEnabled=serviceStartup.IsEnabled=idle;
         refreshService.IsEnabled=!ServiceSetupBusy&&!serviceInspecting&&!closing;
-        serviceOverview.Text = ServiceSetupBusy || serviceConnecting ? "正在设置系统服务…" :
-            ServiceReady ? "已启用并连接" :
-            serviceCleaning ? "服务连接已断开" :
-            serviceStatusUnavailable ? "无法读取服务状态，可在设置中刷新" :
+        string overviewKey = ServiceSetupBusy || serviceConnecting ? "Ui.ServiceSetupUi.Text363" :
+            ServiceReady ? "Ui.ServiceSetupUi.Text212" :
+            serviceCleaning ? "Ui.ServiceSetupUi.Text325" :
+            serviceStatusUnavailable ? "Ui.ServiceSetupUi.Text292" :
             serviceSnapshot switch
             {
-                null => "正在检查系统服务…",
-                { PendingDelete: true } => "等待卸载完成",
-                { Installed: false } => "未安装，可在设置中启用",
-                { State: 4 } => "正在运行，尚未连接",
-                { State: 1 } => "已安装，可在设置中启用",
-                _ => "正在启动或停止"
+                null => "Host.CheckingSystemService",
+                { PendingDelete: true } => "Ui.ServiceSetupUi.Text403",
+                { Installed: false } => "Ui.ServiceSetupUi.Text326",
+                { State: 4 } => "Ui.ServiceSetupUi.Text365",
+                { State: 1 } => "Ui.ServiceSetupUi.Text217",
+                _ => "Ui.ServiceSetupUi.Text351"
             };
+        LocalizedText.Bind(serviceOverview,"Text",overviewKey);
     }
     internal Task EnableSystemService()=>RunServiceSetup(false,true);
     async Task CompleteServiceEnable()
     {
-        ServiceRequired=true;serviceSetupNotice.Text="正在连接系统服务…";
+        ServiceRequired=true;LocalizedText.Bind(serviceSetupNotice,"Text","Ui.ServiceSetupUi.Text366");
         serviceConnectingOperation=ConnectServiceCore(SetupBackend.Connect,true);await serviceConnectingOperation;
-        if(ServiceReady){serviceStatus.Text="系统服务已启用。";serviceSetupNotice.Text="已启用，点击“开始共享”即可。";}
-        else serviceSetupNotice.Text="服务连接失败。请点击“启用系统服务”重试；尚未开始共享。";
+        if(ServiceReady){LocalizedText.Bind(serviceStatus,"Text","Ui.ServiceSetupUi.Text420");LocalizedText.Bind(serviceSetupNotice,"Text","Ui.ServiceSetupUi.Text213");}
+        else LocalizedText.Bind(serviceSetupNotice,"Text","Ui.ServiceSetupUi.Text324");
     }
     internal async Task InspectServiceInstallation()
     {
@@ -81,14 +84,14 @@ internal sealed partial class HostWindow
             if (status.WorkerDeployment is { } workerDeployment)
             {
                 adminDeploymentUnavailable = workerDeployment != AdminWorkerDeployment.Verified;
-                if (state.Text == "等待连接") detail.Text = ListeningDetail;
+                if (state.Text == Strings.Get("Ui.HostWindow.Text408")) detail.Text = ListeningDetail;
             }
-            serviceInstallation.Text=!status.Installed?"系统服务未安装（普通用户模式仍可使用）。":status.PendingDelete?"服务正在等待删除；关闭服务管理窗口后再次卸载，保留现有文件。":$"服务已安装 · {(status.State==4?"运行中":status.State==1?"已停止":"状态转换中")} · {(status.Startup==2?"开机自动启动":"手动启动")}";
+            LocalizedText.Bind(serviceInstallation,"Text",()=>!status.Installed?Strings.Get("Ui.ServiceSetupUi.Text421"):status.PendingDelete?Strings.Get("Ui.ServiceSetupUi.Text320"):Strings.Format("Ui.ServiceSetupUi.Text314",(status.State==4?Strings.Get("Ui.ServiceSetupUi.Text471"):status.State==1?Strings.Get("Ui.ServiceSetupUi.Text197"):Strings.Get("Ui.ServiceSetupUi.Text382")),(status.Startup==2?Strings.Get("Ui.ServiceSetupUi.Text231"):Strings.Get("Ui.ServiceSetupUi.Text234"))));
             serviceInstallation.Text += status.WorkerDeployment switch
             {
-                AdminWorkerDeployment.Verified => "\n管理员输入代理部署已验证。每次会话仍需本机授权。",
-                AdminWorkerDeployment.AccessDenied => "\n当前用户无法读取管理员输入代理部署。请通过下方按钮更新或修复。",
-                AdminWorkerDeployment.RepairRequired => "\n管理员输入代理部署需要修复。请通过下方按钮更新或修复。",
+                AdminWorkerDeployment.Verified => Strings.Get("Ui.ServiceSetupUi.Text014"),
+                AdminWorkerDeployment.AccessDenied => Strings.Get("Ui.ServiceSetupUi.Text011"),
+                AdminWorkerDeployment.RepairRequired => Strings.Get("Ui.ServiceSetupUi.Text015"),
                 _ => ""
             };
         }
@@ -97,7 +100,7 @@ internal sealed partial class HostWindow
             if (!serviceSetupClosed && generation == serviceSetupGeneration)
             {
                 serviceStatusUnavailable = true;
-                serviceInstallation.Text = "无法验证当前用户的服务状态；请检查账户授权。错误类型：" + error.GetType().Name;
+                LocalizedText.Bind(serviceInstallation,"Text",()=>Strings.Get("Ui.ServiceSetupUi.Text297") + error.GetType().Name);
             }
         }
         finally{serviceInspecting=false;if(!serviceSetupClosed){UpdateServiceSetupControls();if(serviceInspectAgain&&!ServiceSetupBusy){serviceInspectAgain=false;await InspectServiceInstallation();}}}
@@ -107,41 +110,41 @@ internal sealed partial class HostWindow
         if(ServiceSetupBusy||Host.Running||RestartPending||serviceConnecting||serviceCleaning||closing||serviceSetupClosed)return;
         if(simpleEnable&&ServiceReady)return;
         ServiceSetupBusy=true;++serviceSetupGeneration;UpdateServiceControls();
-        string step = "校验发布包";
-        serviceSetupNotice.Text="正在校验完整发布包；尚未请求管理员授权…";
+        string step = Strings.Get("Ui.ServiceSetupUi.Text343");
+        LocalizedText.Bind(serviceSetupNotice,"Text","Ui.ServiceSetupUi.Text359");
         try
         {
             if(simpleEnable)
             {
-                step = "读取系统服务状态";
-                serviceSetupNotice.Text="正在检查系统服务…";var current=await SetupBackend.Inspect();
-                if(current.PendingDelete){serviceSetupNotice.Text="服务正在等待删除，请稍后重试或到“服务设置”完成卸载。";return;}
+                step = Strings.Get("Ui.ServiceSetupUi.Text467");
+                LocalizedText.Bind(serviceSetupNotice,"Text","Host.CheckingSystemService");var current=await SetupBackend.Inspect();
+                if(current.PendingDelete){LocalizedText.Bind(serviceSetupNotice,"Text","Ui.ServiceSetupUi.Text319");return;}
                 if(current.Installed&&current.State==4){await CompleteServiceEnable();return;}
-                if(current.Installed&&current.State!=1){serviceSetupNotice.Text="服务正在启动或停止，请稍后再次点击启用。";return;}
-                serviceSetupNotice.Text="正在准备系统服务…";
+                if(current.Installed&&current.State!=1){LocalizedText.Bind(serviceSetupNotice,"Text","Ui.ServiceSetupUi.Text317");return;}
+                LocalizedText.Bind(serviceSetupNotice,"Text","Ui.ServiceSetupUi.Text348");
             }
-            step = "校验发布包";
+            step = Strings.Get("Ui.ServiceSetupUi.Text343");
             bool? automatic=serviceStartup.SelectedIndex==0?null:serviceStartup.SelectedIndex==2;
             // The simple action preserves installed startup policy. Advanced
             // choices are applied only by the explicit repair/update action.
             var plan=await SetupBackend.Prepare(application,uninstall,simpleEnable?null:automatic);
             if(simpleEnable)plan=plan with{OnlyIssues=true};
-            string action=uninstall?"卸载系统服务（会停止服务协调，保留未知或修改过的文件）":$"安装／更新并立即启动系统服务\n启动设置：{(automatic is null?"保留当前设置，首次安装为手动":automatic.Value?"开机自动启动":"手动启动")}";
-            bool accepted=simpleEnable||(SetupConfirmation?.Invoke(plan)??MessageBox.Show(this,$"{action}\n\n授权用户 SID：{plan.Owner}\n发布版本：{plan.Version}\n\n不会自动共享桌面或批准 Viewer。接下来 Windows 将请求管理员授权。", "RelaxDesk 服务维护",MessageBoxButton.OKCancel,MessageBoxImage.Warning)==MessageBoxResult.OK);
-            if(!accepted){serviceSetupNotice.Text="已取消，没有启动服务安装程序。";return;}
+            string action=uninstall?Strings.Get("Ui.ServiceSetupUi.Text142"):Strings.Format("Ui.ServiceSetupUi.Text172",(automatic is null?Strings.Get("Ui.ServiceSetupUi.Text102"):automatic.Value?Strings.Get("Ui.ServiceSetupUi.Text231"):Strings.Get("Ui.ServiceSetupUi.Text234")));
+            bool accepted=simpleEnable||(SetupConfirmation?.Invoke(plan)??MessageBox.Show(this,Strings.Format("Ui.ServiceSetupUi.Text056",action,plan.Owner,plan.Version), Strings.Get("Ui.ServiceSetupUi.Text045"),MessageBoxButton.OKCancel,MessageBoxImage.Warning)==MessageBoxResult.OK);
+            if(!accepted){LocalizedText.Bind(serviceSetupNotice,"Text","Ui.ServiceSetupUi.Text209");return;}
             await DisconnectService();
-            step = "启动管理员维护程序";
-            serviceSetupNotice.Text="正在等待 Windows 授权和服务维护完成；不会开始共享。完成前请保留窗口。";
+            step = Strings.Get("Ui.ServiceSetupUi.Text155");
+            LocalizedText.Bind(serviceSetupNotice,"Text","Ui.ServiceSetupUi.Text362");
             int code=await SetupBackend.Run(plan);
             if(simpleEnable&&code==0){await CompleteServiceEnable();return;}
             if(uninstall&&code==0)ServiceRequired=false;
-            serviceSetupNotice.Text=code==0?(uninstall?"卸载操作已完成；如提示保留文件，请按结果窗口检查。":"服务更新／修复已完成。点击“启用系统服务”自动连接，然后开始共享。"):
-                code==2?"服务等待删除；保留文件，关闭相关服务管理窗口后再次卸载。":$"服务维护未成功完成（退出码 {code}）。请查看维护结果窗口；可能保留了恢复记录，不要手动删除服务目录。";
+            LocalizedText.Bind(serviceSetupNotice,"Text",()=>code==0?(uninstall?Strings.Get("Ui.ServiceSetupUi.Text140"):Strings.Get("Ui.ServiceSetupUi.Text315")):
+                code==2?Strings.Get("Ui.ServiceSetupUi.Text321"):Strings.Format("Ui.ServiceSetupUi.Text323",code));
         }
-        catch(Win32Exception error)when(error.NativeErrorCode==1223){serviceSetupNotice.Text="已取消 Windows 管理员授权，没有启动服务维护。";}
+        catch(Win32Exception error)when(error.NativeErrorCode==1223){LocalizedText.Bind(serviceSetupNotice,"Text","Ui.ServiceSetupUi.Text207");}
         catch(Exception error)
         {
-            serviceSetupNotice.Text=$"{step}失败：{error.GetType().Name} (0x{error.HResult:X8})。";
+            LocalizedText.Bind(serviceSetupNotice,"Text","Ui.ServiceSetupUi.Text061",step,error.GetType().Name,error.HResult);
             logs.AppendText($"service_setup_failed step={step} type={error.GetType().Name} hresult=0x{error.HResult:X8}\n");
         }
         finally{ServiceSetupBusy=false;UpdateServiceControls();await InspectServiceInstallation();}

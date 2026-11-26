@@ -30,12 +30,7 @@ Check(guest.Allows(SessionCapabilities.ClipboardText));
 Check(!guest.AcceptControl(new Packet("ping-v2", 1, DeviceKey: "unexpected")));
 Check(guest.AcceptControl(new Packet("ping-v2", 1)));
 var revokedInput = new AccessGate();
-string[] offeredFullControl = [SessionCapabilities.ClipboardText, SessionCapabilities.ClipboardFiles,
-    SessionCapabilities.FileTransfer, SessionCapabilities.SystemAudio];
-Check(SessionCapabilities.ForFullControl(offeredFullControl, true).SequenceEqual(offeredFullControl));
-Check(SessionCapabilities.ForFullControl(offeredFullControl, false).SequenceEqual(
-    new[] { SessionCapabilities.ClipboardText, SessionCapabilities.SystemAudio }));
-Check(SessionCapabilities.ForFullControl(null, true).Length == 0);
+Check(SessionCapabilities.RequireAll(SessionCapabilities.All).SequenceEqual(SessionCapabilities.All));
 revokedInput.Approve();
 Check(revokedInput.TryExecuteInput(input, () => { }));
 revokedInput.RevokeInput();
@@ -170,6 +165,7 @@ count += ConnectionErrorDetailsChecks.Run();
 count += await MetricsChecks.Run();
 count += await VideoSettingsChecks.Run();
 count += AutomaticVideoQualityChecks.Run();
+count += LocalizationChecks.Run();
 count += DisplayChecks.Run();
 count += DisplayTopologyChecks.Run();
 count += ViewportChecks.Run();
@@ -182,16 +178,8 @@ foreach (string invalid in new[] { "anything", "https://localhost/", invitation.
 { try { ConnectionInvitation.Parse(invalid); throw new Exception("Invalid invitation accepted"); } catch (FormatException) { Check(true); } }
 if (args is ["--core"]) { Console.WriteLine($"PASS {count} protocol/access/media checks (TLS not run)"); return; }
 count += await QuicMediaAttachmentChecks.Run();
-count += await InputTlsChecks.Run();
-count += await DisplayTlsChecks.Run();
-count += await ClipboardSessionTlsChecks.Run();
-count += await AudioSessionChecks.Tls();
-count += await VideoSettingsTlsChecks.Run();
-count += await ApprovalTlsChecks.Run();
-count += await PinnedApprovalChecks.Run();
-count += await FeatureTlsChecks.Run();
-count += await FileTlsChecks.Run();
-count += await ResumeTlsChecks.Run();
+count += await UnifiedSessionChecks.Run();
+
 using var certificate = SessionCertificate.Create();
 var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0); listener.Start();
 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));

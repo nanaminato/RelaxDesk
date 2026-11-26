@@ -1,3 +1,4 @@
+using RelaxDesk.SharedUI;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -38,11 +39,11 @@ public sealed partial class ViewerWindow
         {
             var copy = App.VerificationMode && errorCopyForVerification is not null ? errorCopyForVerification(report, deadline.Token) : DiagnosticClipboardCopy.Write(report, deadline.Token);
             await copy.WaitAsync(deadline.Token);
-            if (generation == errorGeneration) copyErrorFeedback.Text = "已复制。";
+            if (generation == errorGeneration) LocalizedText.Bind(copyErrorFeedback,"Text","Ui.ConnectionErrorPanel.Text215");
         }
         catch (Exception error)
         {
-            if (generation == errorGeneration && !errorPanelLifetime.IsCancellationRequested) copyErrorFeedback.Text = "剪贴板暂不可用，请重试。";
+            if (generation == errorGeneration && !errorPanelLifetime.IsCancellationRequested) LocalizedText.Bind(copyErrorFeedback,"Text","Ui.ConnectionErrorPanel.Text137");
             ViewerSessionLog.Record("error-details-copy-failed", error);
         }
         finally { errorCopying = false; if (!errorPanelLifetime.IsCancellationRequested) copyError.IsEnabled = connectionError is not null; }
@@ -63,7 +64,7 @@ internal static class DiagnosticClipboardCopy
             try { ct.ThrowIfCancellationRequested(); Clipboard.SetDataObject(report, true); done.TrySetResult(); }
             catch (Exception error) { done.TrySetException(error); }
             finally { Interlocked.Exchange(ref active, 0); }
-        }) { IsBackground = true, Name = "RelaxDesk diagnostic copy" };
+        }) { IsBackground = true,Name = "RelaxDesk diagnostic copy" };
         try { worker.SetApartmentState(ApartmentState.STA); worker.Start(); }
         catch { Interlocked.Exchange(ref active, 0); throw; }
         return done.Task;

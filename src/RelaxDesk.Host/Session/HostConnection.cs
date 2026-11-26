@@ -49,15 +49,13 @@ internal static class HostConnection
             }
             else if (hello.Kind != FullControlProtocol.PinnedRequest || hello.Text is null || !CryptographicOperations.FixedTimeEquals(System.Text.Encoding.UTF8.GetBytes(hello.Text), System.Text.Encoding.UTF8.GetBytes(token))) throw new AuthenticationException("Pairing rejected");
         }
+        FullControlProtocol.RequireCurrent(hello);
         if (shell is null && hello.Kind != FullControlProtocol.Request) Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests a desktop session. Type APPROVE to allow this session:");
         if(hello.AudioTicket is not null||hello.ClipboardTicket is not null||hello.Input is not null||hello.InputVersion is not (0 or InputProtocol.Version))throw new AuthenticationException("Invalid input negotiation request");
         if(!DisplayProtocol.Supported(hello.DisplayVersion)||hello.DisplayVersion!=0&&hello.InputVersion!=InputProtocol.Version||hello.DisplayState is not null||hello.DisplayId is not null||hello.DisplayGeneration!=0)throw new AuthenticationException("Invalid display negotiation request");
         var requestedFeatures = SessionCapabilities.Validate(hello.Features);
         if(!VideoSettingsProtocol.Supported(hello.VideoVersion)||hello.VideoSettings is not null)throw new AuthenticationException("Invalid video configuration request");
         if(hello.FileScope is not null||hello.FileResume&&!requestedFeatures.Contains(SessionCapabilities.FileTransfer))throw new AuthenticationException("Invalid file resume request");
-        if (shell is null && requestedFeatures.Any(SessionCapabilities.IsClipboard)) Console.WriteLine("Optional bidirectional clipboard requested: "+SessionCapabilities.ClipboardDescription(requestedFeatures)+". Type APPROVE_CLIPBOARD to allow exactly these requested formats; APPROVE grants screen/input only.");
-        if (shell is null && requestedFeatures.Contains(SessionCapabilities.FileTransfer)) Console.WriteLine("Optional file.transfer requested. APPROVE_FILES grants access only to the configured local directory; APPROVE_ALL grants all requested configured features. APPROVE grants screen/input only.");
-        if(shell is null&&requestedFeatures.Contains(SessionCapabilities.SystemAudio))Console.WriteLine("Optional system output mix requested (may include other applications). APPROVE_AUDIO grants sound only in addition to screen/input; append _AUDIO to a clipboard/files/all approval to separately allow sound. APPROVE_ALL alone does not grant sound.");
         if (hello.QuicPort != 0 || hello.QuicTicket is not null || hello.QuicSend is not null ||
             hello.Network is not (null or NetworkMode.Auto or NetworkMode.Tcp or NetworkMode.Udp))
             throw new AuthenticationException("Invalid network mode request");
@@ -83,7 +81,7 @@ internal static class HostConnection
         string? approval = authorizedHandshake
             ? await RequestConsent(client, shell, requestedFeatures, verifier is null && deviceFingerprint is not null, deviceFingerprint, stop, verifier is not null, verifier is not null && hello.ReconnectOnly)
             : null;
-        if (!authorizedHandshake || approval is null || AudioConsent.Parse(approval) is null or ConsentDecision.Deny)
+        if (!authorizedHandshake || approval is null || approval != "APPROVE")
         {
             if (shell is not null) ShellBridge.Emit("denied", sessionId: shell.Id);
             using var denied = CancellationTokenSource.CreateLinkedTokenSource(stop);
@@ -94,22 +92,14 @@ internal static class HostConnection
         await using var elevated = synthetic && deviceFingerprint is not null && backend is ("test-admin-lifecycle" or "test-admin-worker-loss")
                 ? await AdminInputFixture.Start(backend == "test-admin-worker-loss", stop) : null;
         if (shell is not null) ShellBridge.Emit("approved", sessionId: shell.Id);
-        var availableFeatures = verifier is null && deviceFingerprint is not null
-            ? SessionCapabilities.ForFullControl(requestedFeatures, selectedFileRoot is not null)
-            : GrantedFeatures(requestedFeatures, selectedFileRoot is not null, approval);
-        if (!synthetic && shell is not null)
-            availableFeatures = SessionCapabilities.ForFullControl(requestedFeatures,
-                selectedFileRoot is not null && requestedFeatures.Contains(SessionCapabilities.ClipboardFiles));
+        if(selectedFileRoot is null)
+        {
+            selectedFileRoot=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RelaxDesk","Transfers");
+            Directory.CreateDirectory(selectedFileRoot);_ = new WindowsFileRoot(selectedFileRoot);
+        }
+        var availableFeatures=SessionCapabilities.All;
         await VideoHostSession.Run(listener, client, tls, identity, hello, backend, stop,
-            availableFeatures, shell?.ClipboardRevoked ?? default, selectedFileRoot, shell?.FilesRevoked ?? default,fileResumes,selectedDisplay,shell?.AudioRevoked??default,elevated,shell?.Id);
-    }
-
-    static string[] GrantedFeatures(string[] requested, bool fileScope, string approval)
-    {
-        string decision = AudioConsent.Base(approval);
-        bool filesAllowed = fileScope && decision is "APPROVE_FILES" or "APPROVE_ALL";
-        return SessionCapabilities.Grant(requested, decision is "APPROVE_CLIPBOARD" or "APPROVE_ALL",
-            filesAllowed, AudioConsent.AllowsAudio(approval));
+            availableFeatures, selectedFileRoot,fileResumes,selectedDisplay,elevated,shell?.Id);
     }
 
     static async Task<string> VerifyDeviceIdentity(SslStream tls, X509Certificate2 certificate, string publicKey, CancellationToken stop)
@@ -141,7 +131,7 @@ internal static class HostConnection
         async Task<string?> ReadShell()
         {
             var decision = await shell!.Request(client.Client.RemoteEndPoint?.ToString() ?? "unknown", features, fullControl, deviceFingerprint, deadline.Token, passwordLogin, reconnectOnly);
-            return AudioConsent.Command(decision);
+            return decision==ConsentDecision.Deny?"DENY":"APPROVE";
         }
         async Task WatchPeer()
         {

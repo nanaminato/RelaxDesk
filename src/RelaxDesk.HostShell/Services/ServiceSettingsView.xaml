@@ -1,44 +1,45 @@
 <UserControl x:Class="RelaxDesk.HostShell.ServiceSettingsView" x:ClassModifier="internal"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:RelaxDesk.SharedUI">
     <UserControl.Resources>
         <ResourceDictionary Source="/RelaxDesk.HostShell;component/Themes/ModernTheme.xaml" />
     </UserControl.Resources>
     <StackPanel>
         <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12">
             <StackPanel>
-                <TextBlock x:Name="CoordinationStatus" Text="尚未连接系统服务。完整控制需要已安装的管理员输入组件。"
+                <TextBlock x:Name="CoordinationStatus" Text="{ui:Loc Ui.ServiceSettingsView.Text187}"
                            TextWrapping="Wrap" FontSize="13" Foreground="#1E293B" FontWeight="Medium" />
-                <TextBlock x:Name="Installation" Text="尚未检查服务安装状态。"
+                <TextBlock x:Name="Installation" Text="{ui:Loc Ui.ServiceSettingsView.Text185}"
                            TextWrapping="Wrap" FontSize="12" Foreground="#64748B" Margin="0,6,0,0" />
             </StackPanel>
         </Border>
 
         <WrapPanel Margin="0,12,0,0" VerticalAlignment="Center">
-            <Button x:Name="EnableService" Content="启用系统服务" Style="{StaticResource PrimaryButton}" Margin="0,4,8,4" />
-            <Button x:Name="ConnectService" Content="连接系统服务" IsEnabled="False" Margin="0,4,8,4" />
-            <Button x:Name="RefreshService" Content="刷新服务状态" Margin="0,4,0,4" />
+            <Button x:Name="EnableService" Content="{ui:Loc Ui.ServiceSetupUi.Text156}" Style="{StaticResource PrimaryButton}" Margin="0,4,8,4" />
+            <Button x:Name="ConnectService" Content="{ui:Loc Ui.ServiceSettingsView.Text488}" IsEnabled="False" Margin="0,4,8,4" />
+            <Button x:Name="RefreshService" Content="{ui:Loc Ui.ServiceSettingsView.Text133}" Margin="0,4,0,4" />
         </WrapPanel>
 
-        <CheckBox x:Name="UseService" Content="使用系统服务协调（不增加桌面权限）"
+        <CheckBox x:Name="UseService" Content="{ui:Loc Ui.ServiceSettingsView.Text096}"
                   Margin="0,10,0,0" Foreground="#334155" FontSize="13" />
 
         <Border Height="1" Background="#E2E8F0" Margin="0,14,0,14" />
 
-        <TextBlock Text="启动与安装管理" FontSize="12" FontWeight="SemiBold" Foreground="#475569" Margin="0,0,0,6" />
+        <TextBlock Text="{ui:Loc Ui.ServiceSettingsView.Text154}" FontSize="12" FontWeight="SemiBold" Foreground="#475569" Margin="0,0,0,6" />
         <ComboBox x:Name="Startup" SelectedIndex="0" MinWidth="260" MinHeight="34" Padding="10,6"
                   VerticalContentAlignment="Center" HorizontalAlignment="Left">
-            <ComboBoxItem Content="保留启动设置（首次安装为手动）" />
-            <ComboBoxItem Content="手动启动服务" />
-            <ComboBoxItem Content="开机自动启动服务" />
+            <ComboBoxItem Content="{ui:Loc Ui.ServiceSettingsView.Text101}" />
+            <ComboBoxItem Content="{ui:Loc Ui.ServiceSettingsView.Text235}" />
+            <ComboBoxItem Content="{ui:Loc Ui.ServiceSettingsView.Text232}" />
         </ComboBox>
 
         <WrapPanel Margin="0,10,0,0">
-            <Button x:Name="InstallService" Content="安装／更新／修复（管理员）" Margin="0,4,8,4" />
-            <Button x:Name="UninstallService" Content="卸载服务（管理员）" Style="{StaticResource DangerButton}" Margin="0,4,0,4" />
+            <Button x:Name="InstallService" Content="{ui:Loc Ui.ServiceSettingsView.Text173}" Margin="0,4,8,4" />
+            <Button x:Name="UninstallService" Content="{ui:Loc Ui.ServiceSettingsView.Text141}" Style="{StaticResource DangerButton}" Margin="0,4,0,4" />
         </WrapPanel>
 
         <TextBlock x:Name="Progress" TextWrapping="Wrap" FontSize="12" Foreground="#64748B" Margin="0,10,0,0"
-                   Text="自动完成安装、启动和连接。首次启用需要 Windows 管理员授权；不会自动共享桌面。" />
+                   Text="{ui:Loc Ui.ServiceSettingsView.Text431}" />
     </StackPanel>
 </UserControl>

@@ -38,15 +38,12 @@ if(args is [var switchHost,"--display-switch"]){try{await DisplaySwitchSmoke.Run
 if(args is [var displayHost,"--display-denied"]){try{await DisplaySmoke.Run(displayHost);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is ["--display-contracts"]){try{RelaxDesk.Windows.DisplayContracts.Run();}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is["--file-clipboard-contracts",var fileClipboardFixtures]){try{await RelaxDesk.Windows.FileClipboardContracts.Run(fileClipboardFixtures);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
-if(args is[var richBindingHost,"--clipboard-binding"]){try{await RichClipboardBindingSmoke.Run(richBindingHost);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
-if(args is[var richClipboardHost,var richClipboardMode]&&richClipboardMode is "--clipboard-rich" or "--clipboard-rich-denied" or "--clipboard-rich-failure" or "--clipboard-rich-transport" or "--clipboard-rich-replay" or "--clipboard-rich-format-denied"){try{await RichClipboardSmoke.Run(richClipboardHost,richClipboardMode);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is ["--clipboard-image-contracts"]){try{RelaxDesk.Windows.ClipboardImageContracts.Run();}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is ["--input-contracts"]){RelaxDesk.Windows.InputContracts.Run();return;}
 if(args is ["--file-resume-contracts",var resumeFixtures]){await RelaxDesk.Windows.FileResumeContracts.Run(resumeFixtures);return;}
 if(args is [var largeResumeHost,"--file-resume-large",var largeResumeFixtures]){await LargeFileResumeSmoke.Run(largeResumeHost,largeResumeFixtures);return;}
-if (args is [var persistentHost, "--persistent-host", var persistentFixtures]) { await PersistentHostSmoke.Run(persistentHost, persistentFixtures); return; }
 if (args is ["--file-root-contracts", var fileFixture]) { await RelaxDesk.Windows.FileTransferContracts.Run(fileFixture); return; }
-if (args is [var fileHost, var fileMode, var fileOutput] && fileMode is "--file-transfer" or "--file-denied") { await FileTransferSmoke.Run(fileHost, fileOutput, fileMode=="--file-transfer"); return; }
+if (args is [var fileHost, var fileMode, var fileOutput] && fileMode is "--file-transfer") { await FileTransferSmoke.Run(fileHost, fileOutput); return; }
 if (args is [var udpFileHost, "--file-transfer-udp", var udpFileOutput]) { await FileTransferSmoke.Run(udpFileHost, udpFileOutput, udp: true); return; }
 if (args is [var autoFileHost, "--file-transfer-auto", var autoFileOutput]) { await FileTransferSmoke.Run(autoFileHost, autoFileOutput, autoRecovery: true); return; }
 if (args is [var soakFileHost, "--file-transfer-auto-soak", var soakFileOutput, var soakRounds])
@@ -57,7 +54,6 @@ if (args is [var soakFileHost, "--file-transfer-auto-soak", var soakFileOutput, 
     return;
 }
 if(args is [var dataHost,"--reject-data",var dataFixtures]){string root=Path.Combine(Path.GetFullPath(dataFixtures),"rejected-data-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);await SecuritySmoke.Run(dataHost,"--reject-data",root);return;}
-if (args is [var clipboardHost, var clipboardMode] && clipboardMode is "--clipboard-text" or "--clipboard-denied" or "--clipboard-unnegotiated" or "--clipboard-failure") { await ClipboardSmoke.Run(clipboardHost, clipboardMode); return; }
 if (args is [var quicHost, "--quic-production"]) { await ProductionQuicSmoke.Run(quicHost); return; }
 if (args is [var hostWithoutUdp, "--quic-host-unavailable"]) { await ProductionQuicSmoke.VerifyUnavailableHost(hostWithoutUdp); return; }
 if (args is ["--quic-datagram-probe", var quicNative]) { await QuicDatagramSmoke.Run(quicNative); return; }

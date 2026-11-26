@@ -1,18 +1,15 @@
 <UserControl x:Class="RelaxDesk.HostShell.HostConsentView" x:ClassModifier="internal"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:RelaxDesk.SharedUI">
     <StackPanel>
-        <TextBlock Text="有人请求连接" FontSize="19" FontWeight="SemiBold" Foreground="#17243A" Margin="0,0,0,4" />
+        <TextBlock Text="{ui:Loc Ui.HostConsentView.Text310}" FontSize="19" FontWeight="SemiBold" Foreground="#17243A" Margin="0,0,0,4" />
         <TextBlock x:Name="Peer" FontSize="16" Margin="0,10,0,8" />
         <TextBlock x:Name="Access" TextWrapping="Wrap" Foreground="SlateGray" />
-        <CheckBox x:Name="ClipboardPermission" Content="允许双向文本剪贴板" Visibility="Collapsed" Margin="0,10,0,0" />
-        <CheckBox x:Name="FilesPermission" Content="允许文件传输及文件剪贴板" Visibility="Collapsed" Margin="0,8,0,0" />
-        <TextBlock x:Name="FilesScope" TextWrapping="Wrap" Margin="22,4,0,0" Visibility="Collapsed" FontSize="12" />
-        <CheckBox x:Name="AudioPermission" Content="允许发送系统输出声音（可能包含本机其他应用的声音）" Visibility="Collapsed" Margin="0,8,0,0" />
-        <CheckBox x:Name="RememberDevice" Content="信任此设备" Visibility="Collapsed" />
+        <CheckBox x:Name="RememberDevice" Content="{ui:Loc Ui.HostConsentView.Text104}" Visibility="Collapsed" />
         <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-            <Button x:Name="Allow" Content="允许本次连接" />
-            <Button x:Name="Deny" Content="拒绝" />
+            <Button x:Name="Allow" Content="{ui:Loc Ui.HostConsentView.Text114}" />
+            <Button x:Name="Deny" Content="{ui:Loc Ui.HostConsentView.Text241}" />
         </StackPanel>
     </StackPanel>
 </UserControl>

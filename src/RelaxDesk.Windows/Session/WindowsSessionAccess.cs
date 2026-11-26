@@ -1,3 +1,4 @@
+using RelaxDesk.Core.Localization;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -29,7 +30,7 @@ public sealed record WindowsSessionSnapshot(uint? SessionId, int? ConnectionStat
 }
 
 public sealed class WindowsSessionUnavailableException(string reason) : IOException(
-    "当前 Windows 会话或安全桌面不支持控制；请回到原用户的普通桌面后重新连接并授权。 reason=" + reason)
+    Strings.Get("Ui.WindowsSessionAccess.Text233") + reason)
 {
     public string Reason { get; } = reason;
 }

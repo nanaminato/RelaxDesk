@@ -1,3 +1,5 @@
+using RelaxDesk.SharedUI;
+using RelaxDesk.Core.Localization;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -32,8 +34,8 @@ internal sealed partial class SessionToolbar : Window, IDisposable
         var current = (frame.Codec, frame.HardwareEncoded, gpu);
         if (lastMediaPath == current) return;
         lastMediaPath = current;
-        string encoding = frame.Codec == MediaCodec.DeflateBgra ? "图像兼容编码" : frame.HardwareEncoded ? "硬件编码" : "软件编码";
-        mediaPath = encoding + " · " + (gpu ? "GPU 显示" : "CPU 显示");
+        string encoding = frame.Codec == MediaCodec.DeflateBgra ? Strings.Get("Ui.SessionToolbar.Text158") : frame.HardwareEncoded ? Strings.Get("Ui.SessionToolbar.Text393") : Strings.Get("Ui.SessionToolbar.Text469");
+        mediaPath = encoding + " · " + (gpu ? Strings.Get("Viewer.DisplayModeGpu") : Strings.Get("Ui.SessionToolbar.Text022"));
         this.ToolTip = mediaPath;
     }
     readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(100) };
@@ -65,22 +67,13 @@ internal sealed partial class SessionToolbar : Window, IDisposable
     internal ToggleButton PinButton => pin;
     internal Button MinimizeButton => minimize;
     internal ItemCollection RemoteKeyItems => remoteKeys.Items;
-    Action? openFiles;
-    public void SetFiles(Action? open, int recoveryCount = 0)
-    {
-        openFiles = open;
-        FilesAction.IsEnabled = open is not null;
-        FilesAction.Header = recoveryCount > 0 ? "文件续传…" : "文件传输…";
-        FilesAction.ToolTip = recoveryCount > 0 ? $"有{recoveryCount}项中断任务，打开后确认继续" : "上传、下载与任务队列（需Host授权）";
-    }
-
     internal MenuItem DisplaysAction=>displays;
     internal MenuItem ZoomAction=>zoom;
     Action<int>? setZoom;
     public void SetViewport(ViewportOptions options, Action<int> set)
     {
         setZoom = set;
-        zoom.Header = options.Zoom == 0 ? "画面缩放 · 适应窗口" : $"画面缩放 · {options.Zoom}%";
+        LocalizedText.Bind(zoom,"Header",()=>options.Zoom == 0 ? Strings.Get("Ui.SessionToolbar.Text389") : Strings.Format("Ui.SessionToolbar.Text388",options.Zoom));
         foreach (var item in zoom.Items.OfType<MenuItem>())
             if (item.Tag is int percent) item.IsChecked = options.Zoom == percent;
         customZoom.Text = (options.Zoom == 0 ? 100 : options.Zoom).ToString();
@@ -96,11 +89,11 @@ internal sealed partial class SessionToolbar : Window, IDisposable
     public void SetRemoteInputReady(bool ready) => SetRemoteShortcuts(ready);
     public void SetDisplays(DisplaySessionInfo? state,bool ready,Action<string>? select)
     {
-        displays.Items.Clear();displays.IsEnabled=state is not null;displays.Header=state is null?"显示器（Host 未开放切换）":state.Unavailable?(state.Allowed.Length>0?"显示器（屏幕断开，可重新选择）":"显示器（等待授权屏幕恢复）"):ready?"显示器":"显示器（等待新画面…）";
+        displays.Items.Clear();displays.IsEnabled=state is not null;LocalizedText.Bind(displays,"Header",()=>state is null?Strings.Get("Ui.SessionToolbar.Text299"):state.Unavailable?(state.Allowed.Length>0?Strings.Get("Ui.SessionToolbar.Text300"):Strings.Get("Ui.SessionToolbar.Text301")):ready?Strings.Get("Ui.SessionToolbar.Text298"):Strings.Get("Ui.SessionToolbar.Text302"));
         if(state is null)return;
         foreach(string id in state.Allowed)
         {
-            string label=id=="all"?"全部屏幕（兼容捕获）":state.Displays.Single(d=>d.Id==id).ToString();
+            string label=id=="all"?Strings.Get("Ui.SessionToolbar.Text119"):state.Displays.Single(d=>d.Id==id).ToString();
             var item=new MenuItem{Header=label,IsCheckable=true,IsChecked=id==state.Selected,IsEnabled=ready,Tag=id};
             item.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;select?.Invoke(id);};displays.Items.Add(item);
         }
@@ -108,11 +101,11 @@ internal sealed partial class SessionToolbar : Window, IDisposable
     internal MenuItem VideoSettingsAction=>videoSettings;
     public void SetVideoSettings(VideoSettings? state,bool ready,bool pending,bool h264,Action<int,int> change,bool automatic=false,Action<bool>? setAutomatic=null)
     {
-        videoSettings.Header=state is null?"视频设置（不可用）":pending?"视频设置（等待确认）":state.Generation==1_000_000?"视频设置（需重连）":ready?$"视频设置 · {(automatic?"自动 · ":"")}{state.FramesPerSecond} FPS":"视频设置（稍后可调）";
+        LocalizedText.Bind(videoSettings,"Header",()=>state is null?Strings.Get("Ui.SessionToolbar.Text445"):pending?Strings.Get("Ui.SessionToolbar.Text447"):state.Generation==1_000_000?Strings.Get("Ui.SessionToolbar.Text448"):ready?Strings.Format("Ui.SessionToolbar.Text443",(automatic?Strings.Get("Ui.SessionToolbar.Text430"):""),state.FramesPerSecond):Strings.Get("Ui.SessionToolbar.Text446"));
         videoSettings.IsEnabled=state is not null&&ready;videoSettings.Items.Clear();if(state is null)return;
-        var fps=new MenuItem{Header="帧率上限"};foreach(int value in new[]{15,30,60,120,144})
+        var fps=LocalizedText.Bind(new MenuItem{},"Header","Viewer.FrameRateLimit");foreach(int value in new[]{15,30,60,120,144})
         {var item=new MenuItem{Header=$"{value} FPS",IsCheckable=true,IsChecked=state.FramesPerSecond==value,IsEnabled=automatic||state.FramesPerSecond!=value};item.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;change(value,state.Bitrate);};fps.Items.Add(item);}videoSettings.Items.Add(fps);
-        var bitrate=new MenuItem{Header=h264?"H.264 目标码率":"视频码率（不可用）",IsEnabled=h264};foreach(int value in new[]{2,8,20,40,60,100})
+        var bitrate=LocalizedText.Bind(new MenuItem{Header=h264?Strings.Get("Ui.SessionToolbar.Text024"):Strings.Get("Ui.SessionToolbar.Text441"),IsEnabled=h264},"Header",()=>h264?Strings.Get("Ui.SessionToolbar.Text024"):Strings.Get("Ui.SessionToolbar.Text441"));foreach(int value in new[]{2,8,20,40,60,100})
         {var item=new MenuItem{Header=$"{value} Mbit/s",IsCheckable=true,IsChecked=state.Bitrate==value*1_000_000,IsEnabled=automatic||state.Bitrate!=value*1_000_000};item.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;change(state.FramesPerSecond,value*1_000_000);};bitrate.Items.Add(item);}videoSettings.Items.Add(bitrate);
         if(setAutomatic is not null)
         {
@@ -155,27 +148,15 @@ internal sealed partial class SessionToolbar : Window, IDisposable
         statistics.ToolTip = mediaRate + "\n" + connectionTiming;
     }
     internal MenuItem AudioAction=>audio;
-    public void SetAudio(bool enabled,double volume,bool muted,Action<double,bool> adjust,Action stop)
+    public void SetAudio(bool enabled,double volume,bool muted,Action<double,bool> adjust)
     {
-        audio.IsEnabled=enabled;audio.Header=!enabled?"声音未授权 / 已关闭":muted?"声音 · 已静音":$"声音 · {volume*100:0}%";audio.Items.Clear();if(!enabled)return;
-        var mute=new MenuItem{Header="静音",IsCheckable=true,IsChecked=muted};mute.Click+=(_,_)=>adjust(volume,!muted);audio.Items.Add(mute);
-        foreach(int percent in new[]{0,25,50,75,100}){var item=new MenuItem{Header=$"音量 {percent}%",IsCheckable=true,IsChecked=Math.Abs(volume-percent/100d)<0.001};item.Click+=(_,_)=>adjust(percent/100d,muted);audio.Items.Add(item);}
-        audio.Items.Add(new Separator());var end=new MenuItem{Header="停止声音传输（重新开启需重新授权）"};end.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;stop();};audio.Items.Add(end);
+        audio.IsEnabled=enabled;LocalizedText.Bind(audio,"Header",()=>!enabled?Strings.Get("Ui.SessionToolbar.Text165"):muted?Strings.Get("Ui.SessionToolbar.Text163"):Strings.Format("Ui.SessionToolbar.Text162",volume*100));audio.Items.Clear();if(!enabled)return;
+        var mute=LocalizedText.Bind(new MenuItem{IsCheckable=true,IsChecked=muted},"Header","Ui.SessionToolbar.Text504");mute.Click+=(_,_)=>adjust(volume,!muted);audio.Items.Add(mute);
+        foreach(int percent in new[]{0,25,50,75,100}){var item=LocalizedText.Bind(new MenuItem{IsCheckable=true,IsChecked=Math.Abs(volume-percent/100d)<0.001},"Header","Ui.SessionToolbar.Text505",percent);item.Click+=(_,_)=>adjust(percent/100d,muted);audio.Items.Add(item);}
     }
-    internal MenuItem ClipboardAction => clipboard;
-    Action? openFileClipboard;
-    internal MenuItem FileClipboardAction=>fileClipboard;
-    public void SetFileClipboard(Action? open,bool remoteOffer){openFileClipboard=open;fileClipboard.IsEnabled=open is not null;fileClipboard.Header=remoteOffer?"粘贴远端文件…":"文件剪贴板…";}
     internal MenuItem TextInputAction=>textInput;
     Action? openTextInput;
     public void SetTextInput(Action? open){openTextInput=open;textInput.IsEnabled=open is not null;}
-    Action? disableClipboard;
-    public void SetClipboard(bool enabled, Action? disable)
-    {
-        clipboard.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
-        clipboard.IsEnabled = enabled;
-        disableClipboard = disable;
-    }
     public SessionToolbar(Window owner, Action toggle, Action disconnect, Action<RemoteShortcut>? shortcut = null,Action? releaseInput=null, ConnectionBarPreferences? preferences=null)
     {
         this.owner = owner;
@@ -186,15 +167,15 @@ internal sealed partial class SessionToolbar : Window, IDisposable
         Width = MaximumWidth;
         Height = ExpandedHeight;
         full.Click += (_, _) => { toggle(); Reveal(); };
-        full.ToolTip = "切换全屏和窗口（Ctrl+Alt+Break）";
-        pin.Checked += (_, _) => { pin.ToolTip = "取消固定连接栏"; Reveal(); };
-        pin.Unchecked += (_, _) => { pin.ToolTip = "固定连接栏"; Reveal(); };
-        pin.ToolTip = "固定连接栏";
+        LocalizedText.Bind(full,"ToolTip","Ui.SessionToolbar.Text128");
+        pin.Checked += (_, _) => { LocalizedText.Bind(pin,"ToolTip","Ui.SessionToolbar.Text147"); Reveal(); };
+        pin.Unchecked += (_, _) => { LocalizedText.Bind(pin,"ToolTip","Ui.SessionToolbar.Text157"); Reveal(); };
+        LocalizedText.Bind(pin,"ToolTip","Ui.SessionToolbar.Text157");
         pin.IsChecked = this.preferences.Pinned;
         pin.Checked += (_, _) => this.preferences.Pinned = true;
         pin.Unchecked += (_, _) => this.preferences.Pinned = false;
         minimize.Click += (_, _) => owner.WindowState = WindowState.Minimized;
-        minimize.ToolTip = "最小化";
+        LocalizedText.Bind(minimize,"ToolTip","Ui.SessionToolbar.Text306");
         DisconnectButton.Click += (_, _) => disconnect();
 
         textInput.Click += (_, _) => { ShortcutMenu.IsOpen = false; openTextInput?.Invoke(); };
@@ -213,13 +194,10 @@ internal sealed partial class SessionToolbar : Window, IDisposable
         applyCustomZoom.Click += (_, _) =>
         {
             if (int.TryParse(customZoom.Text, out int percent) && percent is >= 25 and <= 400) ChooseZoom(percent);
-            else customZoom.ToolTip = "请输入 25–400 之间的整数百分比";
+            else LocalizedText.Bind(customZoom,"ToolTip","Ui.SessionToolbar.Text459");
         };
-        FilesAction.Click += (_, _) => { ShortcutMenu.IsOpen = false; openFiles?.Invoke(); };
         ShortcutMenu.Opened += (_, _) => releaseInput?.Invoke();
-        fileClipboard.Click += (_, _) => { ShortcutMenu.IsOpen = false; openFileClipboard?.Invoke(); };
         statistics.Click += (_, _) => { ShortcutMenu.IsOpen = false; openStatistics?.Invoke(); };
-        clipboard.Click += (_, _) => { ShortcutMenu.IsOpen = false; disableClipboard?.Invoke(); };
         ShortcutsButton.Click += (_, _) => OpenSessionMenu();
         ShortcutMenu.Closed += (_, _) => keepUntil = DateTime.UtcNow.AddSeconds(1);
         dragRegion.MouseLeftButtonDown += (_, e) =>
@@ -264,7 +242,7 @@ internal sealed partial class SessionToolbar : Window, IDisposable
 
     public void SetSession(string address, bool fullScreen)
     {
-        lastMediaPath = null; mediaPath = "等待首帧"; ToolTip = null;
+        lastMediaPath = null; mediaPath = Strings.Get("Ui.SessionToolbar.Text410"); ToolTip = null;
         SetEndpoint(address);
         SetFullScreen(fullScreen);
         timer.Start();
@@ -273,8 +251,8 @@ internal sealed partial class SessionToolbar : Window, IDisposable
     {
         isFullScreen = value;
         full.Content = value ? "\uE923" : "\uE922";
-        full.ToolTip = value ? "返回窗口" : "全屏";
-        System.Windows.Automation.AutomationProperties.SetName(full, value ? "返回窗口" : "全屏");
+        LocalizedText.Bind(full,"ToolTip",()=>value ? Strings.Get("Ui.SessionToolbar.Text473") : Strings.Get("Ui.SessionToolbar.Text116"));
+        System.Windows.Automation.AutomationProperties.SetName(full, value ? Strings.Get("Ui.SessionToolbar.Text473") : Strings.Get("Ui.SessionToolbar.Text116"));
         pin.Visibility = minimize.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
         EndDrag(); edgeSince = null;
         if (value) { if (!this.IsVisible) this.Show(); Reveal(); }

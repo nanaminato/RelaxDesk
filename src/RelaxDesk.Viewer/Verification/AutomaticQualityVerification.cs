@@ -27,7 +27,7 @@ public sealed partial class ViewerWindow
             {
                 var store = new ViewerPreferencesStore(Path.Combine(Path.GetFullPath(fixtures), Guid.NewGuid().ToString("N"), "viewer.json"));
                 window.preferencesStore = store;
-                window.SetOptionsExpanded(true); window.connectionOptions.SelectedIndex = 3;
+                window.SetOptionsExpanded(true); window.connectionOptions.SelectedIndex = 2;
                 window.videoFrameRate.SelectedValue = 144; window.videoBitrate.SelectedValue = 100_000_000;
                 window.autoConnectionQuality.IsChecked = true;
                 await window.preferencesOperation;

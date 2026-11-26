@@ -1,3 +1,4 @@
+using RelaxDesk.SharedUI;
 using System.Windows.Controls;
 using RelaxDesk.Core;
 
@@ -8,8 +9,8 @@ internal sealed partial class HostLoginSettings : UserControl
     internal HostLoginSettings()
     {
         InitializeComponent();
-        UserNameLabel.Text = $"连接端用户名（{PasswordVerifier.MinimumNewUserNameLength} 至 {PasswordVerifier.MaximumUserNameLength} 个字符）";
-        PasswordLabel.Text = $"新密码（{PasswordVerifier.MinimumPasswordLength} 至 {PasswordVerifier.MaximumPasswordLength} 个字符）";
+        LocalizedText.Bind(UserNameLabel,"Text","Ui.HostLoginSettings.Text487",PasswordVerifier.MinimumNewUserNameLength,PasswordVerifier.MaximumUserNameLength);
+        LocalizedText.Bind(PasswordLabel,"Text","Ui.HostLoginSettings.Text279",PasswordVerifier.MinimumPasswordLength,PasswordVerifier.MaximumPasswordLength);
         Unloaded += (_, _) => Password.Clear();
     }
 }

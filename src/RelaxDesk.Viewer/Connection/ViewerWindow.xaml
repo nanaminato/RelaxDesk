@@ -17,12 +17,13 @@
                 <Setter Property="Margin" Value="0,0,0,10" />
             </Style>
             <Style x:Key="FieldLabel" TargetType="Label">
+                <Setter Property="Margin" Value="0,0,12,0" />
                 <Setter Property="Padding" Value="0" />
                 <Setter Property="VerticalAlignment" Value="Center" />
             </Style>
         </ResourceDictionary>
     </Window.Resources>
-    <DockPanel>
+    <DockPanel Background="{Binding Background, RelativeSource={RelativeSource AncestorType=Window}}">
         <Border x:Name="windowToolbar" DockPanel.Dock="Top" Height="78" Background="White" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1">
             <Grid Margin="20,0">
                 <Grid.ColumnDefinitions>
@@ -103,13 +104,13 @@
                 <ScrollBar x:Name="verticalPan" Grid.Column="1" Orientation="Vertical" Width="12" Visibility="Collapsed" />
             </Grid>
             <ScrollViewer x:Name="connectionOverlay" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <Border x:Name="connectionCard" Margin="10,8,10,0">
+                <Border x:Name="connectionCard" Grid.IsSharedSizeScope="True" Margin="10,8,10,0">
                     <Grid>
                         <Border x:Name="basicConnection">
                             <StackPanel x:Name="signInForm" Margin="20,14,20,8">
                                 <Grid Style="{StaticResource FieldRow}">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="88" />
+                                        <ColumnDefinition Width="Auto" MinWidth="88" SharedSizeGroup="ConnectionLabel" />
                                         <ColumnDefinition />
                                     </Grid.ColumnDefinitions>
                                     <Label Style="{StaticResource FieldLabel}" Content="{ui:Loc Viewer.Computer}" Target="{Binding ElementName=host}" />
@@ -126,7 +127,7 @@
                                 </Grid>
                                 <Grid Style="{StaticResource FieldRow}">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="88" />
+                                        <ColumnDefinition Width="Auto" MinWidth="88" SharedSizeGroup="ConnectionLabel" />
                                         <ColumnDefinition />
                                     </Grid.ColumnDefinitions>
                                     <Label Style="{StaticResource FieldLabel}" Content="{ui:Loc Viewer.UserName}" Target="{Binding ElementName=loginName}" />
@@ -134,7 +135,7 @@
                                 </Grid>
                                 <Grid Style="{StaticResource FieldRow}">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="88" />
+                                        <ColumnDefinition Width="Auto" MinWidth="88" SharedSizeGroup="ConnectionLabel" />
                                         <ColumnDefinition />
                                     </Grid.ColumnDefinitions>
                                     <Label Style="{StaticResource FieldLabel}" Content="{ui:Loc Viewer.Password}" Target="{Binding ElementName=token}" />
@@ -142,6 +143,7 @@
                                 </Grid>
                                 <CheckBox x:Name="rememberCredentials" Content="{ui:Loc Viewer.RememberCredentials}" Margin="88,4,0,7"
                                           ToolTip="{ui:Loc Viewer.RememberCredentialsTip}" />
+                                <TextBlock Text="{ui:Loc Viewer.FirstConnectHint}" Foreground="DimGray" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,4" />
                                 <Expander x:Name="connectionHistoryPanel" Header="{ui:Loc Viewer.RecentConnections}" Margin="0,8,0,0">
                                     <StackPanel>
                                         <ComboBox x:Name="recentConnections" MinHeight="30" />
@@ -160,47 +162,36 @@
                                 <StackPanel Margin="18">
                                     <CheckBox x:Name="startFullScreen" Content="{ui:Loc Viewer.StartFullScreen}" IsChecked="True" />
                                     <CheckBox x:Name="gpuRendering" Content="{ui:Loc Viewer.GpuRendering}" ToolTip="{ui:Loc Viewer.GpuRenderingTip}" IsChecked="True" />
-                                    <CheckBox x:Name="requestTopology" Content="{ui:Loc Viewer.KeepConnectedOnTopology}"
-                                              ToolTip="{ui:Loc Viewer.KeepConnectedOnTopologyTip}" IsChecked="True" />
-                                </StackPanel>
-                            </TabItem>
-                            <TabItem Header="{ui:Loc Viewer.TabLocalResources}">
-                                <StackPanel Margin="18">
-                                    <CheckBox x:Name="requestClipboard" Content="{ui:Loc Viewer.ClipboardText}" ToolTip="{ui:Loc Viewer.ClipboardTextTip}" IsChecked="True" />
-                                    <CheckBox x:Name="requestClipboardImage" Content="{ui:Loc Viewer.ClipboardImage}" ToolTip="{ui:Loc Viewer.ClipboardImageTip}" IsChecked="True" />
-                                    <CheckBox x:Name="requestClipboardHtml" Content="{ui:Loc Viewer.ClipboardHtml}" ToolTip="{ui:Loc Viewer.ClipboardHtmlTip}" IsChecked="True" />
-                                    <CheckBox x:Name="requestFileClipboard" Content="{ui:Loc Viewer.FileClipboard}" ToolTip="{ui:Loc Viewer.FileClipboardTip}" IsChecked="True" />
-                                    <CheckBox x:Name="requestAudio" Content="{ui:Loc Viewer.PlayRemoteAudio}" IsChecked="True" />
                                 </StackPanel>
                             </TabItem>
                             <TabItem Header="{ui:Loc Viewer.TabAdvanced}">
                                 <StackPanel Margin="18">
                                     <Grid Style="{StaticResource FieldRow}">
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="88" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" MinWidth="88" SharedSizeGroup="ConnectionLabel" /><ColumnDefinition /></Grid.ColumnDefinitions>
                                         <Label Style="{StaticResource FieldLabel}" Content="{ui:Loc Viewer.FrameRateLimit}" Target="{Binding ElementName=videoFrameRate}" />
                                         <ComboBox x:Name="videoFrameRate" Grid.Column="1" SelectedValuePath="Tag" />
                                     </Grid>
                                     <Grid Style="{StaticResource FieldRow}">
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="88" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" MinWidth="88" SharedSizeGroup="ConnectionLabel" /><ColumnDefinition /></Grid.ColumnDefinitions>
                                         <Label Style="{StaticResource FieldLabel}" Content="{ui:Loc Viewer.VideoBitrate}" Target="{Binding ElementName=videoBitrate}" />
                                         <ComboBox x:Name="videoBitrate" Grid.Column="1" SelectedValuePath="Tag" />
                                     </Grid>
                                     <CheckBox x:Name="autoConnectionQuality" Content="{ui:Loc Viewer.AutomaticQuality}" ToolTip="{ui:Loc Viewer.AutomaticQualityTip}" Margin="0,0,0,12" />
                                     <Grid Style="{StaticResource FieldRow}">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="88" />
+                                            <ColumnDefinition Width="Auto" MinWidth="88" SharedSizeGroup="ConnectionLabel" />
                                             <ColumnDefinition />
                                         </Grid.ColumnDefinitions>
                                         <Label Style="{StaticResource FieldLabel}" Content="{ui:Loc Viewer.MediaTransport}" Target="{Binding ElementName=networkMode}" />
                                         <ComboBox x:Name="networkMode" Grid.Column="1" SelectedIndex="0" SelectedValuePath="Content">
-                                            <ComboBoxItem Content="Auto" />
+                                            <ComboBoxItem Content="{ui:Loc Common.Automatic}" />
                                             <ComboBoxItem Content="TCP" />
                                             <ComboBoxItem Content="UDP" />
                                         </ComboBox>
                                     </Grid>
                                     <Grid Style="{StaticResource FieldRow}">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="88" />
+                                            <ColumnDefinition Width="Auto" MinWidth="88" SharedSizeGroup="ConnectionLabel" />
                                             <ColumnDefinition />
                                         </Grid.ColumnDefinitions>
                                         <Label Style="{StaticResource FieldLabel}" Content="{ui:Loc Viewer.FileRateLimit}" Target="{Binding ElementName=fileRateLimit}" />
@@ -217,7 +208,7 @@
                                     </Grid>
                                     <Grid Style="{StaticResource FieldRow}">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="88" />
+                                            <ColumnDefinition Width="Auto" MinWidth="88" SharedSizeGroup="ConnectionLabel" />
                                             <ColumnDefinition />
                                         </Grid.ColumnDefinitions>
                                         <Label Style="{StaticResource FieldLabel}" Content="{ui:Loc Common.Language}" Target="{Binding ElementName=languageSelector}" />

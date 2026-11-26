@@ -8,26 +8,26 @@ using RelaxDesk.Windows;
 
 internal static class FileTransferSmoke
 {
-    public static async Task Run(string hostPath, string outputDirectory, bool grant = true, bool udp = false, bool autoRecovery = false, int downloadRounds = 1)
+    public static async Task Run(string hostPath, string outputDirectory, bool udp = false, bool autoRecovery = false, int downloadRounds = 1)
     {
         string fixture = Path.Combine(Path.GetFullPath(outputDirectory), "tls-" + Guid.NewGuid().ToString("N"));
         string hostRoot = Path.Combine(fixture, "host"), viewerRoot = Path.Combine(fixture, "viewer");
         Directory.CreateDirectory(hostRoot); Directory.CreateDirectory(viewerRoot);
         var local = new WindowsFileRoot(viewerRoot);
         var reservation = new TcpListener(IPAddress.Loopback, 0); reservation.Start(); int port = ((IPEndPoint)reservation.LocalEndpoint).Port; reservation.Stop();
-        bool exerciseAudio = autoRecovery && grant;
+        bool exerciseAudio = true;
         using var host = Process.Start(ChildProcess.Create(hostPath, "--file-root", hostRoot, "127.0.0.1", port.ToString(), exerciseAudio ? "test-audio" : "test-hardware")) ?? throw new IOException("Host launch failed");
         // Each extra round shares the shaped link with independently paced audio and video.
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(autoRecovery ? 90 + 110 * (downloadRounds - 1) : 45));
         UdpLossRelay? relay = null;
         int quicAttempts = 0;
         const int SharedDownstreamBytesPerSecond = 512 * 1024;
-        using var budget = grant ? new NetworkImpairmentRelay.SharedBudget(SharedDownstreamBytesPerSecond) : null;
-        await using var tcpRelay = budget is not null ? new NetworkImpairmentRelay(port, connections: exerciseAudio ? 4 : udp ? 2 : 3) : null;
+        using var budget = new NetworkImpairmentRelay.SharedBudget(SharedDownstreamBytesPerSecond);
+        await using var tcpRelay = budget is not null ? new NetworkImpairmentRelay(port, connections: udp ? 4 : 5) : null;
         NetworkImpairmentRelay.Link? mediaLink = null, fileLink = null, audioLink = null;
         using var client = new SessionClient
         {
-            RequestedFeatures = exerciseAudio ? [SessionCapabilities.FileTransfer, SessionCapabilities.SystemAudio] : [SessionCapabilities.FileTransfer],
+            RequestedFeatures = SessionCapabilities.All,
             Network = autoRecovery ? NetworkMode.Auto : udp ? NetworkMode.Udp : NetworkMode.Tcp,
             RequestQuicRecovery = autoRecovery,
             ConnectQuic = udp || autoRecovery ? (endpoint, certificate) =>
@@ -49,11 +49,9 @@ internal static class FileTransferSmoke
             string token = (await host.StandardOutput.ReadLineAsync(timeout.Token) ?? throw new IOException("No token")).Split(": ")[1]; _ = await host.StandardOutput.ReadLineAsync(timeout.Token);
             await Task.Delay(100, timeout.Token); var connecting = client.Connect("127.0.0.1", tcpRelay?.Port ?? port, pin, token, timeout.Token);
             if (!(await host.StandardOutput.ReadLineAsync(timeout.Token) ?? "").Contains("APPROVE")) throw new IOException("No consent prompt");
-            if (!(await host.StandardOutput.ReadLineAsync(timeout.Token) ?? "").Contains("APPROVE_FILES")) throw new IOException("No separate file approval prompt");
-            if (exerciseAudio && !(await host.StandardOutput.ReadLineAsync(timeout.Token) ?? "").Contains("APPROVE_AUDIO"))
-                throw new IOException("No separate audio approval prompt");
-            await host.StandardInput.WriteLineAsync(exerciseAudio ? "APPROVE_FILES_AUDIO" : grant ? "APPROVE_FILES" : "APPROVE"); await host.StandardInput.FlushAsync(); await connecting;
+            await host.StandardInput.WriteLineAsync("APPROVE"); await host.StandardInput.FlushAsync(); await connecting;
             if (client.Video.TransportName != (udp ? "UDP" : "TCP/TLS")) throw new IOException("Unexpected media transport");
+            await Wire.Write(client.Control,new("display-ready-v2",1,DisplayGeneration:client.DisplayState!.Generation),timeout.Token);
             relay?.EnableShaping(budget);
             if (tcpRelay is not null && budget is not null)
             {
@@ -63,11 +61,11 @@ internal static class FileTransferSmoke
                 fileLink.ShareDownstream(budget);
                 if (exerciseAudio)
                 {
-                    audioLink = await tcpRelay.Connected(3, timeout.Token);
+                    audioLink = await tcpRelay.Connected(udp ? 3 : 4, timeout.Token);
                     audioLink.ShareDownstream(budget);
                 }
             }
-            if (client.Features.Contains(SessionCapabilities.FileTransfer) != grant || (client.Data is not null) != grant) throw new IOException("Independent file grant mismatch");
+            if (!client.Features.Contains(SessionCapabilities.FileTransfer) || client.Data is null) throw new IOException("Current session file channel missing");
             logs = host.StandardOutput.ReadToEndAsync(timeout.Token);
             if (exerciseAudio)
             {
@@ -101,7 +99,7 @@ internal static class FileTransferSmoke
             }, running.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
             control = Task.Run(async () =>
             {
-                long sequence = 0;
+                long sequence = 1;
                 while (true)
                 {
                     if (Interlocked.Exchange(ref keyFrameRequested, 0) != 0)
@@ -118,7 +116,6 @@ internal static class FileTransferSmoke
                     rtt.Add(timer.Elapsed.TotalMilliseconds); await Task.Delay(25, running.Token);
                 }
             });
-            if (grant)
             {
                 await using var files = new FileTransferClient(client.Data!, running.Token, maximumBytesPerSecond: 0);
                 byte[] payload = new byte[(autoRecovery ? 5 : 2) * 1024 * 1024 + 17]; new Random(718).NextBytes(payload);
@@ -166,8 +163,8 @@ internal static class FileTransferSmoke
                     throw new IOException("Media or control stalled during active download");
                 if ((udp || autoRecovery) && Volatile.Read(ref udpDecoded) <= udpBeforeDownload)
                     throw new IOException("No UDP frames decoded during active download");
-                if (exerciseAudio && Interlocked.Read(ref audioWhileVideoOnUdp) <= audioBeforeDownload)
-                    throw new IOException("Audio did not advance after UDP video recovery during active download");
+                if (exerciseAudio && Interlocked.Read(ref audioSequence) <= audioBeforeDownload)
+                    throw new IOException("Audio did not advance during active download");
                 if (fileLink is not null)
                 {
                     long videoBytes = VideoBytes() - videoBytesBeforeDownload;
@@ -183,7 +180,7 @@ internal static class FileTransferSmoke
                 byte[] expectedHash = SHA256.HashData(payload);
                 if (!SHA256.HashData(File.ReadAllBytes(Path.Combine(viewerRoot, "下载/内容.bin"))).SequenceEqual(expectedHash)) throw new IOException("Transferred file hash mismatch");
                 if (autoRecovery) Console.WriteLine("PASS Auto switched from TCP to UDP during the same download, file SHA-256 verified and TLS control kept alive");
-                if (exerciseAudio) Console.WriteLine("PASS independently approved TLS audio advanced during the download and TCP-to-UDP video recovery");
+                if (exerciseAudio) Console.WriteLine(autoRecovery ? "PASS session TLS audio advanced during the download and TCP-to-UDP video recovery" : "PASS session TLS audio advanced during the download");
                 for (int round = 2; round <= downloadRounds; round++)
                 {
                     string destination = $"下载/round-{round}.bin";
@@ -224,7 +221,6 @@ internal static class FileTransferSmoke
                 if(File.Exists(Path.Combine(hostRoot,"cancel-upload.bin"))||File.Exists(Path.Combine(viewerRoot,"cancel-download.bin"))||Directory.EnumerateFiles(fixture,".relaxdesk-*",SearchOption.AllDirectories).Any())throw new IOException("Cancelled transfer leaked final/temporary files");
                 if(frames==0||rtt.Count<20)throw new IOException("Media/control did not continue during transfer");
             }
-            else if(Directory.EnumerateFileSystemEntries(hostRoot).Any())throw new IOException("Denied feature touched root contents");
             if (relay is not null)
             {
                 if (relay.Shaped < 16 || relay.ReorderedPairs == 0) throw new IOException("UDP media shaping was not exercised");
@@ -240,9 +236,9 @@ internal static class FileTransferSmoke
             await host.WaitForExitAsync(timeout.Token);string output=await logs;
             if(host.ExitCode!=0||!output.Contains("native_live_resources=0"))throw new IOException("Host transfer cleanup failed");
             double[] samples=rtt.Order().ToArray();
-            string checks = grant ? "separate pinned/one-use data binding, scoped Unicode download, empty upload/download, SHA256, overwrite consent, folder listing, cancel and reusable channel" : "screen-only approval denied files, no data connection and no root contents accessed";
-            if (grant && !autoRecovery) checks += ", scoped Unicode upload and upload pause with data heartbeat";
-            Console.WriteLine($"PASS file TLS grant={grant} media_transport={client.Video.TransportName}: {checks}; media_frames={frames} control_samples={samples.Length} control_p95_ms={(samples.Length==0?0:samples[(int)Math.Ceiling(samples.Length*.95)-1]):F2}; loopback synthetic video, real fixture files only; fixtures={fixture}");
+            string checks = "separate pinned/one-use data binding, scoped Unicode download, empty upload/download, SHA256, overwrite consent, folder listing, cancel and reusable channel";
+            if (!autoRecovery) checks += ", scoped Unicode upload and upload pause with data heartbeat";
+            Console.WriteLine($"PASS file TLS media_transport={client.Video.TransportName}: {checks}; media_frames={frames} control_samples={samples.Length} control_p95_ms={(samples.Length==0?0:samples[(int)Math.Ceiling(samples.Length*.95)-1]):F2}; loopback synthetic video, real fixture files only; fixtures={fixture}");
         }
         finally
         {

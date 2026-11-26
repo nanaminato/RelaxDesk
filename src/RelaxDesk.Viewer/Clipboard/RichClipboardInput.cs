@@ -9,8 +9,7 @@ public sealed partial class ViewerWindow
     ClipboardContentSession? richClipboardSession;
     void StartRichClipboard(SessionClient connection,AccessGate gate,CancellationToken ct)
     {
-        if(connection.ClipboardData is null)return;
-        if(smoke?.RichClipboardTest==true&&(!System.Net.IPAddress.TryParse(smoke.Host,out var address)||!System.Net.IPAddress.IsLoopback(address)))throw new System.IO.InvalidDataException("Clipboard test provider is loopback-only");
+        if(connection.ClipboardData is null)throw new System.IO.InvalidDataException("Current session requires the clipboard channel");
         if(fileClipboardVerificationFactory is not null&&(!System.Net.IPAddress.TryParse(host.Text,out var testAddress)||!System.Net.IPAddress.IsLoopback(testAddress)))throw new System.IO.InvalidDataException("Clipboard test provider is loopback-only");
         fileClipboardLifetime=CancellationTokenSource.CreateLinkedTokenSource(ct);
         var ready=new TaskCompletionSource<ILocalFileClipboard?>(TaskCreationOptions.RunContinuationsAsynchronously);localFileClipboard=ready;
@@ -18,10 +17,9 @@ public sealed partial class ViewerWindow
         {
             try
             {
-                Action<ClipboardFiles?> offer=files=>ReceiveFileOffer(files,gate,ct);
-                IContentClipboard provider=fileClipboardVerificationFactory is not null?fileClipboardVerificationFactory(offer):smoke?.RichClipboardTest==true?richClipboardTestProvider=new ViewerContentClipboard():new WindowsTextClipboard(
-                    localFilesChanged:files=>QueueClipboardCopy(gate,ct,(flow,token)=>flow.Upload(files,token)),
-                    remoteFilesReceived:(files,version)=>QueueClipboardCopy(gate,ct,(flow,token)=>flow.Download(files,ClipboardStagingDirectory(),token,version)));
+                Action<LocalClipboardFiles> local=files=>QueueClipboardCopy(gate,ct,(flow,token)=>flow.Upload(files,token));
+                Action<ClipboardFiles,long> remote=(files,version)=>QueueClipboardCopy(gate,ct,(flow,token)=>flow.Download(files,ClipboardStagingDirectory(),token,version));
+                IContentClipboard provider=fileClipboardVerificationFactory is not null?fileClipboardVerificationFactory(local,remote):new WindowsTextClipboard(localFilesChanged:local,remoteFilesReceived:remote);
                 ready.TrySetResult(provider as ILocalFileClipboard);return provider;
             }
             catch{ready.TrySetResult(null);throw;}

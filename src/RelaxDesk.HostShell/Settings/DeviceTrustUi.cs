@@ -1,3 +1,5 @@
+using RelaxDesk.SharedUI;
+using RelaxDesk.Core.Localization;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
@@ -44,20 +46,19 @@ internal sealed partial class HostWindow
     async Task LoadDeviceTrust()
     {
         try { SetTrusted(await deviceTrust.Load()); }
-        catch (Exception error) when (IsTrustStorageError(error)) { deviceOverview.Text = trustNotice.Text = "无法读取可信设备记录。"; }
+        catch (Exception error) when (IsTrustStorageError(error)) { deviceOverview.Text = trustNotice.Text = Strings.Get("Ui.DeviceTrustUi.Text291"); }
         finally { trustLoaded = true; }
     }
 
     void SetTrusted(string[] entries)
     {
         trusted = entries;
-        deviceOverview.Text = $"已信任 {entries.Length} 台设备";
+        LocalizedText.Bind(deviceOverview,"Text","Ui.DeviceTrustUi.Text194",entries.Length);
         trustedDevices.Items.Clear();
         foreach (var entry in entries)
             trustedDevices.Items.Add(new ListBoxItem
             {
-                Tag = entry,
-                Content = new TextBlock { Text = entry, TextWrapping = TextWrapping.Wrap }
+                Tag = entry,                Content = new TextBlock { Text = entry,TextWrapping = TextWrapping.Wrap }
             });
     }
 
@@ -68,29 +69,11 @@ internal sealed partial class HostWindow
         rememberDevice.IsChecked = false;
         bool known = activeDeviceFingerprint is { } fingerprint && KnownDevice(fingerprint);
         rememberDevice.Visibility = !requestEvent.PasswordLogin && activeDeviceFingerprint is not null && !known ? Visibility.Visible : Visibility.Collapsed;
-        if (known && !requestEvent.PasswordLogin) peer.Text += Environment.NewLine + "已信任此设备，请确认本次连接。";
+        if (known && !requestEvent.PasswordLogin) peer.Text += Environment.NewLine + Strings.Get("Ui.DeviceTrustUi.Text195");
     }
 
     bool KnownDevice(string fingerprint) => trustLoaded && !trustBusy &&
         !revokedDuringRun.Contains(fingerprint) && trusted.Contains(fingerprint);
-
-    static RelaxDesk.Windows.PasswordLoginSettings.DeviceGrant ReadDeviceGrant(string fingerprint)
-    {
-        try { return RelaxDesk.Windows.PasswordLoginSettings.ReadDeviceGrant(fingerprint); }
-        catch (Exception error) when (IsTrustStorageError(error) || error is System.Security.SecurityException)
-        { return new([], false, null); }
-    }
-
-    void UpdateSavedGrant(Func<RelaxDesk.Windows.PasswordLoginSettings.DeviceGrant, RelaxDesk.Windows.PasswordLoginSettings.DeviceGrant> update)
-    {
-        if (!passwordLoginRequest || activeDeviceFingerprint is not { } fingerprint || loginVerifierForTests is not null) return;
-        try { RelaxDesk.Windows.PasswordLoginSettings.SaveDeviceGrant(fingerprint, update(ReadDeviceGrant(fingerprint))); }
-        catch (Exception error) when (IsTrustStorageError(error) || error is System.Security.SecurityException)
-        {
-            revokedDuringRun.Add(fingerprint);
-            trustNotice.Text = "本次权限已停止，但无法保存撤销。请在受信任设备列表撤销该设备。";
-        }
-    }
 
     string? CaptureDeviceTrust(bool accepted) =>
         accepted && trustLoaded && !trustBusy && rememberDevice.IsChecked == true ? activeDeviceFingerprint : null;
@@ -103,9 +86,9 @@ internal sealed partial class HostWindow
         {
             SetTrusted(await deviceTrust.Save(fingerprint));
             revokedDuringRun.Remove(fingerprint);
-            trustNotice.Text = "已保存可信设备。";
+            LocalizedText.Bind(trustNotice,"Text","Ui.DeviceTrustUi.Text193");
         }
-        catch (Exception error) when (IsTrustStorageError(error)) { trustNotice.Text = "本次连接已处理，设备记录未能保存。"; }
+        catch (Exception error) when (IsTrustStorageError(error)) { LocalizedText.Bind(trustNotice,"Text","Ui.DeviceTrustUi.Text341"); }
         finally { trustBusy = false; forgetDevice.IsEnabled = trustedDevices.SelectedItem is ListBoxItem; }
     }
 
@@ -125,9 +108,9 @@ internal sealed partial class HostWindow
             }
             SetTrusted(await deviceTrust.Remove(fingerprint));
             revokedDuringRun.Remove(fingerprint);
-            trustNotice.Text = "已撤销所选设备。";
+            LocalizedText.Bind(trustNotice,"Text","Ui.DeviceTrustUi.Text219");
         }
-        catch (Exception error) when (IsTrustStorageError(error)) { trustNotice.Text = "本次运行已暂停该设备信任，但未能删除磁盘记录。请在关闭 Host 前重试撤销。"; }
+        catch (Exception error) when (IsTrustStorageError(error)) { LocalizedText.Bind(trustNotice,"Text","Ui.DeviceTrustUi.Text339"); }
         finally { trustBusy = false; forgetDevice.IsEnabled = trustedDevices.SelectedItem is ListBoxItem; }
     }
 

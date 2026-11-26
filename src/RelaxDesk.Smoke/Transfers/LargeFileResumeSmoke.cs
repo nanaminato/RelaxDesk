@@ -45,11 +45,11 @@ internal static class LargeFileResumeSmoke
         string? pin = null, scope = null; long pongs = 0, frames = 0;
         async Task<Pair> Connect()
         {
-            await Until("listening"); var transport = new SessionClient { RequestedFeatures = [SessionCapabilities.FileTransfer] };
+            await Until("listening"); var transport = new SessionClient { RequestedFeatures = SessionCapabilities.All };
             try
             {
                 Task connecting = pin is null ? transport.ConnectByApproval("127.0.0.1", port, deadline.Token) : transport.ConnectByPinnedApproval("127.0.0.1", port, pin, deadline.Token);
-                var request = await Until("approval-request"); await host.StandardInput.WriteLineAsync("APPROVE_FILES " + request.Id); await host.StandardInput.FlushAsync(); await connecting;
+                var request = await Until("approval-request"); await host.StandardInput.WriteLineAsync("APPROVE " + request.Id); await host.StandardInput.FlushAsync(); await connecting;
                 if (!transport.SupportsFileResume || transport.FileScope is null || scope is not null && scope != transport.FileScope) throw new IOException("Large-file resume scope changed");
                 pin = transport.VerifiedFingerprint; scope = transport.FileScope;
                 var pair = new Pair(transport, deadline.Token, () => Interlocked.Increment(ref pongs), () => Interlocked.Increment(ref frames));

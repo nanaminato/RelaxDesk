@@ -1,3 +1,4 @@
+using RelaxDesk.SharedUI;
 using System.Windows.Threading;
 using System.Windows;
 using System.Windows.Controls;
@@ -18,12 +19,12 @@ public sealed partial class ViewerWindow
         if(state.Unavailable)
         {
             displayDeadline?.Stop();cpu.Clear();EndViewport();if(nativeView is not null)nativeView.Visibility=Visibility.Collapsed;
-            displayUnavailable.Visibility=Visibility.Visible;status.Text="屏幕暂不可用；文件与连接权限保持独立，输入已暂停。";
+            displayUnavailable.Visibility=Visibility.Visible;LocalizedText.Bind(status,"Text","Ui.DisplayInput.Text188");
         }
         else
         {
             displayUnavailable.Visibility=Visibility.Collapsed;if(gpuViewportActive&&nativeView is not null)nativeView.Visibility=Visibility.Visible;
-            if(!displaySession.Ready)StartDisplayDeadline();else displayDeadline?.Stop();status.Text="屏幕配置已变化，正在等待新画面…";
+            if(!displaySession.Ready)StartDisplayDeadline();else displayDeadline?.Stop();LocalizedText.Bind(status,"Text","Ui.DisplayInput.Text189");
             if(!outgoing.TryWrite(new("display-configured-v2",++sequence,DisplayGeneration:state.Generation)))session?.Cancel();
             if(!outgoing.TryWrite(new("keyframe-v2",++sequence)))session?.Cancel();
         }
@@ -38,7 +39,7 @@ public sealed partial class ViewerWindow
     {
         displayDeadline?.Stop();var current=session;
         displayDeadline=new(){Interval=TimeSpan.FromSeconds(15)};
-        displayDeadline.Tick+=(_,_)=>{displayDeadline?.Stop();if(ReferenceEquals(session,current)){status.Text="等待新屏幕画面超时，正在结束本次连接。";current?.Cancel();}};displayDeadline.Start();
+        displayDeadline.Tick+=(_,_)=>{displayDeadline?.Stop();if(ReferenceEquals(session,current)){LocalizedText.Bind(status,"Text","Ui.DisplayInput.Text404");current?.Cancel();}};displayDeadline.Start();
     }
     void RefreshDisplayMenu()
     {
@@ -53,7 +54,7 @@ public sealed partial class ViewerWindow
         if(id==displaySession.Snapshot.Selected){RefreshDisplayMenu();return;}
         ReleaseHeldInputs();CloseTextInput();ResetViewportPan();long generation=displaySession.Begin(id);
         if(!outgoing.TryWrite(new("display-select-v2",++sequence,DisplayId:id,DisplayGeneration:generation))){session.Cancel();return;}
-        StartDisplayDeadline();RefreshDisplayMenu();status.Text="正在切换屏幕，等待新画面后恢复输入…";
+        StartDisplayDeadline();RefreshDisplayMenu();LocalizedText.Bind(status,"Text","Ui.DisplayInput.Text349");
     }
     void DisplayPresented(MediaFrame frame)
     {

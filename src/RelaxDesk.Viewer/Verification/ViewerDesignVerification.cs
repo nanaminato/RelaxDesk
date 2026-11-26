@@ -34,7 +34,7 @@ public sealed partial class ViewerWindow
                 Snapshot(window, "connection");
                 window.SetOptionsExpanded(true);
                 await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-                Check(window.connectionOptions.Items.Count == 4 && window.BasicConnectionReady && window.Height > compactHeight);
+                Check(window.connectionOptions.Items.Count == 3 && window.BasicConnectionReady && window.Height > compactHeight);
                 Snapshot(window, "connection-options");
                 window.connectionOptions.SelectedIndex = 1;
                 await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
@@ -42,9 +42,9 @@ public sealed partial class ViewerWindow
                 Snapshot(window, "display-options");
                 window.connectionOptions.SelectedIndex = 2;
                 await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-                Check(window.requestClipboard.IsVisible && window.requestAudio.IsVisible && !window.token.IsVisible);
-                Snapshot(window, "local-resources");
-                window.connectionOptions.SelectedIndex = 3;
+                Check(!window.token.IsVisible);
+                Snapshot(window, "advanced-options");
+                window.connectionOptions.SelectedIndex = 2;
                 await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
                 Check(window.networkMode.IsVisible && window.fileRateLimit.IsVisible);
                 Snapshot(window, "advanced-options");
@@ -66,7 +66,7 @@ public sealed partial class ViewerWindow
                 Check(window.ConnectionPanelVisible && window.WindowState == WindowState.Normal && window.Height == compactHeight && window.Width == 560);
                 // Keyboard navigation should expose all controls without pointer input.
                 Check(window.connect.IsDefault && window.loginName.Focusable && window.optionsButton.Focusable);
-                Console.WriteLine($"PASS {checks} Viewer design checks: compact form, explicit credential opt-in, four tabs, resources/display/transport, 30-DIP session bar, fullscreen, disconnect geometry; rendered PNG previews, synthetic desktop only");
+                Console.WriteLine($"PASS {checks} Viewer design checks: compact form, explicit credential opt-in, three tabs, display/transport, 30-DIP session bar, fullscreen, disconnect geometry; rendered PNG previews, synthetic desktop only");
             }
             catch (Exception error) { Console.Error.WriteLine(error); Environment.ExitCode = 1; }
             finally { window.StopLocalPreview(); window.Close(); }

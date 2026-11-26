@@ -1,3 +1,5 @@
+using RelaxDesk.SharedUI;
+using RelaxDesk.Core.Localization;
 using System.Windows;
 using System.Windows.Controls;
 using RelaxDesk.Core;
@@ -12,7 +14,7 @@ internal sealed partial class HostWindow
     TextBlock loginNotice => loginSettings.Notice;
     Button saveLogin => loginSettings.Save;
     bool savingLogin, passwordLoginRequest;
-    PasswordVerifier? loginVerifierForTests;
+    PasswordVerifier? loginVerifierForTests=null;
 
     void ConfigureLoginSettings()
     {
@@ -23,11 +25,12 @@ internal sealed partial class HostWindow
             try
             {
                 name.Text = PasswordLoginSettings.Read()?.UserName ?? "";
-                loginOverview.Text = name.Text.Length == 0 ? "尚未设置登录信息" : $"用户名：{name.Text}";
+                if(name.Text.Length==0) LocalizedText.Bind(loginOverview,"Text","Ui.HostLoginUi.Text186");
+                else LocalizedText.Bind(loginOverview,"Text","Ui.HostLoginUi.Text383",name.Text);
             }
             catch (Exception error) when (IsTrustStorageError(error) || error is System.Security.SecurityException)
             {
-                loginOverview.Text = "无法读取登录设置";
+                LocalizedText.Bind(loginOverview,"Text","Ui.HostLoginUi.Text293");
                 loginNotice.Text = error.Message;
             }
         };
@@ -43,8 +46,8 @@ internal sealed partial class HostWindow
                 var verifier = await Task.Run(() => PasswordVerifier.Create(userName, secret));
                 SetTrusted(await deviceTrust.Clear());
                 PasswordLoginSettings.Save(verifier);
-                loginOverview.Text = $"用户名：{verifier.UserName}";
-                loginNotice.Text = "已保存。原设备授权已清除，设备需重新审批一次。";
+                LocalizedText.Bind(loginOverview,"Text","Ui.HostLoginUi.Text383",verifier.UserName);
+                LocalizedText.Bind(loginNotice,"Text","Ui.HostLoginUi.Text192");
             }
             catch (Exception error) when (IsTrustStorageError(error) || error is System.Security.SecurityException)
             { loginNotice.Text = error.Message; }

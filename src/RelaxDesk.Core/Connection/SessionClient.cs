@@ -124,13 +124,13 @@ public sealed class SessionClient : IDisposable
             return QuicRecoveryProtocol.Result(offer.Sequence, 0);
         }
     }
-    public string[] RequestedFeatures { get; init; } = [];
+    public string[] RequestedFeatures { get; init; } = SessionCapabilities.All;
     public string[] Features { get; private set; } = [];
     public int RequestedInputVersion {get;init;}=InputProtocol.Version;
     public int InputVersion {get;private set;}
-    public int RequestedDisplayVersion {get;init;}
+    public int RequestedDisplayVersion {get;init;}=DisplayProtocol.TopologyVersion;
     public int DisplayVersion {get;private set;}
-    public int RequestedVideoVersion{get;init;}
+    public int RequestedVideoVersion{get;init;}=VideoSettingsProtocol.Version;
     public int VideoVersion{get;private set;}
     public VideoSettings? VideoSettings{get;private set;}
     public DisplaySessionInfo? DisplayState {get;private set;}
@@ -161,6 +161,8 @@ public sealed class SessionClient : IDisposable
         string? userName = null, string? password = null, Func<string, CancellationToken, Task<bool>>? confirmServer = null,
         bool reconnectOnly = false)
     {
+        var requestedFeatures = SessionCapabilities.RequireAll(RequestedFeatures);
+        if(RequestedInputVersion!=InputProtocol.Version||RequestedDisplayVersion!=DisplayProtocol.TopologyVersion||RequestedVideoVersion!=VideoSettingsProtocol.Version)throw new InvalidDataException("Unsupported session profile; update both endpoints");
         if (!Enum.IsDefined(Network)) throw new ArgumentOutOfRangeException(nameof(Network));
         if (Network is not (NetworkMode.Auto or NetworkMode.Tcp or NetworkMode.Udp))
             throw new ArgumentOutOfRangeException(nameof(Network));
@@ -190,10 +192,6 @@ public sealed class SessionClient : IDisposable
         if (confirmFirstContact && !await confirmServer!(expected, ct))
             throw new AuthenticationException("Server certificate was not confirmed");
         VerifiedFingerprint = expected;
-        var requestedFeatures = SessionCapabilities.Validate(RequestedFeatures);
-        if(!VideoSettingsProtocol.Supported(RequestedVideoVersion))throw new InvalidDataException("Unsupported video version request");
-        if(RequestedInputVersion is not (0 or InputProtocol.Version))throw new InvalidDataException("Unsupported requested input version");
-        if(!DisplayProtocol.Supported(RequestedDisplayVersion)||RequestedDisplayVersion!=0&&RequestedInputVersion!=InputProtocol.Version)throw new InvalidDataException("Unsupported requested display version");
         using var deviceKey = OpenDeviceKey?.Invoke();
         bool requestResume=RequestFileResume&&requestedFeatures.Contains(SessionCapabilities.FileTransfer);
         byte[]? secret = userName is null ? null : PasswordVerifier.EncodePassword(password!);
@@ -227,6 +225,7 @@ public sealed class SessionClient : IDisposable
         if (approval == new Packet(FullControlProtocol.InputUnavailable))
             throw new FullControlInputUnavailableException();
         if (approval.Kind != FullControlProtocol.Approved || approval.Text is null || approval.Capabilities is not { Length: > 0 }) throw new AuthenticationException("Host approval/capabilities missing");
+        FullControlProtocol.RequireCurrent(approval);
         if(approval.Input is not null||approval.InputVersion is not (0 or InputProtocol.Version)||approval.InputVersion!=0&&approval.InputVersion!=RequestedInputVersion)throw new AuthenticationException("Unrequested/invalid input version");
         if (deviceKey is not null && (!deviceChallenged || approval.InputVersion != InputProtocol.Version))
             throw new AuthenticationException("Incomplete full-control handshake");
@@ -243,6 +242,9 @@ public sealed class SessionClient : IDisposable
         if(approval.FileResume&&(!requestResume||!Features.Contains(SessionCapabilities.FileTransfer)||approval.FileScope is not {Length:32}||!Guid.TryParseExact(approval.FileScope,"N",out _))||!approval.FileResume&&approval.FileScope is not null)throw new AuthenticationException("Unrequested/invalid file resume scope");
         SupportsFileResume=approval.FileResume;FileScope=approval.FileScope;
         if (Capabilities.Any(c => c is not ("h264" or "deflate"))) throw new InvalidDataException("Unknown negotiated capability");
+        if(approval.Text is not {Length:64} || !approval.Text.All(char.IsAsciiHexDigit) ||
+            approval.DataTicket is not {Length:64} || !approval.DataTicket.All(char.IsAsciiHexDigit) || approval.DataTicket==approval.Text)
+            throw new AuthenticationException("Missing or invalid session binding tickets");
         bool richClipboard=SessionCapabilities.RichClipboard(Features);
         bool sound=Features.Contains(SessionCapabilities.SystemAudio);
         if(sound?(approval.AudioTicket is not {Length:64}||!approval.AudioTicket.All(char.IsAsciiHexDigit)||new[]{approval.Text,approval.DataTicket,approval.ClipboardTicket}.Contains(approval.AudioTicket)):approval.AudioTicket is not null)throw new AuthenticationException("Missing/unsolicited audio binding ticket");

@@ -11,7 +11,7 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
-    internal static void VerifyDisplaySession(Application app,string hostPath,bool topology=false,bool legacyDisplay=false,bool initializationRace=false)
+    internal static void VerifyDisplaySession(Application app,string hostPath,bool topology=false,bool initializationRace=false)
     {
         var reserve=new TcpListener(IPAddress.Loopback,0);reserve.Start();int port=((IPEndPoint)reserve.LocalEndpoint).Port;reserve.Stop();
         var start=new ProcessStartInfo(hostPath.EndsWith(".exe",StringComparison.OrdinalIgnoreCase)?hostPath:"dotnet"){UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true};
@@ -24,7 +24,7 @@ public sealed partial class ViewerWindow
             string prompt=await host.StandardOutput.ReadLineAsync(timeout.Token)??"";if(!prompt.Contains("APPROVE"))throw new IOException("Consent missing");
             await host.StandardInput.WriteLineAsync("APPROVE");await host.StandardInput.FlushAsync();return await host.StandardOutput.ReadToEndAsync(timeout.Token);
         });
-        var window=new ViewerWindow{ShowActivated=false};window.host.Text="127.0.0.1";window.port.Text=port.ToString();window.fingerprint.Text=pin;window.token.Password=token;window.pinnedConnection.IsChecked=true;window.gpuRendering.IsChecked=false;window.requestTopology.IsChecked=!legacyDisplay;
+        var window=new ViewerWindow{ShowActivated=false};window.host.Text="127.0.0.1";window.port.Text=port.ToString();window.fingerprint.Text=pin;window.token.Password=token;window.pinnedConnection.IsChecked=true;window.gpuRendering.IsChecked=false;
         Task? running=null;
         async Task Until(Func<bool> condition){while(!condition()){if(running?.IsCompleted==true)throw new IOException("Viewer ended early: "+window.status.Text);await Task.Delay(20,timeout.Token);}}
         window.Loaded+=async(_,_)=>

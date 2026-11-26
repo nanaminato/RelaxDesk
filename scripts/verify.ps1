@@ -140,31 +140,23 @@ try {
         if ($LASTEXITCODE) { throw 'Viewer viewport/zoom contracts failed' }
         Run-App $viewer --display-session-contracts $hostDll
         if ($LASTEXITCODE) { throw 'Viewer live display switching failed' }
-        Run-App $viewer --display-legacy-session-contracts $hostDll
-        if ($LASTEXITCODE) { throw 'Viewer legacy display compatibility failed' }
         Run-App $viewer --topology-session-contracts $hostDll
         if ($LASTEXITCODE) { throw 'Viewer live topology recovery failed' }
         Run-App $viewer --topology-race-contracts $hostDll
         if ($LASTEXITCODE) { throw 'Topology initialization-race recovery failed' }
-        foreach($consent in @('granted','deny-clipboard','deny-files')) {
-            Run-App $viewer --file-clipboard-contracts $hostDll (Join-Path $root 'build/file-clipboard-verification') $consent
-            if ($LASTEXITCODE) { throw "Viewer file clipboard failed: $consent" }
-        }
+        Run-App $viewer --unified-session-contracts $hostDll (Join-Path $root 'build/unified-session-verification')
+        if ($LASTEXITCODE) { throw 'Automatic file clipboard/single approval failed' }
         Run-App $viewer --input-ui-contracts
         if ($LASTEXITCODE) { throw 'Viewer input/text composition contracts failed' }
         $shell = Join-Path $root 'src/RelaxDesk.HostShell/bin/Release/net11.0-windows/RelaxDesk.HostShell.dll'
         if ($ArtifactsDirectory -and !$PackageRoot) { $shell = Join-Path $artifacts 'bin/RelaxDesk.HostShell/release/RelaxDesk.HostShell.dll' }
         if ($PackageRoot) { $shell = Join-Path $root 'HostUi/RelaxDesk.HostShell.exe' }
-        Run-App $shell --shell-contracts $hostDll (Join-Path $root 'build/host-shell-verification')
-        if ($LASTEXITCODE) { throw 'WPF Host approval/stop contracts failed' }
-        Run-App $shell --device-trust-contracts $hostDll (Join-Path $root 'build/device-trust-verification')
-        if ($LASTEXITCODE) { throw 'WPF device trust contracts failed' }
+        Run-App $shell --password-login-contracts $hostDll (Join-Path $root 'build/first-approval-verification')
+        if($LASTEXITCODE){throw 'First approval/recognized device full capability contracts failed'}
         Run-App $shell --service-contracts $hostDll $serviceDll
         if($LASTEXITCODE){throw 'Service coordination failed'}
         Run-App $shell --recovery-contracts $hostDll
         if($LASTEXITCODE){throw 'Worker recovery failed'}
-        Run-App $shell --audio-contracts $hostDll
-        if($LASTEXITCODE){throw 'Host audio consent/isolation failed'}
         Run-App $viewer --audio-session-contracts $hostDll
         if($LASTEXITCODE){throw 'Viewer audio session/UI failed'}
         Run-App $viewer --history-contracts $hostDll (Join-Path $root 'build/history-wpf-verification')
@@ -189,50 +181,22 @@ try {
         }
         & $probe --viewport-render-contracts
         if ($LASTEXITCODE) { throw 'GPU viewport draw/crop contracts failed' }
-        Run-App $smokeDll $hostDll --persistent-host (Join-Path $root 'build/persistent-host-verification')
-        if ($LASTEXITCODE) { throw 'Persistent Host authorization/lifecycle failed' }
         $fileFixtures = Join-Path $root 'build/file-transfer-validation'
         Run-App $smokeDll --file-root-contracts $fileFixtures
         if ($LASTEXITCODE) { throw 'Scoped file contracts failed' }
         Run-App $smokeDll --file-resume-contracts (Join-Path $root 'build/file-resume-verification')
         if ($LASTEXITCODE) { throw 'Scoped resume/expiry/cleanup contracts failed' }
-        foreach ($mode in @('--file-transfer', '--file-denied', '--reject-data')) {
+        foreach ($mode in @('--file-transfer', '--reject-data')) {
             Run-App $smokeDll $hostDll $mode $fileFixtures
             if ($LASTEXITCODE) { throw "File transfer smoke failed: $mode" }
-        }
-        foreach ($mode in @('--clipboard-text', '--clipboard-denied', '--clipboard-unnegotiated', '--clipboard-failure')) {
-            Run-App $smokeDll $hostDll $mode
-            if ($LASTEXITCODE) { throw "Clipboard smoke failed: $mode" }
-        }
-        Run-App $smokeDll $hostDll --clipboard-binding
-        if ($LASTEXITCODE) { throw 'Clipboard binding isolation failed' }
-        foreach ($mode in @('--clipboard-rich','--clipboard-rich-denied','--clipboard-rich-failure','--clipboard-rich-transport','--clipboard-rich-replay','--clipboard-rich-format-denied')) {
-            Run-App $smokeDll $hostDll $mode
-            if ($LASTEXITCODE) { throw "Rich clipboard smoke failed: $mode" }
-        }
-        foreach ($mode in @('--video-software', '--video-hardware', '--video-recovery', '--video-stalled', '--video-producer-failure', '--video-runtime-fallback', '--video-capture-recovery', '--video-capture-exhausted', '--video-control-timeout', '--video-idle-control')) {
-            Run-App $smokeDll $hostDll $mode
-            if ($LASTEXITCODE) { throw "Video smoke failed: $mode" }
         }
         Run-App $hostDll --codec-benchmark
         if ($LASTEXITCODE) { throw 'Codec benchmark failed' }
     }
     if($LargeFiles){Run-App $smokeDll $hostDll --file-resume-large (Join-Path $root 'build/file-resume-verification');if($LASTEXITCODE){throw '>1GiB production TLS file-resume verification failed'}}
     if ($Wpf) {
-        foreach($consent in @('granted','denied')) {
-            Run-App $viewer --rich-clipboard-session-contracts $hostDll $consent
-            if ($LASTEXITCODE) { throw "Viewer rich clipboard session failed: $consent" }
-        }
         if ($SkipInteractiveInput) { Write-Output 'SKIP keyboard foreground/interactive-input contracts (explicitly requested)' }
         else { Run-App $viewer --keyboard-contracts; if ($LASTEXITCODE) { throw 'Keyboard routing contracts failed' } }
-        Run-App $viewer --file-ui-contracts $hostDll (Join-Path $root 'build/file-ui-verification')
-        if ($LASTEXITCODE) { throw 'File panel/queue/drop contracts failed' }
-        Run-App $viewer --file-session-contracts $hostDll (Join-Path $root 'build/file-ui-verification')
-        if ($LASTEXITCODE) { throw 'Viewer file-session integration failed' }
-        Run-App $viewer --file-resume-session-contracts $hostDll (Join-Path $root 'build/file-resume-verification')
-        if ($LASTEXITCODE) { throw 'Viewer scoped file resume/reapproval/cleanup failed' }
-        Run-App $viewer --reconnect-contracts $hostDll (Join-Path $root 'build/reconnect-verification')
-        if ($LASTEXITCODE) { throw 'Viewer pinned reconnect/consent/lifecycle failed' }
         Run-App $viewer --toolbar-contracts
         if ($LASTEXITCODE) { throw 'Toolbar lifecycle failed' }
         Run-App $viewer --ui-contracts

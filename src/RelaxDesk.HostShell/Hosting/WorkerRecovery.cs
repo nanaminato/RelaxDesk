@@ -1,3 +1,5 @@
+using RelaxDesk.SharedUI;
+using RelaxDesk.Core.Localization;
 using RelaxDesk.Core;
 using RelaxDesk.Windows;
 
@@ -31,7 +33,7 @@ internal sealed partial class HostWindow
         var delay=restartBudget.Next(change.ExitCode,allowed);
         if(delay is null)return;
         using var wait=new CancellationTokenSource();restartWait=wait;UpdateServiceControls();
-        state.Text="正在恢复共享";detail.Text="共享进程异常退出，正在尝试重新启动。";
+        LocalizedText.Bind(state,"Text","Ui.WorkerRecovery.Text357");LocalizedText.Bind(detail,"Text","Ui.WorkerRecovery.Text123");
         try
         {
             await Task.Delay(delay.Value,wait.Token);
@@ -42,17 +44,17 @@ internal sealed partial class HostWindow
                 var current = ReadRecoveryDesktop();
                 current.EnsureBrokerLeaseAllowedFrom(original);
                 if (!current.TemporaryInputDesktopUnavailable) break;
-                detail.Text="返回 Windows 普通桌面后将自动恢复共享。";
+                LocalizedText.Bind(detail,"Text","Ui.WorkerRecovery.Text472");
                 await Task.Delay(250,wait.Token);
             }
             await StartSharing(backend:restartBackend,recovering:true);
         }
         catch(OperationCanceledException){}
-        catch(Exception e){detail.Text="自动恢复已停止："+e.Message;restartBudget?.Cancel();}
+        catch(Exception e){LocalizedText.Bind(detail,"Text",()=>Strings.Get("Ui.WorkerRecovery.Text432")+e.Message);restartBudget?.Cancel();}
         finally
         {
             restartWait=null;
-            if(!Host.Running){ip.IsEnabled=port.IsEnabled=true;SetDisplayConfigurationEnabled(true);if(wait.IsCancellationRequested){state.Text="已停止共享";detail.Text="已取消自动恢复。";}}
+            if(!Host.Running){ip.IsEnabled=port.IsEnabled=true;SetDisplayConfigurationEnabled(true);if(wait.IsCancellationRequested){LocalizedText.Bind(state,"Text","Ui.HostWindow.Text198");LocalizedText.Bind(detail,"Text","Ui.WorkerRecovery.Text208");}}
             UpdateServiceControls();
             var ended=deferredExit;deferredExit=null;if(ended is not null)RecoverWorker(ended);
         }

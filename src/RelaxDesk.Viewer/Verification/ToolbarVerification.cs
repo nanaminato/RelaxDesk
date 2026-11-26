@@ -38,7 +38,6 @@ internal static class ToolbarVerification
                 var bar = window.Toolbar ?? throw new Exception("Toolbar missing");
                 if (bar.RemoteKeyItems.OfType<MenuItem>().Any(item => item.Tag is RelaxDesk.Core.RemoteShortcut && item.IsEnabled))
                     throw new Exception("Offline preview exposed remote shortcuts");
-                if(bar.FilesAction.IsEnabled)throw new Exception("Offline preview exposed file access");
                 Point client = ((FrameworkElement)window.Content).PointToScreen(new Point(20, 200));
                 SessionToolbar.PixelPoint? pointer = new() { X = (int)client.X, Y = (int)client.Y };
                 bar.TestPointer = () => pointer; // No desktop pointer injection in automation.
@@ -58,8 +57,6 @@ internal static class ToolbarVerification
                     Console.WriteLine("Toolbar owned HWND order verified; another window occluded the screen hit-test");
                 if (!bar.BlocksPointer(point.X, point.Y) || bar.BlocksPointer(point.X, point.Y + 100))
                     throw new Exception("Toolbar screen exclusion bounds incorrect");
-                if (bar.FilesAction.Parent != bar.ShortcutMenu)
-                    throw new Exception("Secondary controls must live in the session menu");
                 int forwarded = 0;
                 child.Input = (_, _, _, _) => forwarded++;
                 child.RichInput = _ => forwarded++;
@@ -137,11 +134,6 @@ internal static class ToolbarVerification
                     bar.FullScreenButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     if (testBar.RemoteKeyItems.OfType<MenuItem>().Any(item => item.Header.ToString()!.Contains("Ctrl+Alt+End")))
                         throw new Exception("Unsupported secure attention sequence should not be listed");
-                    int stopped = 0; testBar.SetClipboard(true, () => stopped++);
-                    if (!testBar.ClipboardAction.IsEnabled) throw new Exception("Granted clipboard stop action unavailable");
-                    testBar.ClipboardAction.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-                    testBar.SetClipboard(false, null);
-                    if (stopped != 1 || testBar.ClipboardAction.IsEnabled) throw new Exception("Clipboard toolbar stop action failed");
                     int textOpened=0;testBar.SetTextInput(()=>textOpened++);
                     testBar.TextInputAction.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));testBar.SetTextInput(null);
                     if(textOpened!=1||testBar.TextInputAction.IsEnabled)throw new Exception("Negotiated text action not reset");

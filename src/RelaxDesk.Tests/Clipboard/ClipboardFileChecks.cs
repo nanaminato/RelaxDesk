@@ -29,7 +29,6 @@ static class ClipboardFileChecks
         Check(ClipboardContentRules.Valid(new ClipboardContent(Files:valid)));Check(!ClipboardContentRules.Valid(new ClipboardContent(Text:"path",Files:valid)));Check(!ClipboardContentRules.Valid(new ClipboardContent(Clear:true,Files:valid)));
         var owned=valid.Own();owned.Paths[0]="changed";Check(valid.Paths[0]=="文件.txt");Check(!valid.ToString().Contains("文件"));
         Reject(()=>SessionCapabilities.Validate([SessionCapabilities.ClipboardFiles]));
-        foreach(bool clipboard in new[]{false,true})foreach(bool files in new[]{false,true})Check(SessionCapabilities.Grant([SessionCapabilities.FileTransfer,SessionCapabilities.ClipboardFiles],clipboard,files).Contains(SessionCapabilities.ClipboardFiles)==(clipboard&&files));
         Reject(()=>SessionCapabilities.ValidateGrant([SessionCapabilities.FileTransfer,SessionCapabilities.ClipboardFiles],[SessionCapabilities.ClipboardFiles]));
         string origin=Guid.NewGuid().ToString("N");using(var stream=new MemoryStream())
         {
@@ -58,6 +57,6 @@ static class ClipboardFileChecks
             using var frame=new MemoryStream();await ClipboardContentWire.Write(frame,new(origin,1,new(Files:valid)),1);wrongDirection.Feed(frame.ToArray());await hostSession.Completion.WaitAsync(TimeSpan.FromSeconds(2));
             Check(hostMemory.Writes==0&&!hostGate.Allows(SessionCapabilities.ClipboardFiles));Check(hostGate.Allows(SessionCapabilities.FileTransfer)&&hostGate.Accept(new("input",1,Code:65)));
         }
-        Console.WriteLine($"PASS {count} file clipboard core contracts: canonical bounded manifests, independent dependent grants, old rich-header compatibility, strict file operations and late-file suppression without losing text; no native clipboard");return count;
+        Console.WriteLine($"PASS {count} file clipboard core contracts: canonical bounded manifests, file source bounds, rich-header framing, strict file operations and late-file suppression without losing text; no native clipboard");return count;
     }
 }

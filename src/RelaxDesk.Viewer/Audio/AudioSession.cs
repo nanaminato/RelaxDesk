@@ -1,3 +1,4 @@
+using RelaxDesk.SharedUI;
 using System.Windows;
 using System.Windows.Controls;
 using System.IO;
@@ -19,18 +20,10 @@ public sealed partial class ViewerWindow
         _=sound.Completion.ContinueWith(_=>Dispatcher.BeginInvoke(()=>
         {
             if(!ReferenceEquals(audioSession,sound)||ct.IsCancellationRequested)return;
-            DisableAudio();status.Text="声音传输已关闭；画面与输入仍可使用。";
+            DisableAudio();LocalizedText.Bind(status,"Text","Ui.AudioSession.Text164");
         }),TaskScheduler.Default);
     }
-    void DisableAudio()
-    {
-        if(sessionPermissions?.Allows(SessionCapabilities.SystemAudio)==true)
-        {
-            sessionPermissions.RevokeFeature(SessionCapabilities.SystemAudio);
-            if(session is not null&&!session.IsCancellationRequested)outgoing.TryWrite(new("audio-state-v2",++sequence));
-        }
-        audioSession?.Stop();RefreshAudioToolbar();
-    }
-    void RefreshAudioToolbar()=>sessionToolbar?.SetAudio(audioSession is not null&&sessionPermissions?.Allows(SessionCapabilities.SystemAudio)==true,audioVolume,audioMuted,(volume,mute)=>{audioVolume=volume;audioMuted=mute;audioSession?.SetVolume(volume,mute);RefreshAudioToolbar();},DisableAudio);
+    void DisableAudio(){sessionPermissions?.RevokeFeature(SessionCapabilities.SystemAudio);audioSession?.Stop();RefreshAudioToolbar();}
+    void RefreshAudioToolbar()=>sessionToolbar?.SetAudio(audioSession is not null&&!audioSession.Completion.IsCompleted,audioVolume,audioMuted,(volume,mute)=>{audioVolume=volume;audioMuted=mute;audioSession?.SetVolume(volume,mute);RefreshAudioToolbar();});
     async Task EndAudio(){var sound=audioSession;audioSession=null;if(sound is not null)await sound.DisposeAsync();}
 }

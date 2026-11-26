@@ -71,7 +71,7 @@ internal sealed class NetworkImpairmentRelay : IAsyncDisposable
     public Task<Link> Connected(int index, CancellationToken ct) => links[index].Task.WaitAsync(ct);
     public NetworkImpairmentRelay(int destination, int connections = 2)
     {
-        if (connections is < 2 or > 4) throw new ArgumentOutOfRangeException(nameof(connections));
+        if (connections is < 2 or > 5) throw new ArgumentOutOfRangeException(nameof(connections));
         links = Enumerable.Range(0, connections).Select(_ => NewLink()).ToArray();
         this.destination = destination; listener.Start(); accepting = Accept();
     }
@@ -79,7 +79,7 @@ internal sealed class NetworkImpairmentRelay : IAsyncDisposable
     {
         try
         {
-            // Accept only the fixed control/media/file fixture attachments.
+            // Accept only the fixed control/media/file/clipboard/audio fixture attachments.
             for (int index = 0; index < links.Length; index++)
             {
                 var peer = await listener.AcceptTcpClientAsync(stop.Token);

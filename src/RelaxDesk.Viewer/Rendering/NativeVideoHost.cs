@@ -25,7 +25,7 @@ public sealed class NativeVideoHost : HwndHost
     ViewportOptions viewport=new();
     public void SetViewport(ViewportOptions options){if(!options.Valid)throw new ArgumentException("Invalid viewport");Volatile.Write(ref viewport,options);RenderInvalidated?.Invoke();}
     nint previousIme;
-    bool keyboardAttached, keyboardOwned;
+    bool keyboardAttached, keyboardOwned, mouseTracking;
     Action<string[]>? filesDropped;
     [DllImport("shell32.dll")] static extern void DragAcceptFiles(nint hwnd,bool accept);
     [DllImport("shell32.dll",CharSet=CharSet.Unicode)] static extern uint DragQueryFile(nint drop,uint index,System.Text.StringBuilder? path,uint characters);
@@ -35,6 +35,7 @@ public sealed class NativeVideoHost : HwndHost
     [DllImport("user32.dll")] static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] static extern nint GetAncestor(nint hwnd, uint flags);
     [DllImport("user32.dll", EntryPoint = "LoadCursorW")] static extern nint LoadCursor(nint instance, nint id);
+    [DllImport("user32.dll")] static extern nint GetCursor();
     [DllImport("user32.dll")] static extern nint SetCursor(nint cursor);
     [DllImport("user32.dll")] static extern bool GetCursorPos(out Point point);
     [DllImport("user32.dll")] static extern nint WindowFromPoint(Point point);
@@ -95,7 +96,8 @@ public sealed class NativeVideoHost : HwndHost
             LocalPointerOverlay?.Invoke(point.X, point.Y) != true &&
             ScreenToClient(hwnd, ref point) && GetClientRect(hwnd, out var bounds) &&
             TryPosition(point.X, point.Y, bounds.Right, bounds.Bottom, false, out _, out _);
-        SetCursor(showHost ? 0 : arrowCursor);
+        nint desired = showHost ? 0 : arrowCursor;
+        if (GetCursor() != desired) SetCursor(desired);
     }
     bool SendRichPosition(nint hwnd,nint packed,bool dragging,bool screen=false,bool standaloneMove=false)
     {
@@ -172,12 +174,15 @@ public sealed class NativeVideoHost : HwndHost
     {
         if (message == 0x200)
         {
-            var tracking = new MouseTracking { Size = (uint)Marshal.SizeOf<MouseTracking>(), Flags = 2, Window = hwnd };
-            TrackMouseEvent(ref tracking);
+            if (!mouseTracking)
+            {
+                var tracking = new MouseTracking { Size = (uint)Marshal.SizeOf<MouseTracking>(),Flags = 2,Window = hwnd };
+                mouseTracking = TrackMouseEvent(ref tracking);
+            }
             PointerRegionChanged?.Invoke();
             if (GetCursorPos(out var position)) UpdateCursor(hwnd, position);
         }
-        if (message == 0x2A3) PointerRegionChanged?.Invoke(); // WM_MOUSELEAVE, including toolbar entry.
+        if (message == 0x2A3) { mouseTracking = false; PointerRegionChanged?.Invoke(); } // WM_MOUSELEAVE, including toolbar entry.
         if(message==0x233)
         {
             try
@@ -206,7 +211,7 @@ public sealed class NativeVideoHost : HwndHost
         if (message == 0x7) keyboardOwned = true;
         if (message == 0x215) { pointerButtons.Clear();InputCaptureLost?.Invoke(); }
         if (message is 0x5 or 0xF or 0x18 or 0x2E0) RenderInvalidated?.Invoke();
-        var pointer = new Point { X = (short)((long)lParam & 65535), Y = (short)((long)lParam >> 16) };
+        var pointer = new Point { X = (short)((long)lParam & 65535),Y = (short)((long)lParam >> 16) };
         if (message is >= 0x200 and <= 0x20E && LocalPointerOverlay is not null &&
             (message is 0x20A or 0x20E || ClientToScreen(hwnd, ref pointer)) &&
             LocalPointerOverlay(pointer.X, pointer.Y))
@@ -231,7 +236,7 @@ public sealed class NativeVideoHost : HwndHost
         else if (message is LeftDown or RightDown) { if(SendLegacyPosition(hwnd,lParam,false)){FocusRemoteKeyboard();SetCapture(hwnd);pointerButtons.Add(message==LeftDown?1:2);Input?.Invoke(message == LeftDown ? 256 : 257, false, 0, 0);}handled = true; }
         else if (message is LeftUp or RightUp) { if(pointerButtons.Remove(message==LeftUp?1:2)){SendLegacyPosition(hwnd,lParam,true);Input?.Invoke(message == LeftUp ? 256 : 257, true, 0, 0);}if(pointerButtons.Count==0&&GetCapture()==hwnd)ReleaseCapture();handled = true; }
         else if (message == Wheel) { if(SendLegacyPosition(hwnd,lParam,false,true))Input?.Invoke((short)(((long)wParam >> 16) & 0xffff) > 0 ? 258 : 259, false, 0, 0); handled = true; }
-        else if (message is 0x100 or 0x101 or 0x104 or 0x105 or 0x102 or 0x103 or 0x106 or 0x107 or 0x286) handled = RouteKeyboard(new MSG { hwnd = hwnd, message = message, wParam = wParam, lParam = lParam });
+        else if (message is 0x100 or 0x101 or 0x104 or 0x105 or 0x102 or 0x103 or 0x106 or 0x107 or 0x286) handled = RouteKeyboard(new MSG { hwnd = hwnd,message = message,wParam = wParam,lParam = lParam });
         // HwndHost enforces layout geometry on WM_WINDOWPOSCHANGING and clears
         // its HWND on WM_NCDESTROY. Skipping the base loses both contracts.
         return handled ? 0 : base.WndProc(hwnd, message, wParam, lParam, ref handled);

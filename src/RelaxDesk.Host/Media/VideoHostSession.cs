@@ -25,7 +25,7 @@ internal static class VideoHostSession
         public TaskCompletionSource<Packet> Result { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
     public static async Task Run(TcpListener listener, TcpClient controlSocket, SslStream control, HostMediaIdentity identity,
-        Packet hello, string backend, CancellationToken stop, string[]? grantedFeatures = null, CancellationToken clipboardRevoked = default, string? selectedFileRoot = null, CancellationToken filesRevoked = default,FileTransferResumeStore? fileResumes=null,string? selectedDisplay=null,CancellationToken audioRevoked=default,AdminInputConnection? elevated=null,string? shellSessionId=null)
+        Packet hello, string backend, CancellationToken stop, string[]? grantedFeatures = null, string? selectedFileRoot = null, FileTransferResumeStore? fileResumes=null,string? selectedDisplay=null,AdminInputConnection? elevated=null,string? shellSessionId=null)
     {
         var certificate = identity.Certificate;
         string[] capabilities = (hello.Capabilities ?? []).Intersect(["h264", "deflate"]).ToArray();
@@ -36,18 +36,13 @@ internal static class VideoHostSession
         var originalDesktop = synthetic ? null : WindowsSessionAccess.Read();
         originalDesktop?.EnsureAllowed();
         var displaySelection=synthetic?null:new WindowsDisplaySelection(selectedDisplay);
-        bool fullControlFixture = backend == "test-full-control";
-        var displays=hello.DisplayVersion!=0&&(!synthetic||fullControlFixture||backend is "test-displays" or "test-topology" or "test-topology-init-race")?new HostDisplaySession(displaySelection,synthetic?selectedDisplay:null,hello.DisplayVersion,backend=="test-topology"):null;
+        var displays=new HostDisplaySession(displaySelection,synthetic?selectedDisplay:null,hello.DisplayVersion,backend=="test-topology");
         int displayVersion=displays?.Version??0;
-        var features = SessionCapabilities.ValidateGrant(hello.Features, grantedFeatures);
+        var features = SessionCapabilities.RequireAll(grantedFeatures);
         var video=hello.VideoVersion==VideoSettingsProtocol.Version?new HostVideoSettings():null;
-        if(audioRevoked.IsCancellationRequested||synthetic&&!fullControlFixture&&backend is not ("test-audio" or "test-audio-failure"))features=features.Where(feature=>feature!=SessionCapabilities.SystemAudio).ToArray();
-        if (synthetic && !fullControlFixture && backend is not ("test-clipboard" or "test-clipboard-failure" or "test-clipboard-rich" or "test-clipboard-rich-failure" or "test-clipboard-files")) features = features.Where(feature=>!SessionCapabilities.IsClipboard(feature)).ToArray();
-        if (clipboardRevoked.IsCancellationRequested) features = features.Where(feature=>!SessionCapabilities.IsClipboard(feature)).ToArray();
-        if (filesRevoked.IsCancellationRequested) features = features.Where(feature=>feature is not (SessionCapabilities.FileTransfer or SessionCapabilities.ClipboardFiles)).ToArray();
         var fileRoot = features.Contains(SessionCapabilities.FileTransfer) && selectedFileRoot is not null ? new WindowsFileRoot(selectedFileRoot) : null;
         var clipboardSources = !synthetic && shellSessionId is not null && features.Contains(SessionCapabilities.ClipboardFiles) ? new ClipboardFileSources() : null;
-        if (fileRoot is null) features = features.Where(feature=>feature is not (SessionCapabilities.FileTransfer or SessionCapabilities.ClipboardFiles)).ToArray();
+        if(fileRoot is null)throw new InvalidDataException("Current session requires file staging");
         bool resumeFiles=hello.FileResume&&fileRoot is not null&&fileResumes is not null&&clipboardSources is null;
         string? fileScope=resumeFiles?await fileResumes!.Scope():null;
         using var datagrams = OpenDatagrams();
@@ -173,8 +168,7 @@ internal static class VideoHostSession
             try { await Wire.Write(control, packet, deadline.Token); }
             finally { controlWrite.Release(); }
         }
-        using var audioLifetime=CancellationTokenSource.CreateLinkedTokenSource(session.Token,audioRevoked);
-        using var audioRevoke=audioRevoked.Register(()=>{gate.RevokeFeature(SessionCapabilities.SystemAudio);audioData?.Dispose();});
+        using var audioLifetime=CancellationTokenSource.CreateLinkedTokenSource(session.Token);
         var audioWorker=audioTicket is null?Task.CompletedTask:Task.Run(async()=>
         {
             try
@@ -189,34 +183,27 @@ internal static class VideoHostSession
             finally
             {
                 gate.RevokeFeature(SessionCapabilities.SystemAudio);audioData?.Dispose();
-                if(!session.IsCancellationRequested)try{await WriteControl(new("capability-revoked-v2",Features:[SessionCapabilities.SystemAudio]));}catch(Exception e){HostSessionLog.Write($"audio_notification_failed error_type={e.GetType().Name}");}
+                if(!session.IsCancellationRequested)try{await WriteControl(new("component-unavailable-v5",Features:[SessionCapabilities.SystemAudio]));}catch(Exception e){HostSessionLog.Write($"audio_notification_failed error_type={e.GetType().Name}");}
             }
         });
         var clipboardReady=new TaskCompletionSource<IFileClipboardPublisher?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var fileSession = CancellationTokenSource.CreateLinkedTokenSource(session.Token, filesRevoked);
-        int explicitFileRevocation=0;
-        using var fileRevokeRegistration = filesRevoked.Register(() => {Interlocked.Exchange(ref explicitFileRevocation,1);gate.RevokeFeature(SessionCapabilities.FileTransfer); dataSocket?.Close(); });
+        using var fileSession = CancellationTokenSource.CreateLinkedTokenSource(session.Token);
         var fileWorker = data is null ? Task.CompletedTask : Task.Run(async () =>
         {
-            try { await new FileTransferServer(fileRoot!, gate,resumeFiles?fileResumes:null,()=>!stop.IsCancellationRequested&&!filesRevoked.IsCancellationRequested&&Volatile.Read(ref explicitFileRevocation)==0,token=>clipboardReady.Task.WaitAsync(token),clipboardSources).Run(data, fileSession.Token); }
+            try { await new FileTransferServer(fileRoot!, gate,resumeFiles?fileResumes:null,()=>!stop.IsCancellationRequested,token=>clipboardReady.Task.WaitAsync(token),clipboardSources).Run(data, fileSession.Token); }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException or OperationCanceledException or System.Text.Json.JsonException)
             {
                 gate.RevokeFeature(SessionCapabilities.FileTransfer);
                 if (!session.IsCancellationRequested)
                 {
                     HostSessionLog.Write($"file_transfer_disabled stage=data-worker error_type={error.GetType().Name} hresult=0x{error.HResult:X8}");
-                    try { await WriteControl(new("capability-revoked-v2", Features: [SessionCapabilities.FileTransfer],Text:Volatile.Read(ref explicitFileRevocation)==0&&error is IOException?"transport":null)); }
+                    try { await WriteControl(new("component-unavailable-v5", Features: [SessionCapabilities.FileTransfer],Text:error is IOException?"transport":null)); }
                     catch (Exception) when (session.IsCancellationRequested) { }
                 }
             }
-            finally { data.Dispose();if(fileResumes is not null&&(stop.IsCancellationRequested||Volatile.Read(ref explicitFileRevocation)!=0))await fileResumes.Clear(); }
+            finally { data.Dispose();if(fileResumes is not null&&(stop.IsCancellationRequested))await fileResumes.Clear(); }
         }, session.Token);
-        using var clipboardLifetime=CancellationTokenSource.CreateLinkedTokenSource(session.Token,clipboardRevoked);
-        var clipboardUpdates = Channel.CreateBounded<ClipboardTextUpdate>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest });
-        await using var clipboard = clipboardData is null&&features.Contains(SessionCapabilities.ClipboardText)
-            ? new ClipboardSynchronizer(() => synthetic ? new TestTextClipboard(backend == "test-clipboard-failure") : new WindowsTextClipboard(), gate,
-                update => clipboardUpdates.Writer.TryWrite(update), clipboardLifetime.Token, HostSessionLog.Write) : null;
-        if (clipboard is not null) _ = clipboard.Completion.ContinueWith(_ => clipboardUpdates.Writer.TryComplete(), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        using var clipboardLifetime=CancellationTokenSource.CreateLinkedTokenSource(session.Token);
         IContentClipboard CreateRichClipboard()
         {
             try
@@ -226,21 +213,12 @@ internal static class VideoHostSession
             }
             catch{clipboardReady.TrySetResult(null);throw;}
         }
-        await using var richClipboard=clipboardData is null?null:new ClipboardContentSession(clipboardData,CreateRichClipboard,gate,clipboardLifetime.Token,HostSessionLog.Write,receiveFiles:false);
-        using var revokeRegistration = clipboardRevoked.Register(() => { SessionCapabilities.RevokeClipboard(gate);clipboardUpdates.Writer.TryComplete();richClipboard?.Stop();clipboardSocket?.Close(); });
+        await using var richClipboard=new ClipboardContentSession(clipboardData??throw new InvalidDataException("Current clipboard channel missing"),CreateRichClipboard,gate,clipboardLifetime.Token,HostSessionLog.Write,receiveFiles:false);
         var clipboardSender = Task.Run(async () =>
         {
-            if(richClipboard is not null)
-            {
-                await richClipboard.Completion;
-                if(!session.IsCancellationRequested)foreach(string feature in features.Where(SessionCapabilities.IsClipboard))await WriteControl(new("capability-revoked-v2",Features:[feature]));
-                await Task.Delay(Timeout.Infinite,session.Token);return;
-            }
-            long clipboardSequence = 0;
-            await foreach (var update in clipboardUpdates.Reader.ReadAllAsync(session.Token))
-                if (gate.Allows(SessionCapabilities.ClipboardText)) await WriteControl(ClipboardTextProtocol.Encode(update, ++clipboardSequence));
-            if (!session.IsCancellationRequested) await WriteControl(new("capability-revoked-v2", Features: [SessionCapabilities.ClipboardText]));
-            await Task.Delay(Timeout.Infinite, session.Token);
+            await richClipboard.Completion;
+            if(!session.IsCancellationRequested)foreach(string feature in features.Where(SessionCapabilities.IsClipboard))await WriteControl(new("component-unavailable-v5",Features:[feature]));
+            await Task.Delay(Timeout.Infinite,session.Token);
         }, session.Token);
         int forceKeyFrame = 1;
         int fallbackRequested = 0;
@@ -468,19 +446,6 @@ internal static class VideoHostSession
                 }
                 else if(packet.Kind=="display-configured-v2")displays!.Switch.ConfirmConfiguration(packet.DisplayGeneration);
                 else if(packet.Kind=="display-ready-v2")displays!.Switch.Confirm(packet.DisplayGeneration);
-                else if (packet.Kind == "clipboard-text-v2")
-                {
-                    if (clipboard is null || !clipboard.Receive(ClipboardTextProtocol.Decode(packet))) throw new AuthenticationException("Clipboard permission revoked");
-                }
-                else if (packet.Kind == "clipboard-state-v2")
-                {
-                    SessionCapabilities.RevokeClipboard(gate); clipboardUpdates.Writer.TryComplete();richClipboard?.Stop();clipboardSocket?.Close();
-                }
-                else if (packet.Kind == "file-state-v2")
-                {
-                    Interlocked.Exchange(ref explicitFileRevocation,1);gate.RevokeFeature(SessionCapabilities.FileTransfer); fileSession.Cancel(); dataSocket?.Close();
-                }
-                else if(packet.Kind=="audio-state-v2"){gate.RevokeFeature(SessionCapabilities.SystemAudio);audioLifetime.Cancel();audioData?.Dispose();}
                 else if (packet.Kind == "keyframe-v2") Interlocked.Exchange(ref forceKeyFrame, 1);
                 else if (packet.Kind == "ping-v2")
                 {
@@ -686,7 +651,7 @@ internal static class VideoHostSession
             try { await Task.WhenAll(observedInput, observedSender, observedProducer, observedClipboard,observedSession,observedAdmin,observedTcpFallback,networkQuality,quicRecovery,simulatedTransition); } catch (Exception) { /* Causal failure is reported above; join all workers. */ }
             try { await fileWorker; } catch (Exception error) { HostSessionLog.Write($"file_worker_shutdown error_type={error.GetType().Name} hresult=0x{error.HResult:X8}"); }
             await audioWorker;
-            if(fileResumes is not null&&(stop.IsCancellationRequested||inputWorkerFailed||failure?.Error is WindowsSessionUnavailableException||Volatile.Read(ref explicitFileRevocation)!=0))await fileResumes.Clear();
+            if(fileResumes is not null&&(stop.IsCancellationRequested||inputWorkerFailed||failure?.Error is WindowsSessionUnavailableException))await fileResumes.Clear();
             gate.Revoke(); try{inputDesktop?.ReleaseAll();}catch(IOException error){HostSessionLog.Write($"input_cleanup_deferred error_type={error.GetType().Name}");}
             try
             {

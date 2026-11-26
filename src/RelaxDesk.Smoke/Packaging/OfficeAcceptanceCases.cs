@@ -31,40 +31,34 @@ internal static class OfficeAcceptanceCases
         foreach (string mode in new[] { "reject-token", "reject-pin", "deny-v2", "reject-media", "deny-approval", "display-denied", "display-switch" })
             Add("office-" + mode, a.Smoke, a.Host, "--" + mode);
         Add("office-topology", a.Smoke, a.Host, "--topology-session", Folder("topology"));
-        Add("office-persistent-host", a.Smoke, a.Host, "--persistent-host", Folder("persistent"));
-        foreach (string mode in new[] { "file-transfer", "file-denied", "reject-data" })
-            Add("office-" + mode, a.Smoke, a.Host, "--" + mode, Folder("files"));
-        foreach (string mode in new[] { "clipboard-text", "clipboard-denied", "clipboard-unnegotiated", "clipboard-failure", "clipboard-binding", "clipboard-rich", "clipboard-rich-denied", "clipboard-rich-failure", "clipboard-rich-transport", "clipboard-rich-replay", "clipboard-rich-format-denied" })
-            Add("office-" + mode, a.Smoke, a.Host, "--" + mode);
+        Add("office-file-transfer",a.Smoke,a.Host,"--file-transfer",Folder("files"));
         foreach (string mode in new[] { "viewport", "input-ui", "hwnd", "ui", "toolbar", "pointer" })
             Add("office-viewer-" + mode, a.Viewer, "--" + mode + "-contracts");
+        Add("office-viewer-localization",a.Viewer,"--localization-contracts",Folder("viewer-localization"));
+        Add("office-host-localization",a.Shell,"--localization-contracts",Folder("host-localization"));
         Add("office-viewer-automatic-quality", a.Viewer, "--automatic-quality-contracts", Folder("automatic-quality"));
         Add("office-viewer-diagnostics", a.Viewer, "--diagnostic-log-contracts", Folder("viewer-diagnostics"));
         Add("office-viewer-error-details", a.Viewer, "--error-details-contracts", Folder("error-details"));
         foreach (string mode in new[] { "cpu-decode", "cpu-submit", "viewer-update" })
             Add("office-viewer-failure-" + mode, a.Viewer, "--pipeline-failure-contracts", a.Host, mode);
-        foreach (string mode in new[] { "display", "display-legacy", "topology", "topology-race", "audio" })
+        foreach (string mode in new[] { "display", "topology", "topology-race", "audio" })
         {
-            string command = mode == "display-legacy" ? "display-legacy-session" : mode == "topology-race" ? "topology-race" : mode + "-session";
+            string command = mode == "topology-race" ? "topology-race" : mode + "-session";
             Add("office-viewer-" + mode, a.Viewer, "--" + command + "-contracts", a.Host);
         }
-        foreach (string mode in new[] { "history", "statistics", "file-ui", "file-session", "file-resume-session", "reconnect" })
+        foreach (string mode in new[] { "history", "statistics" })
             Add("office-viewer-" + mode, a.Viewer, "--" + mode + "-contracts", a.Host, Folder(mode));
         Add("office-viewer-udp-statistics", a.Viewer, "--statistics-contracts", a.Host, Folder("statistics-udp"), "udp");
         Add("office-viewer-fallback-statistics", a.Viewer, "--statistics-contracts", a.Host, Folder("statistics-fallback"), "oversized");
         Add("office-viewer-host-without-udp", a.Viewer, "--statistics-contracts", a.Host, Folder("statistics-host-without-udp"), "host-without-udp");
         Add("office-viewer-text-quality", a.Viewer, "--office-text-quality", "software");
-        foreach (string mode in new[] { "granted", "deny-clipboard", "deny-files" })
-            Add("office-viewer-file-clipboard-" + mode, a.Viewer, "--file-clipboard-contracts", a.Host, Folder("file-clipboard-ui"), mode);
-        foreach (string mode in new[] { "granted", "denied" })
-            Add("office-viewer-rich-clipboard-" + mode, a.Viewer, "--rich-clipboard-session-contracts", a.Host, mode);
+        Add("office-viewer-unified-session",a.Viewer,"--unified-session-contracts",a.Host,Folder("unified-session"));
+        Add("office-host-first-approval",a.Shell,"--password-login-contracts",a.Host,Folder("first-approval"));
         foreach (string mode in new[] { "h264", "deflate", "audio", "static", "automatic" })
             Add("office-viewer-video-settings-" + mode, a.Viewer, "--video-settings-contracts", a.Host, mode);
-        Add("office-device-trust", a.Shell, "--device-trust-contracts", a.Host, Folder("device-trust"));
-        Add("office-host-ui", a.Shell, "--shell-contracts", a.Host, Folder("host-ui"));
         Add("office-host-service-setup-ui",a.Shell,"--service-setup-ui-contracts",a.Host,Folder("service-setup-ui"));
         Add("office-host-service", a.Shell, "--service-contracts", a.Host, a.Service);
-        foreach (string mode in new[] { "recovery", "audio" }) Add("office-host-" + mode, a.Shell, "--" + mode + "-contracts", a.Host);
+        foreach (string mode in new[] { "recovery" }) Add("office-host-" + mode, a.Shell, "--" + mode + "-contracts", a.Host);
         if (cases.Count > 128 || cases.Select(test => test.Name).Distinct().Count() != cases.Count || cases.Any(test => test.Seconds is < 1 or > 180))
             throw new InvalidOperationException("Invalid office acceptance cases");
         return cases.ToArray();

@@ -35,11 +35,10 @@ internal static class SecuritySmoke
                 return;
             }
             using var control = await Open(controlSocket, fingerprint);
-            await Wire.Write(control, new Packet(FullControlProtocol.PinnedRequest, Text: token, Capabilities: ["h264"], Features: root is null ? null : [SessionCapabilities.FileTransfer]), timeout.Token);
+            await Wire.Write(control, new Packet(FullControlProtocol.PinnedRequest, Text: token, Capabilities: ["h264"], Features: SessionCapabilities.All, InputVersion:InputProtocol.Version,DisplayVersion:DisplayProtocol.TopologyVersion,VideoVersion:VideoSettingsProtocol.Version), timeout.Token);
             string prompt = await process.StandardOutput.ReadLineAsync(timeout.Token) ?? throw new IOException("No approval prompt");
             if (!prompt.Contains("APPROVE")) throw new IOException("Missing consent");
-            if(root is not null && !(await process.StandardOutput.ReadLineAsync(timeout.Token)??"").Contains("APPROVE_FILES"))throw new IOException("Missing file consent");
-            await process.StandardInput.WriteLineAsync(root is not null ? "APPROVE_FILES" : mode == "--deny-v2" ? "DENY" : "APPROVE"); await process.StandardInput.FlushAsync();
+            await process.StandardInput.WriteLineAsync(mode == "--deny-v2" ? "DENY" : "APPROVE"); await process.StandardInput.FlushAsync();
             if (mode == "--deny-v2")
             {
                 var denied = await Wire.Read(control, timeout.Token);

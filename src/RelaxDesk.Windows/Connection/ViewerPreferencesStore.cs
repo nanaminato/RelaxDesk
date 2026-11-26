@@ -8,15 +8,9 @@ public sealed record ViewerLoginName(string Endpoint, string UserName);
 // Local preferences and login names only; never passwords or Host grants.
 public sealed record ViewerPreferences
 {
-    public int Format { get; init; } = 1;
+    public int Format { get; init; } = 2;
     public bool FullScreen { get; init; } = true;
     public bool Gpu { get; init; } = true;
-    public bool Topology { get; init; } = true;
-    public bool ClipboardText { get; init; } = true;
-    public bool ClipboardImage { get; init; } = true;
-    public bool ClipboardHtml { get; init; } = true;
-    public bool FileClipboard { get; init; } = true;
-    public bool Audio { get; init; } = true;
     public bool RememberConnections { get; init; } = true;
     public int Network { get; init; }
     public int FileRate { get; init; }
@@ -28,7 +22,7 @@ public sealed record ViewerPreferences
 
     public void Validate()
     {
-        if (Format != 1 || Network is < 0 or > 2 || FileRate is < 0 or > 7 || !new ViewportOptions(Zoom).Valid)
+        if (Format != 2 || Network is < 0 or > 2 || FileRate is < 0 or > 7 || !new ViewportOptions(Zoom).Valid)
             throw new InvalidDataException("Invalid Viewer preferences");
         VideoSettingsProtocol.Validate(new(FramesPerSecond, Bitrate, 1));
         if (LoginNames is null || LoginNames.Length > 20 || LoginNames.Any(entry => entry is null ||

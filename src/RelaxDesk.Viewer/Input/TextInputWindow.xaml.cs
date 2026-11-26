@@ -1,3 +1,4 @@
+using RelaxDesk.SharedUI;
 using System.Windows;
 using System.Windows.Input;
 using RelaxDesk.Core;
@@ -23,7 +24,7 @@ internal sealed partial class TextInputWindow : Window
         {
             if(closed||composing||!InputProtocol.TextValid(Editor.Text))return;
             string committed=Editor.Text;Editor.Clear();Refresh();
-            if(!send(committed))hint.Text="会话已结束或未获授权。文字未发送，请重新连接后输入。";
+            if(!send(committed))LocalizedText.Bind(hint,"Text","Ui.TextInputWindow.Text090");
             Editor.Focus();
         };
         PreviewKeyDown+=(_,e)=>{if(e.Key==Key.Escape&&!composing){Close();e.Handled=true;}};

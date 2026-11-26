@@ -22,7 +22,7 @@ internal sealed class HostDisplaySession
     public DisplaySwitchSession Switch {get;}
     public WindowsDisplaySelection? Active=>Volatile.Read(ref active);
     public bool NeedsRefresh=>Volatile.Read(ref needsRefresh);
-    public HostDisplaySession(WindowsDisplaySelection? initial,string? syntheticSelection=null,int requestedVersion=1,bool scripted=false)
+    public HostDisplaySession(WindowsDisplaySelection? initial,string? syntheticSelection=null,int requestedVersion=DisplayProtocol.TopologyVersion,bool scripted=false)
     {
         synthetic=initial is null;this.scripted=scripted;active=initial;
         catalog=initial?.Topology??[
@@ -32,7 +32,8 @@ internal sealed class HostDisplaySession
         originalCatalog=catalog.ToArray();string selected=initial?.Device??syntheticSelection??"all";
         string[] allowed=selected=="all"?catalog.Select(d=>d.Id).Append("all").ToArray():[selected];
         var state=new DisplaySessionInfo(catalog,allowed,selected,1);
-        Version=requestedVersion>=DisplayProtocol.TopologyVersion&&DisplayTopologyAuthorization.CanTrack(state)?DisplayProtocol.TopologyVersion:DisplayProtocol.Version;
+        if(requestedVersion!=DisplayProtocol.TopologyVersion||!DisplayTopologyAuthorization.CanTrack(state))throw new InvalidDataException("Current display topology identity required");
+        Version=DisplayProtocol.TopologyVersion;
         authorization=TopologyEnabled?new(state):null;Switch=new(state,TopologyEnabled);
     }
     public void Request(string id,long generation,Action release)

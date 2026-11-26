@@ -1,3 +1,4 @@
+using RelaxDesk.Core.Localization;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 using RelaxDesk.Windows;
@@ -62,8 +63,8 @@ internal static class LocalConnectionConsent
         {
             Size = (uint)Marshal.SizeOf<DialogConfiguration>(), Flags = 0x808, CommonButtons = 0x6,
             Title = "RelaxDesk", MainIcon = 0xffff, DefaultButton = No,
-            Instruction = "允许此设备完全控制这台电脑？",
-            Content = "授权后，对方可操作普通窗口和管理员窗口。请核对设备指纹。\n\nSHA-256\n" + fingerprint,
+            Instruction = Strings.Get("Consent.FullControlQuestion"),
+            Content = Strings.Get("Consent.FullControlBody") + fingerprint,
             Callback = (window, notification, value, _, _) =>
             {
                 if (notification == Timer && Unavailable()) SendMessage(window, ClickButton, No, 0);

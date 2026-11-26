@@ -11,7 +11,7 @@ public sealed partial class ViewerWindow
 {
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     static extern bool IsWindowEnabled(nint window);
-    public static void VerifyStatistics(Application app,string hostApplication,string fixtures,bool udp=false,bool oversized=false,bool legacyAuto=false,bool hostWithoutUdp=false,bool viewerWithoutUdp=false)
+    public static void VerifyStatistics(Application app,string hostApplication,string fixtures,bool udp=false,bool oversized=false,bool hostWithoutUdp=false,bool viewerWithoutUdp=false)
     {
         if (SessionStatisticsWindow.FallbackDescription(null) != "" ||
             SessionStatisticsWindow.FallbackDescription("udp-attach-failed") == SessionStatisticsWindow.FallbackDescription("future-reason"))
@@ -29,7 +29,7 @@ public sealed partial class ViewerWindow
             return await host.StandardOutput.ReadToEndAsync(timeout.Token);
         });
         var window=new ViewerWindow{ShowActivated=false};window.host.Text="127.0.0.1";window.port.Text=number.ToString();window.fingerprint.Text=pin;window.token.Password=token;window.pinnedConnection.IsChecked=true;window.gpuRendering.IsChecked=false;Task? running=null;
-        window.networkMode.SelectedIndex = oversized || legacyAuto || hostWithoutUdp || viewerWithoutUdp ? 0 : udp ? 2 : 1;
+        window.networkMode.SelectedIndex = oversized || hostWithoutUdp || viewerWithoutUdp ? 0 : udp ? 2 : 1;
         async Task Until(Func<bool> condition){while(!condition())await Task.Delay(20,timeout.Token);}
         window.Loaded+=async(_,_)=>
         {
@@ -78,7 +78,7 @@ public sealed partial class ViewerWindow
                     throw new IOException("Control queue depth and coalesced mouse moves were not displayed");
                 if(!panel.DisplayText.Contains("Present 调用不代表屏幕已显示")||!panel.DisplayText.Contains("不含 TLS")||!panel.DisplayText.Contains("P95 不相加")||!panel.DisplayText.Contains("控制往返"))throw new IOException("Statistics units/provenance missing");
                 var snapshot=actual();if(snapshot.Pipeline.Frames<=0||snapshot.Pipeline.ApplicationBytes<=0||snapshot.Pipeline.Stages.All(stage=>stage.Name!="capture"))throw new IOException("Live frame/timing samples absent");
-                if (snapshot.Transport != (udp ? "UDP" : "TCP/TLS") || (!legacyAuto &&
+                if (snapshot.Transport != (udp ? "UDP" : "TCP/TLS") || (
                     (snapshot.HostQueue is not { IsValid: true } || !panel.DisplayText.Contains("Host 已编码队列") || !panel.DisplayText.Contains("队列丢弃"))))
                     throw new IOException("Host queue statistics missing or wrong negotiated transport");
                 if (udp && (snapshot.Network is not { Quic: not null, Frames.FrameArrivalJitterMs: not null } ||
@@ -93,13 +93,11 @@ public sealed partial class ViewerWindow
                     if (actual().Fallback != "udp-frame-too-large") throw new IOException("Host fallback reason missing from WPF statistics");
                     Console.WriteLine("PASS WPF shows the authenticated oversized UDP frame fallback reason");
                 }
-                if (legacyAuto || hostWithoutUdp)
+                if (hostWithoutUdp)
                 {
                     if (snapshot.Fallback != "udp-not-offered" || !panel.DisplayText.Contains("Host 未提供 UDP"))
                         throw new IOException("The Auto Viewer did not diagnose the Host's TCP media path");
-                    Console.WriteLine(legacyAuto
-                        ? "PASS current WPF Auto Viewer uses TCP and reports that the legacy Host did not offer UDP"
-                        : "PASS WPF Auto Viewer shows that the Host did not offer UDP while TCP video continues");
+                    Console.WriteLine("PASS WPF Auto Viewer shows that the Host did not offer UDP while TCP video continues");
                 }
                 if (viewerWithoutUdp)
                 {

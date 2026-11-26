@@ -1,3 +1,4 @@
+using RelaxDesk.SharedUI;
 using System.Windows;
 using System.Windows.Controls;
 using RelaxDesk.Core;
@@ -19,7 +20,8 @@ internal sealed partial class HostWindow
     {
         displayChoice.SelectionChanged += (_, _) =>
         {
-            if (displayChoice.SelectedItem is ComboBoxItem { Content: string label }) displayOverview.Text = label;
+            if (displayChoice.SelectedItem is ComboBoxItem selected)
+                displayOverview.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("Content") { Source = selected });
         };
         refreshDisplays.Click+=async(_,_)=>await RefreshDisplays();Loaded+=async(_,_)=>await RefreshDisplays();
     }
@@ -29,13 +31,13 @@ internal sealed partial class HostWindow
         try
         {
             string? selected=SelectedDisplay;var displays=await Task.Run(()=>WindowsDisplays.Enumerate());if(Host.Running||RestartPending)return;
-            displayChoice.Items.Clear();displayChoice.Items.Add(new ComboBoxItem{Content="主显示器（自动选择）",Tag=null});
-            foreach(var display in displays)displayChoice.Items.Add(new ComboBoxItem{Content=display.ToString(),Tag=display.Id,ToolTip=$"坐标 {display.Bounds.X},{display.Bounds.Y} · 旋转 {display.Rotation}°"});
-            try{var union=DisplayTopology.Select(displays,"all");displayChoice.Items.Add(new ComboBoxItem{Content=$"全部屏幕 · {union.Width}×{union.Height}（兼容捕获）",Tag="all"});}catch(System.IO.IOException){}
+            displayChoice.Items.Clear();displayChoice.Items.Add(LocalizedText.Bind(new ComboBoxItem{Tag=null},"Content","Ui.DisplaySettings.Text081"));
+            foreach(var display in displays)displayChoice.Items.Add(LocalizedText.Bind(LocalizedText.Bind(new ComboBoxItem{Tag=display.Id},"Content",()=>display.ToString()),"ToolTip","Ui.DisplaySettings.Text161",display.Bounds.X,display.Bounds.Y,display.Rotation));
+            try{var union=DisplayTopology.Select(displays,"all");displayChoice.Items.Add(LocalizedText.Bind(new ComboBoxItem{Tag="all"},"Content","Ui.DisplaySettings.Text118",union.Width,union.Height));}catch(System.IO.IOException){}
             displayChoice.SelectedItem=displayChoice.Items.Cast<ComboBoxItem>().FirstOrDefault(item=>Equals(item.Tag,selected))??displayChoice.Items[0];
-            displayHint.Text="开始共享后固定此范围；更换屏幕请停止共享并重新选择。新增屏幕不会自动共享。全部屏幕和旋转屏使用 GDI 兼容路径，HDR 精度受系统转换限制。";
+            LocalizedText.Bind(displayHint,"Text","Ui.DisplaySettings.Text229");
         }
-        catch(Exception){displayHint.Text="无法枚举屏幕。可刷新后重试；开始共享时仍会验证实际显示器。";}
+        catch(Exception){LocalizedText.Bind(displayHint,"Text","Ui.DisplaySettings.Text288");}
         finally{enumeratingDisplays=false;refreshDisplays.IsEnabled=!Host.Running&&!RestartPending;}
     }
     void SetDisplayConfigurationEnabled(bool enabled){displayChoice.IsEnabled=enabled;refreshDisplays.IsEnabled=enabled&&!enumeratingDisplays;}

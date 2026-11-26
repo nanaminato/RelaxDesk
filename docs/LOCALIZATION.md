@@ -1,51 +1,20 @@
-# RelaxDesk 国际化与自定义翻译指南
+# UI localization
 
-RelaxDesk 内置了 **5 种常用语言**，并支持用户在无需重新编译的情况下直接添加自定义翻译文件。
+The built-in `zh-CN`, `en`, `ja`, `fr`, and `es` catalogs each contain 489 presentation messages. The audit covers Viewer connection/session menus, clipboard/text UI and automatic file copy, display/audio/statistics/error UI, Host consent/login/device/service settings, user-facing transfer validation, service result dialogs and the elevated input approval question. The two informational rows formerly below FPS and bitrate in the session menu remain removed. The unrelated first-connection hint is retained.
 
-## 内置语言
+XAML uses `ui:Loc` bindings. Code-created presentation properties use `LocalizedText.Bind` for live language changes, with weak event subscriptions so localization does not retain closed controls. Formatted values retain named resource keys and positional arguments; compound labels can use a presentation-only string factory. This mechanism never scans or translates arbitrary text fields, filenames, fingerprints, credentials or remote content. Invariant protocol identifiers, key codes and diagnostic event names stay unchanged. Native Windows standard dialog buttons follow the OS language; application-owned title/body text uses the selected language.
 
-- `en` — English（默认回退语言）
-- `zh-CN` — 简体中文
-- `es` — Español
-- `ja` — 日本語
-- `fr` — Français
+File transfer decisions use `IsDownload` metadata rather than a translated direction label. Language changes must not change access decisions, selected monitor IDs, startup modes, transfer choices or negotiated fields. The fixed multilingual editor sample in `OfficeTextQuality.cs` remains a codec benchmark input, not translatable UI copy. Historical or raw system exception/log text may retain the language in which it was generated.
 
-## 首次启动语言选择规则
+The existing catalog loader supports local custom packs, English fallback and saved language preferences. New built-in keys must exist in all five catalogs with matching positional indices and format clauses. Do not create resource keys from received/user text. Long labels use a shared auto-sized column in the connection form; translated views should be rendered after a complete WPF layout/render cycle.
 
-首次启动应用（尚未手动切换过语言）时，RelaxDesk 会自动参考当前 Windows 系统的界面语言（`CultureInfo.CurrentUICulture`）：
+Validation commands:
 
-1. 优先精确匹配已内置或用户添加的语言代码（例如 `zh-CN`）。
-2. 其次按主语言代码前缀匹配（例如 `ja-JP` 匹配 `ja`，`es-MX` 匹配 `es`，`zh-TW` 匹配 `zh-CN`）。
-3. 如果与所有可用语言完全不匹配，则自动回退为 **English (`en`)**。
-
-在界面中手动切换语言后，选择会自动保存到 `%LOCALAPPDATA%\RelaxDesk\language.json`，下次启动时生效。
-
-## 添加自定义翻译文件
-
-只需在以下任一目录中放入 `.json` 翻译文件，然后重启应用即可自动识别：
-
-1. 应用安装/运行目录下的 `locales\` 文件夹（例如 `<AppDir>\locales\de.json`）
-2. 当前用户配置目录下的 `locales\` 文件夹：`%LOCALAPPDATA%\RelaxDesk\locales\`（例如 `%LOCALAPPDATA%\RelaxDesk\locales\de.json`）
-
-### 文件格式示例
-
-推荐使用包含 `code`、`displayName` 和 `strings` 的标准 JSON 格式（参考内置文件 `src/RelaxDesk.Core/Localization/Locales/en.json`）：
-
-```json
-{
-  "code": "de",
-  "displayName": "Deutsch",
-  "strings": {
-    "Common.Cancel": "Abbrechen",
-    "Host.WindowTitle": "RelaxDesk Host",
-    "Host.StartSharing": "Freigabe starten",
-    "Viewer.WindowTitle": "RelaxDesk Remotedesktopverbindung"
-  }
-}
+```powershell
+python scripts/test-localization.py
+dotnet run --project src/RelaxDesk.Tests -c Release
+dotnet src/RelaxDesk.Viewer/bin/Release/net11.0-windows/RelaxDesk.Viewer.dll --localization-contracts build/viewer-localization
+dotnet src/RelaxDesk.HostShell/bin/Release/net11.0-windows/RelaxDesk.HostShell.dll --localization-contracts build/host-localization
 ```
 
-### 说明
-
-- **部分翻译回退**：自定义文件中未提供的键（key）会自动回退显示英文（`en`）。
-- **覆盖内置语言**：如果放入与内置语言同名的文件（例如 `zh-CN.json`），其中的条目会覆盖内置翻译。
-- **容错保护**：单个翻译文件大小上限为 1 MiB；格式损坏的外部文件会被自动忽略，不会影响应用启动。
+The shared office acceptance list includes both GUI cases. These checks cover five rendered languages, live bindings, dynamic video menus with no description rows, long labels, matching resources and unchanged sample user text. Physical mixed-DPI monitors, native UAC dialogs, external custom translation layouts and exhaustive native-speaker review remain manual coverage.

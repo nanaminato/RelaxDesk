@@ -2,13 +2,13 @@
 
 ## Full-control connection
 
-Production Host and Viewer use the v3 full-control handshake. The Viewer
+Production Host and Viewer use the v5 full-control handshake. The Viewer
 proves its device identity over TLS before the Host displays the local approval
-prompt. Approval enables the offered features within Host configuration. The
+prompt. Approval enables the complete desktop profile, including file copy, clipboard and system audio. There are no per-feature approvals or stop commands. Earlier profiles are rejected. The
 production listener accepts only the full-control handshake. Media and auxiliary
 channel framing use their respective protocol versions.
 Synthetic loopback fixtures use the same handshake and can exercise mocked
-feature selections without launching the elevated input worker.
+component failures without launching the elevated input worker.
 
 
 ## Current session behavior
@@ -17,13 +17,15 @@ The operator previews the authenticated device fingerprint and available
 features, then approves or denies the entire connection. Approved connections
 permit keyboard and mouse input on the eligible Default desktop, including
 administrator windows when the protected input worker is ready. Clipboard,
-audio and scoped files remain configurable features. File access requires a
-Host-selected directory and stays within it. Disconnect ends the entire grant.
+system audio and file copy/paste belong to the same approved connection. Host
+staging is automatic; copied sources retain identity, path and integrity checks.
+There is no standalone file browser or per-feature approval/revoke UI.
 
-The Host can remember the device fingerprint after local approval. Saved
-devices still require a fresh approval on every connection, and revoking trust
-ends the matching active connection. The identity-only store does not import
-old mode-scoped records.
+The Host remembers a new device after its first approved password connection.
+Recognized devices still authenticate the configured password and pinned server
+identity, but do not need another approval. Revoking whole-device trust ends the
+matching active connection. Per-feature grant records are no longer read or
+written. Earlier handshakes and partial profiles are rejected.
 
 The coordinator refuses real sharing if its effective process token is
 elevated, above medium integrity, or has UIAccess, or if it is impersonating.

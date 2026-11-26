@@ -1,15 +1,16 @@
 <UserControl x:Class="RelaxDesk.HostShell.HostLoginSettings" x:ClassModifier="internal"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:RelaxDesk.SharedUI"
              xmlns:core="clr-namespace:RelaxDesk.Core;assembly=RelaxDesk.Core">
     <StackPanel>
         <TextBlock x:Name="UserNameLabel" FontWeight="SemiBold" Margin="0,0,0,4" TextWrapping="Wrap" />
         <TextBox x:Name="UserName" MaxLength="{x:Static core:PasswordVerifier.MaximumUserNameLength}" />
         <TextBlock x:Name="PasswordLabel" FontWeight="SemiBold" Margin="0,0,0,4" TextWrapping="Wrap" />
         <PasswordBox x:Name="Password" MaxLength="{x:Static core:PasswordVerifier.MaximumPasswordLength}" />
-        <Button x:Name="Save" Content="保存登录设置" />
+        <Button x:Name="Save" Content="{ui:Loc Ui.HostLoginSettings.Text098}" />
         <TextBlock x:Name="Notice" TextWrapping="Wrap" />
-        <TextBlock Text="受控端 TLS 指纹" FontWeight="SemiBold" Margin="0,0,0,4" />
-        <TextBox x:Name="Fingerprint" Text="开始共享后显示。首次连接时请核对两端指纹。" TextWrapping="Wrap" IsReadOnly="True" />
+        <TextBlock Text="{ui:Loc Ui.HostLoginSettings.Text149}" FontWeight="SemiBold" Margin="0,0,0,4" />
+        <TextBox x:Name="Fingerprint" Text="{ui:Loc Ui.HostLoginSettings.Text230}" TextWrapping="Wrap" IsReadOnly="True" />
     </StackPanel>
 </UserControl>

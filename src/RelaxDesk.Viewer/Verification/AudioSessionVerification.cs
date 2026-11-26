@@ -30,14 +30,13 @@ public sealed partial class ViewerWindow
         var logs=Task.Run(async()=>
         {
             string? line;while((line=await host.StandardOutput.ReadLineAsync(timeout.Token)) is not null)
-                if(line.StartsWith("Optional system output mix requested",StringComparison.Ordinal)){await host.StandardInput.WriteLineAsync("APPROVE_AUDIO");await host.StandardInput.FlushAsync();break;}
+                if(line.Contains("Type APPROVE",StringComparison.Ordinal)){await host.StandardInput.WriteLineAsync("APPROVE");await host.StandardInput.FlushAsync();break;}
             return await host.StandardOutput.ReadToEndAsync(timeout.Token);
         });
         var window=new ViewerWindow{ShowActivated=false};Task? running=null;
         int generation=0;var sinks=new System.Collections.Concurrent.ConcurrentQueue<TestAudioSink>();
         window.AudioSinkForVerification=()=>{var sink=new TestAudioSink(()=>Volatile.Read(ref generation),Volatile.Read(ref generation));sinks.Enqueue(sink);return sink;};
-        if(window.requestAudio.IsChecked!=true)throw new IOException("Viewer sound disabled by default");
-        window.requestAudio.IsChecked=true;window.host.Text="127.0.0.1";window.port.Text=number.ToString();window.fingerprint.Text=pin;window.token.Password=token;window.pinnedConnection.IsChecked=true;window.gpuRendering.IsChecked=false;
+        window.host.Text="127.0.0.1";window.port.Text=number.ToString();window.fingerprint.Text=pin;window.token.Password=token;window.pinnedConnection.IsChecked=true;window.gpuRendering.IsChecked=false;
         async Task Until(Func<bool> condition){while(!condition())await Task.Delay(20,timeout.Token);}
         window.Loaded+=async(_,_)=>
         {

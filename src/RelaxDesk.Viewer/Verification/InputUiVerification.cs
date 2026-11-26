@@ -18,10 +18,7 @@ public sealed partial class ViewerWindow
             TextInputWindow? dialog=null;
             try
             {
-                Check(window.requestClipboard.IsChecked==true&&window.requestClipboardImage.IsChecked==true&&window.requestClipboardHtml.IsChecked==true&&window.RequestedFeatures().Contains(SessionCapabilities.ClipboardFiles));
-                window.requestFileClipboard.IsChecked = false;
-                Check(!window.RequestedFeatures().Any(feature => feature is SessionCapabilities.FileTransfer or SessionCapabilities.ClipboardFiles));
-                window.requestFileClipboard.IsChecked = true;
+                Check(window.RequestedFeatures().SequenceEqual(SessionCapabilities.All));
                 using var lifetime=new CancellationTokenSource();window.session=lifetime;window.inputVersion=2;
                 window.SendRawKey(65,(nint)((30L<<16)|1),false);Check(window.outgoing.Depth==0);
                 window.inputAuthorized=true;

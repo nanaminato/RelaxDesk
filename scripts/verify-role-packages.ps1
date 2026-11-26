@@ -132,7 +132,7 @@ try {
         $quicSession.Contains('PASS persistent QUIC loss caused Host TCP fallback') -and
         $quicSession.Contains('PASS Auto recovered UDP again after previously recovering and falling back') -and
         $quicSession.Contains('PASS recovered-path loss triggered Host TCP fallback') -and
-        $quicSession.Contains('PASS independently approved TLS audio continued through repeated TCP/UDP video switches') -and
+        $quicSession.Contains('PASS session TLS audio continued through repeated TCP/UDP video switches') -and
         $quicSession.Contains('PASS healthy static UDP video stayed connected through the datagram silence interval') -and
         $quicSession.Contains('PASS requested static desktop refresh delivered a decodable key frame over the same UDP path')) 'Packaged Host QUIC, fallback, or static refresh evidence missing'
     Confirm ($quicSession -match '(?m)^PASS shaped UDP 524288 B/s cap, 8/20 ms delay pulses, shaped_packets=[1-9][0-9]*, reordered_pairs=[1-9][0-9]*, QUIC_reordered=[1-9][0-9]*, advancing H\.264 and jitter statistics') 'Packaged Host shaped UDP delay, reordering or jitter evidence missing'
@@ -142,15 +142,14 @@ try {
         $quicSession.Contains('PASS loss relay drove the running H.264 encoder from 8 to 6 Mbit/s target')) 'Packaged Host measured UDP loss or bitrate adaptation evidence missing'
     $autoFiles = Invoke-App 'packaged-auto-files' $SmokeApplication @($hostExe, '--file-transfer-auto', (Join-Path $output 'auto-file-fixtures')) 150
     Confirm ($autoFiles.Contains('PASS Auto switched from TCP to UDP during the same download, file SHA-256 verified and TLS control kept alive')) 'Packaged Host file integrity during Auto recovery evidence missing'
-    Confirm ($autoFiles.Contains('PASS independently approved TLS audio advanced during the download and TCP-to-UDP video recovery')) 'Packaged Host concurrent audio evidence missing'
+    Confirm ($autoFiles.Contains('PASS session TLS audio advanced during the download and TCP-to-UDP video recovery')) 'Packaged Host concurrent audio evidence missing'
     Confirm ($autoFiles -match '(?m)^PASS shared downstream included TLS audio: audio_tls_bytes=[1-9][0-9]*') 'Packaged Host shared downstream audio evidence missing'
     $udpFiles = Invoke-App 'packaged-udp-files' $SmokeApplication @($hostExe, '--file-transfer-udp', (Join-Path $output 'udp-file-fixtures')) 150
     Confirm ($udpFiles -match '(?m)^PASS shared downstream cap=[1-9][0-9]* B/s: active download video_transport=UDP, video_forwarded_bytes=[1-9][0-9]*, file_tls_bytes=[1-9][0-9]*' -and
         $udpFiles.Contains('PASS concurrent video and files with UDP media capped')) 'Packaged Host shared UDP video and TLS file bandwidth evidence missing'
-    $resumeFiles = Invoke-App 'packaged-file-resume' $viewerExe @('--file-resume-session-contracts', $hostExe, (Join-Path $output 'file-resume-fixtures')) 150
-    Confirm ($resumeFiles.Contains('PASS production Host/Viewer/TLS directory upload recovery') -and
-        $resumeFiles.Contains('PASS production TLS directory download recovery') -and
-        $resumeFiles.Contains('PASS revoke before resume confirmation')) 'Packaged file resume or revocation evidence missing'
+    $clipboardCopy = Invoke-App 'packaged-file-copy' $viewerExe @('--unified-session-contracts', $hostExe, (Join-Path $output 'file-copy-fixtures')) 150
+    Confirm ($clipboardCopy.Contains('PASS single session approval: automatic remote/local file clipboard copy')) 'Packaged automatic file copy evidence missing'
+
     $fallbackStatistics = Invoke-App 'packaged-viewer-fallback-statistics' $viewerExe @('--statistics-contracts', $hostExe, (Join-Path $output 'fallback-statistics-fixtures'), 'oversized') 150
     Confirm ($fallbackStatistics.Contains('PASS WPF shows the authenticated oversized UDP frame fallback reason')) 'Packaged Viewer fallback statistics evidence missing'
     $sessionEnd = Invoke-App 'packaged-host-session-end' $SmokeApplication @($hostExe, '--session-unavailable')
@@ -162,8 +161,9 @@ try {
     Confirm ($inputLifecycle.Contains('PASS one full-control approval enables clipboard, scoped files, audio and display selection over TLS')) 'Packaged whole-connection feature negotiation evidence missing'
     Confirm ($inputLifecycle.Contains('PASS full-control disconnect releases input and requires fresh consent') -and
         $inputLifecycle.Contains('PASS full-control worker loss releases input and requires fresh consent')) 'Packaged full-control input cleanup or fresh consent evidence missing'
-    $deviceTrust = Invoke-App 'packaged-device-trust' $shellExe @('--device-trust-contracts',$hostExe,(Join-Path $output 'device-trust-fixtures'))
-    Confirm ($deviceTrust.Contains('PASS WPF device trust') -and $deviceTrust.Contains('PASS WPF saved device requires fresh Host consent')) 'Packaged device trust and fresh consent evidence missing'
+    $deviceTrust = Invoke-App 'packaged-first-approval' $shellExe @('--password-login-contracts',$hostExe,(Join-Path $output 'device-trust-fixtures'))
+    Confirm ($deviceTrust.Contains('PASS password TLS, legacy rejection, first approval, unattended return, pinned reconnect, device mismatch, and revocation')) 'Packaged first approval and recognized-device authentication evidence missing'
+
     $details=[pscustomobject]@{version=$hostPackage.metadata.version;revision=$hostPackage.metadata.revision;native_sha256=$native[0];quic_tls_provider=$provider;quic_runtime_version=$hostPackage.metadata.quic_runtime_version;packages=@($packages | ForEach-Object {[pscustomobject]@{role=$_.metadata.role;archive=$_.archive;sha256=$_.sha256;bytes=$_.bytes;manifest_files=$_.manifest_files}})}
     $status=if($SkipMachineServicePreview){'PASS_SEPARATE_PACKAGES_SYNTHETIC_ONLY_MACHINE_PREVIEW_SKIPPED'}else{'PASS_SEPARATE_PACKAGES_SYNTHETIC_ONLY'}
 } finally {

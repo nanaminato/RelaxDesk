@@ -38,12 +38,10 @@ internal static class FileProtocolChecks
         foreach(var invalid in new[]{valid with{Sequence=0},valid with{Id="bad"},valid with{Offset=-1},valid with{Data=[]},valid with{Data=new byte[TransferLimits.ChunkBytes+1]},valid with{Path="x"},valid with{Hash=new string('A',64)},valid with{Length=-1},valid with{Kind="unknown"},valid with{Entries=[]},valid with{Overwrite=true}})Reject(()=>FileDataProtocol.Validate(invalid));
         byte[] header=new byte[4];BinaryPrimitives.WriteInt32LittleEndian(header,FileDataProtocol.EnvelopeLimit+1);
         try{await FileDataProtocol.Read(new MemoryStream(header),default);throw new Exception("Oversize file data accepted");}catch(InvalidDataException){count++;}
-        Check(SessionCapabilities.Grant([SessionCapabilities.FileTransfer],false,false).Length==0);
-        Check(SessionCapabilities.Grant([SessionCapabilities.FileTransfer],false,true) is [SessionCapabilities.FileTransfer]);
         var gate=new AccessGate();gate.Approve([SessionCapabilities.FileTransfer]);Check(gate.Allows(SessionCapabilities.FileTransfer)&&!gate.Allows(SessionCapabilities.ClipboardText));
         Check(!gate.AcceptControl(new("file-state-v2",1,Code:1)));Check(!gate.AcceptControl(new("file-state-v2",1,Features:[SessionCapabilities.ClipboardText])));
         Check(!gate.AcceptControl(new("file-state-v2",1,FileResume:true)));Check(!gate.AcceptControl(new("file-state-v2",1,FileScope:Guid.NewGuid().ToString("N"))));
-        Check(gate.AcceptControl(new("file-state-v2",1)));gate.RevokeFeature(SessionCapabilities.FileTransfer);Check(gate.AcceptControl(new("file-state-v2",2)));
+        Check(!gate.AcceptControl(new("file-state-v2",1)));gate.RevokeFeature(SessionCapabilities.FileTransfer);Check(!gate.AcceptControl(new("file-state-v2",2)));
         Check(gate.Accept(new("input",3,Code:65)));gate.Revoke();Check(!gate.Allows(SessionCapabilities.FileTransfer));Check(!gate.AcceptControl(new("file-state-v2",4)));
         return count;
     }

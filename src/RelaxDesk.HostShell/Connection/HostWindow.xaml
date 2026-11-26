@@ -206,7 +206,7 @@
                     </Border>
                     <Border x:Name="loginSection" Style="{StaticResource HostCard}">
                         <DockPanel>
-                            <Button x:Name="openLogin" DockPanel.Dock="Right" Content="{ui:Loc Common.OpenSettings}" VerticalAlignment="Center" MinWidth="104" AutomationProperties.Name="打开登录设置" />
+                            <Button x:Name="openLogin" DockPanel.Dock="Right" Content="{ui:Loc Common.OpenSettings}" VerticalAlignment="Center" MinWidth="104" AutomationProperties.Name="{ui:Loc Ui.HostWindow.xamlAutomationProperties.Text239}" />
                             <StackPanel Margin="0,0,16,0" VerticalAlignment="Center">
                                 <TextBlock Text="{ui:Loc Host.LoginSettings}" Style="{StaticResource SectionTitle}" />
                                 <TextBlock x:Name="loginOverview" Text="{ui:Loc Host.LoadingLoginSettings}" Style="{StaticResource Overview}" />
@@ -226,7 +226,7 @@
                     </Border>
                     <Border Style="{StaticResource HostCard}">
                         <DockPanel>
-                            <Button x:Name="openDevices" DockPanel.Dock="Right" Content="{ui:Loc Common.OpenSettings}" VerticalAlignment="Center" MinWidth="104" AutomationProperties.Name="打开受信任的设备" />
+                            <Button x:Name="openDevices" DockPanel.Dock="Right" Content="{ui:Loc Common.OpenSettings}" VerticalAlignment="Center" MinWidth="104" AutomationProperties.Name="{ui:Loc Ui.HostWindow.xamlAutomationProperties.Text237}" />
                             <StackPanel Margin="0,0,16,0" VerticalAlignment="Center">
                                 <TextBlock Text="{ui:Loc Host.TrustedDevices}" Style="{StaticResource SectionTitle}" />
                                 <TextBlock x:Name="deviceOverview" Text="{ui:Loc Host.LoadingDevices}" Style="{StaticResource Overview}" />
@@ -235,7 +235,7 @@
                     </Border>
                     <Border Style="{StaticResource HostCard}">
                         <DockPanel>
-                            <Button x:Name="openLogs" DockPanel.Dock="Right" Content="{ui:Loc Common.View}" VerticalAlignment="Center" MinWidth="104" AutomationProperties.Name="打开诊断与日志" />
+                            <Button x:Name="openLogs" DockPanel.Dock="Right" Content="{ui:Loc Common.View}" VerticalAlignment="Center" MinWidth="104" AutomationProperties.Name="{ui:Loc Ui.HostWindow.xamlAutomationProperties.Text240}" />
                             <StackPanel Margin="0,0,16,0" VerticalAlignment="Center">
                                 <TextBlock Text="{ui:Loc Host.DiagnosticsAndLogs}" Style="{StaticResource SectionTitle}" Margin="0" />
                             </StackPanel>

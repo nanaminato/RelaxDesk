@@ -1,6 +1,7 @@
 <Window x:Class="RelaxDesk.Viewer.SessionToolbar" x:ClassModifier="internal"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:RelaxDesk.SharedUI"
         xmlns:core="clr-namespace:RelaxDesk.Core;assembly=RelaxDesk.Core"
         xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
         WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False" ShowActivated="False"
@@ -62,34 +63,31 @@
     <Border Background="#205B8F" CornerRadius="0,0,5,5" BorderBrush="#567EB8" BorderThickness="1,0,1,1" ClipToBounds="True">
         <Border.Tag>
             <ContextMenu x:Name="ShortcutMenu" FontFamily="Segoe UI, Microsoft YaHei UI" FontSize="13">
-                <MenuItem x:Name="FilesAction" Header="文件传输…" IsEnabled="False" />
-                <MenuItem x:Name="remoteKeys" Header="远程快捷键">
-                    <MenuItem Header="复制  Ctrl+C" Tag="{x:Static core:RemoteShortcut.Copy}" />
-                    <MenuItem Header="粘贴  Ctrl+V" Tag="{x:Static core:RemoteShortcut.Paste}" />
-                    <MenuItem Header="剪切  Ctrl+X" Tag="{x:Static core:RemoteShortcut.Cut}" />
-                    <MenuItem Header="全选  Ctrl+A" Tag="{x:Static core:RemoteShortcut.SelectAll}" />
-                    <MenuItem Header="撤销  Ctrl+Z" Tag="{x:Static core:RemoteShortcut.Undo}" />
-                    <MenuItem Header="重做  Ctrl+Y" Tag="{x:Static core:RemoteShortcut.Redo}" />
-                    <MenuItem Header="保存  Ctrl+S" Tag="{x:Static core:RemoteShortcut.Save}" />
-                    <MenuItem Header="查找  Ctrl+F" Tag="{x:Static core:RemoteShortcut.Find}" />
-                    <MenuItem Header="地址栏  Ctrl+L" Tag="{x:Static core:RemoteShortcut.AddressBar}" />
-                    <MenuItem Header="任务管理器  Ctrl+Shift+Esc" Tag="{x:Static core:RemoteShortcut.TaskManager}" />
-                    <MenuItem Header="关闭远程窗口  Alt+F4" Tag="{x:Static core:RemoteShortcut.CloseWindow}" />
-                    <MenuItem Header="切换远程窗口  Alt+Tab" Tag="{x:Static core:RemoteShortcut.SwitchWindow}" />
-                    <MenuItem Header="文件资源管理器  Win+E" Tag="{x:Static core:RemoteShortcut.Explorer}" />
-                    <MenuItem Header="显示桌面  Win+D" Tag="{x:Static core:RemoteShortcut.Desktop}" />
-                    <MenuItem Header="运行  Win+R" Tag="{x:Static core:RemoteShortcut.Run}" />
+                <MenuItem x:Name="remoteKeys" Header="{ui:Loc Ui.SessionToolbar.Text476}">
+                    <MenuItem Header="{ui:Loc Ui.SessionToolbar.Text166}" Tag="{x:Static core:RemoteShortcut.Copy}" />
+                    <MenuItem Header="{ui:Loc Ui.SessionToolbar.Text415}" Tag="{x:Static core:RemoteShortcut.Paste}" />
+                    <MenuItem Header="{ui:Loc Ui.SessionToolbar.Text134}" Tag="{x:Static core:RemoteShortcut.Cut}" />
+                    <MenuItem Header="{ui:Loc Ui.SessionToolbar.Text117}" Tag="{x:Static core:RemoteShortcut.SelectAll}" />
+                    <MenuItem Header="{ui:Loc Ui.SessionToolbar.Text244}" Tag="{x:Static core:RemoteShortcut.Undo}" />
+                    <MenuItem Header="{ui:Loc Ui.SessionToolbar.Text500}" Tag="{x:Static core:RemoteShortcut.Redo}" />
+                    <MenuItem Header="{ui:Loc Ui.SessionToolbar.Text097}" Tag="{x:Static core:RemoteShortcut.Save}" />
+                    <MenuItem Header="{ui:Loc Ui.SessionToolbar.Text342}" Tag="{x:Static core:RemoteShortcut.Find}" />
+                    <MenuItem Header="{ui:Loc Ui.SessionToolbar.Text160}" Tag="{x:Static core:RemoteShortcut.AddressBar}" />
+                    <MenuItem Header="{ui:Loc Ui.SessionToolbar.Text086}" Tag="{x:Static core:RemoteShortcut.TaskManager}" />
+                    <MenuItem Header="{ui:Loc Ui.SessionToolbar.Text125}" Tag="{x:Static core:RemoteShortcut.CloseWindow}" />
+                    <MenuItem Header="{ui:Loc Ui.SessionToolbar.Text129}" Tag="{x:Static core:RemoteShortcut.SwitchWindow}" />
+                    <MenuItem Header="{ui:Loc Ui.SessionToolbar.Text277}" Tag="{x:Static core:RemoteShortcut.Explorer}" />
+                    <MenuItem Header="{ui:Loc Ui.SessionToolbar.Text303}" Tag="{x:Static core:RemoteShortcut.Desktop}" />
+                    <MenuItem Header="{ui:Loc Ui.SessionToolbar.Text470}" Tag="{x:Static core:RemoteShortcut.Run}" />
                 </MenuItem>
                 <Separator />
-                <MenuItem x:Name="clipboard" Header="停止剪贴板同步" ToolTip="重新开启需重新连接。" IsEnabled="False" Visibility="Collapsed" />
-                <MenuItem x:Name="textInput" Header="本机输入法 → 发送已完成的文字" IsEnabled="False" />
-                <MenuItem x:Name="fileClipboard" Header="文件剪贴板…" IsEnabled="False" />
-                <MenuItem x:Name="displays" Header="显示器（Host 未开放切换）" IsEnabled="False" />
-                <MenuItem x:Name="zoom" Header="画面缩放">
-                    <MenuItem Header="适应窗口（保持比例）" Tag="0" IsCheckable="True" />
+                <MenuItem x:Name="textInput" Header="{ui:Loc Ui.SessionToolbar.Text334}" IsEnabled="False" />
+                <MenuItem x:Name="displays" Header="{ui:Loc Ui.SessionToolbar.Text299}" IsEnabled="False" />
+                <MenuItem x:Name="zoom" Header="{ui:Loc Ui.SessionToolbar.Text387}">
+                    <MenuItem Header="{ui:Loc Ui.SessionToolbar.Text490}" Tag="0" IsCheckable="True" />
                     <MenuItem Header="50%" Tag="50" IsCheckable="True" />
                     <MenuItem Header="75%" Tag="75" IsCheckable="True" />
-                    <MenuItem Header="1:1 · 100%（物理像素）" Tag="100" IsCheckable="True" />
+                    <MenuItem Header="{ui:Loc Ui.SessionToolbar.Text021}" Tag="100" IsCheckable="True" />
                     <MenuItem Header="125%" Tag="125" IsCheckable="True" />
                     <MenuItem Header="150%" Tag="150" IsCheckable="True" />
                     <MenuItem Header="200%" Tag="200" IsCheckable="True" />
@@ -99,27 +97,27 @@
                     <MenuItem StaysOpenOnClick="True">
                         <MenuItem.Header>
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="自定义 25–400%  " VerticalAlignment="Center" />
+                                <TextBlock Text="{ui:Loc Ui.SessionToolbar.Text435}" VerticalAlignment="Center" />
                                 <TextBox x:Name="customZoom" Width="60" MaxLength="3" />
-                                <Button x:Name="applyCustomZoom" Content="应用" Padding="8,2,8,2" Style="{x:Null}" />
+                                <Button x:Name="applyCustomZoom" Content="{ui:Loc Ui.SessionToolbar.Text228}" Padding="8,2,8,2" Style="{x:Null}" />
                             </StackPanel>
                         </MenuItem.Header>
                     </MenuItem>
                 </MenuItem>
-                <MenuItem x:Name="audio" Header="声音未授权 / 已关闭" IsEnabled="False" />
-                <MenuItem x:Name="statistics" Header="连接统计（只读）" IsEnabled="False" />
-                <MenuItem x:Name="videoSettings" Header="视频设置（Host 未开放）" IsEnabled="False" />
+                <MenuItem x:Name="audio" Header="{ui:Loc Ui.SessionToolbar.Text165}" IsEnabled="False" />
+                <MenuItem x:Name="statistics" Header="{ui:Loc Ui.SessionToolbar.Text489}" IsEnabled="False" />
+                <MenuItem x:Name="videoSettings" Header="{ui:Loc Ui.SessionToolbar.Text444}" IsEnabled="False" />
             </ContextMenu>
         </Border.Tag>
         <DockPanel x:Name="bar">
-            <ToggleButton x:Name="pin" DockPanel.Dock="Left" Content="&#xE718;" ToolTip="固定连接栏" automation:AutomationProperties.Name="固定连接栏" />
+            <ToggleButton x:Name="pin" DockPanel.Dock="Left" Content="&#xE718;" ToolTip="{ui:Loc Ui.SessionToolbar.Text157}" automation:AutomationProperties.Name="{ui:Loc Ui.SessionToolbar.Text157}" />
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                <Button x:Name="ShortcutsButton" Content="&#xE712;" ToolTip="会话菜单" automation:AutomationProperties.Name="会话菜单" />
-                <Button x:Name="minimize" Content="&#xE921;" ToolTip="最小化" automation:AutomationProperties.Name="最小化" />
-                <Button x:Name="full" Content="&#xE922;" ToolTip="切换全屏和窗口（Ctrl+Alt+Break）" automation:AutomationProperties.Name="全屏" />
-                <Button x:Name="DisconnectButton" Content="&#xE8BB;" ToolTip="断开连接" automation:AutomationProperties.Name="断开连接" />
+                <Button x:Name="ShortcutsButton" Content="&#xE712;" ToolTip="{ui:Loc Ui.SessionToolbar.Text091}" automation:AutomationProperties.Name="{ui:Loc Ui.SessionToolbar.Text091}" />
+                <Button x:Name="minimize" Content="&#xE921;" ToolTip="{ui:Loc Ui.SessionToolbar.Text306}" automation:AutomationProperties.Name="{ui:Loc Ui.SessionToolbar.Text306}" />
+                <Button x:Name="full" Content="&#xE922;" ToolTip="{ui:Loc Ui.SessionToolbar.Text128}" automation:AutomationProperties.Name="{ui:Loc Ui.SessionToolbar.Text116}" />
+                <Button x:Name="DisconnectButton" Content="&#xE8BB;" ToolTip="{ui:Loc Viewer.Disconnect}" automation:AutomationProperties.Name="{ui:Loc Viewer.Disconnect}" />
             </StackPanel>
-            <Border x:Name="dragRegion" Background="Transparent" Cursor="SizeWE" ToolTip="左右拖动连接栏">
+            <Border x:Name="dragRegion" Background="Transparent" Cursor="SizeWE" ToolTip="{ui:Loc Ui.SessionToolbar.Text190}">
                 <TextBlock x:Name="endpoint" Foreground="White" VerticalAlignment="Center" Margin="8,0" MaxWidth="280"
                            TextTrimming="CharacterEllipsis" TextAlignment="Center" />
             </Border>

@@ -11,19 +11,19 @@ internal static class TopologySmoke
         string root=Path.Combine(Path.GetFullPath(fixtures),"topology-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);File.WriteAllText(Path.Combine(root,"check.txt"),"topology test fixture");
         var reservation=new TcpListener(IPAddress.Loopback,0);reservation.Start();int port=((IPEndPoint)reservation.LocalEndpoint).Port;reservation.Stop();
         using var host=Process.Start(ChildProcess.Create(application,"--file-root",root,"127.0.0.1",port.ToString(),"test-topology"))??throw new IOException("Topology Host failed");
-        using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(45));using var client=new SessionClient{RequestedDisplayVersion=2,RequestedFeatures=[SessionCapabilities.FileTransfer]};
+        using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(45));using var client=new SessionClient{RequestedDisplayVersion=2,RequestedFeatures=SessionCapabilities.All};
         Task<string>? logs=null;Task? mediaReader=null;var frames=new ConcurrentDictionary<long,int>();var keyframes=new ConcurrentDictionary<long,bool>();
         try
         {
             string pin=(await host.StandardOutput.ReadLineAsync(timeout.Token)??"").Split(": ")[1],token=(await host.StandardOutput.ReadLineAsync(timeout.Token)??"").Split(": ")[1];_=await host.StandardOutput.ReadLineAsync(timeout.Token);
             var connecting=client.Connect("127.0.0.1",port,pin,token,timeout.Token);
-            for(int i=0;i<2;i++)if(!(await host.StandardOutput.ReadLineAsync(timeout.Token)??"").Contains("APPROVE"))throw new IOException("Missing topology/file consent prompt");
-            await host.StandardInput.WriteLineAsync("APPROVE_FILES");await host.StandardInput.FlushAsync();logs=host.StandardOutput.ReadToEndAsync(timeout.Token);await connecting;
+            for(int i=0;i<1;i++)if(!(await host.StandardOutput.ReadLineAsync(timeout.Token)??"").Contains("APPROVE"))throw new IOException("Missing topology/file consent prompt");
+            await host.StandardInput.WriteLineAsync("APPROVE");await host.StandardInput.FlushAsync();logs=host.StandardOutput.ReadToEndAsync(timeout.Token);await connecting;
             if(client.DisplayVersion!=2||client.Data is null||client.DisplayState is null)throw new IOException("Topology/file negotiation missing");
             await using var files=new FileTransferClient(client.Data,timeout.Token,supportsResume:client.SupportsFileResume);
             mediaReader=Task.Run(async()=>
             {
-                try{while(true){var frame=await MediaProtocol.Read(client.Media,timeout.Token,true);frames.AddOrUpdate(frame.DisplayGeneration,1,(_,count)=>count+1);if(frame.KeyFrame)keyframes[frame.DisplayGeneration]=true;}}
+                try{while(true){var frame=await client.Video.Read(timeout.Token);frames.AddOrUpdate(frame.DisplayGeneration,1,(_,count)=>count+1);if(frame.KeyFrame)keyframes[frame.DisplayGeneration]=true;}}
                 catch(Exception error)when(error is IOException or OperationCanceledException or ObjectDisposedException){}
             });
             long sequence=0,current=1;int pongs=0,transitions=0,lists=0;var unavailable=new HashSet<long>();

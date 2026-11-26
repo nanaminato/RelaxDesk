@@ -1,3 +1,4 @@
+using RelaxDesk.Core.Localization;
 namespace RelaxDesk.Core;
 
 public sealed record DisplayBounds(int X,int Y,int Width,int Height)
@@ -8,7 +9,7 @@ public sealed record DisplayBounds(int X,int Y,int Width,int Height)
 }
 public sealed record DisplayInfo(string Id,DisplayBounds Bounds,int Rotation,int DpiX,int DpiY,bool Primary,bool? Hdr,string? Identity=null)
 {
-    public override string ToString()=>$"{Id} · {Bounds.Width}×{Bounds.Height} · 约{DpiX*100/96}%"+(Primary?" · 主屏":"")+(Hdr==true?" · HDR":"");
+    public override string ToString()=>Strings.Format("Ui.Displays.Text059",Id,Bounds.Width,Bounds.Height,DpiX*100/96)+(Primary?Strings.Get("Ui.Displays.Text018"):"")+(Hdr==true?" · HDR":"");
 }
 public static class DisplayTopology
 {

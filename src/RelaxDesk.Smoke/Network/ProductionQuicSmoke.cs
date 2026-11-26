@@ -62,7 +62,7 @@ internal static class ProductionQuicSmoke
         using var viewer = new SessionClient
         {
             Network = mode,
-            RequestedFeatures = exerciseAudio ? [SessionCapabilities.SystemAudio] : [],
+            RequestedFeatures=SessionCapabilities.All,
             RequestQuicRecovery = hideUdp || noLocalUdp,
             ConnectQuic = noLocalUdp ? null : hideUdp ? (endpoint, certificate) =>
                 {
@@ -105,7 +105,7 @@ internal static class ProductionQuicSmoke
             var approval = await process.StandardOutput.ReadLineAsync(ct);
             if (!(approval ?? "").Contains("APPROVE", StringComparison.Ordinal))
                 throw new IOException($"Host approval prompt missing: {approval}");
-            await process.StandardInput.WriteLineAsync(exerciseAudio ? "APPROVE_AUDIO" : "APPROVE");
+            await process.StandardInput.WriteLineAsync("APPROVE");
             await process.StandardInput.FlushAsync(ct);
             try { await handshake; }
             catch (UdpMediaUnavailableException error) when (transport is null &&
@@ -284,7 +284,7 @@ internal static class ProductionQuicSmoke
                     throw new IOException("Recovered-path loss did not report the new fallback with UDP statistics cleared on TCP");
                 Console.WriteLine($"PASS recovered-path loss triggered Host TCP fallback: dropped={recoveredRelay.Dropped}");
                 await CheckAudio(Interlocked.Read(ref audioSequence));
-                Console.WriteLine("PASS independently approved TLS audio continued through repeated TCP/UDP video switches");
+                Console.WriteLine("PASS session TLS audio continued through repeated TCP/UDP video switches");
             }
             if (relay is not null && persistentLoss)
             {

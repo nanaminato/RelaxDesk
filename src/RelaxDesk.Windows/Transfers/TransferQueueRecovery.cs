@@ -1,3 +1,4 @@
+using RelaxDesk.Core.Localization;
 namespace RelaxDesk.Windows;
 
 // A bounded, in-memory manifest with ownership of its one interrupted file.
@@ -25,7 +26,7 @@ public sealed class TransferQueueRecovery : IAsyncDisposable
     {
         lock (sync)
         {
-            if (jobs is null || DateTimeOffset.UtcNow >= expires) throw new InvalidOperationException("续传任务已过期或已处理");
+            if (jobs is null || DateTimeOffset.UtcNow >= expires) throw new InvalidOperationException(Strings.Get("Ui.TransferQueueRecovery.Text427"));
             var result = jobs; jobs = null; expiry.Cancel(); return result;
         }
     }
