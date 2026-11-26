@@ -29,6 +29,8 @@ public sealed partial class ViewerWindow
                 double compactHeight = window.Height;
                 Check(window.BasicConnectionReady && !window.optionsExpanded && window.Width == 560);
                 Check(window.rememberCredentials.IsVisible && window.rememberCredentials.IsChecked != true);
+                window.port.Text = "48200"; window.port.UpdateLayout();
+                Check(window.port.GetRectFromCharacterIndex(4, true).Right <= window.port.ActualWidth - window.port.Padding.Right);
                 Snapshot(window, "connection");
                 window.SetOptionsExpanded(true);
                 await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);

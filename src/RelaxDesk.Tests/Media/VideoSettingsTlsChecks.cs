@@ -12,7 +12,7 @@ internal static class VideoSettingsTlsChecks
         {
             bool success=mode is "new" or "old";int requested=mode=="unsolicited"?0:1,version=mode is "old" or "unsolicited-state"?0:mode=="unsupported"?2:1;
             VideoSettings? state=mode is "old" or "missing"?null:VideoSettingsProtocol.Default;
-            if(mode=="bad-state")state=state! with{FramesPerSecond=61};if(mode=="bad-generation")state=state! with{Generation=2};
+            if(mode=="bad-state")state=state! with{FramesPerSecond=145};if(mode=="bad-generation")state=state! with{Generation=2};
             using var cert=SessionCertificate.Create();using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(10));var listener=new TcpListener(IPAddress.Loopback,0);listener.Start();
             var server=Task.Run(async()=>
             {

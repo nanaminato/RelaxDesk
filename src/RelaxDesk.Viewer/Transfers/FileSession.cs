@@ -34,7 +34,7 @@ public sealed partial class ViewerWindow
         if(pendingFileRecovery is not null&&(!connection.SupportsFileResume||connection.FileScope!=recoveryFileScope||connection.VerifiedFingerprint!=recoveryPeerPin||!connection.Features.Contains(SessionCapabilities.FileTransfer)))await DiscardFileRecovery();
         if (connection.Data is null || !connection.Features.Contains(SessionCapabilities.FileTransfer)) return;
         activeFileScope=connection.FileScope;filePermissionStoppedByUser=false;
-        int rateKiB = fileRateLimit.SelectedIndex switch { 1 => 4096, 2 => 1024, 3 => 256, _ => 20 * 1024 };
+        int rateKiB = fileRateLimit.SelectedIndex switch { 1 => 4096, 2 => 1024, 3 => 256, 4 => 50 * 1024, 5 => 100 * 1024, 6 => 250 * 1024, 7 => 0, _ => 20 * 1024 };
         fileClient = new(connection.Data, ct, maximumBytesPerSecond: rateKiB * 1024,
             supportsResume: connection.SupportsFileResume, supportsClipboardFiles: connection.Features.Contains(SessionCapabilities.ClipboardFiles));
         fileQueue = new(fileClient, ct);

@@ -32,7 +32,7 @@ internal static class VideoSettingsSmoke
                 }
             },running.Token,TaskCreationOptions.LongRunning,TaskScheduler.Default);
             await Until(()=>observed.ContainsKey(1));int previous=observed[1].Decoder;var state=client.VideoSettings;
-            foreach(var target in deflate?new[]{(15,8_000_000),(60,8_000_000),(30,8_000_000)}:new[]{(15,8_000_000),(15,2_000_000),(60,2_000_000),(30,20_000_000)})
+            foreach(var target in deflate?new[]{(15,8_000_000),(144,8_000_000),(30,8_000_000)}:new[]{(15,8_000_000),(15,2_000_000),(120,60_000_000),(144,100_000_000),(30,20_000_000)})
             {
                 await Task.Delay(1100,timeout.Token);if(staticDesktop&&state!.Generation==1&&Interlocked.Read(ref received)!=1)throw new IOException("Static fixture unexpectedly updated before settings request");await Send("video-settings-v2",new(target.Item1,target.Item2,state!.Generation));
                 var ack=await Wire.Read(client.Control,timeout.Token);if(ack.VideoSettings is null||ack!=new Packet("video-settings-state-v2",VideoVersion:1,VideoSettings:ack.VideoSettings)||ack.VideoSettings!=new VideoSettings(target.Item1,target.Item2,state.Generation+1))throw new IOException("Video settings acknowledgement mismatch");

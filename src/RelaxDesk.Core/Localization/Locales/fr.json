@@ -54,6 +54,7 @@
     "Viewer.MediaTransport": "Transport média :",
     "Viewer.FileRateLimit": "Limite de débit :",
     "Viewer.FileRateDefault": "20 MiB/s (Par défaut)",
+  "Viewer.FileRateUnlimited": "Illimité",
     "Viewer.ResetPin": "Effacer le certificat de l'hôte…",
     "Viewer.StatusConnecting": "Connexion en cours, en attente d'approbation de l'hôte…",
     "Viewer.StatusAuthorized": "Autorisé, réception du bureau…",

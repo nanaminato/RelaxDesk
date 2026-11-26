@@ -74,7 +74,7 @@ public sealed partial class ViewerWindow
         connectionOptions.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
         basicConnection.Visibility = expanded ? Visibility.Collapsed : Visibility.Visible;
         optionsButton.Content = Strings.Get(expanded ? "Viewer.HideOptions" : "Viewer.ShowOptions");
-        Height = expanded ? 610 : 470;
+        Height = Math.Min(expanded ? 610 : 480, SystemParameters.WorkArea.Height);
     }
     SessionToolbar? sessionToolbar;
     internal SessionToolbar? Toolbar => sessionToolbar;

@@ -37,7 +37,7 @@ public sealed partial class ViewerWindow
                 window.preferencesStore = store;
                 window.startFullScreen.IsChecked = false; window.gpuRendering.IsChecked = false;
                 window.requestTopology.IsChecked = false; window.requestClipboardImage.IsChecked = false;
-                window.requestAudio.IsChecked = false; window.networkMode.SelectedIndex = 1; window.fileRateLimit.SelectedIndex = 2;
+                window.requestAudio.IsChecked = false; window.networkMode.SelectedIndex = 1; window.fileRateLimit.SelectedIndex = 7;
                 window.SetViewportZoom(137);
                 using var sessionLifetime = new CancellationTokenSource();
                 window.session = sessionLifetime;
@@ -49,11 +49,11 @@ public sealed partial class ViewerWindow
                 await window.preferencesOperation;
                 var saved = store.Load();
                 Check(saved is { FramesPerSecond:60, Bitrate:20_000_000, Zoom:137, FullScreen:false, Gpu:false,
-                    Topology:false, ClipboardImage:false, Audio:false, Network:1, FileRate:2 });
+                    Topology:false, ClipboardImage:false, Audio:false, Network:1, FileRate:7 });
                 Check(!File.ReadAllText(Path.Combine(root, "viewer.json")).Contains("Password"));
                 restored = new ViewerWindow { preferences = store.Load(), historyStore = history, ShowActivated = false };
                 restored.ApplyPreferences(); restored.Show(); await restored.HistoryOperation;
-                Check(restored.CurrentViewport.Zoom == 137 && restored.startFullScreen.IsChecked == false && restored.networkMode.SelectedIndex == 1);
+                Check(restored.CurrentViewport.Zoom == 137 && restored.startFullScreen.IsChecked == false && restored.networkMode.SelectedIndex == 1 && restored.fileRateLimit.SelectedIndex == 7);
                 Check(restored.host.Text == "192.0.2.2" && restored.port.Text == "48201");
                 restored.session = sessionLifetime;
                 restored.videoSettingsSession = new(VideoSettingsProtocol.Default); restored.restoreVideoPreferences = true;
@@ -67,7 +67,7 @@ public sealed partial class ViewerWindow
                 Check(restored.preferences.Bitrate == 20_000_000);
                 restored.videoSettingsSession = null; restored.restoreVideoPreferences = true;
                 restored.VideoSettingsPresented(Frame(MediaCodec.H264)); Check(restored.outgoing.Depth == 0);
-                Reject(() => store.Save(saved with { FramesPerSecond = 61 }));
+                Reject(() => store.Save(saved with { FramesPerSecond = 145 }));
                 Reject(() => store.Save(saved with { Network = 3 }));
                 Reject(() => store.Save(saved with { Zoom = 401 }));
                 File.WriteAllText(Path.Combine(root, "viewer.json"), "{"); Reject(() => store.Load());

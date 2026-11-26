@@ -120,7 +120,7 @@ internal static class FileTransferSmoke
             });
             if (grant)
             {
-                await using var files = new FileTransferClient(client.Data!, running.Token, 2 * 1024 * 1024);
+                await using var files = new FileTransferClient(client.Data!, running.Token, maximumBytesPerSecond: 0);
                 byte[] payload = new byte[(autoRecovery ? 5 : 2) * 1024 * 1024 + 17]; new Random(718).NextBytes(payload);
                 var pause = new TransferControl(); var paused = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); long reported = 0;
                 if (autoRecovery)

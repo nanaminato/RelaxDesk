@@ -54,6 +54,7 @@
     "Viewer.MediaTransport": "媒体传输:",
     "Viewer.FileRateLimit": "文件限速:",
     "Viewer.FileRateDefault": "20 MiB/s（默认）",
+  "Viewer.FileRateUnlimited": "不限速",
     "Viewer.ResetPin": "清除受控端证书记录…",
     "Viewer.StatusConnecting": "正在连接，等待被控端允许…",
     "Viewer.StatusAuthorized": "已获授权，正在接收桌面…",

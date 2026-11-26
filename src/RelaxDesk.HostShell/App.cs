@@ -8,7 +8,8 @@ public sealed class App:Application
     {
         if(args is ["--version"]){Console.WriteLine(BuildIdentity.Version);return;}
         var app=new App();
-        if(args is ["--service-setup-ui-contracts",var setupHost,var setupOutput])ServiceSetupVerification.Run(app,setupHost,setupOutput);
+        if(args is ["--layout-contracts",var layoutOutput])HostWindow.VerifyLayout(app,layoutOutput);
+        else if(args is ["--service-setup-ui-contracts",var setupHost,var setupOutput])ServiceSetupVerification.Run(app,setupHost,setupOutput);
         else if(args is ["--service-contracts",var serviceHost,var service])ServiceVerification.Run(app,serviceHost,service);
         else if(args is ["--device-trust-contracts",var trustHost,var trustOutput]) HostWindow.VerifyDeviceTrust(app,trustHost,trustOutput);
         else if(args is ["--password-login-contracts",var loginHost,var loginOutput]) HostWindow.VerifyPasswordLogin(app,loginHost,loginOutput);

@@ -11,6 +11,11 @@ internal static class FileProtocolChecks
         foreach (string path in new[] { "../x", "..\\x", "C:\\x", "\\\\server\\x", "/root", "a//b", "a/./b", "a/../b", "a:stream", "a\0b", "CON", "con.txt", "COM1.log", "LPT².txt", "NUL", "file.", "file ", ".relaxdesk-internal", "a?b", "a|b", new string('a', 256) }) Reject(() => TransferPaths.Relative(path));
         Check(TransferPaths.Relative("中文\\日本語/file.txt") == "中文/日本語/file.txt");
         Check(TransferPaths.Relative("", true) == ""); Reject(() => TransferPaths.Relative(""));
+        foreach (long rate in new long[] { -1, 1, 65535, 1024L * 1024 * 1024 + 1 })
+        {
+            try { _ = new FileTransferClient(Stream.Null, default, rate); throw new Exception("Invalid rate accepted"); }
+            catch (ArgumentOutOfRangeException) { count++; }
+        }
         long large = 4L * 1024 * 1024 * 1024 + 17;
         TransferLimits.ValidateChunk(large + 100, large, large, 100); count++;
         Reject(() => TransferLimits.ValidateChunk(large + 100, large, large, 101));

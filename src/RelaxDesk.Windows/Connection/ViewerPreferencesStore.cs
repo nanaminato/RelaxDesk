@@ -27,7 +27,7 @@ public sealed record ViewerPreferences
 
     public void Validate()
     {
-        if (Format != 1 || Network is < 0 or > 2 || FileRate is < 0 or > 3 || !new ViewportOptions(Zoom).Valid)
+        if (Format != 1 || Network is < 0 or > 2 || FileRate is < 0 or > 7 || !new ViewportOptions(Zoom).Valid)
             throw new InvalidDataException("Invalid Viewer preferences");
         VideoSettingsProtocol.Validate(new(FramesPerSecond, Bitrate, 1));
         if (LoginNames is null || LoginNames.Length > 20 || LoginNames.Any(entry => entry is null ||

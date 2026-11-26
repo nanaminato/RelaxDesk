@@ -115,8 +115,8 @@ internal sealed partial class HostWindow:Window
     {
         showingSettings = settings;
         PageTitle.Text = Strings.Get(settings ? "Host.PageTitleSettings" : "Host.PageTitleSharing");
-        (settings ? connectionNavigation : settingsNavigation).ClearValue(StyleProperty);
-        (settings ? settingsNavigation : connectionNavigation).Style = (Style)Resources["PrimaryButton"];
+        (settings ? connectionNavigation : settingsNavigation).Style = (Style)Resources["NavButton"];
+        (settings ? settingsNavigation : connectionNavigation).Style = (Style)Resources["NavButtonActive"];
         SharingContent.Visibility = settings ? Visibility.Collapsed : Visibility.Visible;
         SettingsContent.Visibility = settings ? Visibility.Visible : Visibility.Collapsed;
         MainScroll.ScrollToTop();

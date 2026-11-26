@@ -3,9 +3,11 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:core="clr-namespace:RelaxDesk.Core;assembly=RelaxDesk.Core"
         xmlns:ui="clr-namespace:RelaxDesk.SharedUI"
-        Title="{ui:Loc Viewer.WindowTitle}" Width="560" Height="470" MinWidth="540" MinHeight="450"
+        Title="{ui:Loc Viewer.WindowTitle}"
+        Icon="/RelaxDesk.Viewer;component/Assets/viewer.ico"
+        Width="560" Height="480" MinWidth="540" MinHeight="460"
         WindowStartupLocation="CenterScreen" FontFamily="Segoe UI, Microsoft YaHei UI" FontSize="13"
-        Background="#F0F0F0">
+        Background="#F4F7FB" UseLayoutRounding="True" SnapsToDevicePixels="True">
     <Window.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
@@ -21,23 +23,38 @@
         </ResourceDictionary>
     </Window.Resources>
     <DockPanel>
-        <Grid x:Name="windowToolbar" DockPanel.Dock="Top" Height="86" Background="White">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="76" />
-                <ColumnDefinition />
-            </Grid.ColumnDefinitions>
-            <Viewbox Width="42" Height="38" VerticalAlignment="Center">
-                <Grid Width="44" Height="38">
-                    <Border Height="28" VerticalAlignment="Top" Background="#1B68AA" BorderBrush="#314456" BorderThickness="2" CornerRadius="2">
-                        <TextBlock Text="↗" Foreground="White" FontSize="23" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    </Border>
-                    <Border Width="3" Height="7" VerticalAlignment="Bottom" Background="SlateGray" Margin="0,0,0,3" />
-                    <Border Width="24" Height="3" VerticalAlignment="Bottom" Background="SlateGray" />
-                </Grid>
-            </Viewbox>
-            <TextBlock Grid.Column="1" Text="RelaxDesk" FontSize="24" Foreground="#143E69" VerticalAlignment="Center"
-                       ToolTip="{x:Static core:BuildIdentity.Display}" />
-        </Grid>
+        <Border x:Name="windowToolbar" DockPanel.Dock="Top" Height="78" Background="White" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1">
+            <Grid Margin="20,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="52" />
+                    <ColumnDefinition />
+                </Grid.ColumnDefinitions>
+                <Viewbox Width="40" Height="40" VerticalAlignment="Center" HorizontalAlignment="Left">
+                    <Grid Width="64" Height="64">
+                        <Border CornerRadius="14">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                    <GradientStop Color="#1D4ED8" Offset="0" />
+                                    <GradientStop Color="#0EA5E9" Offset="1" />
+                                </LinearGradientBrush>
+                            </Border.Background>
+                        </Border>
+                        <Border Width="40" Height="28" VerticalAlignment="Top" Margin="0,13,0,0"
+                                CornerRadius="4" Background="#24FFFFFF" BorderBrush="White" BorderThickness="3">
+                            <Path Stroke="White" StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                  Data="M 10,16 L 24,6 M 16,6 L 24,6 L 24,14" />
+                        </Border>
+                        <Border Width="3" Height="7" VerticalAlignment="Bottom" Margin="0,0,0,15" Background="White" CornerRadius="1.5" />
+                        <Border Width="20" Height="3" VerticalAlignment="Bottom" Margin="0,0,0,13" Background="White" CornerRadius="1.5" />
+                    </Grid>
+                </Viewbox>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="RelaxDesk" FontSize="22" FontWeight="Bold" Foreground="#0F172A"
+                               ToolTip="{x:Static core:BuildIdentity.Display}" />
+                    <TextBlock Text="{ui:Loc Viewer.WindowTitle}" FontSize="11" Foreground="#64748B" Margin="0,1,0,0" />
+                </StackPanel>
+            </Grid>
+        </Border>
         <StackPanel x:Name="connectionFooter" DockPanel.Dock="Bottom">
             <Separator />
             <DockPanel Margin="14,9,14,10">
@@ -100,7 +117,7 @@
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition />
                                             <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="68" />
+                                            <ColumnDefinition Width="82" />
                                         </Grid.ColumnDefinitions>
                                         <TextBox x:Name="host" Text="192.168.1.10" />
                                         <TextBlock Grid.Column="1" Text="{ui:Loc Common.Port}" VerticalAlignment="Center" Margin="10,0,7,0" />
@@ -183,6 +200,10 @@
                                             <ComboBoxItem Content="4 MiB/s" />
                                             <ComboBoxItem Content="1 MiB/s" />
                                             <ComboBoxItem Content="256 KiB/s" />
+                                            <ComboBoxItem Content="50 MiB/s" />
+                                            <ComboBoxItem Content="100 MiB/s" />
+                                            <ComboBoxItem Content="250 MiB/s" />
+                                            <ComboBoxItem Content="{ui:Loc Viewer.FileRateUnlimited}" />
                                         </ComboBox>
                                     </Grid>
                                     <Grid Style="{StaticResource FieldRow}">

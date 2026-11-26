@@ -58,7 +58,7 @@ public sealed partial class ViewerWindow
                 if(mode=="audio")await Until(()=>audio?.Writes>0);
                 if(mode=="deflate"&&((MenuItem)window.sessionToolbar.VideoSettingsAction.Items[1]).IsEnabled)throw new IOException("Deflate advertised bitrate effect");
                 int generation=mode=="remember"?2:1;
-                foreach(int fps in new[]{15,60,30})
+                foreach(int fps in new[]{120,144,30})
                 {
                     Click(0,$"{fps} FPS");window.ChangeVideoSettings(5,8_000_000);
                     await Until(()=>window.videoSettingsSession?.Current.Generation==generation+1&&window.videoSettingsSession.Ready);generation++;
@@ -67,7 +67,7 @@ public sealed partial class ViewerWindow
                 }
                 if(mode!="deflate")
                 {
-                    foreach(int bitrate in new[]{2,20,8}){Click(1,$"{bitrate} Mbit/s");await Until(()=>window.videoSettingsSession?.Current.Generation==generation+1&&window.videoSettingsSession.Ready);generation++;if(window.videoSettingsSession!.Current.Bitrate!=bitrate*1_000_000)throw new IOException("Bitrate target not acknowledged");}
+                    foreach(int bitrate in new[]{40,100,8}){Click(1,$"{bitrate} Mbit/s");await Until(()=>window.videoSettingsSession?.Current.Generation==generation+1&&window.videoSettingsSession.Ready);generation++;if(window.videoSettingsSession!.Current.Bitrate!=bitrate*1_000_000)throw new IOException("Bitrate target not acknowledged");}
                 }
                 else{window.ChangeVideoSettings(30,2_000_000);if(window.videoSettingsSession!.Pending)throw new IOException("Deflate accepted irrelevant bitrate action");}
                 if(window.smokeFrames<generation)throw new IOException("Settings stalled media");window.StopConnection();await running;

@@ -54,6 +54,7 @@
     "Viewer.MediaTransport": "メディア転送:",
     "Viewer.FileRateLimit": "ファイル速度制限:",
     "Viewer.FileRateDefault": "20 MiB/s（既定）",
+  "Viewer.FileRateUnlimited": "制限なし",
     "Viewer.ResetPin": "保存済みホスト証明書を消去…",
     "Viewer.StatusConnecting": "接続中、ホストの承認を待っています…",
     "Viewer.StatusAuthorized": "承認済み、デスクトップを受信しています…",
