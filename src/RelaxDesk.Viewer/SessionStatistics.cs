@@ -39,7 +39,6 @@ internal sealed partial class SessionStatisticsWindow:Window
     {
         InitializeComponent();
         Owner=owner;this.source=source;this.connection=connection;this.latestRtt=latestRtt;
-        RelaxDesk.Ui.ModernTheme.Apply(this);
         EndpointLabel.Text = connection.Endpoint;
         ReportScroll.MaxHeight = Math.Clamp(owner.ActualHeight - 190, 190, 460);
         CommandBindings.Add(new CommandBinding(ApplicationCommands.Copy, (_, _) => CopyReport()));

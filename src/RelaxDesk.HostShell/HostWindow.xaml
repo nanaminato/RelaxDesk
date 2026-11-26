@@ -3,6 +3,32 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="RelaxDesk 受控端" Width="900" Height="650" MinWidth="720" MinHeight="520"
         FontSize="14" FontFamily="Segoe UI, Microsoft YaHei UI" Background="#F1F5FA">
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/RelaxDesk.HostShell;component/ModernTheme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <TextBox x:Key="HostLogPanel" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                     MaxHeight="180" FontFamily="Consolas" FontSize="11" />
+            <Style x:Key="HostCard" TargetType="Border">
+                <Setter Property="Background" Value="White" />
+                <Setter Property="CornerRadius" Value="12" />
+                <Setter Property="Padding" Value="22" />
+                <Setter Property="Margin" Value="0,0,0,16" />
+            </Style>
+            <Style x:Key="SectionTitle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="17" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="#17243A" />
+                <Setter Property="Margin" Value="0,0,0,4" />
+            </Style>
+            <Style x:Key="Overview" TargetType="TextBlock">
+                <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="Foreground" Value="SlateGray" />
+                <Setter Property="Margin" Value="0,0,0,4" />
+            </Style>
+        </ResourceDictionary>
+    </Window.Resources>
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="190" />
@@ -12,7 +38,10 @@
             <StackPanel Margin="24,28,20,24">
                 <TextBlock Text="RelaxDesk" FontSize="26" FontWeight="SemiBold" Foreground="White" />
                 <TextBlock Text="受控端" Foreground="#A8B8D0" Margin="0,4,0,0" />
-                <StackPanel x:Name="Navigation" Margin="0,24,0,0" />
+                <StackPanel x:Name="Navigation" Margin="0,24,0,0">
+                    <Button x:Name="connectionNavigation" Content="连接" Margin="0,8,0,0" />
+                    <Button x:Name="settingsNavigation" Content="设置" Margin="0,8,0,0" />
+                </StackPanel>
             </StackPanel>
         </Border>
         <ScrollViewer x:Name="MainScroll" Grid.Column="1" VerticalScrollBarVisibility="Auto">
@@ -20,8 +49,87 @@
                 <TextBlock x:Name="PageTitle" Text="共享这台电脑" FontSize="28" FontWeight="SemiBold" Foreground="#17243A" />
                 <TextBlock x:Name="BuildVersion" FontSize="11" Foreground="SlateGray"
                            Margin="0,5,0,18" TextWrapping="Wrap" />
-                <StackPanel x:Name="SharingContent" />
-                <StackPanel x:Name="SettingsContent" Visibility="Collapsed" />
+                <StackPanel x:Name="SharingContent">
+                    <Border Style="{StaticResource HostCard}">
+                        <StackPanel>
+                            <TextBlock x:Name="state" Style="{StaticResource SectionTitle}" FontSize="19" Text="尚未共享" />
+                            <TextBlock x:Name="detail" Text="选择本机地址，开始等待连接请求。" Style="{StaticResource Overview}" Margin="0,4,0,0" />
+                            <StackPanel Margin="0,12,0,0">
+                                <TextBlock Text="系统服务" Style="{StaticResource SectionTitle}" FontSize="14" />
+                                <TextBlock Style="{StaticResource Overview}" Text="{Binding Text, ElementName=serviceOverview}" />
+                                <TextBlock Margin="0,4,0,0"><Hyperlink x:Name="serviceLink">设置系统服务</Hyperlink></TextBlock>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource HostCard}">
+                        <StackPanel>
+                            <TextBlock Text="连接信息" Style="{StaticResource SectionTitle}" />
+                            <TextBlock Text="Viewer 只需填写下面的 IP 和端口" Style="{StaticResource Overview}" FontSize="12" />
+                            <Grid Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition />
+                                    <ColumnDefinition Width="135" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Margin="0,0,16,0">
+                                    <TextBlock Text="本机局域网 IP" FontSize="12" Margin="0,0,0,4" />
+                                    <TextBox x:Name="ip" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="端口" FontSize="12" Margin="0,0,0,4" />
+                                    <TextBox x:Name="port" Text="48200" />
+                                </StackPanel>
+                            </Grid>
+                            <WrapPanel x:Name="addressChoices" />
+                            <WrapPanel><Button x:Name="start" Content="开始共享" /></WrapPanel>
+                            <TextBlock Margin="4,8,0,0"><Hyperlink x:Name="loginLink">设置登录信息</Hyperlink></TextBlock>
+                            <TextBlock x:Name="color" Text="HDR 自动转为 SDR · 全程加密传输" Style="{StaticResource Overview}" Margin="4,12,0,0" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+                <StackPanel x:Name="SettingsContent" Visibility="Collapsed">
+                    <Border Style="{StaticResource HostCard}">
+                        <DockPanel>
+                            <Button x:Name="openDisplay" DockPanel.Dock="Right" Content="打开设置" VerticalAlignment="Center" AutomationProperties.Name="打开共享设置" />
+                            <StackPanel>
+                                <TextBlock Text="共享设置" Style="{StaticResource SectionTitle}" />
+                                <TextBlock x:Name="displayOverview" Text="主显示器" Style="{StaticResource Overview}" />
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+                    <Border x:Name="loginSection" Style="{StaticResource HostCard}">
+                        <DockPanel>
+                            <Button x:Name="openLogin" DockPanel.Dock="Right" Content="打开设置" VerticalAlignment="Center" AutomationProperties.Name="打开登录设置" />
+                            <StackPanel>
+                                <TextBlock Text="登录设置" Style="{StaticResource SectionTitle}" />
+                                <TextBlock x:Name="loginOverview" Text="正在读取登录设置…" Style="{StaticResource Overview}" />
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+                    <Border x:Name="serviceSection" Style="{StaticResource HostCard}">
+                        <DockPanel>
+                            <Button x:Name="openService" DockPanel.Dock="Right" Content="打开设置" VerticalAlignment="Center" AutomationProperties.Name="打开系统服务" />
+                            <StackPanel>
+                                <TextBlock Text="系统服务" Style="{StaticResource SectionTitle}" />
+                                <TextBlock x:Name="serviceOverview" Text="正在检查系统服务…" Style="{StaticResource Overview}" />
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+                    <Border Style="{StaticResource HostCard}">
+                        <DockPanel>
+                            <Button x:Name="openDevices" DockPanel.Dock="Right" Content="打开设置" VerticalAlignment="Center" AutomationProperties.Name="打开受信任的设备" />
+                            <StackPanel>
+                                <TextBlock Text="受信任的设备" Style="{StaticResource SectionTitle}" />
+                                <TextBlock x:Name="deviceOverview" Text="正在读取设备…" Style="{StaticResource Overview}" />
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+                    <Border Style="{StaticResource HostCard}">
+                        <DockPanel>
+                            <Button x:Name="openLogs" DockPanel.Dock="Right" Content="查看" VerticalAlignment="Center" AutomationProperties.Name="打开诊断与日志" />
+                            <TextBlock Text="诊断与日志" Style="{StaticResource SectionTitle}" />
+                        </DockPanel>
+                    </Border>
+                </StackPanel>
             </StackPanel>
         </ScrollViewer>
     </Grid>

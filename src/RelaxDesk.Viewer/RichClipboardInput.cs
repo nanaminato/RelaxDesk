@@ -6,8 +6,6 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
-    readonly CheckBox requestClipboardImage = new() { Content = "图片剪贴板", ToolTip = "双向同步，上限 8 MiB 或 1600 万像素。", IsChecked = true };
-    readonly CheckBox requestClipboardHtml = new() { Content = "HTML 剪贴板", ToolTip = "双向同步，上限 512 KiB。", IsChecked = true };
     ClipboardContentSession? richClipboardSession;
     void StartRichClipboard(SessionClient connection,AccessGate gate,CancellationToken ct)
     {

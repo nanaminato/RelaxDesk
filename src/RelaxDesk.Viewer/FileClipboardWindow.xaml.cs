@@ -1,32 +1,29 @@
 using System.IO;
 using System.Windows;
-using System.Windows.Controls;
 using Microsoft.Win32;
 using RelaxDesk.Core;
 using RelaxDesk.Windows;
 
 namespace RelaxDesk.Viewer;
 
-internal sealed class FileClipboardWindow:Window
+internal sealed partial class FileClipboardWindow:Window
 {
     readonly CancellationTokenSource lifetime;
     CancellationTokenSource? operation;
     readonly Func<CancellationToken,Task<ILocalFileClipboard>> clipboard;
     readonly Func<CancellationToken,Task<FileClipboardTransfer>> transfer;
-    readonly TextBlock localNames=new(){TextWrapping=TextWrapping.Wrap},remoteNames=new(){TextWrapping=TextWrapping.Wrap},feedback=new(){TextWrapping=TextWrapping.Wrap,Margin=new(0,12,0,0)};
-    internal readonly Button ReadLocal=new(){Content="读取本机已复制的文件"},ConfirmUpload=new(){Content="确认上传并准备远端粘贴",IsEnabled=false},ChooseFolder=new(){Content="选择本机接收文件夹",IsEnabled=false},ConfirmDownload=new(){Content="确认下载并准备本机粘贴",IsEnabled=false},RetryRemote=new(){Content="再次准备远端粘贴（不重传）",IsEnabled=false},RetryLocal=new(){Content="再次准备本机粘贴（不重传）",IsEnabled=false};
     internal Task CurrentOperation{get;private set;}=Task.CompletedTask;
     LocalClipboardFiles? localSelection;ClipboardFiles? remoteSelection;string? destination;bool closing;
     internal bool LastOperationSucceeded{get;private set;}
     public FileClipboardWindow(Window owner,Func<CancellationToken,Task<ILocalFileClipboard>> clipboard,Func<CancellationToken,Task<FileClipboardTransfer>> transfer,Action openQueue,CancellationToken ct)
     {
-        Owner=owner;this.clipboard=clipboard;this.transfer=transfer;lifetime=CancellationTokenSource.CreateLinkedTokenSource(ct);Title="文件剪贴板";Width=640;Height=600;MinWidth=480;MinHeight=420;ShowInTaskbar=false;WindowStartupLocation=WindowStartupLocation.CenterOwner;
-        RelaxDesk.Ui.ModernTheme.Apply(this);var panel=new StackPanel{Margin=new(22)};
-        panel.Children.Add(new TextBlock{Text="文件复制粘贴",FontSize=22,FontWeight=FontWeights.SemiBold});
-        panel.Children.Add(new TextBlock{Text="先在资源管理器复制文件，再在此确认传输。只有全部完成后才准备文件剪贴板；请在对应电脑的资源管理器中自行粘贴。传输使用可见的 RelaxDesk-Clipboard-* 子文件夹，保留文件供粘贴，不自动删除。",TextWrapping=TextWrapping.Wrap,Margin=new(0,8,0,14)});
-        foreach(var item in new UIElement[]{ReadLocal,localNames,ConfirmUpload,RetryRemote,new Separator(),remoteNames,ChooseFolder,ConfirmDownload,RetryLocal})panel.Children.Add(item);
-        var queue=new Button{Content="打开传输进度 / 暂停 / 取消"};queue.Click+=(_,_)=>openQueue();panel.Children.Add(queue);
-        var cancel=new Button{Content="取消当前剪贴板传输"};cancel.Click+=(_,_)=>operation?.Cancel();panel.Children.Add(cancel);panel.Children.Add(feedback);Content=new ScrollViewer{Content=panel,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};
+        InitializeComponent();
+        Owner = owner;
+        this.clipboard = clipboard;
+        this.transfer = transfer;
+        lifetime = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        queue.Click += (_, _) => openQueue();
+        cancel.Click += (_, _) => operation?.Cancel();
         ReadLocal.Click+=(_,_)=>Start(async token=>
         {
             var source=await clipboard(token);localSelection=await source.ReadFiles(token);

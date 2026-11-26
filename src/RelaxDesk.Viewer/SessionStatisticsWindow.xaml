@@ -5,6 +5,9 @@
         SizeToContent="Height" ResizeMode="NoResize" ShowInTaskbar="False"
         WindowStartupLocation="CenterOwner" Background="#F1F5FA"
         FontFamily="Segoe UI, Microsoft YaHei UI" FontSize="14">
+    <Window.Resources>
+        <ResourceDictionary Source="/RelaxDesk.Viewer;component/ModernTheme.xaml" />
+    </Window.Resources>
     <Border Background="#F1F5FA" Padding="18">
     <StackPanel>
         <Border Background="#17243A" CornerRadius="10" Padding="16,13">

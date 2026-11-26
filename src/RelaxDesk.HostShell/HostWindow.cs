@@ -6,7 +6,6 @@ using System.Security.Principal;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
 using RelaxDesk.Core;
 using RelaxDesk.Session;
 using RelaxDesk.Windows;
@@ -15,19 +14,18 @@ namespace RelaxDesk.HostShell;
 internal sealed partial class HostWindow:Window
 {
     internal readonly HostProcess Host=new();
-    readonly TextBox ip=new(),port=new(){Text="48200"};
-    readonly TextBlock state=new(){Text="尚未共享"},detail=new(){Text="选择本机地址，开始等待连接请求。",TextWrapping=TextWrapping.Wrap},peer=new(),color=new(){Text="HDR 自动转为 SDR · 全程加密传输",Foreground=Brushes.SlateGray};
-    readonly Button start=new(){Content="开始共享"},allow=new(){Content="允许本次连接"},deny=new(){Content="拒绝"};
     internal Button SharingAction => start;
-    readonly StackPanel consent = new();
+    readonly HostConsentView consent = new();
+    Button allow => consent.Allow;
+    Button deny => consent.Deny;
+    TextBlock peer => consent.Peer;
+    TextBlock consentAccess => consent.Access;
+    CheckBox clipboardPermission => consent.ClipboardPermission;
     HostPanelWindow? requestWindow;
-    readonly Button connectionNavigation, settingsNavigation;
-    readonly CheckBox clipboardPermission=new(){Content="允许双向文本剪贴板（可读取两端新复制的文本，最大64KiB）",IsChecked=false,Visibility=Visibility.Collapsed,Margin=new(0,10,0,0)};
-    readonly TextBlock consentAccess = new() { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.SlateGray };
     bool fullControlRequest;
     bool nativeApproval, stoppingSharing;
     bool activeInput;
-    readonly TextBox logs=new(){IsReadOnly=true,TextWrapping=TextWrapping.Wrap,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,MaxHeight=180,FontFamily=new("Consolas"),FontSize=11};
+    readonly TextBox logs;
     readonly string application;
     bool closing;
     string? desktopNotice;
@@ -46,72 +44,39 @@ internal sealed partial class HostWindow:Window
         deviceTrust = trustStore ?? DeviceTrustStore.CurrentUser();
         application=hostApplication??Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"..","Host","RelaxDesk.Host.exe"));
         InitializeComponent();
-        serviceSettings = new ServiceSettingsView(serviceSetupNotice);
-        RelaxDesk.Ui.ModernTheme.Apply(this);
+        serviceSettings = new ServiceSettingsView();
+        logs = (TextBox)Resources["HostLogPanel"];
         BuildVersion.Text = BuildIdentity.Display;
-        var content = SharingContent;
-        var statusContent=new StackPanel();state.FontSize=19;state.FontWeight=FontWeights.SemiBold;state.Foreground=Brush("#17243A");statusContent.Children.Add(state);detail.Margin=new(0,8,0,0);detail.Foreground=Brushes.SlateGray;statusContent.Children.Add(detail);content.Children.Add(Card(statusContent));
-        var settings=new StackPanel();settings.Children.Add(Text("连接信息",17,true));settings.Children.Add(Text("Viewer 只需填写下面的 IP 和端口",12,false,Brushes.SlateGray));
-        var fields=new Grid{Margin=new(0,12,0,0)};fields.ColumnDefinitions.Add(new());fields.ColumnDefinitions.Add(new(){Width=new(135)});
-        var ipField=new StackPanel{Margin=new(0,0,16,0)};ipField.Children.Add(Text("本机局域网 IP",12));ipField.Children.Add(ip);fields.Children.Add(ipField);
-        var portField=new StackPanel();portField.Children.Add(Text("端口",12));portField.Children.Add(port);Grid.SetColumn(portField,1);fields.Children.Add(portField);settings.Children.Add(fields);
-        var addresses=Addresses();ip.Text=addresses.FirstOrDefault()??"127.0.0.1";
-        if(addresses.Length>1){var options=new WrapPanel();foreach(string address in addresses){var pick=new Button{Content=address,Padding=new(10,5,10,5),FontSize=12};pick.Click+=(_,_)=>{if(!Host.Running&&!RestartPending)ip.Text=address;};options.Children.Add(pick);}settings.Children.Add(options);}
-        var sharingSettings = new StackPanel();
-        AddDisplaySettings(sharingSettings);
-        SettingsContent.Children.Add(SettingsCard("共享设置", displayOverview, sharingSettings));
-        var login = SettingsCard("登录设置", loginOverview, BuildLoginSettings());
-        SettingsContent.Children.Add(login);
-        var servicePanel = new StackPanel();
-        AddServiceSettings(servicePanel);
-        var service = SettingsCard("系统服务", serviceOverview, servicePanel);
-        SettingsContent.Children.Add(service);
-        var devices = new StackPanel();
-        BuildDeviceTrust(devices);
-        SettingsContent.Children.Add(SettingsCard("受信任的设备", deviceOverview, devices));
-        SettingsContent.Children.Add(SettingsCard("诊断与日志", null, logs));
+        var addresses = Addresses();
+        ip.Text = addresses.FirstOrDefault() ?? "127.0.0.1";
+        if (addresses.Length > 1)
+        {
+            foreach (string address in addresses)
+            {
+                var choice = new Button { Content = address, Padding = new(10, 5, 10, 5), FontSize = 12 };
+                choice.Click += (_, _) => { if (!Host.Running && !RestartPending) ip.Text = address; };
+                addressChoices.Children.Add(choice);
+            }
+        }
 
-        connectionNavigation = AddNavigation("连接", () => ShowPage(false));
-        settingsNavigation = AddNavigation("设置", () => ShowPage(true));
+        ConfigureDisplaySettings();
+        ConfigureSettingsWindow(openDisplay, "共享设置", displaySettings);
+        ConfigureLoginSettings();
+        ConfigureSettingsWindow(openLogin, "登录设置", loginSettings);
+        ConfigureServiceSettings();
+        ConfigureSettingsWindow(openService, "系统服务", serviceSettings);
+        ConfigureDeviceTrust();
+        ConfigureSettingsWindow(openDevices, "受信任的设备", trustedDeviceSettings);
+        ConfigureSettingsWindow(openLogs, "诊断与日志", logs);
+
+        connectionNavigation.Click += (_, _) => ShowPage(false);
+        settingsNavigation.Click += (_, _) => ShowPage(true);
+        loginLink.Click += (_, _) => ShowPage(true, loginSection);
+        serviceLink.Click += (_, _) => ShowPage(true, serviceSection);
         ShowPage(false);
-        var actions = new WrapPanel();
         start.Style = (Style)Resources["PrimaryButton"];
-        actions.Children.Add(start);
-        settings.Children.Add(actions);
-        var links = new TextBlock { Margin = new(4, 8, 0, 0) };
-        AddSettingsLink(links, "设置登录信息", login);
-        settings.Children.Add(links);
-        color.Margin = new(4, 12, 0, 0);
-        color.TextWrapping = TextWrapping.Wrap;
-        settings.Children.Add(color);
-        content.Children.Add(Card(settings));
-        var homeService = new StackPanel { Margin = new(0, 12, 0, 0) };
-        homeService.Children.Add(Text("系统服务", 14, true));
-        var homeServiceStatus = Text("", foreground: Brushes.SlateGray);
-        homeServiceStatus.SetBinding(TextBlock.TextProperty,
-            new System.Windows.Data.Binding(nameof(TextBlock.Text)) { Source = serviceOverview });
-        homeService.Children.Add(homeServiceStatus);
-        var serviceLink = new TextBlock { Margin = new(0, 4, 0, 0) };
-        AddSettingsLink(serviceLink, "设置系统服务", service);
-        homeService.Children.Add(serviceLink);
-        statusContent.Children.Add(homeService);
-
-        consent.Children.Add(Text("有人请求连接", 19, true));
-        peer.FontSize = 16;
-        peer.Margin = new(0, 10, 0, 8);
-        consent.Children.Add(peer);
-        consent.Children.Add(consentAccess);
-        consent.Children.Add(clipboardPermission);
-        consent.Children.Add(filesPermission);
-        consent.Children.Add(filesScopeLabel);
-        consent.Children.Add(audioPermission);
-        consent.Children.Add(rememberDevice);
-        var decision = new StackPanel { Orientation = Orientation.Horizontal, Margin = new(0, 14, 0, 0) };
         allow.Style = (Style)Resources["PrimaryButton"];
         deny.Style = (Style)Resources["DangerButton"];
-        decision.Children.Add(allow);
-        decision.Children.Add(deny);
-        consent.Children.Add(decision);
         Closed += (_, _) => CloseRequest();
         start.Click += async (_, _) =>
         {
@@ -122,21 +87,6 @@ internal sealed partial class HostWindow:Window
         Host.Changed+=change=>Dispatcher.BeginInvoke(()=>Changed(change));Host.Diagnostic+=line=>Dispatcher.BeginInvoke(()=>{logs.Text=string.Join(Environment.NewLine,Host.Snapshot());if(line.StartsWith("producer_error")||line.StartsWith("Session ended:")||line.StartsWith("clipboard_")||line.StartsWith("file_transfer_disabled"))detail.Text=line;if(line.StartsWith("audio_disabled")){detail.Text="声音传输已关闭；画面与输入仍可使用。";}});
         Closing+=async(_,e)=>{if(ServiceSetupBusy){e.Cancel=true;serviceSetupNotice.Text="正在处理系统服务，请等待完成后再关闭；如出现 Windows 授权，可在那里取消。";return;}CancelRecovery();if(!Host.Running&&serviceAgent is null&&serviceAttempt is null&&serviceWatch is null)return;e.Cancel=true;if(closing)return;closing=true;await DisconnectService();await StopSharing();Close();};
     }
-    Button AddNavigation(string title, Action navigate)
-    {
-        var button = new Button { Content = title, Margin = new(0, 8, 0, 0) };
-        button.Click += (_, _) => navigate();
-        Navigation.Children.Add(button);
-        return button;
-    }
-
-    void AddSettingsLink(TextBlock links, string text, FrameworkElement section)
-    {
-        var link = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run(text));
-        link.Click += (_, _) => ShowPage(true, section);
-        links.Inlines.Add(link);
-    }
-
     internal void ShowPage(bool settings, FrameworkElement? section = null)
     {
         PageTitle.Text = settings ? "设置" : "共享这台电脑";
@@ -153,13 +103,8 @@ internal sealed partial class HostWindow:Window
             }, System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
-    Border SettingsCard(string title, TextBlock? overview, UIElement body)
+    void ConfigureSettingsWindow(Button open, string title, UIElement body)
     {
-        var headings = new StackPanel();
-        headings.Children.Add(Text(title, 17, true));
-        if (overview is not null) headings.Children.Add(overview);
-        var open = new Button { Content = overview is null ? "查看" : "打开设置", VerticalAlignment = VerticalAlignment.Center };
-        System.Windows.Automation.AutomationProperties.SetName(open, "打开" + title);
         HostPanelWindow? dialog = null;
         open.Click += (_, _) =>
         {
@@ -174,11 +119,6 @@ internal sealed partial class HostWindow:Window
             dialog = window;
             window.Show();
         };
-        var row = new DockPanel();
-        DockPanel.SetDock(open, Dock.Right);
-        row.Children.Add(open);
-        row.Children.Add(headings);
-        return Card(row);
     }
 
     void OpenRequest(string? id)
@@ -212,9 +152,6 @@ internal sealed partial class HostWindow:Window
         requestWindow = null;
         window?.Close();
     }
-    static SolidColorBrush Brush(string value)=>new((Color)ColorConverter.ConvertFromString(value));
-    static TextBlock Text(string value,double size=14,bool bold=false,Brush? foreground=null)=>new(){Text=value,FontSize=size,FontWeight=bold?FontWeights.SemiBold:FontWeights.Normal,Foreground=foreground??Brush("#17243A"),TextWrapping=TextWrapping.Wrap,Margin=new(0,0,0,4)};
-    static Border Card(UIElement child)=>new(){Child=child,Background=Brushes.White,CornerRadius=new(12),Padding=new(22),Margin=new(0,0,0,16)};
     static string[] Addresses()=>NetworkInterface.GetAllNetworkInterfaces().Where(n=>n.OperationalStatus==OperationalStatus.Up&&n.NetworkInterfaceType!=NetworkInterfaceType.Loopback).OrderByDescending(n=>n.GetIPProperties().GatewayAddresses.Count>0).SelectMany(n=>n.GetIPProperties().UnicastAddresses).Where(a=>a.Address.AddressFamily==AddressFamily.InterNetwork).Select(a=>a.Address.ToString()).Distinct().ToArray();
     internal bool RequestVisible => requestWindow?.IsVisible == true;
     internal bool ClipboardChoiceVisible => clipboardPermission.Visibility == Visibility.Visible;

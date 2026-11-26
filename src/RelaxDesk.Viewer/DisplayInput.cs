@@ -11,8 +11,6 @@ public sealed partial class ViewerWindow
     DisplayViewerSession? displaySession;
     DispatcherTimer? displayDeadline;
     bool gpuViewportActive;
-    readonly CheckBox requestTopology = new() { Content = "屏幕变更时保持连接", ToolTip = "需要新版受控端。连接旧版时请取消勾选。", IsChecked = true };
-    readonly Border displayUnavailable=new(){Visibility=Visibility.Collapsed,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center,MaxWidth=480,Padding=new(24),Background=Brushes.White,CornerRadius=new(10),Child=new TextBlock{Text="屏幕暂不可用，输入已暂停。\n\n可在顶部工具栏选择仍获授权的屏幕，或等待原屏幕恢复。新增屏幕需要重新连接并授权。",TextWrapping=TextWrapping.Wrap,Foreground=Brushes.DimGray}};
     void ApplyDisplayTopology(DisplaySessionInfo state,CpuBitmapRenderer cpu)
     {
         if(displaySession?.Generation!=state.Generation)return;

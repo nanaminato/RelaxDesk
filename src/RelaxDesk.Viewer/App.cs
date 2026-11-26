@@ -96,20 +96,10 @@ public sealed class App : Application
 }
 public sealed partial class ViewerWindow : Window
 {
-    readonly TextBox host = new() { Text = "192.168.1.10" }, port = new() { Text = "48200" }, fingerprint = new();
-    readonly PasswordBox token = new();
-    readonly TextBox invitation = new() { MinHeight = 70, TextWrapping = TextWrapping.Wrap, VerticalContentAlignment = VerticalAlignment.Center };
-    readonly Border connectionCard = new();
-    readonly Button disconnect = new() { Content = "断开", IsEnabled = false };
     System.Windows.Threading.DispatcherTimer? previewTimer;
     bool previewing;
     WindowState previousWindowState;
     bool fullScreen;
-    readonly Image image = new() { Stretch = Stretch.Uniform, Focusable = true }; readonly TextBlock status = new() { Text = "Disconnected" };
-    readonly Grid renderPanel = new();
-    readonly CheckBox gpuRendering = new() { Content = "D3D11 GPU display", IsChecked = true };
-    readonly CheckBox pinnedConnection = new() { Content = "使用固定指纹与凭证（可选高级方式）" };
-    readonly CheckBox requestClipboard = new() { Content = "文本剪贴板", ToolTip = "双向同步。", IsChecked = true };
     AccessGate? sessionPermissions;
     ClipboardTextUpdate? pendingClipboard;
     int clipboardDispatchPending;
@@ -117,7 +107,6 @@ public sealed partial class ViewerWindow : Window
     readonly PressedInputs heldInputs = new();
     TaskCompletionSource connectionEnded = new(TaskCreationOptions.RunContinuationsAsynchronously);
     bool closing;
-    readonly Button connect = new() { Content = "Connect" };
     readonly OutgoingControlQueue outgoing = new(256);
     CancellationTokenSource? session; long sequence;
     readonly ViewerSmokeSettings? smoke;
@@ -125,7 +114,7 @@ public sealed partial class ViewerWindow : Window
     public ViewerWindow(ViewerSmokeSettings? smoke = null)
     {
         this.smoke = smoke;
-        BuildInterface();
+        ConfigureInterface();
         connect.Click += async (_, _) =>
         {
             try

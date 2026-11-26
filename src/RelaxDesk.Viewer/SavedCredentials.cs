@@ -8,7 +8,6 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
-    readonly CheckBox rememberCredentials = new() { Content = "记住我的凭据(_R)" };
     ViewerCredentialStore? credentialStore;
     bool loadingCredential;
     string? credentialEndpoint;
@@ -19,7 +18,6 @@ public sealed partial class ViewerWindow
     void ConfigureSavedCredentials()
     {
         if (!App.VerificationMode) credentialStore = new();
-        rememberCredentials.ToolTip = "由 Windows 凭据管理器保护，仅供当前 Windows 用户使用。每个地址保存一组登录凭据。";
         host.TextChanged += (_, _) => LoadSavedCredential(endpointChanged: true);
         port.TextChanged += (_, _) => LoadSavedCredential(endpointChanged: true);
         loginName.TextChanged += (_, _) => LoadSavedCredential(endpointChanged: false);

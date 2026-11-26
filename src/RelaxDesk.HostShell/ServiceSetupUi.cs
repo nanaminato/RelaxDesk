@@ -7,15 +7,14 @@ namespace RelaxDesk.HostShell;
 
 internal sealed partial class HostWindow
 {
-    readonly Button enableService=new(){Content="启用系统服务"};
+    Button enableService => serviceSettings.EnableService;
     readonly ServiceSettingsView serviceSettings;
     Button installService => serviceSettings.InstallService;
     Button uninstallService => serviceSettings.UninstallService;
     Button refreshService => serviceSettings.RefreshService;
     ComboBox serviceStartup => serviceSettings.Startup;
     TextBlock serviceInstallation => serviceSettings.Installation;
-    readonly TextBlock serviceSetupNotice=new(){Text="自动完成安装、启动和连接。首次启用需要 Windows 管理员授权；不会自动共享桌面。",TextWrapping=TextWrapping.Wrap};
-    readonly TextBlock serviceOverview = Text("正在检查系统服务…", foreground: System.Windows.Media.Brushes.SlateGray);
+    TextBlock serviceSetupNotice => serviceSettings.Progress;
     MachineServiceStatus? serviceSnapshot;
     bool serviceStatusUnavailable;
     internal IServiceSetupBackend SetupBackend{get;set;}=new ServiceSetupBackend();
@@ -30,13 +29,9 @@ internal sealed partial class HostWindow
     internal ComboBox ServiceStartupChoice=>serviceStartup;
     bool serviceInspecting,serviceSetupClosed,serviceInspectAgain;
     int serviceSetupGeneration;
-    void AddServiceSetup(Panel panel)
+    void ConfigureServiceSetup()
     {
-        var shortcuts = new WrapPanel();
-        shortcuts.Children.Add(enableService);
-        panel.Children.Add(shortcuts);
-        enableService.Click+=async(_,_)=>await EnableSystemService();
-        panel.Children.Add(serviceSettings);
+        enableService.Click += async (_, _) => await EnableSystemService();
         installService.Click+=async(_,_)=>await RunServiceSetup(false);
         uninstallService.Click+=async(_,_)=>await RunServiceSetup(true);
         refreshService.Click+=async(_,_)=>await InspectServiceInstallation();

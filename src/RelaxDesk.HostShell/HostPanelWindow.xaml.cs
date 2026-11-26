@@ -15,7 +15,6 @@ internal sealed partial class HostPanelWindow : Window
         Background = owner.Background;
         FontSize = owner.FontSize;
         FontFamily = owner.FontFamily;
-        RelaxDesk.Ui.ModernTheme.Apply(this);
         PanelScroll.Content = body;
         Closed += (_, _) => PanelScroll.Content = null;
     }

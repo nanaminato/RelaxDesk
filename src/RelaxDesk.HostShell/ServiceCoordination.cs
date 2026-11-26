@@ -10,7 +10,7 @@ internal sealed partial class HostWindow
 {
     CheckBox useService => serviceSettings.UseService;
     Button connectService => serviceSettings.ConnectService;
-    readonly TextBlock serviceStatus=new(){Text="尚未连接系统服务。完整控制需要已安装的管理员输入组件。",TextWrapping=TextWrapping.Wrap};
+    TextBlock serviceStatus => serviceSettings.CoordinationStatus;
     SessionAgentClient? serviceAgent;
     CancellationTokenSource? serviceAttempt,serviceWatch;
     Task? serviceConnectingOperation,serviceObserver;
@@ -19,11 +19,9 @@ internal sealed partial class HostWindow
     internal bool ServiceRequired{get=>useService.IsChecked==true;set=>useService.IsChecked=value;}
     internal bool ServiceReady=>serviceAgent?.Healthy==true&&!serviceConnecting&&!serviceCleaning;
     internal string ServiceStatus=>serviceStatus.Text;
-    void AddServiceSettings(Panel settings)
+    void ConfigureServiceSettings()
     {
-        settings.Children.Add(Text("系统服务", 17, true));
-        settings.Children.Add(serviceStatus);
-        AddServiceSetup(settings);
+        ConfigureServiceSetup();
         connectService.Click+=async(_,_)=>await ConnectService();
         useService.Checked+=(_,_)=>{if(!ServiceReady)serviceStatus.Text="服务模式尚未连接；不会开始共享。";UpdateServiceControls();};
         useService.Unchecked+=async(_,_)=>{if(Host.Running){useService.IsChecked=true;return;}await DisconnectService();serviceStatus.Text="已断开系统服务协调。";UpdateServiceControls();};

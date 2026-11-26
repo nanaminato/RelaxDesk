@@ -1,0 +1,10 @@
+<UserControl x:Class="RelaxDesk.HostShell.HostTrustedDevices" x:ClassModifier="internal"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel>
+        <ListBox x:Name="Devices" MaxHeight="125" />
+        <Button x:Name="RememberConnected" Content="信任当前连接的设备" IsEnabled="False" />
+        <Button x:Name="Forget" Content="撤销所选设备" IsEnabled="False" />
+        <TextBlock x:Name="Notice" TextWrapping="Wrap" />
+    </StackPanel>
+</UserControl>

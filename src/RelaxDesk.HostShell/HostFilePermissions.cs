@@ -8,8 +8,8 @@ internal sealed partial class HostWindow
 {
     string? selectedFileRoot;
     bool automaticSessionCapabilities;
-    readonly CheckBox filesPermission = new() { Content = "允许文件传输及文件剪贴板", IsChecked = false, Visibility = Visibility.Collapsed, Margin = new(0, 8, 0, 0) };
-    readonly TextBlock filesScopeLabel = new() { TextWrapping = TextWrapping.Wrap, Margin = new(22, 4, 0, 0), Visibility = Visibility.Collapsed, FontSize = 12 };
+    CheckBox filesPermission => consent.FilesPermission;
+    TextBlock filesScopeLabel => consent.FilesScope;
     internal bool FilesChoiceVisible => filesPermission.Visibility == Visibility.Visible;
     internal bool FilesChoiceEnabled => filesPermission.IsEnabled;
     internal bool FilesAllowed { get => filesPermission.IsChecked == true; set => filesPermission.IsChecked = value; }

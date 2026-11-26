@@ -8,29 +8,19 @@ namespace RelaxDesk.HostShell;
 internal sealed partial class HostWindow
 {
     readonly DeviceTrustStore deviceTrust;
-    readonly CheckBox rememberDevice = new()
-    {
-        Content = "信任此设备",
-        Visibility = Visibility.Collapsed
-    };
-    readonly ListBox trustedDevices = new() { MaxHeight = 125 };
-    readonly Button forgetDevice = new() { Content = "撤销所选设备", IsEnabled = false };
-    readonly Button rememberConnectedDevice = new() { Content = "信任当前连接的设备", IsEnabled = false };
-    readonly TextBlock trustNotice = new() { TextWrapping = TextWrapping.Wrap };
-    readonly TextBlock deviceOverview = Text("正在读取设备…", foreground: System.Windows.Media.Brushes.SlateGray);
+    CheckBox rememberDevice => consent.RememberDevice;
+    readonly HostTrustedDevices trustedDeviceSettings = new();
+    ListBox trustedDevices => trustedDeviceSettings.Devices;
+    Button forgetDevice => trustedDeviceSettings.Forget;
+    Button rememberConnectedDevice => trustedDeviceSettings.RememberConnected;
+    TextBlock trustNotice => trustedDeviceSettings.Notice;
     string[] trusted = [];
     readonly HashSet<string> revokedDuringRun = new(StringComparer.Ordinal);
     string? activeDeviceFingerprint;
     bool trustBusy, trustLoaded;
 
-    void BuildDeviceTrust(StackPanel settings)
+    void ConfigureDeviceTrust()
     {
-        var panel = new StackPanel();
-        panel.Children.Add(trustedDevices);
-        panel.Children.Add(rememberConnectedDevice);
-        panel.Children.Add(forgetDevice);
-        panel.Children.Add(trustNotice);
-        settings.Children.Add(panel);
         trustedDevices.SelectionChanged += (_, _) => forgetDevice.IsEnabled = !trustBusy && trustedDevices.SelectedItem is ListBoxItem;
         forgetDevice.Click += async (_, _) =>
         {

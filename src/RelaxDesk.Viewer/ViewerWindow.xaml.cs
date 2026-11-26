@@ -1,0 +1,149 @@
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using RelaxDesk.Windows;
+using RelaxDesk.Core;
+namespace RelaxDesk.Viewer;
+
+public sealed partial class ViewerWindow
+{
+    string SessionEndpoint => host.Text;
+
+    bool optionsExpanded, desktopView;
+    Rect connectionBounds;
+    WindowState connectionWindowState;
+    readonly ConnectionBarPreferences connectionBarPreferences = new();
+
+    void ConfigureInterface()
+    {
+        InitializeComponent();
+        optionsButton.Click += (_, _) => SetOptionsExpanded(!optionsExpanded);
+        cancelConnection.Click += (_, _) =>
+        {
+            if (connectionRun is not null) StopConnection();
+            else Close();
+        };
+        disconnect.IsEnabledChanged += (_, _) => disconnect.Visibility =
+            disconnect.IsEnabled ? Visibility.Visible : Visibility.Collapsed;
+        ConfigureErrorDetails();
+        ConfigureViewport();
+        ConfigureConnectionHistory();
+        resetPin.Click += (_, _) =>
+        {
+            if (!System.Net.IPAddress.TryParse(host.Text.Trim(), out var address) || !int.TryParse(port.Text, out int number) || number is < 1 or > 65535) return;
+            if (MessageBox.Show(this, "清除后，下次登录前需要重新核对受控端证书指纹。", "清除证书记录", MessageBoxButton.OKCancel) != MessageBoxResult.OK) return;
+            try { PasswordLoginSettings.SaveServerPin(new System.Net.IPEndPoint(address, number).ToString(), null); }
+            catch (Exception error) when (error is System.IO.IOException or UnauthorizedAccessException or System.Security.SecurityException) { status.Text = "无法清除证书记录。"; }
+        };
+        ConfigureSavedCredentials();
+    }
+
+    internal void SetOptionsExpanded(bool expanded)
+    {
+        if (expanded == optionsExpanded) return;
+        if (expanded) { basicConnection.Child = null; generalTab.Content = signInForm; }
+        else { generalTab.Content = null; basicConnection.Child = signInForm; }
+        optionsExpanded = expanded;
+        connectionOptions.SelectedIndex = 0;
+        connectionOptions.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+        basicConnection.Visibility = expanded ? Visibility.Collapsed : Visibility.Visible;
+        optionsButton.Content = expanded ? "隐藏选项 ▴" : "显示选项 ▾";
+        Height = expanded ? 610 : 470;
+    }
+    SessionToolbar? sessionToolbar;
+    internal SessionToolbar? Toolbar => sessionToolbar;
+    internal bool DesktopFillsClient => windowToolbar.Visibility == Visibility.Collapsed && connectionFooter.Visibility == Visibility.Collapsed;
+    internal void AddToolbarTestSurface(NativeVideoHost surface) => renderPanel.Children.Add(surface);
+    internal bool ConnectionPanelVisible => connectionOverlay.Visibility == Visibility.Visible;
+    internal bool BasicConnectionReady => host.IsVisible && port.IsVisible && pinnedConnection.IsChecked != true;
+    internal void SetConnectionText(string text) => invitation.Text = text;
+    Task<bool> ConfirmPasswordServer(string pin, CancellationToken cancellation)
+    {
+        cancellation.ThrowIfCancellationRequested();
+        bool accepted = MessageBox.Show(this,
+            $"请将下方指纹与受控端「登录设置」中的 TLS 指纹核对。\n\n{pin}\n\n仅在完全一致时继续，密码将在确认后发送。",
+            "核对受控端身份", MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK;
+        cancellation.ThrowIfCancellationRequested();
+        return Task.FromResult(accepted);
+    }
+    void ApplyInvitation()
+    {
+        if (string.IsNullOrWhiteSpace(invitation.Text)) return;
+        var code = RelaxDesk.Core.ConnectionInvitation.Parse(invitation.Text);
+        if (smoke is not null && (code.Host != smoke.Host || code.Port != smoke.Port)) throw new InvalidOperationException("Smoke invitation endpoint mismatch");
+        host.Text = code.Host; port.Text = code.Port.ToString(); fingerprint.Text = code.Fingerprint; token.Password = code.Token;
+        pinnedConnection.IsChecked = true;
+    }
+    internal void ShowConnectedView(bool connected)
+    {
+        if (connected && !desktopView)
+        {
+            connectionBounds = new Rect(Left, Top, Width, Height);
+            connectionWindowState = WindowState;
+            MinWidth = 680; MinHeight = 480;
+            if (WindowState == WindowState.Normal) { Width = 1100; Height = 750; }
+        }
+        connectionOverlay.Visibility = connected ? Visibility.Collapsed : Visibility.Visible;
+        windowToolbar.Visibility = connectionFooter.Visibility = connected ? Visibility.Collapsed : Visibility.Visible;
+        if (connected)
+        {
+            sessionToolbar ??= new SessionToolbar(this, ToggleFullScreen, () => disconnect.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)),
+                session is null ? null : SendShortcut,ReleaseHeldInputs, connectionBarPreferences);
+            sessionToolbar.FilesAction.Visibility = smoke?.FileTransfer == true || smoke?.ReconnectTest == true ? Visibility.Visible : Visibility.Collapsed;
+            sessionToolbar.FileClipboardAction.Visibility = fileClipboardVerificationFactory is not null ? Visibility.Visible : Visibility.Collapsed;
+            sessionToolbar.SetSession(SessionEndpoint, fullScreen);
+            sessionToolbar.SetClipboard(sessionPermissions is{} clipboardGate&&ClipboardFormats.Granted(clipboardGate).Any, DisableClipboard);
+            sessionToolbar.SetRemoteShortcuts(inputAuthorized);
+            sessionToolbar.SetTextInput(inputAuthorized&&inputVersion==2?OpenTextInput:null);
+            RefreshFileToolbar();RefreshFileClipboardToolbar();RefreshDisplayMenu();RefreshAudioToolbar();RefreshStatisticsToolbar();RefreshVideoSettingsMenu();sessionToolbar.SetViewport(CurrentViewport,SetViewportZoom);
+        }
+        else
+        {
+            localConnectionKeys.Clear();
+            sessionToolbar?.Dispose(); sessionToolbar = null;
+            if (fullScreen) ToggleFullScreen();
+            if (desktopView)
+            {
+                MinWidth = 540; MinHeight = 450;
+                WindowState = connectionWindowState;
+                if (WindowState == WindowState.Normal) { Width = connectionBounds.Width; Height = connectionBounds.Height; Left = connectionBounds.Left; Top = connectionBounds.Top; }
+            }
+        }
+        desktopView = connected;
+        renderPanel.Background = connected ? Brushes.Black : Background;
+        UpdateViewTitle();
+        if (connected) { invitation.Clear(); token.Clear(); }
+    }
+    void UpdateViewTitle()
+    {
+        Title = desktopView ? previewing ? "RelaxDesk — 本机预览" : $"{host.Text} - RelaxDesk 远程桌面" : "RelaxDesk 远程桌面连接";
+        if (desktopView && !previewing && fileClipboardStatus.Length > 0)
+            Title += " · " + fileClipboardStatus;
+    }
+    internal void StartLocalPreview()
+    {
+        if (session is not null) return;
+        StopLocalPreview(); previewing = true; disconnect.IsEnabled = true; ShowConnectedView(true);
+        int frame = 0;
+        void Draw()
+        {
+            image.Source = BitmapSource.Create(960, 540, 96, 96, PixelFormats.Bgr32, null, CodecVerification.Pattern(960, 540, frame++ % 200), 960 * 4);
+            SetViewportVideoSize(960,540);
+            status.Text = "本机预览 · 无网络连接 · 输入不会发往其他电脑";
+        }
+        Draw(); previewTimer = new() { Interval = TimeSpan.FromMilliseconds(100) }; previewTimer.Tick += (_, _) => Draw(); previewTimer.Start();
+    }
+    internal void StopLocalPreview()
+    {
+        if (!previewing) return;
+        previewTimer?.Stop(); previewTimer = null; previewing = false;EndViewport(); image.Source = null; disconnect.IsEnabled = false; ShowConnectedView(false); status.Text = "预览已结束，准备连接";
+    }
+    bool IsLocalPointer(double x, double y) => sessionToolbar?.BlocksPointer(x, y) == true;
+    internal void ToggleFullScreen()
+    {
+        ReleaseHeldInputs();
+        SetFullScreenPresentation(!fullScreen);
+        sessionToolbar?.SetFullScreen(fullScreen);
+    }
+}

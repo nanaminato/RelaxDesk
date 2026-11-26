@@ -7,28 +7,17 @@ namespace RelaxDesk.HostShell;
 
 internal sealed partial class HostWindow
 {
-    readonly TextBox loginFingerprint = new() { TextWrapping = TextWrapping.Wrap, IsReadOnly = true };
-    readonly TextBlock loginNotice = new() { TextWrapping = TextWrapping.Wrap };
-    readonly TextBlock loginOverview = Text("正在读取登录设置…", foreground: System.Windows.Media.Brushes.SlateGray);
-    readonly Button saveLogin = new() { Content = "保存登录设置" };
+    readonly HostLoginSettings loginSettings = new();
+    TextBox loginFingerprint => loginSettings.Fingerprint;
+    TextBlock loginNotice => loginSettings.Notice;
+    Button saveLogin => loginSettings.Save;
     bool savingLogin, passwordLoginRequest;
     PasswordVerifier? loginVerifierForTests;
 
-    StackPanel BuildLoginSettings()
+    void ConfigureLoginSettings()
     {
-        var name = new TextBox { MaxLength = PasswordVerifier.MaximumUserNameLength };
-        var password = new PasswordBox { MaxLength = PasswordVerifier.MaximumPasswordLength };
-        var panel = new StackPanel();
-        panel.Children.Add(Text($"连接端用户名（{PasswordVerifier.MinimumNewUserNameLength} 至 {PasswordVerifier.MaximumUserNameLength} 个字符）", 14, true));
-        panel.Children.Add(name);
-        panel.Children.Add(Text($"新密码（{PasswordVerifier.MinimumPasswordLength} 至 {PasswordVerifier.MaximumPasswordLength} 个字符）", 14, true));
-        panel.Children.Add(password);
-        panel.Children.Add(saveLogin);
-        panel.Children.Add(loginNotice);
-        panel.Children.Add(Text("受控端 TLS 指纹", 14, true));
-        panel.Children.Add(loginFingerprint);
-        panel.Unloaded += (_, _) => password.Clear();
-        loginFingerprint.Text = "开始共享后显示。首次连接时请核对两端指纹。";
+        var name = loginSettings.UserName;
+        var password = loginSettings.Password;
         Loaded += (_, _) =>
         {
             try
@@ -61,6 +50,5 @@ internal sealed partial class HostWindow
             { loginNotice.Text = error.Message; }
             finally { savingLogin = false; UpdateServiceControls(); }
         };
-        return panel;
     }
 }

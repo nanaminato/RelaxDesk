@@ -7,19 +7,12 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
-    readonly ComboBox recentConnections=new(){MinHeight=30};
-    readonly CheckBox rememberConnections = new() { Content = "记录连接地址", ToolTip = "仅记录已授权连接的 IP 和端口。", IsChecked = true };
-    readonly Button clearConnections=new(){Content="清空历史"};
-    readonly TextBlock historyNotice = new() { TextWrapping = TextWrapping.Wrap, FontSize = 11 };
-    readonly Expander connectionHistoryPanel = new() { Header = "最近连接", Margin = new(0,8,0,0) };
     ConnectionHistoryStore? historyStore;
     readonly CancellationTokenSource historyLifetime=new();
     int historyGeneration;
     internal Task HistoryOperation{get;private set;}=Task.CompletedTask;
-    void AddConnectionHistory(Panel panel)
+    void ConfigureConnectionHistory()
     {
-        var content=new StackPanel();content.Children.Add(recentConnections);
-        var actions=new WrapPanel();actions.Children.Add(rememberConnections);actions.Children.Add(clearConnections);content.Children.Add(actions);content.Children.Add(historyNotice);connectionHistoryPanel.Content=content;panel.Children.Add(connectionHistoryPanel);
         recentConnections.SelectionChanged+=(_,_)=>
         {
             if(connectionRun is not null||recentConnections.SelectedItem is not ConnectionEndpoint endpoint)return;

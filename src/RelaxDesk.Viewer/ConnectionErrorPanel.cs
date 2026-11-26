@@ -9,19 +9,12 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
-    readonly Expander errorDetails = new() { Header = "错误详情", Visibility = Visibility.Collapsed, Margin = new(0, 8, 0, 0) };
-    readonly TextBox errorReport = new() { IsReadOnly = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 190, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, FontFamily = new("Consolas") };
-    readonly Button copyError = new() { Content = "复制诊断", ToolTip = "诊断摘要不含凭据。" }, clearError = new() { Content = "清除详情" };
-    readonly TextBlock copyErrorFeedback = new() { TextWrapping = TextWrapping.Wrap };
     ConnectionErrorDetails? connectionError;
     int errorGeneration; bool errorCopying;
     readonly CancellationTokenSource errorPanelLifetime = new();
     Func<string, CancellationToken, Task>? errorCopyForVerification;
-    void BuildErrorDetails(Panel parent)
+    void ConfigureErrorDetails()
     {
-        var panel = new StackPanel();
-        panel.Children.Add(errorReport); var actions = new WrapPanel(); actions.Children.Add(copyError); actions.Children.Add(clearError); panel.Children.Add(actions); panel.Children.Add(copyErrorFeedback);
-        errorDetails.Content = panel; parent.Children.Add(errorDetails);
         clearError.Click += (_, _) => ClearConnectionError(); copyError.Click += async (_, _) => await CopyConnectionError();
         errorReport.CommandBindings.Add(new CommandBinding(ApplicationCommands.Copy,
             async (_, args) => { args.Handled = true; await CopyConnectionError(errorReport.SelectedText); },

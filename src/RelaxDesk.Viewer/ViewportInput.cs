@@ -9,19 +9,12 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
-    readonly Grid videoPanel=new(){ClipToBounds=true};
-    readonly Canvas bitmapPanel=new();
-    readonly ScrollBar horizontalPan=new(){Orientation=Orientation.Horizontal,Height=18,Visibility=Visibility.Collapsed};
-    readonly ScrollBar verticalPan=new(){Orientation=Orientation.Vertical,Width=18,Visibility=Visibility.Collapsed};
     ViewportOptions viewport=new();
     bool viewportInputReady,updatingViewport;
     int viewportVideoWidth,viewportVideoHeight;
     ViewportOptions CurrentViewport=>Volatile.Read(ref viewport);
-    void BuildViewport()
+    void ConfigureViewport()
     {
-        var layout=new Grid();layout.RowDefinitions.Add(new());layout.RowDefinitions.Add(new(){Height=GridLength.Auto});layout.ColumnDefinitions.Add(new());layout.ColumnDefinitions.Add(new(){Width=GridLength.Auto});
-        image.Stretch=Stretch.Fill;image.HorizontalAlignment=HorizontalAlignment.Left;image.VerticalAlignment=VerticalAlignment.Top;
-        bitmapPanel.Children.Add(image);videoPanel.Children.Add(bitmapPanel);videoPanel.Children.Add(displayUnavailable);layout.Children.Add(videoPanel);Grid.SetRow(horizontalPan,1);Grid.SetColumn(verticalPan,1);layout.Children.Add(horizontalPan);layout.Children.Add(verticalPan);renderPanel.Children.Add(layout);
         videoPanel.SizeChanged+=(_,_)=>ViewportBoundsChanged();DpiChanged+=(_,_)=>ViewportBoundsChanged();
         horizontalPan.ValueChanged+=(_,_)=>PanViewport();verticalPan.ValueChanged+=(_,_)=>PanViewport();
     }

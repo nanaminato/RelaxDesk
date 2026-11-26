@@ -1,0 +1,201 @@
+<Window x:Class="RelaxDesk.Viewer.ViewerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:core="clr-namespace:RelaxDesk.Core;assembly=RelaxDesk.Core"
+        Title="RelaxDesk 远程桌面连接" Width="560" Height="470" MinWidth="540" MinHeight="450"
+        WindowStartupLocation="CenterScreen" FontFamily="Segoe UI, Microsoft YaHei UI" FontSize="13"
+        Background="#F0F0F0">
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/RelaxDesk.Viewer;component/ViewerTheme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <Style x:Key="FieldRow" TargetType="Grid">
+                <Setter Property="Margin" Value="0,0,0,10" />
+            </Style>
+            <Style x:Key="FieldLabel" TargetType="Label">
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+        </ResourceDictionary>
+    </Window.Resources>
+    <DockPanel>
+        <Grid x:Name="windowToolbar" DockPanel.Dock="Top" Height="86" Background="White">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="76" />
+                <ColumnDefinition />
+            </Grid.ColumnDefinitions>
+            <Viewbox Width="42" Height="38" VerticalAlignment="Center">
+                <Grid Width="44" Height="38">
+                    <Border Height="28" VerticalAlignment="Top" Background="#1B68AA" BorderBrush="#314456" BorderThickness="2" CornerRadius="2">
+                        <TextBlock Text="↗" Foreground="White" FontSize="23" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <Border Width="3" Height="7" VerticalAlignment="Bottom" Background="SlateGray" Margin="0,0,0,3" />
+                    <Border Width="24" Height="3" VerticalAlignment="Bottom" Background="SlateGray" />
+                </Grid>
+            </Viewbox>
+            <TextBlock Grid.Column="1" Text="RelaxDesk" FontSize="24" Foreground="#143E69" VerticalAlignment="Center"
+                       ToolTip="{x:Static core:BuildIdentity.Display}" />
+        </Grid>
+        <StackPanel x:Name="connectionFooter" DockPanel.Dock="Bottom">
+            <Separator />
+            <DockPanel Margin="14,9,14,10">
+                <Button x:Name="optionsButton" Content="显示选项 ▾" MinWidth="96" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button x:Name="disconnect" Content="取消连接" IsEnabled="False" Visibility="Collapsed" />
+                    <Button x:Name="connect" Content="连接(_C)" IsDefault="True" MinWidth="88" />
+                    <Button x:Name="cancelConnection" Content="取消" MinWidth="82" />
+                </StackPanel>
+            </DockPanel>
+            <StackPanel Margin="18,0,18,10">
+                <TextBlock x:Name="status" TextWrapping="Wrap" Foreground="DimGray" FontSize="11" />
+                <Expander x:Name="errorDetails" Header="错误详情" Visibility="Collapsed" Margin="0,8,0,0">
+                    <StackPanel>
+                        <TextBox x:Name="errorReport" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="190"
+                                 VerticalScrollBarVisibility="Auto" FontFamily="Consolas" />
+                        <WrapPanel>
+                            <Button x:Name="copyError" Content="复制诊断" ToolTip="诊断摘要不含凭据。" />
+                            <Button x:Name="clearError" Content="清除详情" />
+                        </WrapPanel>
+                        <TextBlock x:Name="copyErrorFeedback" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Expander>
+            </StackPanel>
+        </StackPanel>
+        <Grid x:Name="renderPanel">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Grid x:Name="videoPanel" ClipToBounds="True">
+                    <Canvas x:Name="bitmapPanel">
+                        <Image x:Name="image" Stretch="Fill" Focusable="True" HorizontalAlignment="Left" VerticalAlignment="Top" />
+                    </Canvas>
+                    <Border x:Name="displayUnavailable" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"
+                            MaxWidth="480" Padding="24" Background="White" CornerRadius="10">
+                        <TextBlock TextWrapping="Wrap" Foreground="DimGray"><Run Text="屏幕暂不可用，输入已暂停。" /><LineBreak /><LineBreak /><Run Text="可在顶部工具栏选择仍获授权的屏幕，或等待原屏幕恢复。新增屏幕需要重新连接并授权。" /></TextBlock>
+                    </Border>
+                </Grid>
+                <ScrollBar x:Name="horizontalPan" Grid.Row="1" Orientation="Horizontal" Height="18" Visibility="Collapsed" />
+                <ScrollBar x:Name="verticalPan" Grid.Column="1" Orientation="Vertical" Width="18" Visibility="Collapsed" />
+            </Grid>
+            <ScrollViewer x:Name="connectionOverlay" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <Border x:Name="connectionCard" Margin="10,8,10,0">
+                    <Grid>
+                        <Border x:Name="basicConnection">
+                            <StackPanel x:Name="signInForm" Margin="20,14,20,8">
+                                <Grid Style="{StaticResource FieldRow}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="88" />
+                                        <ColumnDefinition />
+                                    </Grid.ColumnDefinitions>
+                                    <Label Style="{StaticResource FieldLabel}" Content="计算机(_C):" Target="{Binding ElementName=host}" />
+                                    <Grid Grid.Column="1">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="68" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox x:Name="host" Text="192.168.1.10" />
+                                        <TextBlock Grid.Column="1" Text="端口" VerticalAlignment="Center" Margin="10,0,7,0" />
+                                        <TextBox x:Name="port" Grid.Column="2" Text="48200" />
+                                    </Grid>
+                                </Grid>
+                                <Grid Style="{StaticResource FieldRow}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="88" />
+                                        <ColumnDefinition />
+                                    </Grid.ColumnDefinitions>
+                                    <Label Style="{StaticResource FieldLabel}" Content="用户名(_U):" Target="{Binding ElementName=loginName}" />
+                                    <TextBox x:Name="loginName" Grid.Column="1" MaxLength="{x:Static core:PasswordVerifier.MaximumUserNameLength}" />
+                                </Grid>
+                                <Grid Style="{StaticResource FieldRow}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="88" />
+                                        <ColumnDefinition />
+                                    </Grid.ColumnDefinitions>
+                                    <Label Style="{StaticResource FieldLabel}" Content="密码(_P):" Target="{Binding ElementName=token}" />
+                                    <PasswordBox x:Name="token" Grid.Column="1" />
+                                </Grid>
+                                <CheckBox x:Name="rememberCredentials" Content="记住我的凭据(_R)" Margin="88,4,0,7"
+                                          ToolTip="由 Windows 凭据管理器保护，仅供当前 Windows 用户使用。每个地址保存一组登录凭据。" />
+                                <TextBlock Text="首次连接需核对指纹并在受控端批准。" Foreground="DimGray"
+                                           FontSize="11" TextWrapping="Wrap" Margin="0,8,0,4" />
+                                <Expander x:Name="connectionHistoryPanel" Header="最近连接" Margin="0,8,0,0">
+                                    <StackPanel>
+                                        <ComboBox x:Name="recentConnections" MinHeight="30" />
+                                        <WrapPanel>
+                                            <CheckBox x:Name="rememberConnections" Content="记录连接地址" ToolTip="仅记录已授权连接的 IP 和端口。" IsChecked="True" />
+                                            <Button x:Name="clearConnections" Content="清空历史" />
+                                        </WrapPanel>
+                                        <TextBlock x:Name="historyNotice" TextWrapping="Wrap" FontSize="11" />
+                                    </StackPanel>
+                                </Expander>
+                            </StackPanel>
+                        </Border>
+                        <TabControl x:Name="connectionOptions" Visibility="Collapsed">
+                            <TabItem x:Name="generalTab" Header="常规" />
+                            <TabItem Header="显示">
+                                <StackPanel Margin="18">
+                                    <CheckBox x:Name="startFullScreen" Content="全屏启动" />
+                                    <CheckBox x:Name="gpuRendering" Content="GPU 显示" ToolTip="GPU 显示不可用时自动使用兼容模式。" IsChecked="True" />
+                                    <CheckBox x:Name="requestTopology" Content="屏幕变更时保持连接"
+                                              ToolTip="需要新版受控端。连接旧版时请取消勾选。" IsChecked="True" />
+                                </StackPanel>
+                            </TabItem>
+                            <TabItem Header="本地资源">
+                                <StackPanel Margin="18">
+                                    <CheckBox x:Name="requestClipboard" Content="文本剪贴板" ToolTip="双向同步。" IsChecked="True" />
+                                    <CheckBox x:Name="requestClipboardImage" Content="图片剪贴板" ToolTip="双向同步，上限 8 MiB 或 1600 万像素。" IsChecked="True" />
+                                    <CheckBox x:Name="requestClipboardHtml" Content="HTML 剪贴板" ToolTip="双向同步，上限 512 KiB。" IsChecked="True" />
+                                    <CheckBox x:Name="requestFileClipboard" Content="文件剪贴板" ToolTip="在两端复制和粘贴文件。" IsChecked="True" />
+                                    <CheckBox x:Name="requestAudio" Content="播放远程声音" IsChecked="True" />
+                                </StackPanel>
+                            </TabItem>
+                            <TabItem Header="高级">
+                                <StackPanel Margin="18">
+                                    <Grid Style="{StaticResource FieldRow}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="88" />
+                                            <ColumnDefinition />
+                                        </Grid.ColumnDefinitions>
+                                        <Label Style="{StaticResource FieldLabel}" Content="媒体传输:" Target="{Binding ElementName=networkMode}" />
+                                        <ComboBox x:Name="networkMode" Grid.Column="1" SelectedIndex="0" SelectedValuePath="Content">
+                                            <ComboBoxItem Content="Auto" />
+                                            <ComboBoxItem Content="TCP" />
+                                            <ComboBoxItem Content="UDP" />
+                                        </ComboBox>
+                                    </Grid>
+                                    <Grid Style="{StaticResource FieldRow}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="88" />
+                                            <ColumnDefinition />
+                                        </Grid.ColumnDefinitions>
+                                        <Label Style="{StaticResource FieldLabel}" Content="文件限速:" Target="{Binding ElementName=fileRateLimit}" />
+                                        <ComboBox x:Name="fileRateLimit" Grid.Column="1" SelectedIndex="0">
+                                            <ComboBoxItem Content="20 MiB/s（默认）" />
+                                            <ComboBoxItem Content="4 MiB/s" />
+                                            <ComboBoxItem Content="1 MiB/s" />
+                                            <ComboBoxItem Content="256 KiB/s" />
+                                        </ComboBox>
+                                    </Grid>
+                                    <Button x:Name="resetPin" Content="清除受控端证书记录…" HorizontalAlignment="Left" Margin="0,16,0,0" />
+                                </StackPanel>
+                            </TabItem>
+                        </TabControl>
+                    </Grid>
+                </Border>
+            </ScrollViewer>
+            <StackPanel Visibility="Collapsed">
+                <TextBox x:Name="fingerprint" />
+                <TextBox x:Name="invitation" />
+                <CheckBox x:Name="pinnedConnection" />
+            </StackPanel>
+        </Grid>
+    </DockPanel>
+</Window>
