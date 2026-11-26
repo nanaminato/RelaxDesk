@@ -45,7 +45,6 @@ internal sealed partial class HostWindow:Window
         deviceTrust = trustStore ?? DeviceTrustStore.CurrentUser();
         application=hostApplication??Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"..","Host","RelaxDesk.Host.exe"));
         InitializeComponent();
-        serviceSettings = new ServiceSettingsView();
         logs = (TextBox)Resources["HostLogPanel"];
         BuildVersion.Text = BuildIdentity.Display;
         var addresses = Addresses();
@@ -61,14 +60,12 @@ internal sealed partial class HostWindow:Window
         }
 
         ConfigureDisplaySettings();
-        ConfigureSettingsWindow(openDisplay, "Host.SharingSettings", displaySettings);
         ConfigureLoginSettings();
         ConfigureSettingsWindow(openLogin, "Host.LoginSettings", loginSettings);
         ConfigureServiceSettings();
-        ConfigureSettingsWindow(openService, "Host.SystemService", serviceSettings);
         ConfigureDeviceTrust();
         ConfigureSettingsWindow(openDevices, "Host.TrustedDevices", trustedDeviceSettings);
-        ConfigureSettingsWindow(openLogs, "Host.DiagnosticsAndLogs", logs);
+        ConfigureSettingsWindow(openLogs, "Host.DiagnosticsAndLogs", CreateDiagnosticsPanel());
         ConfigureLanguageSelector();
 
         connectionNavigation.Click += (_, _) => ShowPage(false);
@@ -126,6 +123,50 @@ internal sealed partial class HostWindow:Window
                 if (section.IsVisible)
                     MainScroll.ScrollToVerticalOffset(MainScroll.VerticalOffset + section.TranslatePoint(new Point(), MainScroll).Y);
             }, System.Windows.Threading.DispatcherPriority.Loaded);
+    }
+
+    UIElement CreateDiagnosticsPanel()
+    {
+        var panel = new StackPanel();
+        var header = new DockPanel { Margin = new Thickness(0, 0, 0, 14) };
+        var copyButton = new Button
+        {
+            Content = "复制日志",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(12, 0, 0, 0)
+        };
+        copyButton.Click += (_, _) =>
+        {
+            try
+            {
+                Clipboard.SetText(logs.Text ?? "");
+                copyButton.Content = "已复制";
+            }
+            catch { }
+        };
+        DockPanel.SetDock(copyButton, Dock.Right);
+        header.Children.Add(copyButton);
+
+        var titles = new StackPanel();
+        titles.Children.Add(new TextBlock
+        {
+            Text = "诊断与日志",
+            FontSize = 20,
+            FontWeight = FontWeights.Bold,
+            Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(15, 23, 42))
+        });
+        titles.Children.Add(new TextBlock
+        {
+            Text = "实时记录受控端连接状态、捕获与传输事件，便于排查问题。",
+            FontSize = 13,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(100, 116, 139)),
+            Margin = new Thickness(0, 4, 0, 0)
+        });
+        header.Children.Add(titles);
+        panel.Children.Add(header);
+        panel.Children.Add(logs);
+        return panel;
     }
 
     void ConfigureSettingsWindow(Button open, string titleKey, UIElement body)

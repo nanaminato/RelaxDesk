@@ -4,5 +4,5 @@ namespace RelaxDesk.HostShell;
 
 internal sealed partial class ServiceSettingsView : UserControl
 {
-    internal ServiceSettingsView() => InitializeComponent();
+    public ServiceSettingsView() => InitializeComponent();
 }

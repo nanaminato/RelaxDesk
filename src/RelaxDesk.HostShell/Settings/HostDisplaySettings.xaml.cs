@@ -4,5 +4,5 @@ namespace RelaxDesk.HostShell;
 
 internal sealed partial class HostDisplaySettings : UserControl
 {
-    internal HostDisplaySettings() => InitializeComponent();
+    public HostDisplaySettings() => InitializeComponent();
 }

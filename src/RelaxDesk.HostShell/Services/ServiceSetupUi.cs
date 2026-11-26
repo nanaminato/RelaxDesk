@@ -8,7 +8,6 @@ namespace RelaxDesk.HostShell;
 internal sealed partial class HostWindow
 {
     Button enableService => serviceSettings.EnableService;
-    readonly ServiceSettingsView serviceSettings;
     Button installService => serviceSettings.InstallService;
     Button uninstallService => serviceSettings.UninstallService;
     Button refreshService => serviceSettings.RefreshService;

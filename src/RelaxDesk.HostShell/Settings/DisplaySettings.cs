@@ -7,7 +7,6 @@ namespace RelaxDesk.HostShell;
 
 internal sealed partial class HostWindow
 {
-    readonly HostDisplaySettings displaySettings = new();
     ComboBox displayChoice => displaySettings.Choice;
     Button refreshDisplays => displaySettings.Refresh;
     TextBlock displayHint => displaySettings.Hint;
