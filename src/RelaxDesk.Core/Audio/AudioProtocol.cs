@@ -53,10 +53,11 @@ public static class AudioProtocol
 public sealed class AudioJitterBuffer
 {
     readonly Queue<AudioFrame> queue=new();readonly object sync=new();
-    long sequence,timestamp;int frames;
+    long sequence,timestamp,discontinuitySequence;int frames;
     public const int CapacityFrames=9600;
     public long Dropped{get;private set;}
     public int BufferedFrames{get{lock(sync)return frames;}}
+    public long DiscontinuitySequence{get{lock(sync)return discontinuitySequence;}}
     public void Push(AudioFrame frame)
     {
         AudioProtocol.Validate(frame);
@@ -64,7 +65,7 @@ public sealed class AudioJitterBuffer
         {
             if(frame.Sequence<=sequence||!frame.Discontinuity&&frame.Timestamp100ns<timestamp)throw new InvalidDataException("Replayed or regressed audio");
             sequence=frame.Sequence;timestamp=frame.Timestamp100ns;
-            if(frame.Discontinuity){Dropped+=queue.Count;queue.Clear();frames=0;}
+            if(frame.Discontinuity){Dropped+=queue.Count;queue.Clear();frames=0;discontinuitySequence=frame.Sequence;}
             while(frames+frame.Frames>CapacityFrames){var old=queue.Dequeue();frames-=old.Frames;Dropped++;}
             queue.Enqueue(frame);frames+=frame.Frames;
         }

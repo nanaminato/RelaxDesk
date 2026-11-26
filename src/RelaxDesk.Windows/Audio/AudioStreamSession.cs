@@ -67,7 +67,6 @@ public sealed class AudioStreamSession:IAsyncDisposable
             else while(!lifetime.IsCancellationRequested)
             {
                 var frame=await AudioProtocol.Read(stream,lifetime.Token);incoming.Push(frame);
-                if(frame.Discontinuity)Interlocked.Increment(ref flush);
                 Packets++;PayloadBytes+=frame.Data.Length;
             }
         }
@@ -77,7 +76,7 @@ public sealed class AudioStreamSession:IAsyncDisposable
     void Device()
     {
         IAudioEndpoint? endpoint=null;int retries=0,seenFlush=0;long sequence=0,lastTimestamp=0;
-        AudioFrame? pending=null;int offset=0;long lastCheck=0,lastSample=Stopwatch.GetTimestamp();bool discontinuity=true,invalidated=false;
+        AudioFrame? pending=null;int offset=0;long lastCheck=0,seenDiscontinuity=0;bool discontinuity=true,invalidated=false;
         try
         {
             lifetime.Token.ThrowIfCancellationRequested();endpoint=factory();
@@ -112,16 +111,24 @@ public sealed class AudioStreamSession:IAsyncDisposable
                     if(frame is not null)
                     {
                         if(frame.Timestamp100ns>=lastTimestamp)
-                        {lastTimestamp=frame.Timestamp100ns;outgoing.Writer.TryWrite(frame with{Sequence=++sequence,Discontinuity=discontinuity||frame.Discontinuity});discontinuity=false;lastSample=now;}
-                    }
-                    else if((now-lastSample)/(double)Stopwatch.Frequency>=0.02)
-                    {
-                        lastTimestamp=Math.Max(lastTimestamp,(long)(now*(10_000_000d/Stopwatch.Frequency)));
-                        outgoing.Writer.TryWrite(new(++sequence,lastTimestamp,discontinuity,new byte[3840]));discontinuity=false;lastSample=now;
+                        {lastTimestamp=frame.Timestamp100ns;outgoing.Writer.TryWrite(frame with{Sequence=++sequence,Discontinuity=discontinuity||frame.Discontinuity});discontinuity=false;}
+                        // Drain the capture backlog before polling again. One
+                        // sleep per device packet falls behind small periods.
+                        continue;
                     }
                 }
                 else
                 {
+                    long boundary=incoming.DiscontinuitySequence;
+                    if(seenDiscontinuity!=boundary)
+                    {
+                        seenDiscontinuity=boundary;
+                        // Push already removed older queued packets. Preserve the
+                        // new packet and any newer samples while clearing stale
+                        // partially submitted/device-buffered sound.
+                        if(pending is not null&&pending.Sequence<boundary)pending=null;
+                        try{endpoint.Flush();}catch(System.Runtime.InteropServices.COMException e)when(unchecked((uint)e.HResult)==0x88890004){invalidated=true;lastCheck=0;continue;}
+                    }
                     int requestedFlush=Volatile.Read(ref flush);
                     if(seenFlush!=requestedFlush)
                     {

@@ -25,9 +25,12 @@ internal static class AudioChecks
         try{buffer.Push(sample);throw new Exception("Audio replay accepted");}catch(InvalidDataException){count++;}
         try{buffer.Push(sample with{Sequence=101,Timestamp100ns=0,Discontinuity=false});throw new Exception("Timestamp regression accepted");}catch(InvalidDataException){count++;}
         buffer.Push(sample with{Sequence=101,Timestamp100ns=0,Discontinuity=true});Check(buffer.BufferedFrames==480);
+        Check(buffer.DiscontinuitySequence==101);
         buffer.Flush();Check(buffer.BufferedFrames==0&&!buffer.TryTake(out _));
+        Check(buffer.DiscontinuitySequence==101);
         try{buffer.Push(sample with{Sequence=101});throw new Exception("Flush reset replay state");}catch(InvalidDataException){count++;}
         Check(new AudioJitterBuffer().BufferedFrames==0);
+        Check(new AudioJitterBuffer().DiscontinuitySequence==0);
         return count;
     }
 }

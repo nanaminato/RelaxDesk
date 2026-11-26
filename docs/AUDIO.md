@@ -24,7 +24,15 @@ Console Host accepts `APPROVE_AUDIO` or an explicit `_AUDIO` suffix on `APPROVE_
 
 Optional `audio.system` uses its own random, expiring, one-use `AudioTicket`, distinct from media/file/clipboard tickets. An additional TLS stream attaches after media and optional file/clipboard streams with exact `audio-v2` / `audio-approved-v2` packets; its certificate must match the pinned control identity. Missing, malformed, reused or unsolicited approval tickets/grants reject negotiation. Audio-only pin/attachment failure disables that stream and preserves independently authenticated video/control; it never accepts another audio certificate or falls back to plaintext. Attachment has a five-second limit.
 
-Separate STA capture/playback and asynchronous audio transport workers never share a video queue or Dispatcher IO path. Capture has a two-packet latest queue; packet gaps mark discontinuity and flush queued/partial/render samples at the receiver. Audio send has a 500ms deadline. Receiver buffering drops oldest packets on overflow; parse/replay failures disable audio only. Inactivity produces bounded silence. Live `audio-state-v2` and Host revoke close only audio and emit a capability notification. Source, socket, playback, device or diagnostic failure is isolated from screen/input. Teardown cancels, closes, joins workers and releases devices.
+Separate STA capture/playback and asynchronous audio transport workers never share a video queue or Dispatcher IO path. Capture drains all currently available device packets before its next poll and has a two-packet latest queue. Packet gaps mark discontinuity: the receiver removes older queued/partial/device-buffered samples while preserving the boundary packet and newer audio. Audio send has a 500ms deadline. Receiver buffering drops oldest packets on overflow; parse/replay failures disable audio only. An empty loopback read sends no fabricated PCM or timestamp; the playback device naturally runs out of queued sound during inactivity. Real WASAPI silent buffers are still transmitted as zero samples. Live `audio-state-v2` and Host revoke close only audio and emit a capability notification. Source, socket, playback, device or diagnostic failure is isolated from screen/input. Teardown cancels, closes, joins workers and releases devices.
+
+Regression commands: Smoke `--audio-stream-contracts` uses synthetic endpoints
+over real loopback TCP to check first/discontinuity packet retention, stale
+partial replacement and empty-capture timing. `--audio-signal-contracts` is an
+explicit device test: it emits a quiet 500ms 1kHz tone into the default output
+and captures that endpoint's loopback, reporting only frequency/amplitude
+aggregates. It stores no samples and may be affected by other playing system
+sound. Neither test certifies remote physical speaker quality.
 
 Default endpoint identity is checked every 250ms. Default changes or invalidation dispose the old endpoint and allow at most three replacements, using 100/200/300ms delays across the audio session; known temporary unavailable/service errors consume the same budget. Successful packets do not replenish it. Partial/queued samples flush after replacement. Exhaustion disables audio and requires reconnect/consent. Playback padding is capped at 40ms or the device's smaller capacity.
 
