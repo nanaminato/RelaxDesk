@@ -35,6 +35,7 @@ public sealed partial class ViewerWindow
                 var target = new ConnectionTarget("127.0.0.2", 48200, false, "", password, [], UserName: "fixture-user");
                 window.SaveConnectedCredential(target, remember: false);
                 Check(store.Read(endpoint) is null);
+                Check(window.preferences.LoginNames.Single().UserName == "fixture-user");
                 window.SaveConnectedCredential(target, remember: true);
                 Check(store.Read(endpoint)?.Password == password);
                 window.port.Text = "48201";
@@ -48,6 +49,27 @@ public sealed partial class ViewerWindow
                 Check(store.Read(endpoint)?.UserName == "replacement-user");
                 store.Delete(endpoint); store.Delete(endpoint);
                 Check(store.Read(endpoint) is null);
+                string fixture = System.IO.Path.Combine(Environment.CurrentDirectory, "build", "username-fixtures", Guid.NewGuid().ToString("N"), "viewer.json");
+                window.preferencesStore = new ViewerPreferencesStore(fixture);
+                window.SaveConnectedCredential(target with { UserName = "上次登录用户" }, remember: false);
+                window.preferencesOperation.GetAwaiter().GetResult();
+                Check(store.Read(endpoint) is null);
+                var reloaded = window.preferencesStore.Load();
+                Check(reloaded.LoginNames is [{ Endpoint:endpoint, UserName:"上次登录用户" }]);
+                Check(!System.IO.File.ReadAllText(fixture).Contains(password));
+                var next = new ViewerWindow { preferences = reloaded, credentialStore = store };
+                try
+                {
+                    next.host.Text = "127.0.0.2";
+                    Check(next.loginName.Text == "上次登录用户" && next.token.Password.Length == 0 && next.rememberCredentials.IsChecked == false);
+                    next.port.Text = "48201";
+                    Check(next.loginName.Text.Length == 0 && next.token.Password.Length == 0);
+                    next.port.Text = "48200";
+                    Check(next.loginName.Text == "上次登录用户" && next.token.Password.Length == 0);
+                    next.loginName.Text = "未登录的新用户名";
+                    Check(next.preferences.LoginNames.Single().UserName == "上次登录用户");
+                }
+                finally { next.Close(); }
                 Console.WriteLine($"PASS {checks} Windows Credential Manager and WPF credential checks: Unicode roundtrip, endpoint isolation, username mismatch clears password, opt-in save, unchecked deletion, replacement and idempotent deletion; isolated synthetic credentials, no real login");
             }
             catch (Exception error) { Console.Error.WriteLine(error); Environment.ExitCode = 1; }

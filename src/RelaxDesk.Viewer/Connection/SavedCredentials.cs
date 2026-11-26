@@ -41,16 +41,17 @@ public sealed partial class ViewerWindow
 
     void LoadSavedCredential(bool endpointChanged)
     {
-        if (loadingCredential || credentialStore is null || connectionRun is not null) return;
+        if (loadingCredential || connectionRun is not null) return;
         string? endpoint = CurrentCredentialEndpoint();
         if (endpointChanged && endpoint == credentialEndpoint) return;
         loadingCredential = true;
         try
         {
             token.Clear(); rememberCredentials.IsChecked = false;
-            if (endpointChanged) { credentialEndpoint = endpoint; loginName.Clear(); }
-            if (endpoint is null || credentialStore.Read(endpoint) is not { } saved) return;
-            if (!endpointChanged && loginName.Text.Trim() != saved.UserName) return;
+            var remembered = preferences.LoginNames.FirstOrDefault(entry => entry.Endpoint == endpoint);
+            if (endpointChanged) { credentialEndpoint = endpoint; loginName.Text = remembered?.UserName ?? ""; }
+            if (endpoint is null || credentialStore?.Read(endpoint) is not { } saved) return;
+            if ((!endpointChanged || remembered is not null) && loginName.Text.Trim() != saved.UserName) return;
             loginName.Text = saved.UserName; token.Password = saved.Password; rememberCredentials.IsChecked = true;
         }
         catch (Exception error) when (CredentialError(error)) { status.Text = "保存的凭据暂不可用，请手动输入。"; }
@@ -58,8 +59,16 @@ public sealed partial class ViewerWindow
     }
     void SaveConnectedCredential(ConnectionTarget target, bool remember)
     {
-        if (!remember || credentialStore is null || target.UserName is null) return;
-        try { credentialStore.Save(new IPEndPoint(IPAddress.Parse(target.Host), target.Port).ToString(), target.UserName, target.Token); }
+        if (target.UserName is null) return;
+        string endpoint = new IPEndPoint(IPAddress.Parse(target.Host), target.Port).ToString();
+        preferences = preferences with { LoginNames = [new(endpoint, target.UserName), .. preferences.LoginNames.Where(entry => entry.Endpoint != endpoint).Take(19)] };
+        SavePreferences();
+        if (credentialStore is null) return;
+        try
+        {
+            if (remember) credentialStore.Save(endpoint, target.UserName, target.Token);
+            else credentialStore.Delete(endpoint);
+        }
         catch (Exception error) when (CredentialError(error)) { ViewerSessionLog.Record("credential-save-failed", new InvalidOperationException("Windows credential storage unavailable")); }
     }
 }

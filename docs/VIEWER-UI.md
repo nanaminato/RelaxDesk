@@ -61,13 +61,18 @@ an atomic replacement file off the Dispatcher and flushed on close. A bounded,
 versioned document validates ranges; missing/corrupt/unreadable preferences use
 defaults. Storage errors do not terminate an active session. These are requests,
 not Host grants; each connection still authenticates and negotiates permission.
-Passwords, usernames, pins, tickets, grants, and video generations are excluded.
+The last successfully authenticated username is remembered separately for each
+IP/port (up to 20 endpoints) in this preferences document. Startup and endpoint
+selection fill that username even when Remember credentials is unchecked.
+Typing a different username or failing authentication does not replace the
+remembered successful login. Passwords, pins, tickets, grants, and video
+generations are excluded.
 Separate Viewer processes use last-writer-wins preferences. Verification modes
 use defaults or injected fixture stores and never write actual user preferences.
 
 ## Remembered credentials
 
-An explicit opt-in stores a successfully authenticated username/password in
+An explicit opt-in additionally stores a successfully authenticated username/password in
 Windows Credential Manager as a generic credential. A service-prefixed SHA-256
 hash of the canonical endpoint identifies the entry. Each endpoint has one
 saved login; saving another username replaces it. Persistence is local to this
@@ -77,8 +82,9 @@ preferences JSON, diagnostics or package manifests.
 Changing endpoint clears the old username/password before loading a matching
 saved entry. Changing username clears the old password and only refills on an
 exact match. Selecting a recent connection can refill from this separate store.
-Unchecking Remember credentials deletes the matching saved username's entry.
-Unchecked connections do not save credentials. Failed authentication never
+Unchecking Remember credentials deletes the matching saved password entry;
+successful unchecked connections remove any old password for that endpoint
+while preserving its remembered username. Failed authentication never
 triggers a write. Once logged in, automatic reconnection continues to use the
 existing in-memory target. Saved credentials never replace certificate checks,
 device trust or Host approval. Windows storage failures permit manual entry.
