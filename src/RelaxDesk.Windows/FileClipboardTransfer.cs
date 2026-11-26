@@ -39,6 +39,7 @@ public sealed class FileClipboardTransfer(FileTransferClient client,FileTransfer
         string[] tops=selection.Paths.Select(path=>stage+"/"+Path.GetFileName(path)).ToArray();
         uploaded=new(completed.Where(job=>tops.Contains(job.RemotePath,StringComparer.OrdinalIgnoreCase)).Select(job=>job.RemotePath).ToArray());
         if(!ClipboardFiles.Valid(uploaded)||uploaded.Paths.Length!=selection.Paths.Length)throw new IOException("文件清单与完成任务不匹配");
+        if(await local.ClipboardVersion(ct)!=selection.Version)throw new IOException("本机剪贴板已改变");
         await client.PrepareClipboard(uploaded,version,ct);
     }
     async Task<TransferEntry> Describe(string path,CancellationToken ct)
@@ -50,10 +51,11 @@ public sealed class FileClipboardTransfer(FileTransferClient client,FileTransfer
         }
         throw new IOException("复制的远端文件已改变或不在授权目录中");
     }
-    public async Task Download(ClipboardFiles offer,string destination,CancellationToken ct)
+    public async Task Download(ClipboardFiles offer,string destination,CancellationToken ct,long? expectedVersion=null)
     {
         Check(ct);if(!ClipboardFiles.Valid(offer))throw new InvalidDataException("Invalid clipboard file offer");
-        long prior=await local.ClipboardVersion(ct);
+        long prior=expectedVersion??await local.ClipboardVersion(ct);
+        if(expectedVersion is not null&&await local.ClipboardVersion(ct)!=prior)throw new IOException("本机剪贴板已改变");
         var entries=new List<TransferEntry>();foreach(string path in offer.Paths)entries.Add(await Describe(path,ct));
         string stage=Stage();var root=await Task.Run(()=>{var selected=new WindowsFileRoot(destination);selected.CreateDirectory(stage);return new WindowsFileRoot(Path.Combine(destination,stage));},ct);
         string folder=Path.Combine(destination,stage);Guid[] jobs=await queue.EnqueueDownloads(entries.ToArray(),folder,ct);var completed=await Complete(jobs,ct);Check(ct);

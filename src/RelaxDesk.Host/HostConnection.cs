@@ -97,6 +97,12 @@ internal static class HostConnection
         var availableFeatures = verifier is null && deviceFingerprint is not null
             ? SessionCapabilities.ForFullControl(requestedFeatures, selectedFileRoot is not null)
             : GrantedFeatures(requestedFeatures, selectedFileRoot is not null, approval);
+        if (!synthetic && shell is not null)
+        {
+            availableFeatures = availableFeatures.Where(feature => feature is not (SessionCapabilities.FileTransfer or SessionCapabilities.ClipboardFiles)).ToArray();
+            if (selectedFileRoot is not null && requestedFeatures.Contains(SessionCapabilities.ClipboardFiles))
+                availableFeatures = [.. availableFeatures, SessionCapabilities.FileTransfer, SessionCapabilities.ClipboardFiles];
+        }
         await VideoHostSession.Run(listener, client, tls, identity, hello, backend, stop,
             availableFeatures, shell?.ClipboardRevoked ?? default, selectedFileRoot, shell?.FilesRevoked ?? default,fileResumes,selectedDisplay,shell?.AudioRevoked??default,elevated,shell?.Id);
     }

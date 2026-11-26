@@ -21,7 +21,9 @@ public sealed partial class ViewerWindow
             try
             {
                 Action<ClipboardFiles?> offer=files=>ReceiveFileOffer(files,gate,ct);
-                IContentClipboard provider=fileClipboardVerificationFactory is not null?fileClipboardVerificationFactory(offer):smoke?.RichClipboardTest==true?richClipboardTestProvider=new ViewerContentClipboard():new WindowsTextClipboard(receiveFileOffer:offer);
+                IContentClipboard provider=fileClipboardVerificationFactory is not null?fileClipboardVerificationFactory(offer):smoke?.RichClipboardTest==true?richClipboardTestProvider=new ViewerContentClipboard():new WindowsTextClipboard(
+                    localFilesChanged:files=>QueueClipboardCopy(gate,ct,(flow,token)=>flow.Upload(files,token)),
+                    remoteFilesReceived:(files,version)=>QueueClipboardCopy(gate,ct,(flow,token)=>flow.Download(files,ClipboardStagingDirectory(),token,version)));
                 ready.TrySetResult(provider as ILocalFileClipboard);return provider;
             }
             catch{ready.TrySetResult(null);throw;}

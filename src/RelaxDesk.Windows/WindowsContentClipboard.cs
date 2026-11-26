@@ -40,14 +40,28 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
         try
         {
             string? text=null,html=null;byte[]? png=null;
-            if(CountClipboardFormats()==0){snapshot=richCached=new(GetClipboardSequenceNumber(),new(Clear:true));cachedFormats=formats;return true;}
+            if(!formats.Files||!IsClipboardFormatAvailable(15))fileSources?.Clear();
+            if(CountClipboardFormats()==0){observedClipboardVersion=sequence;snapshot=richCached=new(GetClipboardSequenceNumber(),new(Clear:true));cachedFormats=formats;return true;}
             if(formats.Files&&IsClipboardFormatAvailable(15))
             {
-                if(clipboardFileRoot is null){snapshot=richCached=new(GetClipboardSequenceNumber(),null);cachedFormats=formats;return true;}
                 if(!ReadMemory(15,ClipboardFileFormat.MaximumBytes,out var drop))return false;
                 ClipboardContent? offered=null;
-                if(drop is not null&&clipboardFileRoot is not null)try{offered=new(Files:clipboardFileRoot.DescribeClipboard(ClipboardFileFormat.Decode(drop)));}catch(Exception error)when(error is IOException or InvalidDataException){}
-                snapshot=richCached=new(GetClipboardSequenceNumber(),offered);cachedFormats=formats;return true;
+                sequence=GetClipboardSequenceNumber();
+                if(sequence!=publishedFileVersion)
+                {
+                    fileSources?.Clear();
+                    if(drop is not null)try
+                    {
+                        string[] paths=ClipboardFileFormat.Decode(drop);
+                        if(localFilesChanged is not null && observedClipboardVersion!=0 && observedClipboardVersion!=sequence)
+                            localFilesChanged(new(sequence,paths));
+                        if(fileSources is not null)offered=new(Files:fileSources.Describe(paths));
+                        else if(clipboardFileRoot is not null)offered=new(Files:clipboardFileRoot.DescribeClipboard(paths));
+                    }
+                    catch(Exception error)when(error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or NotSupportedException){}
+                }
+                observedClipboardVersion=sequence;
+                snapshot=richCached=new(sequence,offered);cachedFormats=formats;return true;
             }
             if(formats.Text)
             {
@@ -77,7 +91,7 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
                     }
                 }
             }
-            var content=new ClipboardContent(text,png,html);snapshot=richCached=new(GetClipboardSequenceNumber(),ClipboardContentRules.Valid(content)?content:null);cachedFormats=formats;return true;
+            var content=new ClipboardContent(text,png,html);observedClipboardVersion=GetClipboardSequenceNumber();snapshot=richCached=new(observedClipboardVersion,ClipboardContentRules.Valid(content)?content:null);cachedFormats=formats;return true;
         }
         finally{CloseClipboard();}
     }
@@ -93,9 +107,10 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
         if(!ClipboardContentRules.Valid(content))throw new InvalidDataException("Invalid clipboard content");
         if(content.Files is not null&&clipboardFileRoot is null)
         {
-            if(fileOffer is null)throw new IOException("File clipboard receiver not configured");
+            if(fileOffer is null&&remoteFilesReceived is null)throw new IOException("File clipboard receiver not configured");
             if(GetClipboardSequenceNumber()!=expectedVersion)return false;
-            fileOffer(content.Files.Own());return true;
+            remoteFilesReceived?.Invoke(content.Files.Own(),expectedVersion);
+            fileOffer?.Invoke(content.Files.Own());return true;
         }
         var prepared=new List<(uint Format,byte[] Bytes)>();
         if(content.Files is not null)prepared.Add((15,ClipboardFileFormat.Encode(clipboardFileRoot!.ResolveClipboard(content.Files))));
@@ -125,7 +140,9 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
                     }
                     allocations[index]=(allocation.Format,0);
                 }
-                writtenVersion=GetClipboardSequenceNumber();cached=null;richCached=null;fileOffer?.Invoke(null);return true;
+                writtenVersion=GetClipboardSequenceNumber();
+                if(content.Files is not null){publishedFileVersion=writtenVersion;fileSources?.Clear();}
+                cached=null;richCached=null;fileOffer?.Invoke(null);return true;
             }
             finally{CloseClipboard();}
         }

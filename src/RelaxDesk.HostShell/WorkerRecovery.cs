@@ -26,7 +26,7 @@ internal sealed partial class HostWindow
     {
         if(!RestartPending)return;
         ip.IsEnabled=port.IsEnabled=start.IsEnabled=useService.IsEnabled=connectService.IsEnabled=false;
-        SetFileConfigurationEnabled(false);SetDisplayConfigurationEnabled(false);stop.IsEnabled=!closing;
+        SetDisplayConfigurationEnabled(false);stop.IsEnabled=!closing;
     }
     async void RecoverWorker(HostEvent change)
     {
@@ -50,7 +50,7 @@ internal sealed partial class HostWindow
         finally
         {
             restartWait=null;
-            if(!Host.Running){ip.IsEnabled=port.IsEnabled=true;SetFileConfigurationEnabled(true);SetDisplayConfigurationEnabled(true);stop.IsEnabled=false;if(wait.IsCancellationRequested){state.Text="已停止共享";detail.Text="已取消自动恢复。";}}
+            if(!Host.Running){ip.IsEnabled=port.IsEnabled=true;SetDisplayConfigurationEnabled(true);stop.IsEnabled=false;if(wait.IsCancellationRequested){state.Text="已停止共享";detail.Text="已取消自动恢复。";}}
             UpdateServiceControls();
             var ended=deferredExit;deferredExit=null;if(ended is not null)RecoverWorker(ended);
         }

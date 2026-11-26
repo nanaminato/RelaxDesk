@@ -46,8 +46,9 @@ internal static class VideoHostSession
         if (clipboardRevoked.IsCancellationRequested) features = features.Where(feature=>!SessionCapabilities.IsClipboard(feature)).ToArray();
         if (filesRevoked.IsCancellationRequested) features = features.Where(feature=>feature is not (SessionCapabilities.FileTransfer or SessionCapabilities.ClipboardFiles)).ToArray();
         var fileRoot = features.Contains(SessionCapabilities.FileTransfer) && selectedFileRoot is not null ? new WindowsFileRoot(selectedFileRoot) : null;
+        var clipboardSources = !synthetic && shellSessionId is not null && features.Contains(SessionCapabilities.ClipboardFiles) ? new ClipboardFileSources() : null;
         if (fileRoot is null) features = features.Where(feature=>feature is not (SessionCapabilities.FileTransfer or SessionCapabilities.ClipboardFiles)).ToArray();
-        bool resumeFiles=hello.FileResume&&fileRoot is not null&&fileResumes is not null;
+        bool resumeFiles=hello.FileResume&&fileRoot is not null&&fileResumes is not null&&clipboardSources is null;
         string? fileScope=resumeFiles?await fileResumes!.Scope():null;
         using var datagrams = OpenDatagrams();
         WindowsQuicDatagrams? OpenDatagrams()
@@ -197,7 +198,7 @@ internal static class VideoHostSession
         using var fileRevokeRegistration = filesRevoked.Register(() => {Interlocked.Exchange(ref explicitFileRevocation,1);gate.RevokeFeature(SessionCapabilities.FileTransfer); dataSocket?.Close(); });
         var fileWorker = data is null ? Task.CompletedTask : Task.Run(async () =>
         {
-            try { await new FileTransferServer(fileRoot!, gate,resumeFiles?fileResumes:null,()=>!stop.IsCancellationRequested&&!filesRevoked.IsCancellationRequested&&Volatile.Read(ref explicitFileRevocation)==0,token=>clipboardReady.Task.WaitAsync(token)).Run(data, fileSession.Token); }
+            try { await new FileTransferServer(fileRoot!, gate,resumeFiles?fileResumes:null,()=>!stop.IsCancellationRequested&&!filesRevoked.IsCancellationRequested&&Volatile.Read(ref explicitFileRevocation)==0,token=>clipboardReady.Task.WaitAsync(token),clipboardSources).Run(data, fileSession.Token); }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException or OperationCanceledException or System.Text.Json.JsonException)
             {
                 gate.RevokeFeature(SessionCapabilities.FileTransfer);
@@ -220,7 +221,7 @@ internal static class VideoHostSession
         {
             try
             {
-                IContentClipboard provider=synthetic?new TestContentClipboard(backend=="test-clipboard-rich-failure",fileRoot,backend=="test-clipboard-files"):new WindowsTextClipboard(fileRoot);
+                IContentClipboard provider=synthetic?new TestContentClipboard(backend=="test-clipboard-rich-failure",fileRoot,backend=="test-clipboard-files"):new WindowsTextClipboard(fileRoot,fileSources:clipboardSources);
                 clipboardReady.TrySetResult(provider as IFileClipboardPublisher);return provider;
             }
             catch{clipboardReady.TrySetResult(null);throw;}

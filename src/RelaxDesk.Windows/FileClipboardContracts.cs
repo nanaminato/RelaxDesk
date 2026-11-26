@@ -33,6 +33,14 @@ public static class FileClipboardContracts
         var offset=encoded.ToArray();BinaryPrimitives.WriteInt32LittleEndian(offset,21);Reject(()=>ClipboardFileFormat.Decode(offset));
         Reject(()=>ClipboardFileFormat.Encode(["C:\\bad:stream"]));Reject(()=>ClipboardFileFormat.Encode(["\\\\server\\share\\file"]));Reject(()=>ClipboardFileFormat.Encode([Path.GetPathRoot(source)!]));Reject(()=>ClipboardFileFormat.Encode(["relative.txt"]));Reject(()=>ClipboardFileFormat.Encode([paths[0],paths[0]]));
         var described=root.DescribeClipboard([Path.Combine(host,"existing.txt")]);Check(described.Paths is["existing.txt"]&&root.ResolveClipboard(described).Single()==Path.Combine(host,"existing.txt"));Reject(()=>root.DescribeClipboard(paths));Reject(()=>root.ResolveClipboard(new(["../escape"])));
+        var sources=new ClipboardFileSources();
+        var offered=sources.Describe(paths);
+        string offerId=offered.Paths[0].Split('/')[0];
+        Check(sources.List(offerId,0).Select(entry=>entry.Path).SequenceEqual(offered.Paths));
+        await using(var selected=sources.OpenRead(offered.Paths[0]))Check(selected.Stream.Length>0);
+        Reject(()=>sources.OpenRead(offerId+"/empty"));
+        Reject(()=>sources.List(offerId+"/../source",0));
+        sources.Clear();Reject(()=>sources.OpenRead(offered.Paths[0]));
         var listener=new TcpListener(IPAddress.Loopback,0);listener.Start();using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(15));using var viewer=new TcpClient();var accepting=listener.AcceptTcpClientAsync(timeout.Token);await viewer.ConnectAsync((IPEndPoint)listener.LocalEndpoint,timeout.Token);using var server=await accepting;listener.Stop();
         var gate=new AccessGate();gate.Approve([SessionCapabilities.FileTransfer,SessionCapabilities.ClipboardFiles]);var publisher=new Publisher(root);
         var worker=new FileTransferServer(root,gate,clipboardPublisher:_=>Task.FromResult<IFileClipboardPublisher?>(publisher)).Run(server.GetStream(),timeout.Token);
@@ -55,7 +63,72 @@ public static class FileClipboardContracts
             while(queue.Busy)await Task.Delay(10,timeout.Token);Check(publisher.Published==before);Check(queue.Snapshot().Any(job=>job.Name=="large.bin"&&job.State==TransferJobState.Cancelled));
         }
         finally{timeout.Cancel();viewer.Close();server.Close();try{await worker;}catch(Exception error)when(error is IOException or OperationCanceledException or ObjectDisposedException){} }
+        await VerifyAutomaticClipboard(root,source,dest,sources);
         string moved=host+"-moved";Directory.Move(host,moved);Directory.CreateDirectory(host);File.WriteAllText(Path.Combine(host,"existing.txt"),"replacement");Reject(()=>root.ResolveClipboard(described));
         Console.WriteLine($"PASS {count} actual Windows file clipboard contracts: Unicode DROPFILES/termination/bounds, scoped path/root identity, real TCP transfer/metadata acknowledgement, changed/revoked clipboard, recursive/empty files, local CF_HDROP buffer after commits, cancellation never publishes; generated fixtures={fixtures}; no system clipboard or Explorer paste");
+    }
+
+    static async Task VerifyAutomaticClipboard(WindowsFileRoot root,string source,string destination,ClipboardFileSources sources)
+    {
+        static async Task Reject(Func<Task> operation)
+        {
+            try{await operation();throw new InvalidOperationException("File outside the session scope was accessible");}
+            catch(TransferRejectedException error)when(error.Code=="access-denied"){}
+        }
+        string file=Path.Combine(source,"日本語.txt");
+        var offer=sources.Describe([source]);
+        var listener=new TcpListener(IPAddress.Loopback,0);
+        listener.Start();
+        using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        CancellationToken ct=timeout.Token;
+        using var viewer=new TcpClient();
+        using var server=await Connect();
+        async Task<TcpClient> Connect()
+        {
+            try
+            {
+                var accepting=listener.AcceptTcpClientAsync(ct);
+                await viewer.ConnectAsync((IPEndPoint)listener.LocalEndpoint,ct);
+                return await accepting;
+            }
+            finally{listener.Stop();}
+        }
+        var gate=new AccessGate();
+        gate.Approve([SessionCapabilities.FileTransfer,SessionCapabilities.ClipboardFiles]);
+        var publisher=new Publisher(root);
+        var worker=new FileTransferServer(root,gate,clipboardPublisher:_=>Task.FromResult<IFileClipboardPublisher?>(publisher),
+            fileSources:sources).Run(server.GetStream(),ct);
+        await using var client=new FileTransferClient(viewer.GetStream(),ct,supportsClipboardFiles:true);
+        await using var queue=new FileTransferQueue(client,ct);
+        try
+        {
+            await Reject(()=>client.List("",0,ct));
+            await Reject(()=>client.CreateDirectory("outside-stage",ct));
+            await Reject(()=>client.PrepareClipboard(new(["existing.txt"]),publisher.Version,ct));
+            var local=new Local([file]);
+            var flow=new FileClipboardTransfer(client,queue,local,()=>ClipboardFormats.Granted(gate).Files);
+            await flow.Upload(new(local.Version,[file]),ct);
+            if(publisher.Published!=1||publisher.Files is null||
+                File.ReadAllText(root.ResolveClipboard(publisher.Files).Single())!=File.ReadAllText(file))
+                throw new IOException("Automatic upload did not publish completed bytes");
+            try
+            {
+                await flow.Download(offer,destination,ct,local.Version+1);
+                throw new InvalidOperationException("A stale clipboard version started a download");
+            }
+            catch(IOException) when(client.DownloadedBytes==0&&local.Published==0){}
+            await flow.Download(offer,destination,ct,local.Version);
+            if(local.Published!=1||File.ReadAllText(Path.Combine(local.Paths.Single(),"日本語.txt"))!=File.ReadAllText(file))
+                throw new IOException("Copied folder outside staging did not publish completed bytes");
+            gate.RevokeFeature(SessionCapabilities.ClipboardFiles);
+            await Reject(()=>client.List(offer.Paths.Single(),0,ct));
+        }
+        finally
+        {
+            timeout.Cancel();
+            viewer.Close();server.Close();
+            try{await worker;}catch(Exception error)when(error is IOException or OperationCanceledException or ObjectDisposedException){}
+        }
+        Console.WriteLine("PASS clipboard-only server: staged upload, copied folder outside staging, session scope, and live revocation");
     }
 }

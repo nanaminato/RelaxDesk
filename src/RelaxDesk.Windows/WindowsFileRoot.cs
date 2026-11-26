@@ -48,7 +48,15 @@ public sealed class WindowsFileRoot
         else{var file=OpenRead(relative);file.DisposeAsync().AsTask().GetAwaiter().GetResult();}
         return full;
     }
-    public void CreateDirectory(string relative) { using var rootLease=DirectoryLease.Acquire(root,false);VerifyIdentity();string directory = Resolve(relative); EnsureSpace(1024 * 1024); using var lease = DirectoryLease.Acquire(directory, true); }
+    public void CreateDirectory(string relative, bool requireNew = false)
+    {
+        using var rootLease=DirectoryLease.Acquire(root,false);VerifyIdentity();string directory=Resolve(relative);EnsureSpace(1024*1024);
+        if(requireNew)
+        {
+            if(!CreateDirectory(directory,0))throw new IOException($"Cannot create clipboard staging directory Win32={Marshal.GetLastWin32Error()}");
+        }
+        using var lease=DirectoryLease.Acquire(directory,!requireNew);
+    }
     public TransferEntry[] List(string relative, int offset)
     {
         if (offset is < 0 or > TransferPaths.MaximumEntries) throw new InvalidDataException("Invalid directory page");
@@ -108,6 +116,7 @@ public sealed class WindowsFileRoot
         if (drive.AvailableFreeSpace < TransferLimits.MinimumFreeBytes || bytes > drive.AvailableFreeSpace - TransferLimits.MinimumFreeBytes) throw new TransferRejectedException("disk-full");
     }
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern SafeFileHandle CreateFile(string name, uint access, uint share, nint security, uint disposition, uint flags, nint template);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool CreateDirectory(string name,nint security);
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool GetFileInformationByHandle(SafeFileHandle handle, out FileInformation info);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern uint GetFinalPathNameByHandle(SafeFileHandle handle, StringBuilder name, uint length, uint flags);
     [StructLayout(LayoutKind.Sequential)] internal struct FileInformation

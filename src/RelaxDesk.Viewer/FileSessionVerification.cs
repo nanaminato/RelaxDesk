@@ -22,7 +22,7 @@ public sealed partial class ViewerWindow
             string local = Path.Combine(root, "viewer-source.txt");
             string payload = "session test 中文 / 日本語\n" + new string('x', 512 * 1024);
             await File.WriteAllTextAsync(local, payload, deadline.Token);
-            FilesDropped([local]);
+            PrepareFixtureUpload([local]);
             if (fileWindow?.PendingUploadCount != 1 || fileQueue.Snapshot().Length != 0) throw new IOException("Session drop bypassed confirmation");
             var transfer = Stopwatch.StartNew();
             fileWindow.ConfirmUploadButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

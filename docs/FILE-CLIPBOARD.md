@@ -1,27 +1,15 @@
-# Scoped file clipboard
+# 桌面文件复制与粘贴
 
-File clipboard is opt-in through `clipboard.files` **and** `file.transfer`. Host must approve clipboard formats and separately approve file access to a selected directory. Either denial disables the feature. Stopping clipboard cancels its active transfer intent, closes its window and leaves ordinary authorized file transfer available. File revocation also revokes file clipboard.
+在控制端或受控端的资源管理器中选中文件或文件夹并按 Ctrl+C。RelaxDesk 在后台传输并校验文件。准备完成后，在另一端的目标文件夹按 Ctrl+V，Windows 负责粘贴及同名处理。控制端窗口栏会显示准备状态。传输从复制时开始，大文件需要等准备完成再粘贴。
 
-## User flow
+受控端桌面应用在批准连接时一并允许双方复制粘贴文件。无需在共享设置选择目录或单独批准文件权限。连接用户可用远端资源管理器操作当前 Windows 登录账户有权访问的文件。可传输普通本地磁盘上的文件和目录，沿用既有的路径安全检查与单文件 50 GiB 上限。
 
-For local to remote copy, copy local files in Explorer, open the Viewer file clipboard menu, read the selection, then explicitly confirm upload. The ordinary scoped file queue stages files and directories in a visible unique `RelaxDesk-Clipboard-<guid>` directory under the Host root. Only after every job completes does the file channel request and acknowledge Host CF_HDROP publication. The user can then paste in a remote application.
+## 会话行为
 
-For remote to local copy, Host advertises copied files only when every path lies inside its authorized root. Viewer shows an offer without downloading or putting remote paths into its local clipboard. Choose a destination and explicitly confirm download. After every queue job completes, Viewer publishes local CF_HDROP referring to the downloaded files. Paste manually in the local application. Staging directories remain visible and are retained; there is no automatic cleanup, cut/move/delete or simulated paste/drop.
+- 数据经现有认证、加密的文件通道传输。受控端只公布当前复制的项目及其子目录，使用会话内的相对路径标识。上传只能写入当前会话创建的缓存目录。控制端和受控端分别使用 `%LOCALAPPDATA%\RelaxDesk\Clipboard` 和 `%LOCALAPPDATA%\RelaxDesk\Transfers`。已落盘的缓存会保留，以便 Windows 通过 CF_HDROP 继续访问。
+- 文件全部写入并校验后才发布到目标剪贴板。目标剪贴板已改变时会放弃发布，避免覆盖较新的本机复制。当前复制的文件传输失败或断线后，重新复制以发起新传输。
+- 当前实现使用实际缓存文件和 Windows CF_HDROP。粘贴时 Windows 从本机缓存复制到目标目录。剪切移动、UNC 路径、重解析点及虚拟 Shell 项目不在支持范围内。旧的命令行目录共享及协议测试入口仍使用其现有授权流程。
 
-This implements staged actual file clipboard publication, distinct from ordinary upload and application drag/drop. It is not a streaming virtual OLE IDataObject. Physical Windows clipboard publication and Explorer paste still require final two-PC acceptance.
+## 验证
 
-## Boundaries and protocol
-
-Core file offers contain at most 128 canonical relative paths and 64 KiB of UTF-8 JSON. No absolute remote paths cross the clipboard channel. Duplicate names, overlapping parent/child entries, traversal, device/ADS aliases and mixed file/text/image/HTML payloads are rejected. Existing eight-field content headers remain valid; only file manifests add `FilesBytes`.
-
-Host to Viewer offers use the pinned rich clipboard channel. Host rejects incoming file offers there: Viewer to Host publication must use acknowledged `clipboard-get` / `clipboard-set` operations on the serialized scoped file channel. Operations require both grants, validate the current root identity and reject reparse/alias escapes. Cancellation after a file-protocol request starts drains its response before another transaction; clipboard failure does not desynchronize ordinary file commands. Clipboard commands time out independently.
-
-Native CF_HDROP uses bounded Unicode DROPFILES data (512 KiB, 128 entries), canonical local drive paths and double-NUL termination. ANSI, UNC/device paths, malformed offsets and unsafe entries are rejected. Native commands share the existing clipboard worker, HWND, desktop guard and blocked-call lease. Viewer does not automatically render local file selections; reading them requires the explicit UI action.
-
-Clipboard version comparison prevents completed transfers overwriting a newer copy. Retry republishes already completed files without retransmission. Partial, cancelled, skipped, failed or interrupted batches do not publish. Reconnection does not silently resume file clipboard intent. Files remain ordinary scoped queue jobs with progress, pause and cancel controls. In-flight native calls retain the existing Windows cancellation limitations.
-
-## Validation
-
-See [validation record](../benchmarks/2026-11-24-file-clipboard-validation.md). Run the normal [verification script](../scripts/verify.ps1) with `-Wpf`; it includes real loopback Host/TLS/Viewer sessions and real filesystem transfers using isolated clipboard providers. These checks do not modify the system clipboard or establish physical application paste correctness.
-
-Windows references: [DROPFILES](https://learn.microsoft.com/windows/win32/api/shlobj_core/ns-shlobj_core-dropfiles), [Shell clipboard formats](https://learn.microsoft.com/en-us/windows/win32/shell/clipboard).
+运行 `RelaxDesk.Smoke --file-clipboard-contracts <空的测试输出目录>`。测试覆盖本地 TCP 文件收发、剪贴板模拟发布、目录范围、会话缓存权限和撤销。两台 Windows 机器的验收步骤是在 Windows Home 受控端和控制端分别复制普通文件和含子目录的文件夹，准备完成后在另一端的资源管理器中粘贴到不同目录，核对内容。另用较大的文件验证传输中断线或目标端复制新内容时的行为。

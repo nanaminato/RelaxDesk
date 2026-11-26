@@ -58,7 +58,6 @@ internal sealed partial class HostWindow:Window
         if(addresses.Length>1){var options=new WrapPanel();foreach(string address in addresses){var pick=new Button{Content=address,Padding=new(10,5,10,5),FontSize=12};pick.Click+=(_,_)=>{if(!Host.Running&&!RestartPending)ip.Text=address;};options.Children.Add(pick);}settings.Children.Add(options);}
         var sharingSettings = new StackPanel();
         AddDisplaySettings(sharingSettings);
-        AddFileSettings(sharingSettings);
         AddRecoverySettings(sharingSettings);
         AddWindowButton(Navigation, "共享设置", sharingSettings);
         AddLoginSettings(Navigation);
@@ -69,7 +68,7 @@ internal sealed partial class HostWindow:Window
         var actions=new WrapPanel();start.Style=(Style)Resources["PrimaryButton"];stop.Style=(Style)Resources["DangerButton"];
         actions.Children.Add(start);actions.Children.Add(stop);actions.Children.Add(disconnectSession);disconnectSession.Click+=async(_,_)=>await DisconnectSession();actions.Children.Add(revokeClipboard);revokeClipboard.Click+=async(_,_)=>await StopClipboard();var copy=new Button{Content="复制地址"};copy.Click+=(_,_)=>Clipboard.SetText(ip.Text+":"+port.Text);actions.Children.Add(copy);settings.Children.Add(actions);color.Margin=new(4,12,0,0);color.TextWrapping=TextWrapping.Wrap;settings.Children.Add(color);var settingsCard=Card(settings);
         var consent=new StackPanel();consent.Children.Add(Text("有人请求连接",19,true));peer.FontSize=16;peer.Margin=new(0,10,0,8);consent.Children.Add(peer);consent.Children.Add(consentAccess);var decision=new StackPanel{Orientation=Orientation.Horizontal,Margin=new(0,14,0,0)};allow.Style=(Style)Resources["PrimaryButton"];deny.Style=(Style)Resources["DangerButton"];decision.Children.Add(allow);decision.Children.Add(deny);consent.Children.Add(decision);request.Child=consent;request.Background=Brush("#EAF2FF");request.CornerRadius=new(12);request.Padding=new(22);request.Margin=new(0,0,0,16);content.Children.Add(request);content.Children.Add(settingsCard);
-        consent.Children.Insert(3,clipboardPermission);consent.Children.Insert(4,filesPermission);consent.Children.Insert(5,filesScopeLabel);actions.Children.Add(revokeFiles);consent.Children.Insert(6,audioPermission);consent.Children.Insert(7,rememberDevice);actions.Children.Add(revokeAudio);revokeAudio.Click+=async(_,_)=>await StopAudio();
+        consent.Children.Insert(3,clipboardPermission);consent.Children.Insert(4,filesPermission);consent.Children.Insert(5,filesScopeLabel);actions.Children.Add(revokeFiles);revokeFiles.Click+=async(_,_)=>await StopFiles();consent.Children.Insert(6,audioPermission);consent.Children.Insert(7,rememberDevice);actions.Children.Add(revokeAudio);revokeAudio.Click+=async(_,_)=>await StopAudio();
         var servicePanel = new StackPanel();
         AddServiceSettings(servicePanel);
         content.Children.Add(Card(servicePanel));
@@ -111,12 +110,13 @@ internal sealed partial class HostWindow:Window
         if(ServiceRequired&&!ServiceReady){state.Text="服务协调不可用";detail.Text="请先连接已授权的系统服务；没有开始共享。";UpdateServiceControls();return;}
         if (InputDeploymentForVerification is not null && !await CheckInputDeployment()) return;
         if (closing || ServiceSetupBusy || ServiceRequired && !ServiceReady) return;
-        try{if(!backend.StartsWith("test-", StringComparison.Ordinal)){
+        usesAutomaticFileClipboard=!backend.StartsWith("test-",StringComparison.Ordinal);
+        try{if(usesAutomaticFileClipboard){
                 if(PasswordLoginSettings.Read() is null) throw new IOException("请先在「登录设置」保存用户名和密码。");
                 EnsureDefaultFileRoot();
             }
-            if(address is not null)ip.Text=address;if(number.HasValue)port.Text=number.Value.ToString();if(!int.TryParse(port.Text,out int selected))throw new ArgumentException("端口应为 1–65535");ip.IsEnabled=port.IsEnabled=start.IsEnabled=false;SetFileConfigurationEnabled(false);SetDisplayConfigurationEnabled(false);stop.IsEnabled=true;state.Text="正在启动";await Host.Start(application,ip.Text.Trim(),selected,backend,selectedFileRoot,SelectedDisplay,loginVerifierForTests);}
-        catch(Exception e){state.Text="无法开始共享";detail.Text=e.Message;ip.IsEnabled=port.IsEnabled=start.IsEnabled=true;SetFileConfigurationEnabled(true);SetDisplayConfigurationEnabled(true);stop.IsEnabled=false;}
+            if(address is not null)ip.Text=address;if(number.HasValue)port.Text=number.Value.ToString();if(!int.TryParse(port.Text,out int selected))throw new ArgumentException("端口应为 1–65535");ip.IsEnabled=port.IsEnabled=start.IsEnabled=false;SetDisplayConfigurationEnabled(false);stop.IsEnabled=true;state.Text="正在启动";await Host.Start(application,ip.Text.Trim(),selected,backend,selectedFileRoot,SelectedDisplay,loginVerifierForTests);}
+        catch(Exception e){state.Text="无法开始共享";detail.Text=e.Message;ip.IsEnabled=port.IsEnabled=start.IsEnabled=true;SetDisplayConfigurationEnabled(true);stop.IsEnabled=false;}
         finally{UpdateServiceControls();}
     }
 
@@ -161,7 +161,7 @@ internal sealed partial class HostWindow:Window
         if (id is null) return;
         allow.IsEnabled = deny.IsEnabled = false;
         bool clipboard = accepted && !fullControlRequest && clipboardPermission.IsChecked == true;
-        bool files = accepted && !fullControlRequest && filesPermission.IsChecked == true && selectedFileRoot is not null;
+        bool files = accepted && !usesAutomaticFileClipboard && !fullControlRequest && filesPermission.IsChecked == true && selectedFileRoot is not null;
         bool audio = accepted && !fullControlRequest && audioPermission.IsChecked == true;
         if (accepted && passwordLoginRequest && activeDeviceFingerprint is { } fingerprint && !KnownDevice(fingerprint))
         {
@@ -181,7 +181,7 @@ internal sealed partial class HostWindow:Window
         var enabled = accepted && fullControlRequest ? fullControlFeatures : [];
         revokeAudio.Visibility = audio || enabled.Contains(SessionCapabilities.SystemAudio) ? Visibility.Visible : Visibility.Collapsed;
         revokeClipboard.Visibility = clipboard || enabled.Any(SessionCapabilities.IsClipboard) ? Visibility.Visible : Visibility.Collapsed;
-        revokeFiles.Visibility = files || enabled.Contains(SessionCapabilities.FileTransfer) ? Visibility.Visible : Visibility.Collapsed;
+        revokeFiles.Visibility = !usesAutomaticFileClipboard && (files || enabled.Contains(SessionCapabilities.FileTransfer)) ? Visibility.Visible : Visibility.Collapsed;
         request.Visibility = Visibility.Collapsed;
         if (CaptureDeviceTrust(accepted) is { } remember) await SaveDeviceTrust(remember);
     }
@@ -223,21 +223,23 @@ internal sealed partial class HostWindow:Window
                 detail.Text = "请在本机安全输入窗口核对设备指纹并确认。";
                 break;
             case "approval-request":desktopNotice=null;displayedSessionId=change.SessionId;disconnectSession.Visibility=Visibility.Visible;fullControlRequest = change.FullControl;passwordLoginRequest=change.PasswordLogin; activeInput = nativeApproval = false;
-                requestedClipboardFormats = (change.Features ?? []).Where(SessionCapabilities.IsClipboard).ToArray();
+                requestedClipboardFormats = (change.Features ?? []).Where(feature => SessionCapabilities.IsClipboard(feature) && (!usesAutomaticFileClipboard || feature != SessionCapabilities.ClipboardFiles)).ToArray();
                 peer.Text = $"请求来源  {value}";
                 peer.TextWrapping = TextWrapping.Wrap;
                 if (change.DeviceFingerprint is { Length: 64 } device && device.All(char.IsAsciiHexDigit))
                     peer.Text += $"\n已验证设备公钥 SHA-256  {device}";
                 consentAccess.Text = fullControlRequest ? "允许后，对方可控制此桌面并操作管理员权限窗口。请核对设备指纹后再批准。" : "允许后共享画面，并允许普通桌面的键鼠操作。";
-                request.Visibility=Visibility.Visible;allow.IsEnabled=deny.IsEnabled=true;clipboardPermission.IsChecked=false;clipboardPermission.Content=new TextBlock{Text="允许双向剪贴板："+SessionCapabilities.ClipboardDescription(change.Features??[])+"（读取/替换两端新复制的内容）",TextWrapping=TextWrapping.Wrap};clipboardPermission.Visibility=(change.Features??[]).Any(SessionCapabilities.IsClipboard)?Visibility.Visible:Visibility.Collapsed;ShowFileRequest((change.Features??[]).Contains(SessionCapabilities.FileTransfer));ShowAudioRequest(change.Features);ApplyDeviceTrust(change);
+                request.Visibility=Visibility.Visible;allow.IsEnabled=deny.IsEnabled=true;clipboardPermission.IsChecked=false;clipboardPermission.Content=new TextBlock{Text="允许双向剪贴板："+SessionCapabilities.ClipboardDescription(requestedClipboardFormats)+"（读取/替换两端新复制的内容）",TextWrapping=TextWrapping.Wrap};clipboardPermission.Visibility=requestedClipboardFormats.Length>0?Visibility.Visible:Visibility.Collapsed;ShowFileRequest((change.Features??[]).Contains(SessionCapabilities.FileTransfer));ShowAudioRequest(change.Features);ApplyDeviceTrust(change);
+                if (usesAutomaticFileClipboard && selectedFileRoot is not null && (change.Features ?? []).Contains(SessionCapabilities.ClipboardFiles))
+                    consentAccess.Text += "\n连接允许双向复制和粘贴文件。";
                 if (fullControlRequest)
                 {
                     fullControlFeatures = SessionCapabilities.ForFullControl(change.Features, selectedFileRoot is not null);
                     clipboardPermission.Visibility = filesPermission.Visibility = audioPermission.Visibility = Visibility.Collapsed;
                     filesScopeLabel.Visibility = Visibility.Collapsed;
-                    if (fullControlFeatures.Any(SessionCapabilities.IsClipboard))
-                        consentAccess.Text += "\n双向剪贴板：" + SessionCapabilities.ClipboardDescription(fullControlFeatures);
-                    if (fullControlFeatures.Contains(SessionCapabilities.FileTransfer))
+                    if (requestedClipboardFormats.Length > 0)
+                        consentAccess.Text += "\n双向剪贴板：" + SessionCapabilities.ClipboardDescription(requestedClipboardFormats);
+                    if (!usesAutomaticFileClipboard && fullControlFeatures.Contains(SessionCapabilities.FileTransfer))
                         consentAccess.Text += "\n文件传输目录：" + selectedFileRoot;
                     if (fullControlFeatures.Contains(SessionCapabilities.SystemAudio))
                         consentAccess.Text += "\n共享系统声音。";
@@ -246,7 +248,7 @@ internal sealed partial class HostWindow:Window
                 {
                     request.Visibility = Visibility.Collapsed;
                     var grant = ReadDeviceGrant(approvedDevice);
-                    clipboardPermission.IsChecked = Host.ClipboardRequested &&
+                    clipboardPermission.IsChecked = requestedClipboardFormats.Length > 0 &&
                         grant.ClipboardFormats is { } formats && requestedClipboardFormats.All(formats.Contains);
                     filesPermission.IsChecked = selectedFileRoot is not null && grant.FileRoot == selectedFileRoot && Host.FilesRequested;
                     audioPermission.IsChecked = grant.Audio && Host.AudioRequested;
@@ -289,7 +291,7 @@ internal sealed partial class HostWindow:Window
                 {
                     activeInput = true;
                     revokeClipboard.Visibility = fullControlFeatures.Any(SessionCapabilities.IsClipboard) ? Visibility.Visible : Visibility.Collapsed;
-                    revokeFiles.Visibility = fullControlFeatures.Contains(SessionCapabilities.FileTransfer) ? Visibility.Visible : Visibility.Collapsed;
+                    revokeFiles.Visibility = !usesAutomaticFileClipboard && fullControlFeatures.Contains(SessionCapabilities.FileTransfer) ? Visibility.Visible : Visibility.Collapsed;
                     revokeAudio.Visibility = fullControlFeatures.Contains(SessionCapabilities.SystemAudio) ? Visibility.Visible : Visibility.Collapsed;
                 }
                 state.Text="正在建立共享";detail.Text="已允许本次连接，正在准备屏幕。";request.Visibility=Visibility.Collapsed;break;
@@ -307,7 +309,7 @@ internal sealed partial class HostWindow:Window
                 }
                 catch(JsonException){}break;
             case "session-ended":revokeAudio.Visibility=Visibility.Collapsed;request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=revokeFiles.Visibility=disconnectSession.Visibility=Visibility.Collapsed;displayedSessionId=null;state.Text="会话已结束";detail.Text="正在清理资源，随后继续等待新的连接。";break;
-            case "ended":case "stopped":revokeAudio.Visibility=Visibility.Collapsed;displayedSessionId=null;disconnectSession.Visibility=Visibility.Collapsed;if(state.Text!="已拒绝连接")state.Text=kind=="stopped"?"已停止共享":"会话已结束";request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=Visibility.Collapsed;revokeFiles.Visibility=Visibility.Collapsed;ip.IsEnabled=port.IsEnabled=start.IsEnabled=true;SetFileConfigurationEnabled(true);SetDisplayConfigurationEnabled(true);stop.IsEnabled=false;break;
+            case "ended":case "stopped":revokeAudio.Visibility=Visibility.Collapsed;displayedSessionId=null;disconnectSession.Visibility=Visibility.Collapsed;if(state.Text!="已拒绝连接")state.Text=kind=="stopped"?"已停止共享":"会话已结束";request.Visibility=Visibility.Collapsed;revokeClipboard.Visibility=Visibility.Collapsed;revokeFiles.Visibility=Visibility.Collapsed;ip.IsEnabled=port.IsEnabled=start.IsEnabled=true;SetDisplayConfigurationEnabled(true);stop.IsEnabled=false;break;
         }
         UpdateConnectedDeviceTrust();
         UpdateServiceControls();

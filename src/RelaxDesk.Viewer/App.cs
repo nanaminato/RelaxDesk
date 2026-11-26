@@ -126,7 +126,6 @@ public sealed partial class ViewerWindow : Window
     {
         this.smoke = smoke;
         BuildInterface();
-        ConfigureFileDrop();
         connect.Click += async (_, _) =>
         {
             try
@@ -374,7 +373,6 @@ public sealed partial class ViewerWindow : Window
             try
             {
                 nativeView = new() { LocalPointerOverlay = (x,y) => IsLocalPointer(x,y), Input = Send, RichInput = inputVersion==2?SendRich:null, PointerMove = SendPointerMove, InputBacklogExceeded = ()=>cancellation.Cancel(), InputFocusLost = ReleaseHeldInputs, InputCaptureLost = ReleaseMouseButtons, RenderInvalidated = () => repaintSignal.Set() }; videoPanel.Children.Add(nativeView); nativeView.SetViewport(CurrentViewport);renderPanel.UpdateLayout();
-                nativeView.SetFilesDrop(fileQueue?.Enabled==true?FilesDropped:null);
                 gpuViewportActive=true;hwnd = nativeView.Handle; if (hwnd == 0) throw new InvalidOperationException("Render child HWND not available");
                 image.Visibility = Visibility.Collapsed;
             }
@@ -454,7 +452,7 @@ public sealed partial class ViewerWindow : Window
                         {
                             if (!ReferenceEquals(sessionPermissions, permissionGate)) return;
                             if(SessionCapabilities.IsClipboard(feature)){StopFileClipboard();SessionCapabilities.RevokeClipboard(permissionGate);richClipboardSession?.Stop();sessionToolbar?.SetClipboard(false,null);}
-                            else if(feature==SessionCapabilities.FileTransfer){StopFileClipboard();if(packet.Text=="transport")fileQueue?.Interrupt();else fileQueue?.Disable("Host已关闭文件权限");sessionToolbar?.SetFiles(null);nativeView?.SetFilesDrop(null);}
+                            else if(feature==SessionCapabilities.FileTransfer){StopFileClipboard();if(packet.Text=="transport")fileQueue?.Interrupt();else fileQueue?.Disable("Host已关闭文件权限");sessionToolbar?.SetFiles(null);}
                             else if(feature==SessionCapabilities.SystemAudio){audioSession?.Stop();RefreshAudioToolbar();}
                             if(feature==SessionCapabilities.FileTransfer)Interlocked.Increment(ref fileRevocationReplies);
                             status.Text="会话能力已关闭；重新开启需要重新连接并授权。";

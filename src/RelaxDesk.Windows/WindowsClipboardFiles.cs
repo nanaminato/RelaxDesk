@@ -17,12 +17,17 @@ public sealed partial class WindowsTextClipboard:ILocalFileClipboard,IFileClipbo
 {
     readonly WindowsFileRoot? clipboardFileRoot;
     readonly Action<ClipboardFiles?>? fileOffer;
+    readonly ClipboardFileSources? fileSources;
+    readonly Action<LocalClipboardFiles>? localFilesChanged;
+    readonly Action<ClipboardFiles, long>? remoteFilesReceived;
+    long observedClipboardVersion, publishedFileVersion;
     readonly object fileCommandSync=new();
     Action<ClipboardFormats>? fileCommand;
     Action? cancelFileCommand;
-    Task<T> ScheduleFileCommand<T>(Func<ClipboardFormats,T> operation,CancellationToken ct)
+    async Task<T> ScheduleFileCommand<T>(Func<ClipboardFormats,T> operation,CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();var done=new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Action cancel=()=>done.TrySetCanceled();
         lock(fileCommandSync)
         {
             if(window==0)throw new ObjectDisposedException(nameof(WindowsTextClipboard));
@@ -32,9 +37,19 @@ public sealed partial class WindowsTextClipboard:ILocalFileClipboard,IFileClipbo
                 if(ct.IsCancellationRequested){done.TrySetCanceled(ct);return;}
                 try{if(!formats.Files)throw new IOException("Clipboard file permission is off");done.TrySetResult(operation(formats));}catch(Exception error){done.TrySetException(error);}
             };
-            cancelFileCommand=()=>done.TrySetCanceled();
+            cancelFileCommand=cancel;
         }
-        return done.Task.WaitAsync(ct);
+        using var registration=ct.Register(()=>
+        {
+            lock(fileCommandSync)
+            {
+                if(!ReferenceEquals(cancelFileCommand,cancel))return;
+                fileCommand=null;
+                cancelFileCommand=null;
+            }
+            done.TrySetCanceled(ct);
+        });
+        return await done.Task.WaitAsync(ct);
     }
     void RunFileCommand(ClipboardFormats formats)
     {
@@ -64,7 +79,7 @@ public sealed partial class WindowsTextClipboard:ILocalFileClipboard,IFileClipbo
                 try
                 {
                     if(GetClipboardSequenceNumber()!=expectedVersion||!EmptyClipboard()||SetClipboardData(15,memory)==0)return false;
-                    memory=0;cached=null;richCached=null;return true;
+                    memory=0;publishedFileVersion=GetClipboardSequenceNumber();cached=null;richCached=null;return true;
                 }
                 finally{CloseClipboard();}
             }

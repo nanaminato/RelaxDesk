@@ -38,7 +38,7 @@ public sealed partial class ViewerWindow
         string sourceFolder = Path.Combine(fixture, "上传队列"); Directory.CreateDirectory(Path.Combine(sourceFolder, "zz-empty"));
         string sourceFile = Path.Combine(sourceFolder, "00-中文.bin"); await File.WriteAllBytesAsync(sourceFile, content, ct);
         await File.WriteAllTextAsync(Path.Combine(sourceFolder, "zz-tail.txt"), "尾部 / 日本語", ct); await File.WriteAllTextAsync(Path.Combine(sourceFolder, "zz-cancel.txt"), "never send", ct);
-        FilesDropped([sourceFolder]); Check(fileWindow?.VisibleConfirmation == true, "Directory drop bypassed confirmation");
+        PrepareFixtureUpload([sourceFolder]); Check(fileWindow?.VisibleConfirmation == true, "Directory drop bypassed confirmation");
         fileWindow!.ConfirmUploadButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
         await Until(() => fileQueue!.Snapshot().Any(job => job.Name == "00-中文.bin" && job.CompletedBytes >= 512 * 1024 && job.State == TransferJobState.Running));
         var selected = fileQueue!.Snapshot(); fileQueue.Cancel(selected.Single(job => job.Name == "zz-cancel.txt").Id);
@@ -80,7 +80,7 @@ public sealed partial class ViewerWindow
 
         async Task InterruptedUpload(string name)
         {
-            string path = Path.Combine(fixture, name); await File.WriteAllBytesAsync(path, content, ct); FilesDropped([path]);await Until(()=>fileWindow?.ConfirmUploadButton.IsEnabled==true);fileWindow!.ConfirmUploadButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            string path = Path.Combine(fixture, name); await File.WriteAllBytesAsync(path, content, ct); PrepareFixtureUpload([path]);await Until(()=>fileWindow?.ConfirmUploadButton.IsEnabled==true);fileWindow!.ConfirmUploadButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             await Until(() => fileQueue!.Snapshot().Any(job => job.Name == name && job.CompletedBytes >= 512 * 1024 && job.State == TransferJobState.Running));
             var job = fileQueue!.Snapshot().Single(job => job.Name == name); fileQueue.Pause(job.Id, true); await FreshGrant();
         }
@@ -108,7 +108,7 @@ public sealed partial class ViewerWindow
         // automatic retry whose Host grants screen only must drop the old plan.
         await driver.Listening(ct); _ = ConnectVideo(); var again = await driver.Request(ct); await driver.Send("APPROVE_FILES", again.Id);
         await Until(() => fileQueue?.Enabled == true); string deniedSource = Path.Combine(fixture, "denied-recovery.bin"); await File.WriteAllBytesAsync(deniedSource, content, ct);
-        FilesDropped([deniedSource]); fileWindow!.ConfirmUploadButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+        PrepareFixtureUpload([deniedSource]); fileWindow!.ConfirmUploadButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
         await Until(() => fileQueue!.Snapshot().Any(job => job.CompletedBytes >= 512 * 1024 && job.State == TransferJobState.Running));
         relay.Cut(); var screenOnly = await driver.Request(ct); await driver.Send("APPROVE", screenOnly.Id);
         await Until(() => sessionPermissions is not null && fileQueue is null && pendingFileRecovery is null); await recoveryCleanup;

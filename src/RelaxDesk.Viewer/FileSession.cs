@@ -1,5 +1,3 @@
-using System.Windows;
-using System.Windows.Controls;
 using RelaxDesk.Core;
 using RelaxDesk.Windows;
 
@@ -7,7 +5,6 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
-    readonly CheckBox requestFiles = new() { Content = "启用文件传输与短期续传", IsChecked = true };
     FileTransferClient? fileClient;
     FileTransferQueue? fileQueue;
     FileTransferWindow? fileWindow;
@@ -17,19 +14,16 @@ public sealed partial class ViewerWindow
     Task recoveryCleanup=Task.CompletedTask;
     string? activeFileScope,recoveryFileScope,recoveryPeerPin;
     bool fileSessionVerified;
-    void ConfigureFileDrop()
-    {
-        requestFiles.Checked+=(_,_)=>requestFileClipboard.IsEnabled=true;
-        requestFiles.Unchecked+=(_,_)=>{requestFileClipboard.IsChecked=false;requestFileClipboard.IsEnabled=false;};
-        AllowDrop = true;
-        PreviewDragOver += (_, e) => { if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return; e.Effects = fileQueue?.Enabled == true ? DragDropEffects.Copy : DragDropEffects.None; e.Handled = true; };
-        Drop += (_, e) => { if (fileQueue?.Enabled == true && e.Data.GetData(DataFormats.FileDrop) is string[] paths) FilesDropped(paths); e.Handled = true; };
-    }
     string[] RequestedFeatures()
     {
         if (smoke?.ReconnectTest==true)return [SessionCapabilities.FileTransfer];
         if (smoke is not null&&!smoke.RichClipboardTest) return smoke.FileTransfer ? [SessionCapabilities.FileTransfer] : [];
-        var features = new List<string>(); if (requestClipboard.IsChecked == true) features.Add(SessionCapabilities.ClipboardText); if(requestClipboardImage.IsChecked==true)features.Add(SessionCapabilities.ClipboardImage);if(requestClipboardHtml.IsChecked==true)features.Add(SessionCapabilities.ClipboardHtml); if (requestFiles.IsChecked == true) features.Add(SessionCapabilities.FileTransfer); if(requestFileClipboard.IsChecked==true&&requestFiles.IsChecked==true)features.Add(SessionCapabilities.ClipboardFiles); if(requestAudio.IsChecked==true)features.Add(SessionCapabilities.SystemAudio);return features.ToArray();
+        var features = new List<string> { SessionCapabilities.FileTransfer, SessionCapabilities.ClipboardFiles };
+        if (requestClipboard.IsChecked == true) features.Add(SessionCapabilities.ClipboardText);
+        if (requestClipboardImage.IsChecked == true) features.Add(SessionCapabilities.ClipboardImage);
+        if (requestClipboardHtml.IsChecked == true) features.Add(SessionCapabilities.ClipboardHtml);
+        if (requestAudio.IsChecked == true) features.Add(SessionCapabilities.SystemAudio);
+        return features.ToArray();
     }
     internal void SelectFileRateForVerification(int index) => fileRateLimit.SelectedIndex = index;
 
@@ -46,7 +40,7 @@ public sealed partial class ViewerWindow
         activeQueue.Changed += () =>
         {
             if (activeQueue.Enabled || Interlocked.Exchange(ref notified, 1) != 0) return;
-            Dispatcher.BeginInvoke(() => { if (!ReferenceEquals(fileQueue, activeQueue)) return; sessionToolbar?.SetFiles(null); nativeView?.SetFilesDrop(null); });
+            Dispatcher.BeginInvoke(() => { if (ReferenceEquals(fileQueue, activeQueue)) sessionToolbar?.SetFiles(null); });
         };
     }
     async Task OpenFilePanel()
@@ -57,15 +51,19 @@ public sealed partial class ViewerWindow
         fileWindow.Show(); fileWindow.Activate();
         try { await fileWindow.RefreshRemote(); } catch (Exception error) { status.Text = "文件列表暂不可用：" + error.GetType().Name; }
     }
-    void FilesDropped(string[] paths)
+    void PrepareFixtureUpload(string[] paths)
     {
         if (fileClient is null || fileQueue?.Enabled != true || session is null || session.IsCancellationRequested) return;
-        ReleaseHeldInputs(); fileWindow ??= CreateFileWindow(); fileWindow.Show(); fileWindow.Activate(); fileWindow.PrepareUpload(paths);
+        ReleaseHeldInputs();
+        fileWindow ??= CreateFileWindow();
+        fileWindow.Show();
+        fileWindow.Activate();
+        fileWindow.PrepareUpload(paths);
     }
     void StopFilePermission()
     {
         StopFileClipboard();filePermissionStoppedByUser=true;_ = DiscardFileRecovery();
-        sessionPermissions?.RevokeFeature(SessionCapabilities.FileTransfer); fileQueue?.Disable("文件权限已关闭"); sessionToolbar?.SetFiles(null); nativeView?.SetFilesDrop(null);
+        sessionPermissions?.RevokeFeature(SessionCapabilities.FileTransfer); fileQueue?.Disable("文件权限已关闭"); sessionToolbar?.SetFiles(null);
         if (session is not null && !session.IsCancellationRequested && !outgoing.TryWrite(new("file-state-v2", ++sequence))) session.Cancel();
     }
     FileTransferWindow CreateFileWindow()
