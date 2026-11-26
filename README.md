@@ -1,152 +1,126 @@
 # RelaxDesk
 
-HDR capture uses an explicit FP16 Windows Graphics Capture frame pool on HDR monitors. [Capture policy and physical gray-ramp results](docs/HDR-CAPTURE.md).
+> 语言：简体中文 | [English (Archive)](README-en.md)
 
-Viewer uses a compact MSTSC-style connection window, four option tabs and a thin
-blue session bar, with optional Windows-protected saved credentials. See
-[Viewer UI and validation](docs/VIEWER-UI.md). Source change; existing installers
-are unchanged.
+**面向 Windows 10/11 家庭版（Home）的高性能开源远程桌面控制工具。**
 
-Current LAN sign-in uses the Host's configured username and password. The first
-connection verifies the Host certificate and requires local approval of the
-Viewer device. Returning devices and automatic reconnect use the same password,
-certificate and device identity. See the [Host guide](packaging/roles/HOST.zh-CN.md)
-and [Viewer guide](packaging/roles/VIEWER.zh-CN.md).
+RelaxDesk 用于在像素级别远程共享并控制**当前物理桌面**，致力于在日常办公场景下提供接近微软远程桌面（MSTSC）的响应体验——无需升级 Windows 专业版，无需开启微软 RDP 服务，也不修改任何 Windows 系统文件。
 
-Latest requested delivery now has [independent Host and Viewer EXE installers](docs/EXE-INSTALLERS.md), with current-user desktop/Start Menu shortcuts and separate Apps uninstall entries. Actual final installers pass 46 lifecycle checks including both installed WPF launches, payload hashes and independent removal; no manual unzip/CMD is needed. Portable ZIPs remain available. Real Home/service-UAC/hardware acceptance is still pending.
+> **当前状态**：实验版。核心采集、硬件 H.264 编解码、TLS 加密传输、剪贴板、文件传输、系统音频与安装包流程已实现并通过自动化契约测试；真实 Windows Home 双机物理环境、显卡驱动兼容性与管理员服务部署仍需在目标硬件上持续验收。
 
-Latest delivery is now [separate self-contained Host and Viewer ZIPs](docs/ROLE-PACKAGES.md), version `0.4.2-roles.20261124-202127.g7e51e95`. Host includes the one-click service UI; Viewer contains no Host/service payload. Actual split-archive hash/version/runtime/preflight/UI and synthetic cross-role checks pass. Historical source-only/no-package checkpoints below predate this explicit packaging request. Physical UAC/SCM/Home acceptance remains pending.
+---
 
-Service UI is now [one-click enable](docs/SERVICE-SETUP-UI.md): automatic install/start/connection, original-user identity, no second ordinary-success dialog, existing-running-service fast path; advanced startup/repair/removal stays collapsed. Source-only change, no new package or real SCM/UAC acceptance.
+## 核心特性
 
-Current source adds [service installation/update/start/removal inside HostShell](docs/SERVICE-SETUP-UI.md), with explicit UAC for a separate maintenance helper and the original user's SID. No per-change package: the delivered g5ebe35d ZIP is unchanged and still uses the documented administrator CLI. Actual UAC/SCM deployment remains pending.
+- **物理桌面共享**：直接控制当前登录的 Windows 交互式桌面，不创建独立的 RDP 登录会话。
+- **低延迟画面与 HDR 适配**：支持 DXGI Desktop Duplication / Windows Graphics Capture（HDR 屏幕自动使用 FP16 采集并做 SDR 映射）与 Media Foundation 硬件 H.264 编解码，保留 GDI 兼容回退。
+- **原生化连接体验**：连接端（Viewer）采用紧凑的 MSTSC 风格界面、顶部蓝色会话栏，支持多显示器切换、自适应缩放 / 1:1 物理像素 / 自定义缩放与平移，以及独立本地输入法文字提交。
+- **完整办公能力**：
+  - 独立授权的文本、图片、HTML 与**文件剪贴板**（支持资源管理器直接复制粘贴文件）。
+  - 独立授权的目录文件浏览器与大文件断点续传。
+  - 独立授权的系统音频（WASAPI 混音输出），支持静音与音量调节。
+- **安全优先**：
+  - 强制 **TCP + TLS** 端到端加密（禁止明文回退），可选 **QUIC (UDP + TLS)** 视频通道。
+  - 基于被控端用户名/密码、TLS 证书指纹核对与首次连接本机显式审批；受信任设备可随时在被控端撤销。
+  - 最小权限边界：常规共享运行在普通用户权限下，不绕过 UAC 安全桌面，不修改系统安全策略。
 
-## Final unified candidate — 2026-11-24
+---
 
-The final self-contained office bundle includes the source features described below. See [exact artifact, automated result and open physical gates](docs/FINAL-DELIVERY.md) and the [original requirement audit](docs/REQUIREMENTS-AUDIT.md). The first unified candidate was rejected and replaced after a deep-path service regression; its failure remains documented. Home dual-PC, actual clipboard/input/audio, hardware/office performance and real administrator deployment are not certified.
+## 快速开始
 
-The following source-checkpoint paragraphs predate this unified delivery; their statements about deferred packaging or historical ZIP contents describe those earlier checkpoints. Current artifact status comes from the delivery report.
+RelaxDesk 将**被控端（Host）**与**连接端（Viewer）**拆分为独立安装包/便携包，无需在目标机安装 .NET SDK。
 
-## Earlier source checkpoints
+### 1. 被控端（Host）
 
-Source now includes [independently authorized system audio](docs/AUDIO.md): separate pinned TLS, WASAPI output mix/playback, volume/mute/revoke, bounded device recovery and video-correlated scheduling. Production WPF/TLS tests use synthetic endpoints; real Home sound quality/A-V sync remain pending. The existing distributed ZIP predates this feature; final unified packaging remains deferred.
+1. 运行被控端安装程序，或解压便携包后启动被控端。
+2. 在「连接」页设置登录用户名（6–64 字符）与密码（8–128 字符）。
+3. 选择本机监听 IP（默认端口 `48200`）并点击**开始共享**。
+4. 首次有新设备连接时，核对 TLS 指纹并在弹窗中点击批准。
 
-Viewer source also includes [IP/port-only recent connections](docs/CONNECTION-HISTORY.md) and an explicitly opened [live statistics panel](docs/LIVE-STATISTICS.md). Statistics distinguish application bytes, control RTT and processing/API timings from physical end-to-end measurements. These additions are not in the historical distributed ZIP.
+详细步骤见 [被控端使用说明](packaging/roles/HOST.zh-CN.md)。
 
-Negotiated [FPS/target bitrate controls](docs/VIDEO-SETTINGS.md) now use keyframe-confirmed settings generations. [Controlled TCP delay/bandwidth/interruption tests](docs/NETWORK-VALIDATION.md) exercise real encrypted Host/decoder paths with synthetic pixels; they do not establish physical Home or office performance. For matched two-PC tests under measured bandwidth, latency and loss, see the [weak-network and MSTSC testing guide (中文)](docs/WEAK-NETWORK-TESTING.md). Final unified packaging remains deferred.
+### 2. 连接端（Viewer）
 
-Scoped [file task and byte resume](docs/FILE-RESUME.md) is now implemented: fresh Host authorization, fixed identity/directory scope, explicit continue/discard, five-minute tickets, SHA-256 and bounded partial retention. Actual WPF/TLS directory recovery and real non-sparse files above 1GiB pass [recorded checks](benchmarks/2026-11-23-file-resume-validation.md). Physical Home/network/input acceptance remains pending; no per-slice package.
+1. 运行连接端安装程序，或解压便携包后启动连接端。
+2. 输入被控端 IP、端口（默认 `48200`）以及用户名和密码（可选通过 Windows 凭据管理器记住凭据）。
+3. 点击「显示选项」可按需勾选剪贴板、文件与声音权限。
+4. 首次连接时核对被控端显示的 TLS 指纹，等待被控端批准即可进入桌面。
 
-Host now returns to Listening after each separately authorized session. HostShell distinguishes session disconnect from global stop; [lifecycle and security contract](docs/SESSION-LIFECYCLE.md). Viewer now reconnects with bounded backoff, the original certificate pin and fresh Host consent; revoked optional features and old input are not replayed. File tasks can now resume under a new grant and explicit confirmation. No package is generated for this slice.
+详细步骤见 [连接端使用说明](packaging/roles/VIEWER.zh-CN.md)。
 
-File-transfer UI checkpoint: [scoped directory + third pinned TLS stream](docs/FILE-TRANSFER.md), Host folder consent, Viewer directory browser, recursive queue, confirmed drag-drop and live revoke are implemented. [Automated evidence](benchmarks/2026-11-23-file-ui-validation.md). Cross-session resume is implemented in memory; physical Home acceptance remains pending; no new package until the final milestone.
+---
 
-Viewer now offers [fit, physical 1:1, custom zoom and local panning](docs/VIEWPORT.md), with shared CPU/GPU/input geometry and redraw readiness. Physical mixed-DPI and pointer landing acceptance remain pending.
+## 公网 / 异地远程连接
 
-Current development source adds [independently authorized text/image/HTML clipboard](docs/CLIPBOARD-CONTENT.md) and [rich keyboard/pointer input with explicit local-IME text submission](docs/INPUT-PROTOCOL.md). Production Host/Viewer clipboard integration is tested with isolated providers; real Windows clipboard/Home application and IME acceptance remain pending. Packaging is deferred until the final milestone at the owner's request; the existing 0.4.2 ZIP predates these features.
+RelaxDesk 默认面向局域网（LAN）直连，不依赖中心账号系统。如需从外部网络访问家里的电脑，推荐以下两种方式（完整说明与进阶配置见 [公网与异地远程访问配置指南](docs/REMOTE-ACCESS.zh-CN.md)）：
 
-2026-11-23 continuation: bounded capture recovery/control liveness, remote shortcut menu and pointer-motion coalescing are delivered as a self-contained 0.4.2 acceptance slice. See [product readiness](docs/PRODUCT-READINESS.md) and [exact build/test evidence](benchmarks/2026-11-23-office-readiness.md). This historical package predates clipboard, file and reconnect development; physical Home acceptance remains open.
+### 方式一：Tailscale / ZeroTier 虚拟组网（推荐）
 
-**A high-performance, open-source remote desktop project for Windows Home.**
+在两端安装并登录同一 Tailscale 或 ZeroTier 网络后，直接使用虚拟局域网 IP 和端口 `48200` 连接即可。无需暴露公网端口，支持 P2P 直连及 QUIC (UDP) 加速。
 
-RelaxDesk aims to provide responsive, pixel-based remote control of an existing Windows desktop, with an office-productivity experience approaching Microsoft Remote Desktop (MSTSC)—without requiring Windows Pro, enabling Microsoft's RDP host, or modifying Windows system files.
+### 方式二：使用 frpc 内网穿透（自有公网服务器）
 
-> **Status: experimental DXGI/H.264 architecture implemented; Windows Home physical-console acceptance is pending.** GPU H.264 encode/decode, authenticated binary video and actual WPF render submissions pass synthetic-video tests. Dual-PC Windows Home validation remains pending. See [implementation evidence](docs/IMPLEMENTATION.md). The “80% of MSTSC” target is an engineering hypothesis to validate through reproducible benchmarks, not a measured result.
+RelaxDesk 的控制、视频、文件、剪贴板与音频复用单个 TCP 端口（默认 `48200`），仅需配置一条 `tcp` 代理即可（端到端 TLS 加密依然生效，QUIC UDP 会自动回退到 TCP+TLS）：
 
-## Goals
+```toml
+# 被控端 frpc.toml 示例（frp v0.52+）
+serverAddr = "your.server.example.com"
+serverPort = 7000
 
-- **Host:** Windows 10/11 Home first; compatible with Pro/Enterprise/Server where supported and tested.
-- **Viewer:** Windows first. Linux/macOS support may follow via platform adapters.
-- **Session model:** share and control the **existing physical desktop**. No independent Windows logon sessions; the local screen may show remote activity.
-- **Interaction:** low-latency mouse/keyboard, high-fidelity text, reliable disconnect/reconnect, multi-monitor and DPI handling.
-- **UAC:** design for legitimate, authorized administration via a minimal privileged Windows service and per-session workers; do not weaken Windows security protections.
-- **Network:** start with authenticated encrypted LAN connections, then add NAT traversal/relay as optional components.
-- **Performance:** measure and optimize against MSTSC and other remote desktop implementations under matched workloads and network conditions.
-- **Security:** explicit authorization, encrypted transport, safe credentials, revocable device access and least-privilege process boundaries.
+auth.method = "token"
+auth.token = "replace-with-your-frps-token"
 
-## Planned stack
-
-| Area | Initial direction |
-| --- | --- |
-| Managed core | Latest verified stable .NET SDK at implementation time (currently targeting .NET 11) |
-| Windows UI | WPF / MVVM (keep UI out of host core) |
-| Native graphics | C++20, D3D11, DXGI Desktop Duplication |
-| Video | Hardware H.264 via supported Windows APIs; explicit software fallback |
-| Desktop optimization | Pointer metadata, dirty/move rects, selective lossless updates after baseline validation |
-| Input | Windows input APIs with session/desktop-aware permission handling |
-| Transport | Versioned protocol, authenticated encrypted channel, low-latency media path; benchmark TCP/UDP/QUIC before committing |
-| Diagnostics | Capture/encode/network/decode/present timing and resource-use metrics |
-
-DXGI Desktop Duplication and Media Foundation H.264 are implemented in a C++20 module. GPU codecs are tested with synthetic images; DXGI capture and GPU display have succeeded in the RDP session, but later SwapChain occlusion blocks repeatable GPU presentation. The GDI + Deflate compatibility baseline remains available. The API availability, codec path, GPU driver combinations and Windows Home compatibility require hands-on validation.
-
-## Architecture
-
-```text
-Windows Viewer (WPF)
-  ├─ Connection UI, consent/session status, input capture
-  ├─ Client renderer / decoder
-  └─ Secure versioned transport
-              ⇅
-Windows Home Host
-  ├─ Unprivileged network/session coordinator
-  ├─ Per-interactive-session capture & input agent
-  │    ├─ DXGI / D3D11 capture
-  │    ├─ Encoder and cursor metadata
-  │    └─ Authorized input delivery
-  └─ Minimal privileged Windows service (later phase)
-       └─ Session lifecycle, secure-desktop transitions and controlled workers
+[[proxies]]
+name = "relaxdesk-tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 48200
+remotePort = 48200
 ```
 
-All privilege-bearing operations must be narrow, audited and authorization-checked. Session 0 is not an interactive desktop; the service itself must not be treated as a universal screen capture context.
+> 如不希望在公网服务器开放端口，建议使用 `frp` 的 **STCP 模式**，详见 [docs/REMOTE-ACCESS.zh-CN.md](docs/REMOTE-ACCESS.zh-CN.md)。
 
-## Development stages
+---
 
-1. **Baseline LAN prototype:** single-monitor Windows Home host, viewer, authenticated encrypted connection, capture, encode/decode, pointer and keyboard/mouse input. Collect diagnostics from day one.
-2. **Performance engineering:** compare office tasks with MSTSC (on an RDP-capable comparison host) and Sunshine/Moonlight; reduce latency and memory copies; add cursor, dirty/move rect and text-quality optimizations based on evidence.
-3. **Reliability and Windows integration:** session changes, Windows Service, authorized UAC/lock-screen scenarios, multi-monitor and robust recovery.
-4. **Internet connectivity:** optional relay and connectivity negotiation, with no dependency on a central account system for LAN use.
-5. **Portability:** isolate OS-specific capture, input, rendering and service APIs before expanding the viewer/host platform matrix.
+## 非目标（Non-goals）
 
-See [Architecture](docs/ARCHITECTURE.md), [Roadmap](docs/ROADMAP.md), [Benchmark Plan](docs/BENCHMARKS.md), and [Agent Instructions](AGENTS.md).
+- 不重新实现 MSTSC/RDP，不创建独立 Windows RDP 会话。
+- 不修改 `termsrv.dll`，不使用 RDP Wrapper，不绕过 Windows 许可或会话限制。
+- 不禁用 UAC 安全桌面，不提供无鉴权/隐蔽远控。
+- 不在缺乏实测数据的前提下承诺固定帧率、带宽或延迟指标。
 
-## Non-goals
+---
 
-- Reimplementing MSTSC/RDP or hosting an independent RDP login session.
-- Patching `termsrv.dll`, using RDP Wrapper, or bypassing Windows licensing/session limits.
-- Disabling UAC secure desktop, accepting unauthenticated network control, or creating stealth remote access.
-- Promising a fixed FPS, bandwidth or latency before measuring real systems.
+## 从源码构建
 
-## Build
+环境要求：Windows x64、已固定版本 `.NET SDK 11.0.100` 及 C++20 原生构建工具链。
 
-Build with stable SDK 11.0.100 (run `./scripts/build-native.ps1` first): `dotnet build RelaxDesk.sln -c Release`. Run checks: `dotnet run --project src/RelaxDesk.Tests -c Release`. .NET 11 is now installed and pinned. See [run instructions, protocol and validation status](docs/IMPLEMENTATION.md).
+```powershell
+# 1. 构建原生图形与编解码模块
+./scripts/build-native.ps1
 
-## License
+# 2. 构建解决方案
+dotnet build RelaxDesk.sln -c Release
 
-**Not yet selected.** Please agree on an open-source license before distributing code or incorporating third-party implementations. No license grant is implied by a public repository alone.
+# 3. 运行自动化测试
+dotnet run --project src/RelaxDesk.Tests -c Release
+```
 
-## Project status
+---
 
-Independent project, with potential future integration into RelaxKonOS via an adapter; RelaxDesk must not depend on RelaxKonOS.
+## 相关文档
 
-Current GPU display implementation, final RDP occlusion failures and Home validation commands: [GPU display acceptance report](benchmarks/2026-11-22-gpu-display-report.md).
+- **用户与部署**
+  - [公网与异地远程访问配置指南](docs/REMOTE-ACCESS.zh-CN.md)
+  - [被控端使用说明](packaging/roles/HOST.zh-CN.md) / [连接端使用说明](packaging/roles/VIEWER.zh-CN.md)
+  - [独立 EXE 安装包说明](docs/EXE-INSTALLERS.md) / [系统服务设置 UI](docs/SERVICE-SETUP-UI.md)
+  - [弱网与 MSTSC 对比测试指南](docs/WEAK-NETWORK-TESTING.md)
+- **架构与设计（英文技术文档）**
+  - [Architecture](docs/ARCHITECTURE.md) / [Roadmap](docs/ROADMAP.md) / [Benchmark Plan](docs/BENCHMARKS.md)
+  - [旧版英文 README 归档](README-en.md)
 
-Windows Home local-console one-command validation: `powershell.exe -NoProfile -File scripts/accept-home.ps1`. See [occlusion diagnosis and log collection](benchmarks/2026-11-22-occlusion-report.md).
+---
 
+## 许可证
 
-免 SDK 的 Windows Home 验收包：在开发机运行 `powershell.exe -NoProfile -File scripts/package-acceptance.ps1`，目标机完整解压 ZIP 后双击 `Collect-Logs.cmd`。包内包含自包含 Host/Viewer、原生模块及测试工具。见 [运行说明与日志回传清单](packaging/RUN-ME.zh-CN.md)。Windows Home 物理真机仍待验证。
-
-Windows acceptance package: run `Start-Host.cmd` on the shared PC and `Start-Viewer.cmd` on the client. Host approval is a WPF button; IP and port are sufficient. HDR-to-SDR GPU mapping is implemented and synthetic-color tested; physical HDR appearance remains pending. See [package instructions](packaging/RUN-ME.zh-CN.md).
-
-Desktop file copy and paste now prepares files automatically across an approved session using the Windows clipboard. See [file clipboard behavior and acceptance](docs/FILE-CLIPBOARD.md).
-
-Host-selected screens and all-screen capture/input now support physical negative origins. Unrotated single screens retain DXGI/GPU encode; rotated/all-screen scope uses explicit GDI compatibility. See [display contract and remaining P4 work](docs/DISPLAYS.md). Identity-scoped [live topology recovery](docs/DISPLAY-TOPOLOGY.md) is implemented; physical multi-monitor/DPI acceptance remains open.
-
-Viewer live screen selection is now negotiated within the approved Host scope. Input pauses until a matching new-generation frame is displayed; capture/encoder and same-size decoder state are replaced. See [display protocol and limits](docs/DISPLAYS.md). Identity-scoped topology refresh is implemented; physical P4 acceptance remains open. No per-slice package.
-
-Windows integration checkpoint: [session/desktop eligibility and controlled teardown](docs/WINDOWS-SESSIONS.md) now guard real capture/input/clipboard and an idle-session watch. Session 0, inactive/unknown WTS, invisible window station and non-Default/unavailable desktop fail closed; persistent Host waits for fresh consent. Service/agent coordination, installer, audio and physical Home/UAC/lock acceptance remain open. No package.
-
-Current-user [install/upgrade/uninstall](docs/USER-INSTALL.md) is implemented with manifest verification, isolated release staging, rollback, HKCU version/uninstall registration and optional desktop shortcuts. Source tests cover PowerShell 5.1/7; actual unified-package installation, service mode and audio remain open. No package is produced for this slice.
-
-Optional [LocalService broker and interactive-agent coordination](docs/SESSION-BROKER.md) are implemented in source: authenticated local-only pipe, per-session leases/health and HostShell opt-in/stop-on-loss, with no remote approval or graphics in Session 0. Actual SCM/LocalService deployment, machine service installer, opt-in logon/restart coordination and audio remain open. Console/WPF synthetic tests do not accept those exits. No package.
-
-Protected [machine broker install/upgrade/removal](docs/MACHINE-SERVICE-INSTALL.md) is now implemented in source, with explicit administrator/owner selection, manual default, opt-in automatic startup and no desktop grant. 80 real-file/ACL and simulated-SCM contracts pass; real elevated SCM/LocalService deployment and final self-contained package acceptance remain unverified. Next: opt-in interactive logon/restart coordination and audio. No package.
+**尚未选定开源许可证。** 在项目所有者明确选定并提交许可证前，本仓库不默示任何开源授权。

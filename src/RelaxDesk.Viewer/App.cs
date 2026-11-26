@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Threading.Channels;
 using RelaxDesk.Core;
+using RelaxDesk.Core.Localization;
 using RelaxDesk.Windows;
 using System.Diagnostics;
 using System.Text.Json;
@@ -257,7 +258,7 @@ public sealed partial class ViewerWindow : Window
                 if(displaySession is not null&&!displaySession.AcceptFrame(frame))return;
                 if(!AcceptVideoFrame(frame))return;
                 SetViewportVideoSize(frame.Width,frame.Height);if(gpu&&drawnViewport is not null)ViewportDrawn(drawnViewport);
-                status.Text = $"已连接 · {frame.Width} × {frame.Height} · {(gpu ? "GPU 显示" : "兼容显示")}";
+                status.Text = Strings.Format("Viewer.StatusConnectedFormat", frame.Width, frame.Height, Strings.Get(gpu ? "Viewer.DisplayModeGpu" : "Viewer.DisplayModeCompat"));
                 sessionToolbar?.SetMediaPath(frame, gpu);
                 DisplayPresented(frame);ExerciseWindow(count);
                 audioSession?.VideoPresented(frame.Timestamp100ns);
@@ -303,7 +304,7 @@ public sealed partial class ViewerWindow : Window
         try
         {
             if (smoke is null) ViewerSessionLog.Record("connect-start");
-            status.Text = "正在连接，等待被控端允许…";
+            status.Text = Strings.Get("Viewer.StatusConnecting");
             using(var connecting=CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token))
             {
                 connecting.CancelAfter(TimeSpan.FromSeconds(75));
@@ -339,14 +340,14 @@ public sealed partial class ViewerWindow : Window
             long initialDroppedPointerMoves = Interlocked.Read(ref droppedPointerMoves);
             BeginStatistics(()=>new(metrics.Snapshot(decoded.Dropped+Interlocked.Read(ref skipped),decoded.Depth),Volatile.Read(ref receivedFrames),Interlocked.Read(ref gpuFrames),Interlocked.Read(ref cpuFrames),Interlocked.Read(ref readbackBytes),Volatile.Read(ref rendererGenerations),connection.Video.TransportName,connection.VideoFallback,connection.ReadVideoNetworkStatistics(),connection.HostVideoQueue,outgoing.Depth,outgoing.CoalescedMoves-initialCoalescedMoves,connection.VideoTransportRevision,Interlocked.Read(ref droppedPointerMoves)-initialDroppedPointerMoves,Volatile.Read(ref viewportVideoWidth),Volatile.Read(ref viewportVideoHeight)),
                 new(new IPEndPoint(IPAddress.Parse(target.Host), target.Port).ToString(), DateTimeOffset.UtcNow,
-                    DiagnosticCorrelation.Current, target.UserName is null ? "会话审批" : "用户名和密码",
+                    DiagnosticCorrelation.Current, target.UserName is null ? Strings.Get("Viewer.AuthModeApproval") : Strings.Get("Viewer.AuthModePassword"),
                     connection.InputVersion, connection.DisplayVersion, connection.VideoVersion, [.. connection.Features]));
             toolbarStatisticsSource = () => new(metrics.ReadCounters(), connection.Video.TransportName,
                 connection.VideoTransportRevision, Volatile.Read(ref latestControlRtt));
             if (connection.ClipboardData is null&&permissionGate.Allows(SessionCapabilities.ClipboardText))
                 clipboard = new ClipboardSynchronizer(() => new WindowsTextClipboard(), permissionGate, QueueClipboardUpdate, cancellation.Token,
                     message => Dispatcher.BeginInvoke(() => { if (!ReferenceEquals(sessionPermissions, permissionGate) || cancellation.IsCancellationRequested) return; status.Text = message; if (!permissionGate.Allows(SessionCapabilities.ClipboardText)) DisableClipboard(); }));
-            status.Text = "已获授权，正在接收桌面…";
+            status.Text = Strings.Get("Viewer.StatusAuthorized");
             ShowConnectedView(true);
             if(target.FullScreen&&!fullScreen)ToggleFullScreen();
             if(previousPin is not null)outgoing.TryWrite(new("keyframe-v2",++sequence));
@@ -446,7 +447,7 @@ public sealed partial class ViewerWindow : Window
                             else if(feature==SessionCapabilities.FileTransfer){StopFileClipboard();if(packet.Text=="transport")fileQueue?.Interrupt();else fileQueue?.Disable("Host已关闭文件权限");sessionToolbar?.SetFiles(null);}
                             else if(feature==SessionCapabilities.SystemAudio){audioSession?.Stop();RefreshAudioToolbar();}
                             if(feature==SessionCapabilities.FileTransfer)Interlocked.Increment(ref fileRevocationReplies);
-                            status.Text="会话能力已关闭；重新开启需要重新连接并授权。";
+                            status.Text = Strings.Get("Viewer.StatusCapabilityRevoked");
                         });
                     }
                     else throw new InvalidDataException("Unexpected control response");

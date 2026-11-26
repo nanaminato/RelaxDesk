@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net11.0</TargetFramework></PropertyGroup>
-  <ItemGroup><InternalsVisibleTo Include="RelaxDesk.Tests" /></ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="RelaxDesk.Tests" />
+    <EmbeddedResource Include="Localization\Locales\*.json" />
+  </ItemGroup>
 </Project>

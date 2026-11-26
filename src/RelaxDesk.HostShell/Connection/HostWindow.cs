@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using RelaxDesk.Core;
+using RelaxDesk.Core.Localization;
 using RelaxDesk.Session;
 using RelaxDesk.Windows;
 namespace RelaxDesk.HostShell;
@@ -60,14 +61,15 @@ internal sealed partial class HostWindow:Window
         }
 
         ConfigureDisplaySettings();
-        ConfigureSettingsWindow(openDisplay, "共享设置", displaySettings);
+        ConfigureSettingsWindow(openDisplay, "Host.SharingSettings", displaySettings);
         ConfigureLoginSettings();
-        ConfigureSettingsWindow(openLogin, "登录设置", loginSettings);
+        ConfigureSettingsWindow(openLogin, "Host.LoginSettings", loginSettings);
         ConfigureServiceSettings();
-        ConfigureSettingsWindow(openService, "系统服务", serviceSettings);
+        ConfigureSettingsWindow(openService, "Host.SystemService", serviceSettings);
         ConfigureDeviceTrust();
-        ConfigureSettingsWindow(openDevices, "受信任的设备", trustedDeviceSettings);
-        ConfigureSettingsWindow(openLogs, "诊断与日志", logs);
+        ConfigureSettingsWindow(openDevices, "Host.TrustedDevices", trustedDeviceSettings);
+        ConfigureSettingsWindow(openLogs, "Host.DiagnosticsAndLogs", logs);
+        ConfigureLanguageSelector();
 
         connectionNavigation.Click += (_, _) => ShowPage(false);
         settingsNavigation.Click += (_, _) => ShowPage(true);
@@ -87,9 +89,32 @@ internal sealed partial class HostWindow:Window
         Host.Changed+=change=>Dispatcher.BeginInvoke(()=>Changed(change));Host.Diagnostic+=line=>Dispatcher.BeginInvoke(()=>{logs.Text=string.Join(Environment.NewLine,Host.Snapshot());if(line.StartsWith("producer_error")||line.StartsWith("Session ended:")||line.StartsWith("clipboard_")||line.StartsWith("file_transfer_disabled"))detail.Text=line;if(line.StartsWith("audio_disabled")){detail.Text="声音传输已关闭；画面与输入仍可使用。";}});
         Closing+=async(_,e)=>{if(ServiceSetupBusy){e.Cancel=true;serviceSetupNotice.Text="正在处理系统服务，请等待完成后再关闭；如出现 Windows 授权，可在那里取消。";return;}CancelRecovery();if(!Host.Running&&serviceAgent is null&&serviceAttempt is null&&serviceWatch is null)return;e.Cancel=true;if(closing)return;closing=true;await DisconnectService();await StopSharing();Close();};
     }
+    bool showingSettings;
+    void ConfigureLanguageSelector()
+    {
+        var manager = LocalizationManager.Current;
+        languageSelector.ItemsSource = manager.AvailableLanguages;
+        languageSelector.SelectedValue = manager.CurrentLanguageCode;
+        languageSelector.SelectionChanged += (_, _) =>
+        {
+            if (languageSelector.SelectedItem is LanguageOption option)
+                manager.SetLanguage(option.Code);
+        };
+        manager.LanguageChanged += (_, _) =>
+        {
+            Dispatcher.BeginInvoke(() =>
+            {
+                PageTitle.Text = Strings.Get(showingSettings ? "Host.PageTitleSettings" : "Host.PageTitleSharing");
+                if (!string.Equals(languageSelector.SelectedValue as string, manager.CurrentLanguageCode, StringComparison.OrdinalIgnoreCase))
+                    languageSelector.SelectedValue = manager.CurrentLanguageCode;
+            });
+        };
+    }
+
     internal void ShowPage(bool settings, FrameworkElement? section = null)
     {
-        PageTitle.Text = settings ? "设置" : "共享这台电脑";
+        showingSettings = settings;
+        PageTitle.Text = Strings.Get(settings ? "Host.PageTitleSettings" : "Host.PageTitleSharing");
         (settings ? connectionNavigation : settingsNavigation).ClearValue(StyleProperty);
         (settings ? settingsNavigation : connectionNavigation).Style = (Style)Resources["PrimaryButton"];
         SharingContent.Visibility = settings ? Visibility.Collapsed : Visibility.Visible;
@@ -103,7 +128,7 @@ internal sealed partial class HostWindow:Window
             }, System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
-    void ConfigureSettingsWindow(Button open, string title, UIElement body)
+    void ConfigureSettingsWindow(Button open, string titleKey, UIElement body)
     {
         HostPanelWindow? dialog = null;
         open.Click += (_, _) =>
@@ -114,7 +139,7 @@ internal sealed partial class HostWindow:Window
                 dialog.Activate();
                 return;
             }
-            var window = new HostPanelWindow(this, title, body);
+            var window = new HostPanelWindow(this, Strings.Get(titleKey), body);
             window.Closed += (_, _) => dialog = null;
             dialog = window;
             window.Show();

@@ -4,6 +4,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using RelaxDesk.Windows;
 using RelaxDesk.Core;
+using RelaxDesk.Core.Localization;
 namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
@@ -38,6 +39,29 @@ public sealed partial class ViewerWindow
         };
         ConfigureSavedCredentials();
         ConfigurePreferences();
+        ConfigureLanguageSelector();
+    }
+
+    void ConfigureLanguageSelector()
+    {
+        var manager = LocalizationManager.Current;
+        languageSelector.ItemsSource = manager.AvailableLanguages;
+        languageSelector.SelectedValue = manager.CurrentLanguageCode;
+        languageSelector.SelectionChanged += (_, _) =>
+        {
+            if (languageSelector.SelectedItem is LanguageOption option)
+                manager.SetLanguage(option.Code);
+        };
+        manager.LanguageChanged += (_, _) =>
+        {
+            Dispatcher.BeginInvoke(() =>
+            {
+                optionsButton.Content = Strings.Get(optionsExpanded ? "Viewer.HideOptions" : "Viewer.ShowOptions");
+                if (!string.Equals(languageSelector.SelectedValue as string, manager.CurrentLanguageCode, StringComparison.OrdinalIgnoreCase))
+                    languageSelector.SelectedValue = manager.CurrentLanguageCode;
+                UpdateViewTitle();
+            });
+        };
     }
 
     internal void SetOptionsExpanded(bool expanded)
@@ -49,7 +73,7 @@ public sealed partial class ViewerWindow
         connectionOptions.SelectedIndex = 0;
         connectionOptions.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
         basicConnection.Visibility = expanded ? Visibility.Collapsed : Visibility.Visible;
-        optionsButton.Content = expanded ? "隐藏选项 ▴" : "显示选项 ▾";
+        optionsButton.Content = Strings.Get(expanded ? "Viewer.HideOptions" : "Viewer.ShowOptions");
         Height = expanded ? 610 : 470;
     }
     SessionToolbar? sessionToolbar;

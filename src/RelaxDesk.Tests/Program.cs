@@ -1,5 +1,7 @@
 using System.Buffers.Binary;
+using System.Globalization;
 using RelaxDesk.Core;
+using RelaxDesk.Core.Localization;
 int count = 0;
 void Check(bool result) { if (!result) throw new Exception($"Test {count + 1} failed"); count++; }
 async Task Reject(byte[] bytes) { try { await Wire.Read(new MemoryStream(bytes)); throw new Exception("Accepted malformed packet"); } catch (Exception e) when (e is InvalidDataException or EndOfStreamException or System.Text.Json.JsonException) { count++; } }
@@ -201,7 +203,56 @@ try
 }
 catch { await server; throw; }
 finally { listener.Stop(); }
-Console.WriteLine($"PASS {count} protocol/access/TLS integration checks");
+
+// Localization tests: 5 built-in languages, system culture fallback to English, custom user translation files & persistence.
+{
+    string tempRoot = Path.Combine(Path.GetTempPath(), "relaxdesk-i18n-" + Guid.NewGuid().ToString("N"));
+    string userLocales = Path.Combine(tempRoot, "locales");
+    string prefFile = Path.Combine(tempRoot, "language.json");
+    Directory.CreateDirectory(userLocales);
+    try
+    {
+        var builtin = new LocalizationManager([], null, new CultureInfo("en-US"));
+        var codes = builtin.AvailableLanguages.Select(l => l.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        Check(codes.Count == 5 && codes.Contains("en") && codes.Contains("zh-CN") && codes.Contains("es") && codes.Contains("ja") && codes.Contains("fr"));
+
+        // First-launch system culture matching & fallback to English when unmatched
+        Check(new LocalizationManager([], null, new CultureInfo("zh-CN")).CurrentLanguageCode == "zh-CN");
+        Check(new LocalizationManager([], null, new CultureInfo("zh-TW")).CurrentLanguageCode == "zh-CN");
+        Check(new LocalizationManager([], null, new CultureInfo("ja-JP")).CurrentLanguageCode == "ja");
+        Check(new LocalizationManager([], null, new CultureInfo("es-MX")).CurrentLanguageCode == "es");
+        Check(new LocalizationManager([], null, new CultureInfo("fr-CA")).CurrentLanguageCode == "fr");
+        Check(new LocalizationManager([], null, new CultureInfo("ar-SA")).CurrentLanguageCode == "en");
+
+        // User-added custom translation file (new language + partial keys fallback to English + malformed file ignored)
+        File.WriteAllText(Path.Combine(userLocales, "de.json"), """
+            {
+              "code": "de",
+              "displayName": "Deutsch",
+              "strings": {
+                "Common.Cancel": "Abbrechen"
+              }
+            }
+            """);
+        File.WriteAllText(Path.Combine(userLocales, "broken.json"), "{ not valid json");
+        var withCustom = new LocalizationManager([userLocales], prefFile, new CultureInfo("de-DE"));
+        Check(withCustom.CurrentLanguageCode == "de");
+        Check(withCustom.Get("Common.Cancel") == "Abbrechen");
+        Check(withCustom.Get("Host.StartSharing") == "Start Sharing"); // fallback to English
+
+        // Persistence across restart
+        Check(withCustom.SetLanguage("ja"));
+        var restarted = new LocalizationManager([userLocales], prefFile, new CultureInfo("en-US"));
+        Check(restarted.CurrentLanguageCode == "ja");
+        Check(restarted.Get("Host.StartSharing") == "共有を開始");
+    }
+    finally
+    {
+        if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, recursive: true);
+    }
+}
+
+Console.WriteLine($"PASS {count} protocol/access/TLS/localization integration checks");
 
 sealed class CountingWireStream : MemoryStream
 {
