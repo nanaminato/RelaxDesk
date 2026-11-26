@@ -34,6 +34,21 @@ and captures that endpoint's loopback, reporting only frequency/amplitude
 aggregates. It stores no samples and may be affected by other playing system
 sound. Neither test certifies remote physical speaker quality.
 
+Playback also drains successful writes immediately, including partial writes
+and transitions between packets. It polls only when there is no data, timing
+requires waiting, or the endpoint accepts zero frames. Sleeping after every
+10ms packet cannot keep up when Windows rounds the wait to a longer timer tick.
+The existing 40ms WASAPI padding cap still bounds prebuffering.
+
+For an explicitly authorized real-host check, Viewer supports
+`--remote-audio-probe <IP> <port> <username>`. This uses the current user's
+already opted-in matching Credential Manager entry and verified certificate
+pin, requests audio only, and plays real remote audio for ten seconds through
+the WPF CPU/video-synchronized/real WASAPI path. It prints aggregate received
+and rendered frame counts, not credentials or samples, and disconnects. It is
+never part of unattended suites. See the
+[actual LAN playback validation](../benchmarks/2026-11-26-lan-audio-playback-validation.md).
+
 Default endpoint identity is checked every 250ms. Default changes or invalidation dispose the old endpoint and allow at most three replacements, using 100/200/300ms delays across the audio session; known temporary unavailable/service errors consume the same budget. Successful packets do not replenish it. Partial/queued samples flush after replacement. Exhaustion disables audio and requires reconnect/consent. Playback padding is capped at 40ms or the device's smaller capacity.
 
 ## Timing and diagnostics

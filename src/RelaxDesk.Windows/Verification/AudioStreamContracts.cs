@@ -14,13 +14,15 @@ public static class AudioStreamContracts
         public readonly ConcurrentQueue<byte[]> Written = new();
         public readonly TaskCompletionSource Attempted = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool Writable = true;
+        public int MaximumWriteBytes = int.MaxValue;
         public bool IsDefaultDevice() => true;
         public AudioFrame? Read() => Capture.TryDequeue(out var frame) ? frame : null;
         public int Write(ReadOnlySpan<byte> samples)
         {
             Attempted.TrySetResult();
             if (!Volatile.Read(ref Writable)) return 0;
-            Written.Enqueue(samples.ToArray()); return samples.Length;
+            int count = Math.Min(samples.Length, MaximumWriteBytes);
+            Written.Enqueue(samples[..count].ToArray()); return count;
         }
         public void Flush() { }
         public void Dispose() { }
@@ -83,6 +85,18 @@ public static class AudioStreamContracts
             Check(received.Timestamp100ns == actual.Timestamp100ns && received.Data.SequenceEqual(actual.Data), "Capture changed real sample timing/data");
             await Task.Delay(100, timeout.Token);
             Check(sender.Packets == 1, "Capture inserted extra silence after a real packet");
+        });
+        await WithPair(async (writer, reader) =>
+        {
+            // A valid endpoint may accept only a small prefix. Progress must
+            // refill available capacity without adding a poll delay per prefix.
+            var endpoint = new Endpoint { MaximumWriteBytes = 48 };
+            await using var receiver = new AudioStreamSession(reader, false, () => endpoint, timeout.Token);
+            var frame = Frame(1, false, 42);
+            await AudioProtocol.Write(writer, frame, timeout.Token);
+            await Until(() => receiver.Packets == 1);
+            await Task.Delay(100, timeout.Token);
+            Check(endpoint.Written.SelectMany(bytes => bytes).SequenceEqual(frame.Data), "Partial audio writes were throttled below real-time playback or changed PCM");
         });
         Console.WriteLine($"PASS {checks} audio stream discontinuity/first-packet/stale-pending/no-fabricated-silence/PCM-timestamp contracts; real loopback TCP with synthetic endpoints, no physical sound claim");
     }

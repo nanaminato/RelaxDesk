@@ -149,6 +149,11 @@ public sealed class AudioStreamSession:IAsyncDisposable
                             try{written=endpoint.Write(samples);}catch(System.Runtime.InteropServices.COMException e)when(unchecked((uint)e.HResult)==0x88890004){invalidated=true;lastCheck=0;continue;}
                             if(written<0||written>samples.Length||written%4!=0)throw new IOException("Invalid audio render progress");
                             offset+=written;if(offset==pending.Data.Length)pending=null;
+                            // Refill available WASAPI capacity immediately, even
+                            // across packet/partial-write boundaries. A 5ms wait
+                            // can last a full Windows timer tick (~15.6ms), slower
+                            // than the 10ms packets supplied by many endpoints.
+                            if(written>0)continue;
                         }
                     }
                 }
