@@ -59,17 +59,17 @@ internal sealed partial class HostWindow:Window
         if(addresses.Length>1){var options=new WrapPanel();foreach(string address in addresses){var pick=new Button{Content=address,Padding=new(10,5,10,5),FontSize=12};pick.Click+=(_,_)=>{if(!Host.Running&&!RestartPending)ip.Text=address;};options.Children.Add(pick);}settings.Children.Add(options);}
         var sharingSettings = new StackPanel();
         AddDisplaySettings(sharingSettings);
-        SettingsContent.Children.Add(SettingsCard("共享设置", sharingSettings));
-        var login = SettingsCard("登录设置", BuildLoginSettings());
+        SettingsContent.Children.Add(SettingsCard("共享设置", displayOverview, sharingSettings));
+        var login = SettingsCard("登录设置", loginOverview, BuildLoginSettings());
         SettingsContent.Children.Add(login);
         var servicePanel = new StackPanel();
         AddServiceSettings(servicePanel);
-        var service = Card(servicePanel);
+        var service = SettingsCard("系统服务", serviceOverview, servicePanel);
         SettingsContent.Children.Add(service);
         var devices = new StackPanel();
         BuildDeviceTrust(devices);
-        SettingsContent.Children.Add(Card(devices));
-        SettingsContent.Children.Add(SettingsCard("诊断与日志", logs));
+        SettingsContent.Children.Add(SettingsCard("受信任的设备", deviceOverview, devices));
+        SettingsContent.Children.Add(SettingsCard("诊断与日志", null, logs));
 
         connectionNavigation = AddNavigation("连接", () => ShowPage(false));
         settingsNavigation = AddNavigation("设置", () => ShowPage(true));
@@ -80,13 +80,21 @@ internal sealed partial class HostWindow:Window
         settings.Children.Add(actions);
         var links = new TextBlock { Margin = new(4, 8, 0, 0) };
         AddSettingsLink(links, "设置登录信息", login);
-        links.Inlines.Add("     ");
-        AddSettingsLink(links, "设置系统服务", service);
         settings.Children.Add(links);
         color.Margin = new(4, 12, 0, 0);
         color.TextWrapping = TextWrapping.Wrap;
         settings.Children.Add(color);
         content.Children.Add(Card(settings));
+        var homeService = new StackPanel { Margin = new(0, 12, 0, 0) };
+        homeService.Children.Add(Text("系统服务", 14, true));
+        var homeServiceStatus = Text("", foreground: Brushes.SlateGray);
+        homeServiceStatus.SetBinding(TextBlock.TextProperty,
+            new System.Windows.Data.Binding(nameof(TextBlock.Text)) { Source = serviceOverview });
+        homeService.Children.Add(homeServiceStatus);
+        var serviceLink = new TextBlock { Margin = new(0, 4, 0, 0) };
+        AddSettingsLink(serviceLink, "设置系统服务", service);
+        homeService.Children.Add(serviceLink);
+        statusContent.Children.Add(homeService);
 
         consent.Children.Add(Text("有人请求连接", 19, true));
         peer.FontSize = 16;
@@ -145,12 +153,32 @@ internal sealed partial class HostWindow:Window
             }, System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
-    static Border SettingsCard(string title, UIElement body)
+    Border SettingsCard(string title, TextBlock? overview, UIElement body)
     {
-        var panel = new StackPanel();
-        panel.Children.Add(Text(title, 17, true));
-        panel.Children.Add(body);
-        return Card(panel);
+        var headings = new StackPanel();
+        headings.Children.Add(Text(title, 17, true));
+        if (overview is not null) headings.Children.Add(overview);
+        var open = new Button { Content = overview is null ? "查看" : "打开设置", VerticalAlignment = VerticalAlignment.Center };
+        System.Windows.Automation.AutomationProperties.SetName(open, "打开" + title);
+        HostPanelWindow? dialog = null;
+        open.Click += (_, _) =>
+        {
+            if (dialog is not null)
+            {
+                if (dialog.WindowState == WindowState.Minimized) dialog.WindowState = WindowState.Normal;
+                dialog.Activate();
+                return;
+            }
+            var window = new HostPanelWindow(this, title, body);
+            window.Closed += (_, _) => dialog = null;
+            dialog = window;
+            window.Show();
+        };
+        var row = new DockPanel();
+        DockPanel.SetDock(open, Dock.Right);
+        row.Children.Add(open);
+        row.Children.Add(headings);
+        return Card(row);
     }
 
     void OpenRequest(string? id)

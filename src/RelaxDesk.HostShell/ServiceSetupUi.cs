@@ -15,6 +15,9 @@ internal sealed partial class HostWindow
     ComboBox serviceStartup => serviceSettings.Startup;
     TextBlock serviceInstallation => serviceSettings.Installation;
     readonly TextBlock serviceSetupNotice=new(){Text="自动完成安装、启动和连接。首次启用需要 Windows 管理员授权；不会自动共享桌面。",TextWrapping=TextWrapping.Wrap};
+    readonly TextBlock serviceOverview = Text("正在检查系统服务…", foreground: System.Windows.Media.Brushes.SlateGray);
+    MachineServiceStatus? serviceSnapshot;
+    bool serviceStatusUnavailable;
     internal IServiceSetupBackend SetupBackend{get;set;}=new ServiceSetupBackend();
     internal Func<ServiceSetupPlan,bool>? SetupConfirmation{get;set;}
     internal bool ServiceSetupBusy{get;private set;}
@@ -46,6 +49,19 @@ internal sealed partial class HostWindow
         enableService.IsEnabled=idle&&!ServiceReady;enableService.Content=ServiceReady?"系统服务已启用":ServiceSetupBusy?"正在处理…":"启用系统服务";
         installService.IsEnabled=uninstallService.IsEnabled=serviceStartup.IsEnabled=idle;
         refreshService.IsEnabled=!ServiceSetupBusy&&!serviceInspecting&&!closing;
+        serviceOverview.Text = ServiceSetupBusy || serviceConnecting ? "正在设置系统服务…" :
+            ServiceReady ? "已启用并连接" :
+            serviceCleaning ? "服务连接已断开" :
+            serviceStatusUnavailable ? "无法读取服务状态，可在设置中刷新" :
+            serviceSnapshot switch
+            {
+                null => "正在检查系统服务…",
+                { PendingDelete: true } => "等待卸载完成",
+                { Installed: false } => "未安装，可在设置中启用",
+                { State: 4 } => "正在运行，尚未连接",
+                { State: 1 } => "已安装，可在设置中启用",
+                _ => "正在启动或停止"
+            };
     }
     internal Task EnableSystemService()=>RunServiceSetup(false,true);
     async Task CompleteServiceEnable()
@@ -66,6 +82,8 @@ internal sealed partial class HostWindow
         {
             var status=await SetupBackend.Inspect();if(serviceSetupClosed)return;
             if(generation!=serviceSetupGeneration){serviceInspectAgain=true;return;}
+            serviceSnapshot = status;
+            serviceStatusUnavailable = false;
             if (status.WorkerDeployment is { } workerDeployment)
             {
                 adminDeploymentUnavailable = workerDeployment != AdminWorkerDeployment.Verified;
@@ -80,7 +98,14 @@ internal sealed partial class HostWindow
                 _ => ""
             };
         }
-        catch(Exception error){if(!serviceSetupClosed&&generation==serviceSetupGeneration)serviceInstallation.Text="无法验证当前用户的服务状态；请检查账户授权。错误类型："+error.GetType().Name;}
+        catch(Exception error)
+        {
+            if (!serviceSetupClosed && generation == serviceSetupGeneration)
+            {
+                serviceStatusUnavailable = true;
+                serviceInstallation.Text = "无法验证当前用户的服务状态；请检查账户授权。错误类型：" + error.GetType().Name;
+            }
+        }
         finally{serviceInspecting=false;if(!serviceSetupClosed){UpdateServiceSetupControls();if(serviceInspectAgain&&!ServiceSetupBusy){serviceInspectAgain=false;await InspectServiceInstallation();}}}
     }
     internal async Task RunServiceSetup(bool uninstall,bool simpleEnable=false)

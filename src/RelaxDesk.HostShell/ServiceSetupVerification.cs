@@ -70,10 +70,12 @@ internal static class ServiceSetupVerification
             backend.Connector=ct=>SessionAgentClient.ConnectTest(name,Environment.ProcessId,ct);await window.EnableSystemService();
             check(window.ServiceReady&&backend.Runs==runs&&!window.Host.Running);
             Directory.CreateDirectory(output);
-            window.ShowPage(true);
+            window.ShowPage(false);
             foreach(var size in new[]{(1040d,780d),(840d,650d)})
             {
-                window.Width=size.Item1;window.Height=size.Item2;window.UpdateLayout();Children<TextBlock>(window).Single(item=>item.Text==window.SetupNotice).BringIntoView();await Task.Delay(100);
+                window.Width=size.Item1;window.Height=size.Item2;window.UpdateLayout();
+                var homeStatus = Children<TextBlock>(window).Single(item => item.IsVisible && item.Text == "已启用并连接");
+                homeStatus.BringIntoView();await Task.Delay(100);
                 var bitmap=new RenderTargetBitmap((int)window.ActualWidth,(int)window.ActualHeight,96,96,PixelFormats.Pbgra32);bitmap.Render(window);
                 var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));using var file=File.Create(Path.Combine(output,$"one-click-{size.Item1:0}x{size.Item2:0}.png"));png.Save(file);
                 check(window.OwnedWindows.Count == 0);
@@ -156,15 +158,22 @@ internal static class ServiceSetupVerification
                 var link = Children<TextBlock>(window).SelectMany(item => item.Inlines.OfType<System.Windows.Documents.Hyperlink>())
                     .Single(item => item.Inlines.OfType<System.Windows.Documents.Run>().Any(run => run.Text == "设置系统服务"));
                 link.RaiseEvent(new RoutedEventArgs(System.Windows.Documents.Hyperlink.ClickEvent));
-                await Until(() => window.InstallServiceButton.IsVisible && window.MainScroll.VerticalOffset > 0);
-                Check(window.OwnedWindows.Count == 0);
+                await Until(() => window.SettingsContent.IsVisible);
+                Check(window.OwnedWindows.Count == 0 && !window.InstallServiceButton.IsVisible);
+                var serviceSettings = Children<Button>(window).Single(item =>
+                    System.Windows.Automation.AutomationProperties.GetName(item) == "打开系统服务");
+                serviceSettings.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                var dialog = window.OwnedWindows.OfType<HostPanelWindow>().Single();
                 foreach(var size in new[]{(1040d,780d),(840d,650d)})
                 {
-                    window.Width=size.Item1;window.Height=size.Item2;window.UpdateLayout();await Task.Delay(100);
-                    var bitmap=new RenderTargetBitmap((int)window.ActualWidth,(int)window.ActualHeight,96,96,PixelFormats.Pbgra32);bitmap.Render(window);
+                    dialog.Width=size.Item1/1.5;dialog.Height=size.Item2/1.5;dialog.UpdateLayout();await Task.Delay(100);
+                    var root = (FrameworkElement)dialog.Content;
+                    var bitmap=new RenderTargetBitmap((int)root.ActualWidth,(int)root.ActualHeight,96,96,PixelFormats.Pbgra32);bitmap.Render(root);
                     var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));using var file=File.Create(Path.Combine(output,$"service-setup-{size.Item1:0}x{size.Item2:0}.png"));png.Save(file);
                     Check(window.InstallServiceButton.ActualWidth>150&&window.UninstallServiceButton.ActualWidth>100);
                 }
+                dialog.Close();
+                Check(!window.InstallServiceButton.IsVisible);
                 window.ShowPage(false);
                 Console.WriteLine($"PASS {checks} actual WPF service setup UI contracts: one-click enable and real test-pipe automatic connection, running-service fast path, issues-only helper results, original-user SID, advanced startup/removal, cancel/failure/pending/single flight, responsive UI and guarded close/sharing, stale queries and layouts. Fake privileged launcher and same-process test broker; no UAC prompt, native result dialog, installation or SCM mutation.");
             }

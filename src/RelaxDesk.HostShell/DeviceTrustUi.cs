@@ -17,6 +17,7 @@ internal sealed partial class HostWindow
     readonly Button forgetDevice = new() { Content = "撤销所选设备", IsEnabled = false };
     readonly Button rememberConnectedDevice = new() { Content = "信任当前连接的设备", IsEnabled = false };
     readonly TextBlock trustNotice = new() { TextWrapping = TextWrapping.Wrap };
+    readonly TextBlock deviceOverview = Text("正在读取设备…", foreground: System.Windows.Media.Brushes.SlateGray);
     string[] trusted = [];
     readonly HashSet<string> revokedDuringRun = new(StringComparer.Ordinal);
     string? activeDeviceFingerprint;
@@ -29,7 +30,7 @@ internal sealed partial class HostWindow
         panel.Children.Add(rememberConnectedDevice);
         panel.Children.Add(forgetDevice);
         panel.Children.Add(trustNotice);
-        settings.Children.Add(new Expander { Header = "受信任的设备", Content = panel });
+        settings.Children.Add(panel);
         trustedDevices.SelectionChanged += (_, _) => forgetDevice.IsEnabled = !trustBusy && trustedDevices.SelectedItem is ListBoxItem;
         forgetDevice.Click += async (_, _) =>
         {
@@ -53,13 +54,14 @@ internal sealed partial class HostWindow
     async Task LoadDeviceTrust()
     {
         try { SetTrusted(await deviceTrust.Load()); }
-        catch (Exception error) when (IsTrustStorageError(error)) { trustNotice.Text = "无法读取可信设备记录。"; }
+        catch (Exception error) when (IsTrustStorageError(error)) { deviceOverview.Text = trustNotice.Text = "无法读取可信设备记录。"; }
         finally { trustLoaded = true; }
     }
 
     void SetTrusted(string[] entries)
     {
         trusted = entries;
+        deviceOverview.Text = $"已信任 {entries.Length} 台设备";
         trustedDevices.Items.Clear();
         foreach (var entry in entries)
             trustedDevices.Items.Add(new ListBoxItem

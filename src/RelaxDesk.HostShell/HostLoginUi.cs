@@ -9,6 +9,7 @@ internal sealed partial class HostWindow
 {
     readonly TextBox loginFingerprint = new() { TextWrapping = TextWrapping.Wrap, IsReadOnly = true };
     readonly TextBlock loginNotice = new() { TextWrapping = TextWrapping.Wrap };
+    readonly TextBlock loginOverview = Text("正在读取登录设置…", foreground: System.Windows.Media.Brushes.SlateGray);
     readonly Button saveLogin = new() { Content = "保存登录设置" };
     bool savingLogin, passwordLoginRequest;
     PasswordVerifier? loginVerifierForTests;
@@ -26,11 +27,20 @@ internal sealed partial class HostWindow
         panel.Children.Add(loginNotice);
         panel.Children.Add(Text("受控端 TLS 指纹", 14, true));
         panel.Children.Add(loginFingerprint);
+        panel.Unloaded += (_, _) => password.Clear();
         loginFingerprint.Text = "开始共享后显示。首次连接时请核对两端指纹。";
         Loaded += (_, _) =>
         {
-            try { name.Text = PasswordLoginSettings.Read()?.UserName ?? ""; }
-            catch (Exception error) when (IsTrustStorageError(error)) { loginNotice.Text = error.Message; }
+            try
+            {
+                name.Text = PasswordLoginSettings.Read()?.UserName ?? "";
+                loginOverview.Text = name.Text.Length == 0 ? "尚未设置登录信息" : $"用户名：{name.Text}";
+            }
+            catch (Exception error) when (IsTrustStorageError(error) || error is System.Security.SecurityException)
+            {
+                loginOverview.Text = "无法读取登录设置";
+                loginNotice.Text = error.Message;
+            }
         };
         saveLogin.Click += async (_, _) =>
         {
@@ -44,6 +54,7 @@ internal sealed partial class HostWindow
                 var verifier = await Task.Run(() => PasswordVerifier.Create(userName, secret));
                 SetTrusted(await deviceTrust.Clear());
                 PasswordLoginSettings.Save(verifier);
+                loginOverview.Text = $"用户名：{verifier.UserName}";
                 loginNotice.Text = "已保存。原设备授权已清除，设备需重新审批一次。";
             }
             catch (Exception error) when (IsTrustStorageError(error) || error is System.Security.SecurityException)

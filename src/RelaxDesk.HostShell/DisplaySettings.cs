@@ -10,6 +10,7 @@ internal sealed partial class HostWindow
     readonly ComboBox displayChoice=new(){MinHeight=32};
     readonly Button refreshDisplays=new(){Content="刷新屏幕"};
     readonly TextBlock displayHint=new(){Text="选择共享范围；旋转屏和全部屏幕使用兼容捕获。",TextWrapping=TextWrapping.Wrap};
+    readonly TextBlock displayOverview = Text("主显示器", foreground: System.Windows.Media.Brushes.SlateGray);
     string? SelectedDisplay=>(displayChoice.SelectedItem as ComboBoxItem)?.Tag as string;
     bool enumeratingDisplays;
     internal bool DisplayConfigurationEnabled=>displayChoice.IsEnabled;
@@ -19,6 +20,10 @@ internal sealed partial class HostWindow
     {
         settings.Children.Add(Text("共享屏幕",12));settings.Children.Add(displayChoice);settings.Children.Add(displayHint);settings.Children.Add(refreshDisplays);
         displayChoice.Items.Add(new ComboBoxItem{Content="主显示器",Tag=null});displayChoice.SelectedIndex=0;
+        displayChoice.SelectionChanged += (_, _) =>
+        {
+            if (displayChoice.SelectedItem is ComboBoxItem { Content: string label }) displayOverview.Text = label;
+        };
         refreshDisplays.Click+=async(_,_)=>await RefreshDisplays();Loaded+=async(_,_)=>await RefreshDisplays();
     }
     async Task RefreshDisplays()
