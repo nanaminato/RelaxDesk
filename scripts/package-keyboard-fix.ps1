@@ -15,13 +15,19 @@ try {
     $archive=Join-Path $output 'source-base.zip'; & git archive --format=zip "--output=$archive" $revision
     if ($LASTEXITCODE) { throw 'Source snapshot failed' }
     $source=Join-Path $output 'source'; Expand-Archive -LiteralPath $archive -DestinationPath $source
-    $files=@(
-        'src/RelaxDesk.Viewer/NativeVideoHost.cs','src/RelaxDesk.Viewer/RemoteKeyboardKeys.cs',
-        'src/RelaxDesk.Viewer/BitmapKeyboardInput.cs','src/RelaxDesk.Viewer/KeyboardFocusVerification.cs',
-        'src/RelaxDesk.Windows/Desktop.cs','src/RelaxDesk.Windows/KeyboardInjectionFlags.cs',
-        'src/RelaxDesk.Windows/WindowsContracts.cs'
-    )
-    foreach ($file in $files) { Copy-Item -LiteralPath (Join-Path $root $file) -Destination (Join-Path $source $file) }
+    # The extracted release predates the source folders used by this checkout.
+    $files=[ordered]@{
+        'src/RelaxDesk.Viewer/NativeVideoHost.cs'='src/RelaxDesk.Viewer/Rendering/NativeVideoHost.cs'
+        'src/RelaxDesk.Viewer/RemoteKeyboardKeys.cs'='src/RelaxDesk.Viewer/Input/RemoteKeyboardKeys.cs'
+        'src/RelaxDesk.Viewer/BitmapKeyboardInput.cs'='src/RelaxDesk.Viewer/Input/BitmapKeyboardInput.cs'
+        'src/RelaxDesk.Viewer/KeyboardFocusVerification.cs'='src/RelaxDesk.Viewer/Verification/KeyboardFocusVerification.cs'
+        'src/RelaxDesk.Windows/Desktop.cs'='src/RelaxDesk.Windows/Session/Desktop.cs'
+        'src/RelaxDesk.Windows/KeyboardInjectionFlags.cs'='src/RelaxDesk.Windows/Input/KeyboardInjectionFlags.cs'
+        'src/RelaxDesk.Windows/WindowsContracts.cs'='src/RelaxDesk.Windows/Verification/WindowsContracts.cs'
+    }
+    foreach ($file in $files.Keys) {
+        Copy-Item -LiteralPath (Join-Path $root $files[$file]) -Destination (Join-Path $source $file)
+    }
     $app=Join-Path $source 'src/RelaxDesk.Viewer/App.cs'
     $text=[IO.File]::ReadAllText($app)
     if (!$text.Contains('--keyboard-contracts')) {

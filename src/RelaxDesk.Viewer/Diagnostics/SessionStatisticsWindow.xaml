@@ -6,7 +6,7 @@
         WindowStartupLocation="CenterOwner" Background="#F1F5FA"
         FontFamily="Segoe UI, Microsoft YaHei UI" FontSize="14">
     <Window.Resources>
-        <ResourceDictionary Source="/RelaxDesk.Viewer;component/ModernTheme.xaml" />
+        <ResourceDictionary Source="/RelaxDesk.Viewer;component/Themes/ModernTheme.xaml" />
     </Window.Resources>
     <Border Background="#F1F5FA" Padding="18">
     <StackPanel>

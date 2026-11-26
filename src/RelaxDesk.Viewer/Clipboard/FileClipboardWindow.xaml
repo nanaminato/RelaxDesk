@@ -4,7 +4,7 @@
         Title="文件剪贴板" Width="640" Height="600" MinWidth="480" MinHeight="420"
         ShowInTaskbar="False" WindowStartupLocation="CenterOwner">
     <Window.Resources>
-        <ResourceDictionary Source="/RelaxDesk.Viewer;component/ModernTheme.xaml" />
+        <ResourceDictionary Source="/RelaxDesk.Viewer;component/Themes/ModernTheme.xaml" />
     </Window.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="22">

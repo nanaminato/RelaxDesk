@@ -6,7 +6,7 @@
     <Window.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="/RelaxDesk.HostShell;component/ModernTheme.xaml" />
+                <ResourceDictionary Source="/RelaxDesk.HostShell;component/Themes/ModernTheme.xaml" />
             </ResourceDictionary.MergedDictionaries>
             <TextBox x:Key="HostLogPanel" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
                      MaxHeight="180" FontFamily="Consolas" FontSize="11" />

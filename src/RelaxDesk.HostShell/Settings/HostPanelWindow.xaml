@@ -4,7 +4,7 @@
         Width="620" Height="450" MinWidth="420" MinHeight="260"
         ShowInTaskbar="False" WindowStartupLocation="CenterOwner">
     <Window.Resources>
-        <ResourceDictionary Source="/RelaxDesk.HostShell;component/ModernTheme.xaml" />
+        <ResourceDictionary Source="/RelaxDesk.HostShell;component/Themes/ModernTheme.xaml" />
     </Window.Resources>
     <Border Padding="20" Background="{Binding Background, RelativeSource={RelativeSource AncestorType=Window}}">
         <ScrollViewer x:Name="PanelScroll" VerticalScrollBarVisibility="Auto" />

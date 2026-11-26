@@ -6,7 +6,7 @@
     <Window.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="/RelaxDesk.Viewer;component/ModernTheme.xaml" />
+                <ResourceDictionary Source="/RelaxDesk.Viewer;component/Themes/ModernTheme.xaml" />
             </ResourceDictionary.MergedDictionaries>
             <Style x:Key="TransferGrid" TargetType="DataGrid">
                 <Setter Property="AutoGenerateColumns" Value="False" />

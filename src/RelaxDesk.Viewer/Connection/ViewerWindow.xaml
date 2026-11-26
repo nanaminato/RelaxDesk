@@ -8,7 +8,7 @@
     <Window.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="/RelaxDesk.Viewer;component/ViewerTheme.xaml" />
+                <ResourceDictionary Source="/RelaxDesk.Viewer;component/Themes/ViewerTheme.xaml" />
             </ResourceDictionary.MergedDictionaries>
             <Style x:Key="FieldRow" TargetType="Grid">
                 <Setter Property="Margin" Value="0,0,0,10" />
