@@ -25,6 +25,7 @@ public sealed partial class ViewerWindow
     ResizeMode fullscreenRestoreResize;
     WindowStyle fullscreenRestoreStyle;
     bool applyingFullscreenBounds;
+    bool changingFullscreen;
     nint fullscreenMonitor;
 
     void InitializeFullscreenPresentation()
@@ -32,6 +33,12 @@ public sealed partial class ViewerWindow
         ((HwndSource)PresentationSource.FromVisual(this)).AddHook(FullscreenMessage);
         StateChanged += (_, _) =>
         {
+            if (changingFullscreen) return;
+            if (desktopView && !fullScreen && WindowState == WindowState.Maximized)
+            {
+                ToggleFullScreen();
+                return;
+            }
             if (fullScreen && WindowState != WindowState.Minimized)
                 Dispatcher.BeginInvoke(() =>
                 {
@@ -75,23 +82,30 @@ public sealed partial class ViewerWindow
     void SetFullScreenPresentation(bool enabled)
     {
         if (enabled == fullScreen) return;
-        if (enabled)
+        changingFullscreen = true;
+        try
         {
-            fullscreenMonitor = MonitorFromWindow(new WindowInteropHelper(this).Handle, 2);
-            previousWindowState = WindowState;
-            fullscreenRestoreBounds = WindowState == WindowState.Normal ? new(Left, Top, Width, Height) : RestoreBounds;
-            fullscreenRestoreResize = ResizeMode; fullscreenRestoreStyle = WindowStyle;
-            fullScreen = true;
-            WindowState = WindowState.Normal; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
-            WindowState = WindowState.Maximized; ApplyFullscreenBounds();
+            if (enabled)
+            {
+                fullscreenMonitor = MonitorFromWindow(new WindowInteropHelper(this).Handle, 2);
+                // A session maximize is a full-screen request. Restore must return
+                // to a decorated normal window, never maximize it again.
+                previousWindowState = WindowState.Normal;
+                fullscreenRestoreBounds = WindowState == WindowState.Normal ? new(Left, Top, Width, Height) : RestoreBounds;
+                fullscreenRestoreResize = ResizeMode; fullscreenRestoreStyle = WindowStyle;
+                fullScreen = true;
+                WindowState = WindowState.Normal; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
+                WindowState = WindowState.Maximized; ApplyFullscreenBounds();
+            }
+            else
+            {
+                fullScreen = false; fullscreenMonitor = 0; WindowState = WindowState.Normal;
+                WindowStyle = fullscreenRestoreStyle; ResizeMode = fullscreenRestoreResize;
+                Left = fullscreenRestoreBounds.Left; Top = fullscreenRestoreBounds.Top;
+                Width = fullscreenRestoreBounds.Width; Height = fullscreenRestoreBounds.Height;
+                WindowState = previousWindowState;
+            }
         }
-        else
-        {
-            fullScreen = false; fullscreenMonitor = 0; WindowState = WindowState.Normal;
-            WindowStyle = fullscreenRestoreStyle; ResizeMode = fullscreenRestoreResize;
-            Left = fullscreenRestoreBounds.Left; Top = fullscreenRestoreBounds.Top;
-            Width = fullscreenRestoreBounds.Width; Height = fullscreenRestoreBounds.Height;
-            WindowState = previousWindowState;
-        }
+        finally { changingFullscreen = false; }
     }
 }

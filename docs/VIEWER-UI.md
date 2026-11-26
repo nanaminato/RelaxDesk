@@ -10,14 +10,19 @@ password, an unchecked-by-default Remember credentials option, recent
 connections, Connect, Cancel and Show options. Show options expands the
 window to 610 DIPs high with General, Display, Local Resources and Advanced
 tabs. The settings region scrolls on smaller desktops. Display can request
-full-screen startup. Resource controls retain their existing permissions and
+full-screen startup (enabled by default). Resource controls retain their existing permissions and
 defaults. The Advanced tab contains transport, file rate and certificate reset.
 The connection form is disabled while connecting; cancellation remains outside
 it. Credentials and settings are hidden throughout the connected session.
 
 ## Connected
 
-The window grows to 1100 × 750 DIPs, with the desktop filling the client area.
+After authorization, the session enters full screen by default; uncheck
+全屏启动 to begin windowed at 1100 × 750 DIPs. Maximizing a connected window,
+including its title-bar maximize button, enters full screen. The connection
+bar restore button returns to the normal decorated window and its saved bounds.
+The desktop defaults to physical 1:1 with thin scrollbars for cropped regions;
+the session menu retains fit-to-window and custom zoom.
 In full screen, a 460 × 30 DIP single-row blue owned-window connection bar shows the endpoint
 and icon controls for menu, minimize (full screen), full screen/restore and
 disconnect. Full screen also exposes a left pin. Text tooltips and accessibility

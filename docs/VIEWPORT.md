@@ -1,8 +1,14 @@
 # Viewer scaling and panning
 
+The Viewer defaults to physical 1:1 (100%) with the top-left desktop region
+visible. Resizing or restoring to a smaller window crops the visible region
+instead of shrinking the remote desktop. Horizontal/vertical scrollbars are
+12 DIPs thick and appear only on overflowing axes. Fit and custom zoom remain
+available in the session menu (Ctrl+Alt+Home in windowed mode).
+
 Connected toolbar → shortcuts → **画面缩放** offers aspect-preserving fit, physical-pixel **1:1 / 100%**, presets and an integer custom percentage from 25 to 400. Scrollbars appear only when the selected scaled surface exceeds the visible area. They pan the local view; ordinary remote wheel input is still forwarded. There are no global hooks or new Ctrl+wheel interception. The same controls work in local preview.
 
-100% means one remote pixel per physical Viewer pixel, independent of Host/Viewer logical DPI. It does not mean one remote pixel per WPF DIP. Fit shows the whole selected screen/all-screen union with letterboxing. Manual percentages preserve the requested aspect scale with integer source/destination rounding (at most a source-pixel rounding difference on each axis). Pan positions are clamped to the valid source region. Changing screens/resolution recenters the pan; the percentage remains in memory for that Viewer window. Disconnect clears old frame dimensions and input readiness; no settings are persisted to disk.
+100% means one remote pixel per physical Viewer pixel, independent of Host/Viewer logical DPI. It does not mean one remote pixel per WPF DIP. Fit shows the whole selected screen/all-screen union with letterboxing. Manual percentages preserve the requested aspect scale with integer source/destination rounding (at most a source-pixel rounding difference on each axis). Pan positions are clamped to the valid source region. Changing screens/resolution resets the pan to the top left; the percentage remains in memory for that Viewer window. Disconnect clears old frame dimensions and input readiness; no settings are persisted to disk.
 
 ## Common geometry
 

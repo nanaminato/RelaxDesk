@@ -9,7 +9,7 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
-    ViewportOptions viewport=new();
+    ViewportOptions viewport=new(100,0,0);
     bool viewportInputReady,updatingViewport;
     int viewportVideoWidth,viewportVideoHeight;
     ViewportOptions CurrentViewport=>Volatile.Read(ref viewport);
@@ -31,7 +31,7 @@ public sealed partial class ViewerWindow
         ReleaseHeldInputs();viewportInputReady=false;Volatile.Write(ref viewport,next);ApplyViewport();RefreshDisplayMenu();
     }
     void ResetViewportPan()
-    {viewportInputReady=false;Volatile.Write(ref viewport,CurrentViewport with{PanX=.5,PanY=.5});ApplyViewport();}
+    {viewportInputReady=false;Volatile.Write(ref viewport,CurrentViewport with{PanX=0,PanY=0});ApplyViewport();}
     void ViewportBoundsChanged()
     {
         if(updatingViewport)return;ReleaseHeldInputs();viewportInputReady=false;

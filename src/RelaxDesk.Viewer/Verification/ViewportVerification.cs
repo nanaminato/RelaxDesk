@@ -30,6 +30,9 @@ public sealed partial class ViewerWindow
                 window.StartLocalPreview();window.previewTimer!.Stop();byte[] pixels=new byte[1200*800*4];
                 for(int y=0;y<800;y++)for(int x=0;x<1200;x++){int p=(y*1200+x)*4;pixels[p]=(byte)(x<600?40:180);pixels[p+1]=(byte)(y<400?30:160);pixels[p+2]=(byte)(x<600?160:40);pixels[p+3]=255;}
                 window.image.Source=BitmapSource.Create(1200,800,96,96,PixelFormats.Bgr32,null,pixels,4800);window.SetViewportVideoSize(1200,800);await Ready();
+                Check(window.CurrentViewport is { Zoom:100, PanX:0, PanY:0 });
+                Check(window.TryViewportLayout(out var initialView)&&initialView.ScaleX==1&&initialView.ScaleY==1&&initialView.SourceX==0&&initialView.SourceY==0);
+                Check(window.horizontalPan.Height==12&&window.verticalPan.Width==12);
                 Zoom(100);Check(!window.viewportInputReady);await Ready();
                 Check(window.horizontalPan.IsVisible&&window.verticalPan.IsVisible);window.horizontalPan.Value=0;window.verticalPan.Value=0;await Ready();
                 Check(window.TryViewportLayout(out var view)&&view.ScaleX==1&&view.ScaleY==1&&view.SourceX==0&&view.SourceY==0);Pixel(20,20,40,30,160);

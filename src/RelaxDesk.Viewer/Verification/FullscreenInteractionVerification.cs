@@ -25,8 +25,18 @@ public sealed partial class ViewerWindow
             try
             {
                 window.Activate(); window.StartLocalPreview();
+                Check(window.startFullScreen.IsChecked == true, "connections default to full-screen startup");
                 Check(!window.Toolbar!.Surface.IsVisible, "windowed view has no floating bar");
-                window.ToggleFullScreen(); await Task.Delay(200);
+                double restoreWidth = window.Width, restoreHeight = window.Height;
+                window.WindowState = WindowState.Maximized; await Task.Delay(200);
+                Check(window.fullScreen && window.WindowStyle == WindowStyle.None, "session maximize enters full screen");
+                window.Toolbar.FullScreenButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+                await Task.Delay(200);
+                Check(!window.fullScreen && window.WindowState == WindowState.Normal && window.WindowStyle != WindowStyle.None,
+                    "connection-bar restore exits to a decorated normal window");
+                Check(Math.Abs(window.Width - restoreWidth) < 1 && Math.Abs(window.Height - restoreHeight) < 1,
+                    "maximize/full-screen restore preserves normal bounds");
+                window.WindowState = WindowState.Maximized; await Task.Delay(200);
                 window.WindowState = WindowState.Normal; await Task.Delay(200);
                 Check(window.WindowState == WindowState.Maximized, "shell restore must retain full-screen presentation");
                 var bar = window.Toolbar!;

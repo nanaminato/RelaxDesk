@@ -81,8 +81,8 @@
                         <TextBlock TextWrapping="Wrap" Foreground="DimGray"><Run Text="屏幕暂不可用，输入已暂停。" /><LineBreak /><LineBreak /><Run Text="可在顶部工具栏选择仍获授权的屏幕，或等待原屏幕恢复。新增屏幕需要重新连接并授权。" /></TextBlock>
                     </Border>
                 </Grid>
-                <ScrollBar x:Name="horizontalPan" Grid.Row="1" Orientation="Horizontal" Height="18" Visibility="Collapsed" />
-                <ScrollBar x:Name="verticalPan" Grid.Column="1" Orientation="Vertical" Width="18" Visibility="Collapsed" />
+                <ScrollBar x:Name="horizontalPan" Grid.Row="1" Orientation="Horizontal" Height="12" Visibility="Collapsed" />
+                <ScrollBar x:Name="verticalPan" Grid.Column="1" Orientation="Vertical" Width="12" Visibility="Collapsed" />
             </Grid>
             <ScrollViewer x:Name="connectionOverlay" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <Border x:Name="connectionCard" Margin="10,8,10,0">
@@ -142,7 +142,7 @@
                             <TabItem x:Name="generalTab" Header="常规" />
                             <TabItem Header="显示">
                                 <StackPanel Margin="18">
-                                    <CheckBox x:Name="startFullScreen" Content="全屏启动" />
+                                    <CheckBox x:Name="startFullScreen" Content="全屏启动" IsChecked="True" />
                                     <CheckBox x:Name="gpuRendering" Content="GPU 显示" ToolTip="GPU 显示不可用时自动使用兼容模式。" IsChecked="True" />
                                     <CheckBox x:Name="requestTopology" Content="屏幕变更时保持连接"
                                               ToolTip="需要新版受控端。连接旧版时请取消勾选。" IsChecked="True" />
