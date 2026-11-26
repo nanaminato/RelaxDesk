@@ -46,7 +46,6 @@ internal sealed class SessionToolbar : IDisposable
     readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(100) };
     readonly ConnectionBarPreferences preferences;
     readonly Border dragRegion = new() { Background = Brushes.Transparent, Cursor = Cursors.SizeWE };
-    public FrameworkElement? WindowedMenuTarget { get; set; }
     DateTime keepUntil;
     DateTime? edgeSince;
     bool isFullScreen, dragging;
@@ -327,8 +326,8 @@ internal sealed class SessionToolbar : IDisposable
     {
         releaseInput?.Invoke();
         if (isFullScreen) Reveal();
-        ShortcutMenu.PlacementTarget = isFullScreen ? ShortcutsButton : WindowedMenuTarget ?? owner.Content as FrameworkElement;
-        ShortcutMenu.Placement = PlacementMode.Bottom;
+        ShortcutMenu.PlacementTarget = isFullScreen ? ShortcutsButton : owner.Content as FrameworkElement;
+        ShortcutMenu.Placement = isFullScreen ? PlacementMode.Bottom : PlacementMode.RelativePoint;
         ShortcutMenu.IsOpen = true;
     }
     void OwnerChanged(object? sender, EventArgs e) => UpdatePosition();

@@ -1,6 +1,4 @@
 using System.IO;
-using System.Windows;
-using System.Windows.Controls;
 using RelaxDesk.Core;
 using RelaxDesk.Windows;
 
@@ -17,7 +15,12 @@ public sealed partial class ViewerWindow
     Task? automaticClipboardCopy;
     CancellationTokenSource? activeClipboardCopy;
     Func<FileClipboardTransfer,CancellationToken,Task>? pendingClipboardCopy;
-    readonly TextBlock fileClipboardStatus = new() { Margin = new(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+    string fileClipboardStatus = "";
+    void SetFileClipboardStatus(string value)
+    {
+        fileClipboardStatus = value;
+        UpdateViewTitle();
+    }
 
     static string ClipboardStagingDirectory()
     {
@@ -48,16 +51,16 @@ public sealed partial class ViewerWindow
             activeClipboardCopy=current;
             try
             {
-                fileClipboardStatus.Text="正在准备文件…";
+                SetFileClipboardStatus("正在准备文件…");
                 var flow=await FileClipboardFlow(current.Token);
                 fileQueue!.ClearFinished();
                 await copy(flow,current.Token);
-                if(!current.IsCancellationRequested)fileClipboardStatus.Text="文件已就绪，可以粘贴。";
+                if(!current.IsCancellationRequested)SetFileClipboardStatus("文件已就绪，可以粘贴。");
             }
             catch(OperationCanceledException) when(current.IsCancellationRequested){}
             catch(Exception error) when(error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or NotSupportedException or ObjectDisposedException or OperationCanceledException)
             {
-                if(!current.IsCancellationRequested)fileClipboardStatus.Text="文件复制未完成，请重新复制。";
+                if(!current.IsCancellationRequested)SetFileClipboardStatus("文件复制未完成，请重新复制。");
                 ViewerSessionLog.Record("file-clipboard-copy",error);
             }
             finally{activeClipboardCopy=null;}
@@ -81,7 +84,7 @@ public sealed partial class ViewerWindow
         fileClipboardWindow.SetRemote(remoteClipboardFiles);fileClipboardWindow.Show();fileClipboardWindow.Activate();
     }
     void StopFileClipboard()
-    {fileClipboardLifetime?.Cancel();fileClipboardStatus.Text="";remoteClipboardFiles=null;fileClipboardWindow?.SetRemote(null);fileClipboardWindow?.DisablePermission();sessionToolbar?.SetFileClipboard(null,false);}
+    {fileClipboardLifetime?.Cancel();SetFileClipboardStatus("");remoteClipboardFiles=null;fileClipboardWindow?.SetRemote(null);fileClipboardWindow?.DisablePermission();sessionToolbar?.SetFileClipboard(null,false);}
     async Task EndFileClipboard()
     {
         StopFileClipboard();localFileClipboard?.TrySetResult(null);localFileClipboard=null;

@@ -53,7 +53,7 @@ public sealed partial class ViewerWindow
                 await Task.Delay(200);
                 Check(!window.ConnectionPanelVisible && window.DesktopFillsClient && window.Width == 1100);
                 Snapshot(window, "session-preview");
-                Check(!window.Toolbar!.Surface.IsVisible && window.windowedSessionControls.IsVisible);
+                Check(!window.Toolbar!.Surface.IsVisible);
                 window.ToggleFullScreen();
                 await Task.Delay(200);
                 Snapshot(window.Toolbar.Surface, "fullscreen-bar");

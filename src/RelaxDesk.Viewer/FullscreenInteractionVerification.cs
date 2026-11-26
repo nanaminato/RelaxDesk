@@ -25,7 +25,7 @@ public sealed partial class ViewerWindow
             try
             {
                 window.Activate(); window.StartLocalPreview();
-                Check(!window.Toolbar!.Surface.IsVisible && window.windowedSessionControls.IsVisible, "windowed commands only");
+                Check(!window.Toolbar!.Surface.IsVisible, "windowed view has no floating bar");
                 window.ToggleFullScreen(); await Task.Delay(200);
                 window.WindowState = WindowState.Normal; await Task.Delay(200);
                 Check(window.WindowState == WindowState.Maximized, "shell restore must retain full-screen presentation");
@@ -41,7 +41,7 @@ public sealed partial class ViewerWindow
                 var bottomHit = WindowFromPoint(new NativePoint { X = (monitor.Left + monitor.Right) / 2, Y = monitor.Bottom - 2 });
                 Check(bottomHit == new WindowInteropHelper(window).Handle || GetAncestor(bottomHit, 2) == new WindowInteropHelper(window).Handle,
                     "local taskbar edge must hit Viewer, without global Topmost");
-                Check(!window.windowedSessionControls.IsVisible && bar.Surface.IsVisible && bar.PinButton.IsChecked == true, "default pinned full-screen bar");
+                Check(bar.Surface.IsVisible && bar.PinButton.IsChecked == true, "default pinned full-screen bar");
                 Check(FullscreenTestMessage(new WindowInteropHelper(bar.Surface).Handle, 0x21, 0, 0) == 3, "no-activate must not eat first click");
 
                 Check(Mouse.Capture(bar.FullScreenButton), "capture real WPF button");

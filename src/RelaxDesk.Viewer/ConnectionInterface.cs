@@ -23,8 +23,6 @@ public sealed partial class ViewerWindow
     Rect connectionBounds;
     WindowState connectionWindowState;
     readonly ConnectionBarPreferences connectionBarPreferences = new();
-    readonly Button windowedMenuButton = new() { Content = "会话 ▾", Focusable = false };
-    FrameworkElement windowedSessionControls = null!;
 
     void BuildInterface()
     {
@@ -44,15 +42,6 @@ public sealed partial class ViewerWindow
         Grid.SetColumn(heading, 1); banner.Children.Add(heading);
         windowToolbar = banner; DockPanel.SetDock(banner, Dock.Top); root.Children.Add(banner);
 
-        var sessionCommands = new StackPanel { Orientation = Orientation.Horizontal, Background = Background, Visibility = Visibility.Collapsed };
-        windowedMenuButton.Click += (_, _) => sessionToolbar?.OpenSessionMenu();
-        var sessionFull = new Button { Content = "全屏", Focusable = false };
-        sessionFull.Click += (_, _) => ToggleFullScreen();
-        var sessionEnd = new Button { Content = "断开", Focusable = false };
-        sessionEnd.Click += (_, _) => disconnect.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        sessionCommands.Children.Add(windowedMenuButton); sessionCommands.Children.Add(sessionFull); sessionCommands.Children.Add(sessionEnd);
-        sessionCommands.Children.Add(fileClipboardStatus);
-        windowedSessionControls = sessionCommands; DockPanel.SetDock(sessionCommands, Dock.Top); root.Children.Add(sessionCommands);
         var bottom = new StackPanel();
         var commands = new DockPanel { Margin = new Thickness(14, 9, 14, 10) };
         optionsButton.Click += (_, _) => SetOptionsExpanded(!optionsExpanded);
@@ -186,7 +175,6 @@ public sealed partial class ViewerWindow
         {
             sessionToolbar ??= new SessionToolbar(this, ToggleFullScreen, () => disconnect.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)),
                 session is null ? null : SendShortcut,ReleaseHeldInputs, connectionBarPreferences);
-            sessionToolbar.WindowedMenuTarget = windowedMenuButton;
             sessionToolbar.FilesAction.Visibility = smoke?.FileTransfer == true || smoke?.ReconnectTest == true ? Visibility.Visible : Visibility.Collapsed;
             sessionToolbar.FileClipboardAction.Visibility = fileClipboardVerificationFactory is not null ? Visibility.Visible : Visibility.Collapsed;
             sessionToolbar.SetSession(SessionEndpoint, fullScreen);
@@ -208,10 +196,15 @@ public sealed partial class ViewerWindow
             }
         }
         desktopView = connected;
-        windowedSessionControls.Visibility = connected && !fullScreen ? Visibility.Visible : Visibility.Collapsed;
         renderPanel.Background = connected ? Brushes.Black : Background;
-        Title = connected ? previewing ? "RelaxDesk — 本机预览" : $"{host.Text} - RelaxDesk 远程桌面" : "RelaxDesk 远程桌面连接";
+        UpdateViewTitle();
         if (connected) { invitation.Clear(); token.Clear(); }
+    }
+    void UpdateViewTitle()
+    {
+        Title = desktopView ? previewing ? "RelaxDesk — 本机预览" : $"{host.Text} - RelaxDesk 远程桌面" : "RelaxDesk 远程桌面连接";
+        if (desktopView && !previewing && fileClipboardStatus.Length > 0)
+            Title += " · " + fileClipboardStatus;
     }
     internal void StartLocalPreview()
     {
@@ -231,21 +224,11 @@ public sealed partial class ViewerWindow
         if (!previewing) return;
         previewTimer?.Stop(); previewTimer = null; previewing = false;EndViewport(); image.Source = null; disconnect.IsEnabled = false; ShowConnectedView(false); status.Text = "预览已结束，准备连接";
     }
-    bool IsLocalPointer(double x, double y)
-    {
-        if (sessionToolbar?.BlocksPointer(x, y) == true) return true;
-        if (!windowedSessionControls.IsVisible) return false;
-        var origin = windowedSessionControls.PointToScreen(new Point());
-        var dpi = VisualTreeHelper.GetDpi(windowedSessionControls);
-        return x >= origin.X && y >= origin.Y &&
-            x < origin.X + windowedSessionControls.ActualWidth * dpi.DpiScaleX &&
-            y < origin.Y + windowedSessionControls.ActualHeight * dpi.DpiScaleY;
-    }
+    bool IsLocalPointer(double x, double y) => sessionToolbar?.BlocksPointer(x, y) == true;
     internal void ToggleFullScreen()
     {
         ReleaseHeldInputs();
         SetFullScreenPresentation(!fullScreen);
-        windowedSessionControls.Visibility = desktopView && !fullScreen ? Visibility.Visible : Visibility.Collapsed;
         sessionToolbar?.SetFullScreen(fullScreen);
     }
 }

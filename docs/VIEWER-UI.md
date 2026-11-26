@@ -24,8 +24,10 @@ disconnect. Full screen also exposes a left pin. Text tooltips and accessibility
 names identify every icon. Media encoder/display information is in a tooltip;
 files, statistics and other functions remain in the session menu.
 
-Windowed mode uses ordinary in-window session/full-screen/disconnect controls
-instead of a floating overlay. Full screen covers the entire selected monitor,
+Windowed mode leaves the area below the Windows title bar for the remote desktop.
+Use Ctrl+Alt+Home for the session menu, Ctrl+Alt+Break to toggle full screen, and
+the title bar's Close button to disconnect. File-copy status appears in the
+window title. Full screen covers the entire selected monitor,
 including the local taskbar work-area reservation; the remote taskbar remains
 part of the shared desktop. Shell restore/activation cannot leave a full-screen
 session in a normal-sized borderless window. Exit restores prior bounds/style.
