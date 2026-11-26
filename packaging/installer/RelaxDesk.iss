@@ -1,4 +1,5 @@
 ; RelaxDesk-owned installer recipe. Inno Setup is an external build tool.
+#define ViewerRunKey "Software\Microsoft\Windows\CurrentVersion\App Paths\rdesk.exe"
 [Setup]
 AppId=RelaxDesk.{#Role}
 AppName={#Title}
@@ -42,6 +43,10 @@ Source: "{#CompilerLicense}"; DestDir: "{app}\receipts\{#Release}"; DestName: "I
 [Registry]
 Root: HKCU; Subkey: "Software\RelaxDesk\Installations\{#Role}"; ValueType: string; ValueName: "Root"; ValueData: "{app}"; Flags: uninsdeletevalue uninsdeletekeyifempty
 Root: HKCU; Subkey: "Software\RelaxDesk\Installations\{#Role}"; ValueType: string; ValueName: "Receipts"; ValueData: "{code:GetReceiptIndex}"; Flags: uninsdeletevalue uninsdeletekeyifempty
+
+#if Role == "Viewer"
+Root: HKCU; Subkey: "{#ViewerRunKey}"; ValueType: string; ValueData: "{app}\{#Release}\{#Entry}"; Flags: uninsdeletevalue uninsdeletekeyifempty
+#endif
 
 [Icons]
 Name: "{userprograms}\RelaxDesk\{#Title}"; Filename: "{app}\{#Release}\{#Entry}"; WorkingDir: "{app}\{#Release}"
@@ -227,6 +232,22 @@ begin
   Result := True;
 end;
 
+#if Role == "Viewer"
+function OwnedViewerRunAlias(Root, Index: String): Boolean;
+var Target, Item, Release: String;
+begin
+  Result := not RegKeyExists(HKCU, '{#ViewerRunKey}');
+  if Result then exit;
+  if not RegQueryStringValue(HKCU, '{#ViewerRunKey}', '', Target) then exit;
+  while Index <> '' do begin
+    Item := Token(Index, ';'); Release := Token(Item, '=');
+    if CompareText(Target, AddBackslash(Root) + Release + '\{#Entry}') = 0 then begin
+      Result := True; exit;
+    end;
+  end;
+end;
+#endif
+
 function GetReceiptIndex(Param: String): String;
 begin Result := ReceiptIndex; end;
 
@@ -289,6 +310,13 @@ begin
   end else if NonEmpty(Root) then begin Result := '此目录包含非本安装器管理的文件，请选择空目录。'; exit; end;
   if Running(Root) then begin Result := '请先关闭此安装目录中的 {#Title}，再继续。安装器不会结束共享会话。'; exit; end;
   if not OwnedShortcuts(Root, Existing, '') then begin Result := '同名快捷方式已存在且不属于此安装，请先检查。'; exit; end;
+#if Role == "Viewer"
+  if not OwnedViewerRunAlias(Root, Existing) or
+     (not RegKeyExists(HKCU, '{#ViewerRunKey}') and
+       (RegKeyExists(HKLM64, '{#ViewerRunKey}') or RegKeyExists(HKLM32, '{#ViewerRunKey}'))) then begin
+    Result := '运行命令 rdesk 已被其他程序注册。请先检查现有注册项，安装器不会覆盖它。'; exit;
+  end;
+#endif
   ReceiptIndex := Existing;
   if Pos('{#Release}=', ReceiptIndex) = 0 then begin
     if ReceiptIndex <> '' then ReceiptIndex := ReceiptIndex + ';';
@@ -327,6 +355,11 @@ begin
        not VerifyReceipts(Root, Index, '') or not OwnedShortcuts(Root, Index, '') then begin
       SuppressibleMsgBox('文件、快捷方式或安装记录已修改，已停止卸载以保留内容。请备份并恢复后重试。', mbError, MB_OK, IDOK); exit;
     end;
+#if Role == "Viewer"
+    if not OwnedViewerRunAlias(Root, Index) then begin
+      SuppressibleMsgBox('运行命令 rdesk 已被修改，已停止卸载以保留现有注册。请检查后重试。', mbError, MB_OK, IDOK); exit;
+    end;
+#endif
     if Running(Root) then begin SuppressibleMsgBox('请先关闭此安装目录中的 {#Title}。', mbError, MB_OK, IDOK); exit; end;
     Result := True;
   except SuppressibleMsgBox('无法安全确认卸载范围，未删除文件。请保留日志并检查。', mbError, MB_OK, IDOK); end;
