@@ -71,6 +71,7 @@ public sealed class App : Application
             else if(args is ["--statistics-contracts",var legacyStatisticsHost,var legacyStatisticsFixtures,"legacy-auto"])ViewerWindow.VerifyStatistics(app,legacyStatisticsHost,legacyStatisticsFixtures,legacyAuto:true);
             else if(args is ["--statistics-contracts",var tcpOnlyStatisticsHost,var tcpOnlyStatisticsFixtures,"host-without-udp"])ViewerWindow.VerifyStatistics(app,tcpOnlyStatisticsHost,tcpOnlyStatisticsFixtures,hostWithoutUdp:true);
             else if(args is ["--statistics-contracts",var missingUdpHost,var missingUdpFixtures,"viewer-without-udp"])ViewerWindow.VerifyStatistics(app,missingUdpHost,missingUdpFixtures,viewerWithoutUdp:true);
+            else if(args is ["--pointer-contracts"])ViewerWindow.VerifyPointerPresentation(app);
             else if(args is ["--video-settings-contracts",var settingsHost,var settingsMode])ViewerWindow.VerifyVideoSettings(app,settingsHost,settingsMode);
             else if(args is ["--display-legacy-session-contracts",var legacyDisplayHost])ViewerWindow.VerifyDisplaySession(app,legacyDisplayHost,false,true);
             else if(args is ["--topology-race-contracts",var raceHost])ViewerWindow.VerifyDisplaySession(app,raceHost,false,false,true);
@@ -223,12 +224,14 @@ public sealed partial class ViewerWindow : Window
         Task? fileVerification = null;
         Task? clipboardVerification=null;
         var decoded = new LatestQueue<(DecodedMedia Frame, string? Transport)>(1); var cpu = new CpuBitmapRenderer(image);
+        cpu.SetPointerVisible(remotePointerVisible);
         var metrics = new PipelineMetrics(); long readbackBytes = 0, gpuFrames = 0, cpuFrames = 0, skipped = 0; int resizeCount = 0, simulatedLosses = 0, keyframeRequests = 0, rendererGenerations = 0, idleRepaints = 0;
         var roundTrip=new ControlRoundTrip();
         double latestControlRtt = -1;
         ulong hiddenPresents = 0, occludedPresents = 0, busyPresents = 0, lastHidden = 0, lastOccluded = 0, lastBusy = 0;
         bool preferGpu = gpuRendering.IsChecked == true; nint hwnd = 0;
         using var repaintSignal = new AutoResetEvent(false);
+        pointerPresentationChanged = visible => { cpu.SetPointerVisible(visible); repaintSignal.Set(); };
         int receivedFrames = 0; bool budgetComplete = false;
         var pipelineFailures = new FirstSessionFailure(); lastPipelineFailure = null;
         var pipelineFailed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -364,7 +367,7 @@ public sealed partial class ViewerWindow : Window
         {
             try
             {
-                nativeView = new() { LocalPointerOverlay = (x,y) => IsLocalPointer(x,y), Input = Send, RichInput = inputVersion==2?SendRich:null, PointerMove = SendPointerMove, InputBacklogExceeded = ()=>cancellation.Cancel(), InputFocusLost = ReleaseHeldInputs, InputCaptureLost = ReleaseMouseButtons, RenderInvalidated = () => repaintSignal.Set() }; videoPanel.Children.Add(nativeView); nativeView.SetViewport(CurrentViewport);renderPanel.UpdateLayout();
+                nativeView = new() { PointerRegionChanged = RefreshPointerPresentation, LocalPointerOverlay = (x,y) => IsLocalPointer(x,y), Input = Send, RichInput = inputVersion==2?SendRich:null, PointerMove = SendPointerMove, InputBacklogExceeded = ()=>cancellation.Cancel(), InputFocusLost = ReleaseHeldInputs, InputCaptureLost = ReleaseMouseButtons, RenderInvalidated = () => repaintSignal.Set() }; videoPanel.Children.Add(nativeView); nativeView.SetViewport(CurrentViewport);renderPanel.UpdateLayout();
                 gpuViewportActive=true;hwnd = nativeView.Handle; if (hwnd == 0) throw new InvalidOperationException("Render child HWND not available");
                 image.Visibility = Visibility.Collapsed;
             }
@@ -513,7 +516,7 @@ public sealed partial class ViewerWindow : Window
                             {
                                 stage = "gpu-present";
                                 var idleViewport=CurrentViewport;
-                                if (AcceptVideoFrame(retained.Frame)&&(displaySession is null||displaySession.AcceptFrame(retained.Frame))&&renderer.Present(retained.Surface, retained.Frame.Metadata,idleViewport))
+                                if (AcceptVideoFrame(retained.Frame)&&(displaySession is null||displaySession.AcceptFrame(retained.Frame))&&renderer.Present(retained.Surface, retained.Frame.Metadata,idleViewport,showPointer:remotePointerVisible))
                                 {
                                     Interlocked.Increment(ref idleRepaints);_ = Dispatcher.BeginInvoke(()=>{if(ReferenceEquals(session,cancellation)&&!cancellation.IsCancellationRequested)ViewportDrawn(idleViewport);});
                                 }
@@ -547,7 +550,7 @@ public sealed partial class ViewerWindow : Window
                                 if (renderer is null) { renderer = new(surface.Surface, hwnd); rendererGenerations++; }
                                 nativeView!.SetVideoSize(frame.Width, frame.Height);
                                 stage = "gpu-present"; InjectPipelineFault(stage);
-                                var drawnViewport=CurrentViewport;bool shown = renderer.Present(surface.Surface, frame.Metadata,drawnViewport);
+                                var drawnViewport=CurrentViewport;bool shown = renderer.Present(surface.Surface, frame.Metadata,drawnViewport,showPointer:remotePointerVisible);
                                 if(smoke is not null && receivedFrames==1)Console.WriteLine("render_environment="+renderer.Diagnostics());
                                 metrics.Add("decode", surface.DecodeMilliseconds); metrics.Add("gpu_draw_submit", renderer.Timing.DrawMs); metrics.Add("present_call", renderer.Timing.PresentMs);
                                 metrics.Add("readback", surface.Timing.ReadbackMs); Interlocked.Add(ref readbackBytes, checked((long)surface.Timing.ReadbackBytes));
@@ -602,7 +605,7 @@ public sealed partial class ViewerWindow : Window
         catch (Exception e) { attemptError=e; if (smoke is null) ViewerSessionLog.Record("connection-error", e); if(e is not RemoteSessionEndedException)ShowConnectionError(e,lastPipelineFailure?.Stage??attemptStage); status.Text = "连接已断开：" + e.Message + "。请保留 Host 的 session_end 日志。"; }
         finally
         {
-            heartbeat?.Stop(); cancellation.Cancel();EndStatistics();EndVideoSettings(); EndDisplaySession(); EndViewport(); ResetInputState(); CompositionTarget.Rendering -= Rendering; ReleaseHeldInputs(); cpu.Clear(); image.Visibility = Visibility.Visible;
+            heartbeat?.Stop(); cancellation.Cancel();EndStatistics();EndVideoSettings(); EndDisplaySession(); EndViewport(); ResetInputState(); CompositionTarget.Rendering -= Rendering; ReleaseHeldInputs(); pointerPresentationChanged=null; SetPointerPresentation(false); cpu.Clear(); image.Visibility = Visibility.Visible;
             restoreFullScreen=fullScreen;
             if(established)retryFeatures=connection.Features.Where(feature=>sessionPermissions?.Allows(feature)==true||feature==SessionCapabilities.FileTransfer&&fileTransportInterrupted&&!filePermissionStoppedByUser).ToArray();
             bool recoverFiles=attemptError is not null&&ConnectionRecovery.IsTransient(attemptError)&&connectionRun?.IsCancellationRequested==false&&retryFeatures.Contains(SessionCapabilities.FileTransfer);

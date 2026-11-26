@@ -15,6 +15,9 @@ public sealed class NativeVideoHost : HwndHost
     public Action? InputCaptureLost;
     public Func<int, int, bool>? LocalPointerOverlay;
     public Action? RenderInvalidated;
+    public Action? PointerRegionChanged;
+    [StructLayout(LayoutKind.Sequential)] struct MouseTracking { public uint Size, Flags; public nint Window; public uint HoverTime; }
+    [DllImport("user32.dll")] static extern bool TrackMouseEvent(ref MouseTracking tracking);
     sealed record VideoSize(int Width,int Height);
     VideoSize? videoSize;
     volatile bool hostPointer;
@@ -89,6 +92,7 @@ public sealed class NativeVideoHost : HwndHost
     void UpdateCursor(nint hwnd, Point point)
     {
         bool showHost = hostPointer && GetForegroundWindow() == GetAncestor(hwnd, 2) &&
+            LocalPointerOverlay?.Invoke(point.X, point.Y) != true &&
             ScreenToClient(hwnd, ref point) && GetClientRect(hwnd, out var bounds) &&
             TryPosition(point.X, point.Y, bounds.Right, bounds.Bottom, false, out _, out _);
         SetCursor(showHost ? 0 : arrowCursor);
@@ -166,6 +170,14 @@ public sealed class NativeVideoHost : HwndHost
     }
     protected override nint WndProc(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
+        if (message == 0x200)
+        {
+            var tracking = new MouseTracking { Size = (uint)Marshal.SizeOf<MouseTracking>(), Flags = 2, Window = hwnd };
+            TrackMouseEvent(ref tracking);
+            PointerRegionChanged?.Invoke();
+            if (GetCursorPos(out var position)) UpdateCursor(hwnd, position);
+        }
+        if (message == 0x2A3) PointerRegionChanged?.Invoke(); // WM_MOUSELEAVE, including toolbar entry.
         if(message==0x233)
         {
             try

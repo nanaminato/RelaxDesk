@@ -238,6 +238,10 @@ internal sealed partial class SessionToolbar : Window, IDisposable
         };
         owner.LocationChanged += OwnerChanged; owner.SizeChanged += OwnerChanged; owner.StateChanged += OwnerChanged; owner.Closed += OwnerClosed;
         timer.Tick += Tick;
+        MouseEnter += (_, _) => PointerRegionChanged?.Invoke();
+        MouseLeave += (_, _) => PointerRegionChanged?.Invoke();
+        ShortcutMenu.Opened += (_, _) => PointerRegionChanged?.Invoke();
+        ShortcutMenu.Closed += (_, _) => PointerRegionChanged?.Invoke();
     }
     public void SetRemoteShortcuts(bool enabled)
     {
@@ -308,7 +312,13 @@ internal sealed partial class SessionToolbar : Window, IDisposable
         keepUntil = DateTime.UtcNow.AddSeconds(1);
     }
     internal void Poll() => Tick(null, EventArgs.Empty);
+    internal Action? PointerRegionChanged;
     void Tick(object? sender, EventArgs e)
+    {
+        try { UpdatePointerRegion(); }
+        finally { if (!disposed) PointerRegionChanged?.Invoke(); }
+    }
+    void UpdatePointerRegion()
     {
         if (disposed) return;
         RefreshConnectionInfo();

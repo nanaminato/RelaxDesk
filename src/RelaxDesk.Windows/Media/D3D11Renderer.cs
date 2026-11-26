@@ -46,12 +46,14 @@ public sealed class D3D11Renderer : IDisposable
         protected override void Destroy(nint handle) => NativeMethods.rd_renderer_destroy(handle);
     }
     readonly Context context;
+    static readonly byte[] hiddenPointerMetadata = CaptureMetadataCodec.Encode(new CaptureMetadata(0, 0, [], [], 0, 0, false, 0, 0, 0, 0, 0, 0, []));
     public RenderTiming Timing { get; private set; }
     public bool OutputBlocked { get; private set; }
     public string Diagnostics() {NativeMethods.Check(NativeMethods.rd_renderer_diagnostics(context.Value,out var json));return Marshal.PtrToStringUTF8(json)??"{}";}
     public D3D11Renderer(GpuVideoFrame frame, nint hwnd) => context = new(frame, hwnd);
-    public bool Present(GpuVideoFrame frame, byte[] metadata,ViewportOptions? viewport=null)
+    public bool Present(GpuVideoFrame frame, byte[] metadata,ViewportOptions? viewport=null, bool showPointer=true)
     {
+        if (!showPointer) metadata = hiddenPointerMetadata;
         if(viewport is not null)NativeMethods.Check(NativeMethods.rd_renderer_set_view(context.Value,viewport.Zoom,viewport.PanX,viewport.PanY));
         int hr = NativeMethods.rd_renderer_draw(context.Value, frame.NativeFrame, metadata, (uint)metadata.Length);
         NativeMethods.Check(hr);

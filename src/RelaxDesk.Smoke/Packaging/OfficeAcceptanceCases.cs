@@ -36,7 +36,7 @@ internal static class OfficeAcceptanceCases
             Add("office-" + mode, a.Smoke, a.Host, "--" + mode, Folder("files"));
         foreach (string mode in new[] { "clipboard-text", "clipboard-denied", "clipboard-unnegotiated", "clipboard-failure", "clipboard-binding", "clipboard-rich", "clipboard-rich-denied", "clipboard-rich-failure", "clipboard-rich-transport", "clipboard-rich-replay", "clipboard-rich-format-denied" })
             Add("office-" + mode, a.Smoke, a.Host, "--" + mode);
-        foreach (string mode in new[] { "viewport", "input-ui", "hwnd", "ui", "toolbar" })
+        foreach (string mode in new[] { "viewport", "input-ui", "hwnd", "ui", "toolbar", "pointer" })
             Add("office-viewer-" + mode, a.Viewer, "--" + mode + "-contracts");
         Add("office-viewer-diagnostics", a.Viewer, "--diagnostic-log-contracts", Folder("viewer-diagnostics"));
         Add("office-viewer-error-details", a.Viewer, "--error-details-contracts", Folder("error-details"));

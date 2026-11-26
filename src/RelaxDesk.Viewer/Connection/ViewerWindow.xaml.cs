@@ -29,6 +29,7 @@ public sealed partial class ViewerWindow
             disconnect.IsEnabled ? Visibility.Visible : Visibility.Collapsed;
         ConfigureErrorDetails();
         ConfigureViewport();
+        ConfigurePointerPresentation();
         ConfigureConnectionHistory();
         resetPin.Click += (_, _) =>
         {
@@ -136,6 +137,8 @@ public sealed partial class ViewerWindow
             }
         }
         desktopView = connected;
+        SetPointerPresentation(false);
+        if (sessionToolbar is not null) sessionToolbar.PointerRegionChanged = RefreshPointerPresentation;
         renderPanel.Background = connected ? Brushes.Black : Background;
         UpdateViewTitle();
         if (connected) { invitation.Clear(); token.Clear(); }

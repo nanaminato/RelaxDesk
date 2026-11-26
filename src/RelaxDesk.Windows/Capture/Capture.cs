@@ -28,8 +28,8 @@ public sealed class GdiCaptureBackend : ICaptureBackend
     readonly Desktop desktop;
     public GdiCaptureBackend(WindowsDisplaySelection? selection=null)=>desktop=new(selection);
     public string Name => "gdi";
-    public CapturedFrame Capture(int timeoutMilliseconds = 100) => new(desktop.Width, desktop.Height, desktop.Capture(includePointer: true),
-        new(Stopwatch.GetTimestamp(), 1, [], [], 0, 0, false, CaptureMetadata.HostManagedPointer, 0, 0, 0, 0, 0, []));
+    public CapturedFrame Capture(int timeoutMilliseconds = 100) => new(desktop.Width, desktop.Height, desktop.Capture(includePointer: false),
+        new(Stopwatch.GetTimestamp(), 1, [], [], 0, 0, false, 0, 0, 0, 0, 0, 0, []));
     public byte[] ReadPixels(CapturedFrame frame) => frame.Bgra ?? throw new InvalidOperationException("No GDI pixels");
     public void Dispose() => desktop.Dispose();
 }
