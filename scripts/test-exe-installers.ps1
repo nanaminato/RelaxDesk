@@ -1,6 +1,6 @@
 param([Parameter(Mandatory)][string]$InstallerDirectory,[Parameter(Mandatory)][string]$OutputDirectory,[switch]$RunUserIntegration,[switch]$SkipMachineServicePreview)
 $ErrorActionPreference='Stop'
-if(!$RunUserIntegration){throw 'Explicit -RunUserIntegration required: temporary current-user Apps entries and shortcuts will be exercised'}
+if(!$RunUserIntegration){throw 'Explicit -RunUserIntegration required: temporary current-user Apps entries, shortcuts and the Viewer Run alias will be exercised'}
 $repository=Split-Path $PSScriptRoot -Parent;$output=[IO.Path]::GetFullPath($OutputDirectory)
 if(!$output.StartsWith((Join-Path $repository 'build')+'\',[StringComparison]::OrdinalIgnoreCase) -or (Test-Path -LiteralPath $output)){throw 'Use a fresh workspace/build fixture'}
 [void][IO.Directory]::CreateDirectory($output)
@@ -27,7 +27,17 @@ function Uninstall($Role,[string]$Name,[bool]$Success=$true){
     Run $Name (Join-Path $Role.root 'unins000.exe') @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/LOG='+(Join-Path $output ($Name+'.log')))) $Success
 }
 function Until([scriptblock]$Predicate){$watch=[Diagnostics.Stopwatch]::StartNew();while(!(& $Predicate)){if($watch.Elapsed.TotalSeconds -gt 30){throw 'Fixture state did not settle'};Start-Sleep -Milliseconds 100}}
+$aliasSubkey='Software\Microsoft\Windows\CurrentVersion\App Paths\rdesk.exe'
+$aliasKey='HKCU:\'+$aliasSubkey
 try {
+    Check (!(Test-Path -LiteralPath $aliasKey)) 'Existing current-user rdesk alias found; integration refused'
+    foreach($view in @('Registry32','Registry64')){
+        $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,$view)
+        try {
+            $existing=$base.OpenSubKey($aliasSubkey)
+            if($existing){$existing.Dispose();throw 'Existing machine rdesk alias found; integration refused'}
+        } finally {$base.Dispose()}
+    }
     Check ($installers.Count -eq 2) 'Expected two independent EXE installers'
     foreach($item in $installers){
         $role=if($item.role -eq 'host'){'Host'}elseif($item.role -eq 'viewer'){'Viewer'}else{throw 'Unknown installer role'}
@@ -49,12 +59,27 @@ try {
     $junction=Join-Path $output 'junction-target';$null=New-Item -ItemType Junction -Path $junction -Target $foreign
     Install $hostRole 'reject-junction' $junction $false
     Check (!(Test-Path $hostRole.key) -and (Get-Content -LiteralPath (Join-Path $foreign 'keep.txt') -Raw) -eq 'not installer-owned') 'Junction escape was not rejected'
+    $foreignAlias=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($aliasSubkey)
+    try {
+        $foreignAlias.SetValue('', 'C:\foreign\rdesk.exe')
+        Install $viewerRole 'reject-foreign-run-alias' $viewerRole.root $false
+        Check ($foreignAlias.GetValue('') -ceq 'C:\foreign\rdesk.exe' -and !(Test-Path $viewerRole.key)) 'Viewer overwrote a foreign Run alias'
+    } finally {
+        $ownsFixture=$foreignAlias.ValueCount -eq 1 -and $foreignAlias.SubKeyCount -eq 0 -and $foreignAlias.GetValue('') -ceq 'C:\foreign\rdesk.exe'
+        $foreignAlias.Dispose()
+        if($ownsFixture){[Microsoft.Win32.Registry]::CurrentUser.DeleteSubKey($aliasSubkey)}
+    }
     foreach($role in $roles){
         Install $role ($role.name+'-install') $role.root
         Check ((Test-Path $role.key) -and (Test-Path $role.registration) -and (Test-Path $role.desktop) -and (Test-Path $role.menu)) 'Missing Apps registration or shortcuts'
         $registered=Get-ItemProperty -LiteralPath $role.key
         Check ($registered.DisplayVersion -eq $installers[0].package_version -and [IO.Path]::GetFullPath($registered.InstallLocation).TrimEnd('\') -ieq $role.root) 'Wrong uninstall identity/location/version'
         $expected=Join-Path (Join-Path $role.root $role.release) $role.entry
+        if($role.name -eq 'Host'){
+            Check (!(Test-Path -LiteralPath $aliasKey)) 'Host installer registered the Viewer alias'
+        }else{
+            Check ((Get-Item -LiteralPath $aliasKey).GetValue('') -ieq $expected) 'Viewer Run alias points to the wrong EXE'
+        }
         $shell=New-Object -ComObject WScript.Shell
         try{foreach($path in @($role.desktop,$role.menu)){$link=$shell.CreateShortcut($path);try{Check ($link.TargetPath -ieq $expected -and $link.Arguments -eq '') 'Shortcut does not launch the role EXE directly'}finally{[void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($link)}}}finally{[void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)}
         $payload=Join-Path $role.root $role.release
@@ -80,6 +105,9 @@ try {
         $null=$launched.CloseMainWindow();if(!$launched.WaitForExit(15000)){throw 'Owned installed app did not close'};$launched.Dispose();$launched=$null
         Install $role ($role.name+'-repeat-install') $role.root
         Check ((Get-ItemProperty -LiteralPath $role.registration).Receipts.Split(';').Count -eq 1) 'Repeated install duplicated receipt/version state'
+        if($role.name -eq 'Viewer'){
+            Check ((Get-Item -LiteralPath $aliasKey).GetValue('') -ieq $expected) 'Viewer reinstall did not preserve the Run alias'
+        }
     }
     Install $hostRole 'reject-second-install-root' (Join-Path $output 'second-host-root') $false
     Check ((Get-ItemProperty $hostRole.registration).Root -ieq $hostRole.root) 'Existing Host installation was taken over'
@@ -91,20 +119,28 @@ try {
     [IO.File]::WriteAllBytes($restorePath,$restoreBytes);$restorePath=$null;$restoreBytes=$null
     $unknown=Join-Path $hostRole.root 'operator-notes.txt';[IO.File]::WriteAllText($unknown,'retain unknown content')
     $viewerExe=Join-Path (Join-Path $viewerRole.root $viewerRole.release) $viewerRole.entry
-    $info=[Diagnostics.ProcessStartInfo]::new($viewerExe);$info.UseShellExecute=$false;$info.WindowStyle='Minimized';$info.WorkingDirectory=Split-Path $viewerExe -Parent
-    $launched=[Diagnostics.Process]::Start($info)
+    $info=[Diagnostics.ProcessStartInfo]::new('rdesk.exe');$info.UseShellExecute=$true;$info.WindowStyle='Minimized';$info.WorkingDirectory=$output
+    $shellProcess=[Diagnostics.Process]::Start($info)
+    if(!$shellProcess){throw 'Shell launch via rdesk.exe returned no process'}
+    try {
+        if($shellProcess.MainModule.FileName -ine $viewerExe){throw 'Shell resolved rdesk.exe to a different application'}
+        $launched=$shellProcess
+    } finally {
+        if(!$launched){$shellProcess.Dispose()}
+    }
     Until {$launched.Refresh();$launched.HasExited -or $launched.MainWindowHandle -ne 0}
-    Check (!$launched.HasExited -and $launched.MainWindowHandle -ne 0) 'Installed Viewer did not open its WPF window'
+    Check (!$launched.HasExited -and $launched.MainWindowHandle -ne 0) 'Shell launch via rdesk.exe did not open its WPF window'
     Uninstall $viewerRole 'reject-running-viewer' $false
     Check ((Test-Path $viewerRole.key) -and !$launched.HasExited) 'Uninstaller terminated active Viewer'
     Uninstall $hostRole 'host-remove-while-viewer-running'
     Until {!(Test-Path $hostRole.key) -and !(Test-Path (Join-Path $hostRole.root $hostRole.release))}
-    Check ((Test-Path $viewerRole.key) -and (Test-Path $viewerRole.menu) -and !$launched.HasExited) 'Host uninstall affected Viewer'
+    Check ((Test-Path $viewerRole.key) -and (Test-Path $viewerRole.menu) -and (Test-Path -LiteralPath $aliasKey) -and !$launched.HasExited) 'Host uninstall affected Viewer'
     Check (!(Test-Path $hostRole.desktop) -and !(Test-Path $hostRole.menu) -and !(Test-Path $hostRole.registration) -and (Get-Content -LiteralPath $unknown -Raw) -eq 'retain unknown content') 'Host removal lost retained data or left owned integration'
     $null=$launched.CloseMainWindow();if(!$launched.WaitForExit(15000)){throw 'Owned test Viewer did not close'};$launched.Dispose();$launched=$null
     Uninstall $viewerRole 'viewer-remove'
     Until {!(Test-Path $viewerRole.key) -and !(Test-Path $viewerRole.root)}
     Check (!(Test-Path $viewerRole.desktop) -and !(Test-Path $viewerRole.menu) -and !(Test-Path $viewerRole.registration)) 'Viewer left owned integration'
+    Check (!(Test-Path -LiteralPath $aliasKey)) 'Viewer left its Run alias after uninstall'
     $state=if($SkipMachineServicePreview){'PASS_ACTUAL_PER_USER_INSTALLER_LIFECYCLE_MACHINE_PREVIEW_SKIPPED'}else{'PASS_ACTUAL_PER_USER_INSTALLER_LIFECYCLE'}
 } finally {
     if($launched){try{if(!$launched.HasExited){$null=$launched.CloseMainWindow();$null=$launched.WaitForExit(10000)}}finally{$launched.Dispose()}}
