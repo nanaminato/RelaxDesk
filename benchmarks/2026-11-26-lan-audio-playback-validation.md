@@ -39,6 +39,16 @@ buffer difference. It displayed 311 video frames, flushed once, and reported
 no audio failure. This exercised actual encrypted remote sound and production
 video/audio synchronization, rather than a synthetic Host or fake sink.
 
+A repeat with a slower first video frame included 530ms of intentionally
+discarded pre-anchor startup audio in its totals (480,480/505,920, 94.97%).
+The probe now allows one second after video anchoring and measures differences
+over a ten-second steady interval, rather than counting startup as sustained
+loss. That real WPF run received 480,960 and rendered 480,000 frames (99.80%),
+with one initial flush, 245 video frames and no failure. The 960-frame difference
+is 20ms of bounded end-of-interval buffering. Startup latency and steady
+throughput are separate quantities; these observations do not certify startup
+latency or subjective audibility.
+
 Reproduce with a matching saved login and verified pin:
 `dotnet <Viewer.dll> --remote-audio-probe <IP> <port> <username>`.
 It emits sound for ten seconds and prints aggregates only. The separate raw

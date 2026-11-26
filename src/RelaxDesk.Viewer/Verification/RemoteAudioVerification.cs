@@ -46,14 +46,20 @@ public sealed partial class ViewerWindow
                     if (running.IsCompleted) throw new IOException("Connection ended before playback");
                     await Task.Delay(20, deadline.Token);
                 }
+                // Exclude initial decoder/video anchoring: stale startup audio
+                // is intentionally discarded rather than replayed late.
+                await Task.Delay(TimeSpan.FromSeconds(1), deadline.Token);
+                var startAudio = window.audioSession ?? throw new IOException("Audio disabled during startup");
+                long receivedBefore = startAudio.PayloadBytes / Core.AudioProtocol.FrameBytes;
+                long renderedBefore = sink is null ? 0 : Interlocked.Read(ref sink.Frames);
                 await Task.Delay(TimeSpan.FromSeconds(10), deadline.Token);
                 var audio = window.audioSession ?? throw new IOException("Audio disabled during playback");
-                long received = audio.PayloadBytes / Core.AudioProtocol.FrameBytes;
-                long rendered = sink is null ? 0 : Interlocked.Read(ref sink.Frames);
+                long received = audio.PayloadBytes / Core.AudioProtocol.FrameBytes - receivedBefore;
+                long rendered = (sink is null ? 0 : Interlocked.Read(ref sink.Frames)) - renderedBefore;
                 double ratio = rendered / (double)Math.Max(1, received);
                 Console.WriteLine(JsonSerializer.Serialize(new { receivedFrames = received, renderedFrames = rendered, renderFraction = ratio,
                     flushes = sink?.Flushes, videoFrames = window.smokeFrames, failure = audio.Failure,
-                    renderer = "WPF CPU", synchronizedToVideo = true, samplesSaved = false }));
+                    renderer = "WPF CPU", synchronizedToVideo = true, startupExcluded = true, samplesSaved = false }));
                 if (received < 400_000 || ratio < .95 || audio.Failure is not null)
                     throw new IOException("Real WPF audio playback did not sustain source frame delivery");
                 Console.WriteLine("PASS authorized remote WPF/TLS/real-WASAPI video-synchronized audio throughput; no physical listening-quality claim");
