@@ -21,6 +21,7 @@ OutputBaseFilename=RelaxDesk-{#Role}-Setup-x64
 VersionInfoVersion={#FileVersion}
 UninstallDisplayName={#Title}
 UninstallDisplayIcon={app}\{#Release}\{#Entry}
+UninstallLogMode=overwrite
 CloseApplications=no
 RestartApplications=no
 RestartIfNeededByRun=no
@@ -152,14 +153,14 @@ begin
   Result := True;
 end;
 
-function VerifyReceipts(Root, Index: String): Boolean;
+function VerifyReceipts(Root, Index, RequiredRelease: String): Boolean;
 var Item, Release, Digest, ReceiptPath, Line, Expected, Relative, Path: String;
     Lines: TArrayOfString; I, Count: Integer;
 begin
   Result := False; Count := 0;
   if Index = '' then exit;
   while Index <> '' do begin
-    Count := Count + 1; if Count > 8 then exit;
+    Count := Count + 1; if Count > 32 then exit;
     Item := Token(Index, ';'); Release := Token(Item, '='); Digest := Item;
     if (Copy(Release, 1, 4) <> 'app-') or not Hex(Copy(Release, 5, 32), 32) or
        (Length(Release) <> 36) or not Hex(Digest, 64) then exit;
@@ -176,6 +177,7 @@ begin
       Path := Canonical(AddBackslash(Root) + Relative);
       if not Child(Path, Root) or not NoReparse(Path) then exit;
       if DirExists(Path) then exit;
+      if (Release = RequiredRelease) and not FileExists(Path) then exit;
       if FileExists(Path) and (Lowercase(GetSHA256OfFile(Path)) <> Lowercase(Expected)) then exit;
     end;
   end;
@@ -200,7 +202,7 @@ begin
   except Log('Cannot establish application process ownership.'); end;
 end;
 
-function OwnedShortcuts(Root, Index: String): Boolean;
+function OwnedShortcuts(Root, Index, KeepRelease: String): Boolean;
 var Shell, Link: Variant; Shortcut, Item, Release, Remaining: String; I: Integer; Owned: Boolean;
 begin
   Result := False;
@@ -217,6 +219,9 @@ begin
            (Link.Arguments = '') then Owned := True;
       end;
       if not Owned then exit;
+      if (KeepRelease <> '') and
+         (CompareText(Link.TargetPath, AddBackslash(Root) + KeepRelease + '\{#Entry}') <> 0) then
+        if not DeleteFile(Shortcut) then exit;
     end;
   end;
   Result := True;
@@ -225,8 +230,54 @@ end;
 function GetReceiptIndex(Param: String): String;
 begin Result := ReceiptIndex; end;
 
+procedure RemoveEmptyParents(Path, Root: String);
+begin
+  Path := ExtractFileDir(Path);
+  while Child(Path, Root) do begin
+    if not NoReparse(Path) or not RemoveDir(Path) then exit;
+    Path := ExtractFileDir(Path);
+  end;
+end;
+
+function PruneReleases(Root, Index, KeepRelease: String; RemoveReceipts: Boolean): Boolean;
+var Item, Release, ReceiptPath, Line, Expected, Path: String;
+    Lines: TArrayOfString; I: Integer;
+begin
+  Result := False;
+  while Index <> '' do begin
+    Item := Token(Index, ';'); Release := Token(Item, '=');
+    if CompareText(Release, KeepRelease) <> 0 then begin
+      ReceiptPath := AddBackslash(Root) + 'receipts\' + Release + '.hashes';
+      if RemoveReceipts then begin
+        if FileExists(ReceiptPath) then begin
+          if not NoReparse(ReceiptPath) then exit;
+          if Lowercase(GetSHA256OfFile(ReceiptPath)) <> Lowercase(Item) then exit;
+          if not DeleteFile(ReceiptPath) then Log('Could not remove superseded receipt: ' + ReceiptPath);
+        end;
+      end else begin
+        if not NoReparse(ReceiptPath) or not FileExists(ReceiptPath) then exit;
+        if Lowercase(GetSHA256OfFile(ReceiptPath)) <> Lowercase(Item) then exit;
+        if not LoadStringsFromFile(ReceiptPath, Lines) then exit;
+        for I := 0 to GetArrayLength(Lines) - 1 do begin
+          Line := Lines[I]; Expected := Token(Line, #9);
+          if not SafeRelative(Line) or ((Pos(Release + '\', Line) <> 1) and
+             (Line <> 'receipts\' + Release + '\InnoSetup-LICENSE.txt')) then exit;
+          Path := Canonical(AddBackslash(Root) + Line);
+          if not Child(Path, Root) or not NoReparse(Path) or DirExists(Path) then exit;
+          if FileExists(Path) then begin
+            if Lowercase(GetSHA256OfFile(Path)) <> Lowercase(Expected) then exit;
+            if not DeleteFile(Path) then exit;
+          end;
+          RemoveEmptyParents(Path, Root);
+        end;
+      end;
+    end;
+  end;
+  Result := True;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
-var Root, Previous, Existing, Remaining, Part: String; Count: Integer;
+var Root, Previous, Existing: String;
 begin
   Result := ''; Root := Canonical(ExpandConstant('{app}'));
   if (Length(Root) < 4) or (Copy(Root, 2, 1) <> ':') then begin Result := '请选择本机非根目录。'; exit; end;
@@ -234,25 +285,35 @@ begin
   if not CheckTree(Root) then begin Result := '安装目录含链接或异常路径，请选择普通本机目录。'; exit; end;
   if RegQueryStringValue(HKCU, Registration, 'Root', Previous) then begin
     if CompareText(Canonical(Previous), Root) <> 0 then begin Result := '已安装在其他目录，请先使用应用列表中的卸载入口。'; exit; end;
-    if not RegQueryStringValue(HKCU, Registration, 'Receipts', Existing) or not VerifyReceipts(Root, Existing) then begin Result := '已有程序文件或安装记录被修改。请先备份并恢复，安装器不会覆盖这些内容。'; exit; end;
+    if not RegQueryStringValue(HKCU, Registration, 'Receipts', Existing) or not VerifyReceipts(Root, Existing, '') then begin Result := '已有程序文件或安装记录被修改。请先备份并恢复，安装器不会覆盖这些内容。'; exit; end;
   end else if NonEmpty(Root) then begin Result := '此目录包含非本安装器管理的文件，请选择空目录。'; exit; end;
   if Running(Root) then begin Result := '请先关闭此安装目录中的 {#Title}，再继续。安装器不会结束共享会话。'; exit; end;
-  if not OwnedShortcuts(Root, Existing) then begin Result := '同名快捷方式已存在且不属于此安装，请先检查。'; exit; end;
+  if not OwnedShortcuts(Root, Existing, '') then begin Result := '同名快捷方式已存在且不属于此安装，请先检查。'; exit; end;
   ReceiptIndex := Existing;
   if Pos('{#Release}=', ReceiptIndex) = 0 then begin
     if ReceiptIndex <> '' then ReceiptIndex := ReceiptIndex + ';';
     ReceiptIndex := ReceiptIndex + '{#Release}={#ReceiptHash}';
   end;
-  Remaining := ReceiptIndex; Count := 0;
-  while Remaining <> '' do begin Part := Token(Remaining, ';'); Count := Count + 1; end;
-  if Count > 8 then Result := '保留版本过多，请备份后先卸载，再安装新版本。';
 end;
 
 procedure CurStepChanged(Step: TSetupStep);
+var Root, Current: String;
 begin
-  if Step = ssPostInstall then
-    if not VerifyReceipts(Canonical(ExpandConstant('{app}')), ReceiptIndex) then
+  if Step = ssPostInstall then begin
+    Root := Canonical(ExpandConstant('{app}'));
+    Current := '{#Release}={#ReceiptHash}';
+    if not VerifyReceipts(Root, ReceiptIndex, '{#Release}') then
       RaiseException('安装后校验失败；请保留安装日志，不要启动应用。');
+    if (ReceiptIndex <> Current) then begin
+      if Running(Root) or not OwnedShortcuts(Root, ReceiptIndex, '{#Release}') or
+         not PruneReleases(Root, ReceiptIndex, '{#Release}', False) then
+        RaiseException('新版已安装，但暂时无法清理旧版程序。请关闭 RelaxDesk 后重新运行安装包。');
+      if not RegWriteStringValue(HKCU, Registration, 'Receipts', Current) then
+        RaiseException('新版已安装，但无法更新安装记录。请重新运行安装包。');
+      PruneReleases(Root, ReceiptIndex, '{#Release}', True);
+      ReceiptIndex := Current;
+    end;
+  end;
 end;
 
 function InitializeUninstall: Boolean;
@@ -263,10 +324,24 @@ begin
     if not CheckTree(Root) or not RegQueryStringValue(HKCU, Registration, 'Root', Registered) or
        (CompareText(Canonical(Registered), Root) <> 0) or
        not RegQueryStringValue(HKCU, Registration, 'Receipts', Index) or
-       not VerifyReceipts(Root, Index) or not OwnedShortcuts(Root, Index) then begin
+       not VerifyReceipts(Root, Index, '') or not OwnedShortcuts(Root, Index, '') then begin
       SuppressibleMsgBox('文件、快捷方式或安装记录已修改，已停止卸载以保留内容。请备份并恢复后重试。', mbError, MB_OK, IDOK); exit;
     end;
     if Running(Root) then begin SuppressibleMsgBox('请先关闭此安装目录中的 {#Title}。', mbError, MB_OK, IDOK); exit; end;
     Result := True;
   except SuppressibleMsgBox('无法安全确认卸载范围，未删除文件。请保留日志并检查。', mbError, MB_OK, IDOK); end;
+end;
+
+procedure CurUninstallStepChanged(Step: TUninstallStep);
+var Root, Index: String;
+begin
+  if Step = usUninstall then begin
+    Root := Canonical(ExpandConstant('{app}'));
+    if not RegQueryStringValue(HKCU, Registration, 'Receipts', Index) or
+       not VerifyReceipts(Root, Index, '') or
+       not OwnedShortcuts(Root, Index, '{#Release}') or
+       not PruneReleases(Root, Index, '{#Release}', False) then
+      RaiseException('无法清理旧版程序，已停止卸载。请关闭 RelaxDesk 后重试。');
+    PruneReleases(Root, Index, '{#Release}', True);
+  end;
 end;
