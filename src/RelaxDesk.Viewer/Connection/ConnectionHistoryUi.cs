@@ -29,7 +29,15 @@ public sealed partial class ViewerWindow
         if(historyStore is null&&!App.VerificationMode)historyStore=new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RelaxDesk","preferences","connections.json"));
         if(historyStore is null){rememberConnections.IsChecked=false;clearConnections.IsEnabled=false;return;}
         int generation=historyGeneration;
-        try{var entries=await historyStore.Load(historyLifetime.Token);if(generation==historyGeneration)SetHistory(entries);}
+        string initialHost=host.Text,initialPort=port.Text;
+        try
+        {
+            var entries=await historyStore.Load(historyLifetime.Token);
+            if(generation!=historyGeneration)return;
+            SetHistory(entries);
+            if(entries.Length>0&&connectionRun is null&&smoke is null&&rememberConnections.IsChecked==true&&host.Text==initialHost&&port.Text==initialPort)
+                recentConnections.SelectedIndex=0;
+        }
         catch(OperationCanceledException){}
         catch(Exception e){HistoryError(e);}
     }

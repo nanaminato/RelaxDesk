@@ -37,6 +37,7 @@ public sealed partial class ViewerWindow
             catch (Exception error) when (error is System.IO.IOException or UnauthorizedAccessException or System.Security.SecurityException) { status.Text = "无法清除证书记录。"; }
         };
         ConfigureSavedCredentials();
+        ConfigurePreferences();
     }
 
     internal void SetOptionsExpanded(bool expanded)

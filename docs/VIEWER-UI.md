@@ -47,6 +47,24 @@ Both bitmap and native renderers exclude local toolbar/menu pointer input,
 including captured drags. Disconnect restores the prior connection-window
 bounds and expanded/collapsed state. This changes Viewer presentation only.
 
+## Remembered connection options
+
+Startup preselects the most recent successfully authorized endpoint without
+connecting automatically. Windows Credential Manager may independently refill
+an explicitly saved login for that endpoint.
+
+`%LOCALAPPDATA%\RelaxDesk\preferences\viewer.json` remembers global Viewer
+choices: full-screen startup, GPU display, topology compatibility, text/image/
+HTML/file clipboard requests, audio request, history recording, transport,
+file rate limit, zoom and selected FPS/H.264 bitrate. Changes are serialized to
+an atomic replacement file off the Dispatcher and flushed on close. A bounded,
+versioned document validates ranges; missing/corrupt/unreadable preferences use
+defaults. Storage errors do not terminate an active session. These are requests,
+not Host grants; each connection still authenticates and negotiates permission.
+Passwords, usernames, pins, tickets, grants, and video generations are excluded.
+Separate Viewer processes use last-writer-wins preferences. Verification modes
+use defaults or injected fixture stores and never write actual user preferences.
+
 ## Remembered credentials
 
 An explicit opt-in stores a successfully authenticated username/password in

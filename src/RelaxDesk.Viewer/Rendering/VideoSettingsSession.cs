@@ -5,12 +5,22 @@ namespace RelaxDesk.Viewer;
 public sealed partial class ViewerWindow
 {
     ViewerVideoSettings? videoSettingsSession;MediaCodec? settingsCodec;
+    bool restoreVideoPreferences;
     (VideoSettings? State,bool Pending,bool Ready,MediaCodec? Codec)? videoMenuState;
     void BeginVideoSettings(SessionClient connection)
-    {videoSettingsSession=connection.VideoVersion==VideoSettingsProtocol.Version?new(connection.VideoSettings!):null;settingsCodec=null;videoMenuState=null;}
+    {videoSettingsSession=connection.VideoVersion==VideoSettingsProtocol.Version?new(connection.VideoSettings!):null;settingsCodec=null;videoMenuState=null;restoreVideoPreferences=true;}
     void EndVideoSettings(){videoSettingsSession=null;settingsCodec=null;videoMenuState=null;}
     bool AcceptVideoFrame(MediaFrame frame)=>videoSettingsSession?.Accept(frame)??true;
-    void VideoSettingsPresented(MediaFrame frame){videoSettingsSession?.Presented(frame);settingsCodec=frame.Codec;RefreshVideoSettingsMenu();}
+    void VideoSettingsPresented(MediaFrame frame)
+    {
+        videoSettingsSession?.Presented(frame);settingsCodec=frame.Codec;
+        if(restoreVideoPreferences&&videoSettingsSession is { Ready:true } model)
+        {
+            restoreVideoPreferences=false;
+            ChangeVideoSettings(preferences.FramesPerSecond,settingsCodec==MediaCodec.H264?preferences.Bitrate:model.Current.Bitrate);
+        }
+        RefreshVideoSettingsMenu();
+    }
     void RefreshVideoSettingsMenu()
     {
         if(sessionToolbar is null)return;
@@ -25,6 +35,11 @@ public sealed partial class ViewerWindow
         if(fps==model.Current.FramesPerSecond&&bitrate==model.Current.Bitrate)return;
         var request=model.Request(fps,bitrate);
         if(!outgoing.TryWrite(new("video-settings-v2",++sequence,VideoVersion:VideoSettingsProtocol.Version,VideoSettings:request)))session.Cancel();
+        else
+        {
+            preferences=preferences with { FramesPerSecond=fps,Bitrate=settingsCodec==MediaCodec.H264?bitrate:preferences.Bitrate };
+            SavePreferences();
+        }
         RefreshVideoSettingsMenu();
     }
     void ReceiveVideoSettings(Packet packet,CancellationToken ct)

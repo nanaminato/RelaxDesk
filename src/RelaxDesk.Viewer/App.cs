@@ -60,6 +60,7 @@ public sealed class App : Application
             else if(args is ["--pipeline-failure-contracts",var pipelineHost,var pipelineStage])ViewerWindow.VerifyPipelineFailure(app,pipelineHost,pipelineStage);
             else if(args is ["--diagnostic-log-contracts",var diagnosticFixtures])DiagnosticLogVerification.Run(app,diagnosticFixtures);
             else if(args is ["--viewport-contracts"])ViewerWindow.VerifyViewport(app);
+            else if(args is ["--preferences-contracts",var preferencesFixtures])ViewerWindow.VerifyPreferences(app,preferencesFixtures);
             else if(args is ["--audio-session-contracts",var audioHost])ViewerWindow.VerifyAudioSession(app,audioHost);
             else if(args is ["--history-contracts",var historyHost,var historyFixtures])ViewerWindow.VerifyConnectionHistory(app,historyHost,historyFixtures);
             else if(args is ["--statistics-contracts",var statisticsHost,var statisticsFixtures])ViewerWindow.VerifyStatistics(app,statisticsHost,statisticsFixtures);

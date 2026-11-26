@@ -23,6 +23,7 @@ public sealed partial class ViewerWindow
         var next=new ViewportOptions(zoom);if(!next.Valid)return;
         ReleaseHeldInputs();viewportInputReady=false;Volatile.Write(ref viewport,next);ApplyViewport();
         sessionToolbar?.SetViewport(next,SetViewportZoom);RefreshDisplayMenu();
+        SavePreferences();
     }
     void PanViewport()
     {
