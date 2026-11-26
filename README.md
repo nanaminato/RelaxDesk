@@ -33,7 +33,7 @@ Source now includes [independently authorized system audio](docs/AUDIO.md): sepa
 
 Viewer source also includes [IP/port-only recent connections](docs/CONNECTION-HISTORY.md) and an explicitly opened [live statistics panel](docs/LIVE-STATISTICS.md). Statistics distinguish application bytes, control RTT and processing/API timings from physical end-to-end measurements. These additions are not in the historical distributed ZIP.
 
-Negotiated [FPS/target bitrate controls](docs/VIDEO-SETTINGS.md) now use keyframe-confirmed settings generations. [Controlled TCP delay/bandwidth/interruption tests](docs/NETWORK-VALIDATION.md) exercise real encrypted Host/decoder paths with synthetic pixels; they do not establish physical Home or office performance. Final unified packaging remains deferred.
+Negotiated [FPS/target bitrate controls](docs/VIDEO-SETTINGS.md) now use keyframe-confirmed settings generations. [Controlled TCP delay/bandwidth/interruption tests](docs/NETWORK-VALIDATION.md) exercise real encrypted Host/decoder paths with synthetic pixels; they do not establish physical Home or office performance. For matched two-PC tests under measured bandwidth, latency and loss, see the [weak-network and MSTSC testing guide (中文)](docs/WEAK-NETWORK-TESTING.md). Final unified packaging remains deferred.
 
 Scoped [file task and byte resume](docs/FILE-RESUME.md) is now implemented: fresh Host authorization, fixed identity/directory scope, explicit continue/discard, five-minute tickets, SHA-256 and bounded partial retention. Actual WPF/TLS directory recovery and real non-sparse files above 1GiB pass [recorded checks](benchmarks/2026-11-23-file-resume-validation.md). Physical Home/network/input acceptance remains pending; no per-slice package.
 
