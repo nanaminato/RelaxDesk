@@ -106,15 +106,19 @@ internal sealed partial class SessionToolbar : Window, IDisposable
         }
     }
     internal MenuItem VideoSettingsAction=>videoSettings;
-    public void SetVideoSettings(VideoSettings? state,bool ready,bool pending,bool h264,Action<int,int> change)
+    public void SetVideoSettings(VideoSettings? state,bool ready,bool pending,bool h264,Action<int,int> change,bool automatic=false,Action<bool>? setAutomatic=null)
     {
-        videoSettings.Header=state is null?"视频设置（Host 未开放）":pending?"视频设置（等待应用确认…）":state.Generation==1_000_000?"视频设置（请重新连接后调整）":ready?$"视频设置 · {state.FramesPerSecond} FPS 上限":"视频设置（等待画面/短暂冷却）";
+        videoSettings.Header=state is null?"视频设置（不可用）":pending?"视频设置（等待确认）":state.Generation==1_000_000?"视频设置（需重连）":ready?$"视频设置 · {(automatic?"自动 · ":"")}{state.FramesPerSecond} FPS":"视频设置（稍后可调）";
         videoSettings.IsEnabled=state is not null&&ready;videoSettings.Items.Clear();if(state is null)return;
         var fps=new MenuItem{Header="帧率上限"};foreach(int value in new[]{15,30,60,120,144})
-        {var item=new MenuItem{Header=$"{value} FPS",IsCheckable=true,IsChecked=state.FramesPerSecond==value,IsEnabled=state.FramesPerSecond!=value};item.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;change(value,state.Bitrate);};fps.Items.Add(item);}videoSettings.Items.Add(fps);
-        var bitrate=new MenuItem{Header=h264?"H.264 目标码率":"当前图像兼容编码，码率不适用",IsEnabled=h264};foreach(int value in new[]{2,8,20,40,60,100})
-        {var item=new MenuItem{Header=$"{value} Mbit/s",IsCheckable=true,IsChecked=state.Bitrate==value*1_000_000,IsEnabled=state.Bitrate!=value*1_000_000};item.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;change(state.FramesPerSecond,value*1_000_000);};bitrate.Items.Add(item);}videoSettings.Items.Add(bitrate);
-        videoSettings.Items.Add(new Separator());videoSettings.Items.Add(new MenuItem{Header="实际提交帧率与媒体流量见连接统计",IsEnabled=false});videoSettings.Items.Add(new MenuItem{Header="码率是目标参数；更高目标通常增加带宽",IsEnabled=false});
+        {var item=new MenuItem{Header=$"{value} FPS",IsCheckable=true,IsChecked=state.FramesPerSecond==value,IsEnabled=automatic||state.FramesPerSecond!=value};item.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;change(value,state.Bitrate);};fps.Items.Add(item);}videoSettings.Items.Add(fps);
+        var bitrate=new MenuItem{Header=h264?"H.264 目标码率":"视频码率（不可用）",IsEnabled=h264};foreach(int value in new[]{2,8,20,40,60,100})
+        {var item=new MenuItem{Header=$"{value} Mbit/s",IsCheckable=true,IsChecked=state.Bitrate==value*1_000_000,IsEnabled=automatic||state.Bitrate!=value*1_000_000};item.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;change(state.FramesPerSecond,value*1_000_000);};bitrate.Items.Add(item);}videoSettings.Items.Add(bitrate);
+        if(setAutomatic is not null)
+        {
+            var auto=new MenuItem{Header=RelaxDesk.Core.Localization.Strings.Get("Viewer.AutomaticQuality"),IsCheckable=true,IsChecked=automatic};
+            auto.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;setAutomatic(auto.IsChecked);};videoSettings.Items.Add(auto);
+        }
     }
     internal MenuItem StatisticsAction=>statistics;
     string mediaRate = "";

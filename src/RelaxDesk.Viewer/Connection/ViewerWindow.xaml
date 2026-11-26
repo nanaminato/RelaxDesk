@@ -142,8 +142,6 @@
                                 </Grid>
                                 <CheckBox x:Name="rememberCredentials" Content="{ui:Loc Viewer.RememberCredentials}" Margin="88,4,0,7"
                                           ToolTip="{ui:Loc Viewer.RememberCredentialsTip}" />
-                                <TextBlock Text="{ui:Loc Viewer.FirstConnectHint}" Foreground="DimGray"
-                                           FontSize="11" TextWrapping="Wrap" Margin="0,8,0,4" />
                                 <Expander x:Name="connectionHistoryPanel" Header="{ui:Loc Viewer.RecentConnections}" Margin="0,8,0,0">
                                     <StackPanel>
                                         <ComboBox x:Name="recentConnections" MinHeight="30" />
@@ -177,6 +175,17 @@
                             </TabItem>
                             <TabItem Header="{ui:Loc Viewer.TabAdvanced}">
                                 <StackPanel Margin="18">
+                                    <Grid Style="{StaticResource FieldRow}">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="88" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                        <Label Style="{StaticResource FieldLabel}" Content="{ui:Loc Viewer.FrameRateLimit}" Target="{Binding ElementName=videoFrameRate}" />
+                                        <ComboBox x:Name="videoFrameRate" Grid.Column="1" SelectedValuePath="Tag" />
+                                    </Grid>
+                                    <Grid Style="{StaticResource FieldRow}">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="88" /><ColumnDefinition /></Grid.ColumnDefinitions>
+                                        <Label Style="{StaticResource FieldLabel}" Content="{ui:Loc Viewer.VideoBitrate}" Target="{Binding ElementName=videoBitrate}" />
+                                        <ComboBox x:Name="videoBitrate" Grid.Column="1" SelectedValuePath="Tag" />
+                                    </Grid>
+                                    <CheckBox x:Name="autoConnectionQuality" Content="{ui:Loc Viewer.AutomaticQuality}" ToolTip="{ui:Loc Viewer.AutomaticQualityTip}" Margin="0,0,0,12" />
                                     <Grid Style="{StaticResource FieldRow}">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="88" />

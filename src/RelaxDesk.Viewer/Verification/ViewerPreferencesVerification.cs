@@ -35,6 +35,11 @@ public sealed partial class ViewerWindow
                 Check(window.connectionRun is null && window.token.Password == "");
                 Check(store.Load() == new ViewerPreferences());
                 window.preferencesStore = store;
+                window.videoFrameRate.SelectedValue = 144; window.videoBitrate.SelectedValue = 100_000_000;
+                window.autoConnectionQuality.IsChecked = true;
+                await window.preferencesOperation;
+                Check(store.Load() is { FramesPerSecond:144, Bitrate:100_000_000, AutomaticVideoQuality:true });
+                window.autoConnectionQuality.IsChecked = false;
                 window.startFullScreen.IsChecked = false; window.gpuRendering.IsChecked = false;
                 window.requestTopology.IsChecked = false; window.requestClipboardImage.IsChecked = false;
                 window.requestAudio.IsChecked = false; window.networkMode.SelectedIndex = 1; window.fileRateLimit.SelectedIndex = 7;

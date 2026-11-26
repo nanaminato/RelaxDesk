@@ -13,7 +13,7 @@ public sealed partial class ViewerWindow
 {
     public static void VerifyVideoSettings(Application app,string hostApplication,string mode)
     {
-        if(mode is not ("h264" or "deflate" or "audio" or "static" or "remember"))throw new ArgumentException("Video settings mode");
+        if(mode is not ("h264" or "deflate" or "audio" or "static" or "remember" or "automatic"))throw new ArgumentException("Video settings mode");
         var listener=new TcpListener(IPAddress.Loopback,0);listener.Start();int number=((IPEndPoint)listener.LocalEndpoint).Port;listener.Stop();
         string path=Path.GetFullPath(hostApplication);var info=new ProcessStartInfo(path.EndsWith(".exe",StringComparison.OrdinalIgnoreCase)?path:"dotnet"){UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true};
         if(!path.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))info.ArgumentList.Add(path);foreach(string value in new[]{"127.0.0.1",number.ToString(),mode=="audio"?"test-audio":mode=="deflate"?"test-deflate":mode=="static"?"test-video-settings-static":"test-hardware"})info.ArgumentList.Add(value);
@@ -29,6 +29,12 @@ public sealed partial class ViewerWindow
             return await host.StandardOutput.ReadToEndAsync(timeout.Token);
         });
         var window=new ViewerWindow{ShowActivated=false};Task? running=null;TestAudioSink? audio=null;
+        window.image.IsHitTestVisible=false; // Synthetic Host rejects physical input; this fixture exercises settings only.
+        if(mode=="automatic")
+        {
+            window.videoFrameRate.SelectedValue=144;window.videoBitrate.SelectedValue=100_000_000;
+            window.autoConnectionQuality.IsChecked=true;window.networkMode.SelectedIndex=1;
+        }
         if(mode=="remember")window.preferences=window.preferences with{FramesPerSecond=60,Bitrate=20_000_000};
         window.host.Text="127.0.0.1";window.port.Text=number.ToString();window.fingerprint.Text=pin;window.token.Password=token;window.pinnedConnection.IsChecked=true;window.gpuRendering.IsChecked=false;
         if(mode=="audio"){window.requestAudio.IsChecked=true;window.AudioSinkForVerification=()=>audio=new(()=>0,0);}
@@ -58,21 +64,33 @@ public sealed partial class ViewerWindow
                 if(mode=="audio")await Until(()=>audio?.Writes>0);
                 if(mode=="deflate"&&((MenuItem)window.sessionToolbar.VideoSettingsAction.Items[1]).IsEnabled)throw new IOException("Deflate advertised bitrate effect");
                 int generation=mode=="remember"?2:1;
-                foreach(int fps in new[]{120,144,30})
+                if(mode=="automatic")
+                {
+                    ConnectionQualitySample Sample(int i,double rtt)=>new(i*5,rtt,i*100,i*1_000_000,0,0);
+                    window.ObserveAutomaticVideoQuality(Sample(0,20));window.ObserveAutomaticVideoQuality(Sample(1,150));window.ObserveAutomaticVideoQuality(Sample(2,150));
+                    await Until(()=>window.videoSettingsSession is{Ready:true,Current:{FramesPerSecond:22,Bitrate:6_000_000,Generation:2}});generation=2;
+                    if(window.preferences is not{FramesPerSecond:144,Bitrate:100_000_000,AutomaticVideoQuality:true})throw new IOException("Automatic adjustment changed saved caps");
+                    Click(0,"60 FPS");await Until(()=>window.videoSettingsSession?.Current.Generation==3&&window.videoSettingsSession.Ready);generation=3;
+                    if(window.preferences.AutomaticVideoQuality||!Equals(window.videoFrameRate.SelectedValue,60))throw new IOException("Manual menu did not synchronize Advanced");
+                    var auto=(MenuItem)window.sessionToolbar!.VideoSettingsAction.Items[2];auto.IsChecked=true;auto.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                    await Until(()=>window.videoSettingsSession is{Ready:true,Current:{FramesPerSecond:30,Bitrate:6_000_000,Generation:4}});generation=4;
+                    if(!window.preferences.AutomaticVideoQuality)throw new IOException("Automatic menu did not synchronize Advanced");
+                }
+                else foreach(int fps in new[]{120,144,30})
                 {
                     Click(0,$"{fps} FPS");window.ChangeVideoSettings(5,8_000_000);
                     await Until(()=>window.videoSettingsSession?.Current.Generation==generation+1&&window.videoSettingsSession.Ready);generation++;
                     if(window.videoSettingsSession!.Current.FramesPerSecond!=fps)throw new IOException("Pending request was replayed or wrong FPS applied");
                     if(mode=="audio"){int count=audio!.Writes;await Until(()=>audio.Writes>count);}
                 }
-                if(mode!="deflate")
+                if(mode is not ("deflate" or "automatic"))
                 {
                     foreach(int bitrate in new[]{40,100,8}){Click(1,$"{bitrate} Mbit/s");await Until(()=>window.videoSettingsSession?.Current.Generation==generation+1&&window.videoSettingsSession.Ready);generation++;if(window.videoSettingsSession!.Current.Bitrate!=bitrate*1_000_000)throw new IOException("Bitrate target not acknowledged");}
                 }
-                else{window.ChangeVideoSettings(30,2_000_000);if(window.videoSettingsSession!.Pending)throw new IOException("Deflate accepted irrelevant bitrate action");}
+                else if(mode=="deflate"){window.ChangeVideoSettings(30,2_000_000);if(window.videoSettingsSession!.Pending)throw new IOException("Deflate accepted irrelevant bitrate action");}
                 if(window.smokeFrames<generation)throw new IOException("Settings stalled media");window.StopConnection();await running;
                 if(window.videoSettingsSession is not null||mode=="audio"&&audio?.Disposed!=true)throw new IOException("Settings/audio cleanup missing");
-                Console.WriteLine($"PASS actual WPF video settings mode={mode}: FPS and applicable bitrate menu, pending/cooldown/keyframe-present confirmation, same-size generation changes, optional audio continuity and clean disconnect; synthetic media, no physical quality claim");window.Close();app.Shutdown();
+                Console.WriteLine($"PASS actual WPF video settings mode={mode}: FPS/bitrate/automatic menu, pending/cooldown/keyframe-present confirmation, same-size generation changes, optional audio continuity and clean disconnect; synthetic media, no physical quality claim");window.Close();app.Shutdown();
             }
             catch(Exception e){Console.Error.WriteLine(e);Environment.ExitCode=1;window.StopConnection();if(running is not null)try{await running;}catch{}window.Close();app.Shutdown(1);}
         };

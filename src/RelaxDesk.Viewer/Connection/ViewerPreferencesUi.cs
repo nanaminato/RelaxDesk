@@ -18,6 +18,7 @@ public sealed partial class ViewerWindow
         try { if (preferencesStore is not null) preferences = preferencesStore.Load(); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or System.Security.SecurityException)
         { status.Text = "无法读取连接设置，已使用默认值。"; }
+        ConfigureVideoPreferenceChoices();
         ApplyPreferences();
         foreach (var check in PreferenceChecks())
         {
@@ -26,27 +27,55 @@ public sealed partial class ViewerWindow
         }
         networkMode.SelectionChanged += (_, _) => SavePreferences();
         fileRateLimit.SelectionChanged += (_, _) => SavePreferences();
+        videoFrameRate.SelectionChanged += (_, _) => SavePreferences();
+        videoBitrate.SelectionChanged += (_, _) => SavePreferences();
         Closing += (_, _) => { SavePreferences(); preferencesOperation.GetAwaiter().GetResult(); };
     }
     CheckBox[] PreferenceChecks() => [startFullScreen, gpuRendering, requestTopology, requestClipboard,
-        requestClipboardImage, requestClipboardHtml, requestFileClipboard, requestAudio, rememberConnections];
+        requestClipboardImage, requestClipboardHtml, requestFileClipboard, requestAudio, rememberConnections, autoConnectionQuality];
     void ApplyPreferences()
     {
         loadingPreferences = true;
         try
         {
             bool[] values = [preferences.FullScreen, preferences.Gpu, preferences.Topology, preferences.ClipboardText,
-                preferences.ClipboardImage, preferences.ClipboardHtml, preferences.FileClipboard, preferences.Audio, preferences.RememberConnections];
+                preferences.ClipboardImage, preferences.ClipboardHtml, preferences.FileClipboard, preferences.Audio, preferences.RememberConnections, preferences.AutomaticVideoQuality];
             var controls = PreferenceChecks();
             for (int i = 0; i < controls.Length; i++) controls[i].IsChecked = values[i];
             networkMode.SelectedIndex = preferences.Network; fileRateLimit.SelectedIndex = preferences.FileRate;
+            ApplyVideoPreferenceValues();
             viewport = new(preferences.Zoom, 0, 0);
         }
         finally { loadingPreferences = false; }
     }
+    void ConfigureVideoPreferenceChoices()
+    {
+        foreach (int fps in new[] { 15, 30, 60, 120, 144 })
+            videoFrameRate.Items.Add(new ComboBoxItem { Content = $"{fps} FPS", Tag = fps });
+        foreach (int rate in new[] { 2, 8, 20, 40, 60, 100 })
+            videoBitrate.Items.Add(new ComboBoxItem { Content = $"{rate} Mbit/s", Tag = rate * 1_000_000 });
+    }
+    void ApplyVideoPreferenceValues()
+    {
+        bool previousLoading = loadingPreferences; loadingPreferences = true;
+        try
+        {
+            void Select(ComboBox combo, int value, string label)
+            {
+                if (!combo.Items.OfType<ComboBoxItem>().Any(item => Equals(item.Tag, value)))
+                    combo.Items.Add(new ComboBoxItem { Content = label, Tag = value });
+                combo.SelectedValue = value;
+            }
+            Select(videoFrameRate, preferences.FramesPerSecond, $"{preferences.FramesPerSecond} FPS");
+            Select(videoBitrate, preferences.Bitrate, $"{preferences.Bitrate / 1_000_000d:g} Mbit/s");
+            autoConnectionQuality.IsChecked = preferences.AutomaticVideoQuality;
+        }
+        finally { loadingPreferences = previousLoading; }
+    }
     void SavePreferences()
     {
         if (loadingPreferences) return;
+        bool previousAutomatic = preferences.AutomaticVideoQuality;
         preferences = preferences with
         {
             FullScreen = startFullScreen.IsChecked == true, Gpu = gpuRendering.IsChecked == true,
@@ -54,8 +83,12 @@ public sealed partial class ViewerWindow
             ClipboardImage = requestClipboardImage.IsChecked == true, ClipboardHtml = requestClipboardHtml.IsChecked == true,
             FileClipboard = requestFileClipboard.IsChecked == true, Audio = requestAudio.IsChecked == true,
             RememberConnections = rememberConnections.IsChecked == true, Network = Math.Max(0, networkMode.SelectedIndex),
-            FileRate = Math.Max(0, fileRateLimit.SelectedIndex), Zoom = CurrentViewport.Zoom
+            FileRate = Math.Max(0, fileRateLimit.SelectedIndex), Zoom = CurrentViewport.Zoom,
+            FramesPerSecond = videoFrameRate.SelectedValue is int fps ? fps : preferences.FramesPerSecond,
+            Bitrate = videoBitrate.SelectedValue is int bitrate ? bitrate : preferences.Bitrate,
+            AutomaticVideoQuality = autoConnectionQuality.IsChecked == true
         };
+        if (previousAutomatic != preferences.AutomaticVideoQuality) AutomaticVideoModeChanged();
         if (preferencesStore is not { } store) return;
         var snapshot = preferences;
         // Serialize writes off the Dispatcher and let the final close flush them.

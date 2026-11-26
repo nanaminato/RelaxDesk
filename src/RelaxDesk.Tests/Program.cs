@@ -169,6 +169,7 @@ count += ConnectionHistoryChecks.Run();
 count += ConnectionErrorDetailsChecks.Run();
 count += await MetricsChecks.Run();
 count += await VideoSettingsChecks.Run();
+count += AutomaticVideoQualityChecks.Run();
 count += DisplayChecks.Run();
 count += DisplayTopologyChecks.Run();
 count += ViewportChecks.Run();

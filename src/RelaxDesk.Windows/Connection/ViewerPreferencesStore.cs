@@ -23,6 +23,7 @@ public sealed record ViewerPreferences
     public int Zoom { get; init; } = 100;
     public int FramesPerSecond { get; init; } = 30;
     public int Bitrate { get; init; } = 8_000_000;
+    public bool AutomaticVideoQuality { get; init; }
     public ViewerLoginName[] LoginNames { get; init; } = [];
 
     public void Validate()

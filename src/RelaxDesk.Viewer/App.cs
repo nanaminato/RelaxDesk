@@ -71,6 +71,7 @@ public sealed class App : Application
             else if(args is ["--statistics-contracts",var legacyStatisticsHost,var legacyStatisticsFixtures,"legacy-auto"])ViewerWindow.VerifyStatistics(app,legacyStatisticsHost,legacyStatisticsFixtures,legacyAuto:true);
             else if(args is ["--statistics-contracts",var tcpOnlyStatisticsHost,var tcpOnlyStatisticsFixtures,"host-without-udp"])ViewerWindow.VerifyStatistics(app,tcpOnlyStatisticsHost,tcpOnlyStatisticsFixtures,hostWithoutUdp:true);
             else if(args is ["--statistics-contracts",var missingUdpHost,var missingUdpFixtures,"viewer-without-udp"])ViewerWindow.VerifyStatistics(app,missingUdpHost,missingUdpFixtures,viewerWithoutUdp:true);
+            else if(args is ["--automatic-quality-contracts",var qualityFixtures])ViewerWindow.VerifyAutomaticQuality(app,qualityFixtures);
             else if(args is ["--pointer-contracts"])ViewerWindow.VerifyPointerPresentation(app);
             else if(args is ["--video-settings-contracts",var settingsHost,var settingsMode])ViewerWindow.VerifyVideoSettings(app,settingsHost,settingsMode);
             else if(args is ["--display-legacy-session-contracts",var legacyDisplayHost])ViewerWindow.VerifyDisplaySession(app,legacyDisplayHost,false,true);
@@ -398,6 +399,10 @@ public sealed partial class ViewerWindow : Window
                             connection.ObserveControlPong(packet);
                             metrics.Add("control_rtt", rtt);
                             Volatile.Write(ref latestControlRtt, rtt);
+                            var counters=metrics.ReadCounters();
+                            var quality=new ConnectionQualitySample(counters.ElapsedSeconds,rtt,Volatile.Read(ref receivedFrames),counters.ApplicationBytes,
+                                decoded.Dropped+Interlocked.Read(ref skipped),connection.VideoTransportRevision,connection.HostVideoQueue,connection.ReadVideoNetworkStatistics()?.HostSend);
+                            _ = Dispatcher.BeginInvoke(()=>{if(ReferenceEquals(session,cancellation)&&!cancellation.IsCancellationRequested)ObserveAutomaticVideoQuality(quality);});
                         }
                         continue;
                     }

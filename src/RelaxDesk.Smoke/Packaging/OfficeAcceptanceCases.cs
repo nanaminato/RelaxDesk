@@ -38,6 +38,7 @@ internal static class OfficeAcceptanceCases
             Add("office-" + mode, a.Smoke, a.Host, "--" + mode);
         foreach (string mode in new[] { "viewport", "input-ui", "hwnd", "ui", "toolbar", "pointer" })
             Add("office-viewer-" + mode, a.Viewer, "--" + mode + "-contracts");
+        Add("office-viewer-automatic-quality", a.Viewer, "--automatic-quality-contracts", Folder("automatic-quality"));
         Add("office-viewer-diagnostics", a.Viewer, "--diagnostic-log-contracts", Folder("viewer-diagnostics"));
         Add("office-viewer-error-details", a.Viewer, "--error-details-contracts", Folder("error-details"));
         foreach (string mode in new[] { "cpu-decode", "cpu-submit", "viewer-update" })
@@ -57,7 +58,7 @@ internal static class OfficeAcceptanceCases
             Add("office-viewer-file-clipboard-" + mode, a.Viewer, "--file-clipboard-contracts", a.Host, Folder("file-clipboard-ui"), mode);
         foreach (string mode in new[] { "granted", "denied" })
             Add("office-viewer-rich-clipboard-" + mode, a.Viewer, "--rich-clipboard-session-contracts", a.Host, mode);
-        foreach (string mode in new[] { "h264", "deflate", "audio", "static" })
+        foreach (string mode in new[] { "h264", "deflate", "audio", "static", "automatic" })
             Add("office-viewer-video-settings-" + mode, a.Viewer, "--video-settings-contracts", a.Host, mode);
         Add("office-device-trust", a.Shell, "--device-trust-contracts", a.Host, Folder("device-trust"));
         Add("office-host-ui", a.Shell, "--shell-contracts", a.Host, Folder("host-ui"));
