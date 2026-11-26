@@ -15,7 +15,7 @@ public sealed partial class ViewerWindow
 
     readonly Button optionsButton = new() { Content = "显示选项 ▾", MinWidth = 96 };
     readonly TabControl connectionOptions = new() { Visibility = Visibility.Collapsed };
-    readonly CheckBox startFullScreen = new() { Content = "全屏启动远程桌面", IsChecked = false };
+    readonly CheckBox startFullScreen = new() { Content = "全屏启动", IsChecked = false };
     readonly Border basicConnection = new();
     readonly TabItem generalTab = new() { Header = "常规" };
     StackPanel signInForm = null!;
@@ -37,8 +37,7 @@ public sealed partial class ViewerWindow
         var monitor = new Viewbox { Width = 42, Height = 38, Child = DesktopSymbol(), VerticalAlignment = VerticalAlignment.Center };
         banner.Children.Add(monitor);
         var heading = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        heading.Children.Add(new TextBlock { Text = "远程桌面连接", FontSize = 24, Foreground = new SolidColorBrush(Color.FromRgb(20, 62, 105)) });
-        heading.Children.Add(new TextBlock { Text = "RelaxDesk", FontSize = 12, Foreground = Brushes.DimGray, Margin = new Thickness(1, 3, 0, 0), ToolTip = BuildIdentity.Display });
+        heading.Children.Add(new TextBlock { Text = "RelaxDesk", FontSize = 24, Foreground = new SolidColorBrush(Color.FromRgb(20, 62, 105)), ToolTip = BuildIdentity.Display });
         Grid.SetColumn(heading, 1); banner.Children.Add(heading);
         windowToolbar = banner; DockPanel.SetDock(banner, Dock.Top); root.Children.Add(banner);
 
@@ -55,32 +54,34 @@ public sealed partial class ViewerWindow
         disconnect.IsEnabledChanged += (_, _) => disconnect.Visibility = disconnect.IsEnabled ? Visibility.Visible : Visibility.Collapsed;
         actions.Children.Add(disconnect); actions.Children.Add(connect); actions.Children.Add(cancel); commands.Children.Add(actions);
         bottom.Children.Add(new Separator()); bottom.Children.Add(commands);
-        status.Text = "准备连接"; status.TextWrapping = TextWrapping.Wrap; status.Foreground = Brushes.DimGray; status.FontSize = 11;
+        status.Text = ""; status.TextWrapping = TextWrapping.Wrap; status.Foreground = Brushes.DimGray; status.FontSize = 11;
         var notices = new StackPanel { Margin = new Thickness(18, 0, 18, 10) }; notices.Children.Add(status); BuildErrorDetails(notices); bottom.Children.Add(notices);
         connectionFooter = bottom; DockPanel.SetDock(bottom, Dock.Bottom); root.Children.Add(bottom);
 
         image.Focusable = true; BuildViewport();
         signInForm = new StackPanel { Margin = new Thickness(20, 14, 20, 8) };
-        signInForm.Children.Add(new TextBlock { Text = "输入要连接的电脑及受控端登录信息。", Margin = new Thickness(0, 0, 0, 18) });
         var address = new Grid(); address.ColumnDefinitions.Add(new()); address.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); address.ColumnDefinitions.Add(new() { Width = new GridLength(68) });
         address.Children.Add(host); var portLabel = new TextBlock { Text = "端口", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 7, 0) }; Grid.SetColumn(portLabel, 1); address.Children.Add(portLabel); Grid.SetColumn(port, 2); address.Children.Add(port);
         signInForm.Children.Add(ConnectionField("计算机(_C):", address, host));
         signInForm.Children.Add(ConnectionField("用户名(_U):", loginName, loginName));
         signInForm.Children.Add(ConnectionField("密码(_P):", token, token));
         rememberCredentials.Margin = new Thickness(88, 4, 0, 7); signInForm.Children.Add(rememberCredentials);
-        signInForm.Children.Add(new TextBlock { Text = "首次连接需核对受控端身份，并在受控端批准此设备。", Foreground = Brushes.DimGray, FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 4) });
+        signInForm.Children.Add(new TextBlock { Text = "首次连接需核对指纹并在受控端批准。", Foreground = Brushes.DimGray, FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 4) });
         var history = new StackPanel(); AddConnectionHistory(history); signInForm.Children.Add(history);
         basicConnection.Child = signInForm;
         connectionOptions.Items.Add(generalTab);
 
-        var display = OptionsPanel("远程桌面显示", "连接后可在会话菜单中切换适应窗口、1:1 或自定义缩放。");
-        display.Children.Add(startFullScreen); gpuRendering.Content = "使用 GPU 显示（不可用时自动回退）"; display.Children.Add(gpuRendering); display.Children.Add(requestTopology);
-        display.Children.Add(new TextBlock { Text = "HDR 桌面由受控端转换为 SDR。屏幕选择须在受控端授权范围内。", TextWrapping = TextWrapping.Wrap, Foreground = Brushes.DimGray, Margin = new Thickness(0, 18, 0, 0) });
+        var display = OptionsPanel();
+        display.Children.Add(startFullScreen);
+        gpuRendering.Content = "GPU 显示";
+        gpuRendering.ToolTip = "GPU 显示不可用时自动使用兼容模式。";
+        display.Children.Add(gpuRendering);
+        display.Children.Add(requestTopology);
         connectionOptions.Items.Add(new TabItem { Header = "显示", Content = display });
-        var resources = OptionsPanel("本地资源", "连接时请求以下资源；是否开放由受控端决定。");
+        var resources = OptionsPanel();
         resources.Children.Add(requestClipboard); resources.Children.Add(requestClipboardImage); resources.Children.Add(requestClipboardHtml); resources.Children.Add(requestFileClipboard); resources.Children.Add(requestAudio);
         connectionOptions.Items.Add(new TabItem { Header = "本地资源", Content = resources });
-        var advanced = OptionsPanel("连接设置", "自动传输会优先选择可用通道，必要时回退。");
+        var advanced = OptionsPanel();
         advanced.Children.Add(ConnectionField("媒体传输:", networkMode, networkMode));
         advanced.Children.Add(ConnectionField("文件限速:", fileRateLimit, fileRateLimit));
         var resetPin = new Button { Content = "清除受控端证书记录…", HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 16, 0, 0) };
@@ -115,13 +116,7 @@ public sealed partial class ViewerWindow
         row.Children.Add(new Label { Content = text, Target = target, Padding = new Thickness(0), VerticalAlignment = VerticalAlignment.Center });
         Grid.SetColumn(control, 1); row.Children.Add(control); return row;
     }
-    static StackPanel OptionsPanel(string title, string description)
-    {
-        var panel = new StackPanel { Margin = new Thickness(18) };
-        panel.Children.Add(new TextBlock { Text = title, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 10) });
-        panel.Children.Add(new TextBlock { Text = description, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.DimGray, Margin = new Thickness(0, 0, 0, 16) });
-        return panel;
-    }
+    static StackPanel OptionsPanel() => new() { Margin = new Thickness(18) };
     internal void SetOptionsExpanded(bool expanded)
     {
         if (expanded == optionsExpanded) return;

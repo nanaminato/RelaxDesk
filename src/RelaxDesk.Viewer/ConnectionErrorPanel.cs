@@ -9,9 +9,9 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
-    readonly Expander errorDetails = new() { Header = "最近一次错误详情", Visibility = Visibility.Collapsed, Margin = new(0, 8, 0, 0) };
+    readonly Expander errorDetails = new() { Header = "错误详情", Visibility = Visibility.Collapsed, Margin = new(0, 8, 0, 0) };
     readonly TextBox errorReport = new() { IsReadOnly = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 190, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, FontFamily = new("Consolas") };
-    readonly Button copyError = new() { Content = "复制安全诊断摘要" }, clearError = new() { Content = "清除详情" };
+    readonly Button copyError = new() { Content = "复制诊断", ToolTip = "诊断摘要不含凭据。" }, clearError = new() { Content = "清除详情" };
     readonly TextBlock copyErrorFeedback = new() { TextWrapping = TextWrapping.Wrap };
     ConnectionErrorDetails? connectionError;
     int errorGeneration; bool errorCopying;
@@ -19,7 +19,7 @@ public sealed partial class ViewerWindow
     Func<string, CancellationToken, Task>? errorCopyForVerification;
     void BuildErrorDetails(Panel parent)
     {
-        var panel = new StackPanel(); panel.Children.Add(new TextBlock { Text = "仅包含阶段、错误类型／代码和本地关联标识，不含原始异常消息或凭证。", TextWrapping = TextWrapping.Wrap });
+        var panel = new StackPanel();
         panel.Children.Add(errorReport); var actions = new WrapPanel(); actions.Children.Add(copyError); actions.Children.Add(clearError); panel.Children.Add(actions); panel.Children.Add(copyErrorFeedback);
         errorDetails.Content = panel; parent.Children.Add(errorDetails);
         clearError.Click += (_, _) => ClearConnectionError(); copyError.Click += async (_, _) => await CopyConnectionError();
@@ -45,11 +45,11 @@ public sealed partial class ViewerWindow
         {
             var copy = App.VerificationMode && errorCopyForVerification is not null ? errorCopyForVerification(report, deadline.Token) : DiagnosticClipboardCopy.Write(report, deadline.Token);
             await copy.WaitAsync(deadline.Token);
-            if (generation == errorGeneration) copyErrorFeedback.Text = selection is null ? "已复制安全诊断摘要。" : "已复制所选诊断内容。";
+            if (generation == errorGeneration) copyErrorFeedback.Text = "已复制。";
         }
         catch (Exception error)
         {
-            if (generation == errorGeneration && !errorPanelLifetime.IsCancellationRequested) copyErrorFeedback.Text = "剪贴板暂不可用，可选中详情手动复制或稍后重试。";
+            if (generation == errorGeneration && !errorPanelLifetime.IsCancellationRequested) copyErrorFeedback.Text = "剪贴板暂不可用，请重试。";
             ViewerSessionLog.Record("error-details-copy-failed", error);
         }
         finally { errorCopying = false; if (!errorPanelLifetime.IsCancellationRequested) copyError.IsEnabled = connectionError is not null; }

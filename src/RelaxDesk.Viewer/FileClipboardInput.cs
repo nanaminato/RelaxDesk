@@ -7,7 +7,7 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
-    readonly CheckBox requestFileClipboard = new() { Content = "同步双向文件剪贴板", IsChecked = true };
+    readonly CheckBox requestFileClipboard = new() { Content = "文件剪贴板", ToolTip = "在两端复制和粘贴文件。", IsChecked = true };
     TaskCompletionSource<ILocalFileClipboard?>? localFileClipboard;
     CancellationTokenSource? fileClipboardLifetime;
     ClipboardFiles? remoteClipboardFiles;

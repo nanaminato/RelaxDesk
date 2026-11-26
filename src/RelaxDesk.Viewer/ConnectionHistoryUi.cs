@@ -8,10 +8,10 @@ namespace RelaxDesk.Viewer;
 public sealed partial class ViewerWindow
 {
     readonly ComboBox recentConnections=new(){MinHeight=30};
-    readonly CheckBox rememberConnections=new(){Content="本次运行记录已授权连接（仅 IP 和端口）",IsChecked=true};
+    readonly CheckBox rememberConnections = new() { Content = "记录连接地址", ToolTip = "仅记录已授权连接的 IP 和端口。", IsChecked = true };
     readonly Button clearConnections=new(){Content="清空历史"};
-    readonly TextBlock historyNotice=new(){Text="连接历史仅保存 IP 和端口。选择后请输入用户名和密码。",TextWrapping=TextWrapping.Wrap,FontSize=11};
-    readonly Expander connectionHistoryPanel=new(){Header="最近连接 · 仅 IP/端口",Margin=new(0,8,0,0)};
+    readonly TextBlock historyNotice = new() { TextWrapping = TextWrapping.Wrap, FontSize = 11 };
+    readonly Expander connectionHistoryPanel = new() { Header = "最近连接", Margin = new(0,8,0,0) };
     ConnectionHistoryStore? historyStore;
     readonly CancellationTokenSource historyLifetime=new();
     int historyGeneration;
@@ -24,13 +24,13 @@ public sealed partial class ViewerWindow
         {
             if(connectionRun is not null||recentConnections.SelectedItem is not ConnectionEndpoint endpoint)return;
             host.Text=endpoint.Address;port.Text=endpoint.Port.ToString();token.Clear();fingerprint.Clear();invitation.Clear();
-            historyNotice.Text="已填写地址。请输入用户名和密码。";
+            historyNotice.Text = "";
         };
         Loaded+=(_,_)=>HistoryOperation=LoadConnectionHistory();
         clearConnections.Click+=(_,_)=>HistoryOperation=ClearConnectionHistory();
         Closed+=(_,_)=>{historyLifetime.Cancel();_=HistoryOperation.ContinueWith(_=>historyLifetime.Dispose(),TaskScheduler.Default);};
     }
-    void SetHistory(ConnectionEndpoint[] entries){recentConnections.ItemsSource=entries;recentConnections.SelectedIndex=-1;recentConnections.IsEnabled=entries.Length>0;connectionHistoryPanel.Header=$"最近连接（{entries.Length}）· 仅 IP/端口";}
+    void SetHistory(ConnectionEndpoint[] entries){recentConnections.ItemsSource=entries;recentConnections.SelectedIndex=-1;recentConnections.IsEnabled=entries.Length>0;connectionHistoryPanel.Header=$"最近连接（{entries.Length}）";}
     async Task LoadConnectionHistory()
     {
         if(historyStore is null&&!App.VerificationMode)historyStore=new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RelaxDesk","preferences","connections.json"));
@@ -60,5 +60,5 @@ public sealed partial class ViewerWindow
         catch(Exception e){HistoryError(e);}
         finally{clearConnections.IsEnabled=true;}
     }
-    void HistoryError(Exception error){historyNotice.Text="历史记录不可用；连接仍可使用。可清空损坏记录后重试。";_=Task.Run(()=>ViewerSessionLog.Record("connection-history-unavailable",error));}
+    void HistoryError(Exception error){historyNotice.Text="无法读取历史。可清空历史后重试。";_=Task.Run(()=>ViewerSessionLog.Record("connection-history-unavailable",error));}
 }

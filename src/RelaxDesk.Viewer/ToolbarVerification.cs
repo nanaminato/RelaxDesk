@@ -135,7 +135,8 @@ internal static class ToolbarVerification
                     await Task.Delay(1800);
                     if (testBar.Expanded) throw new Exception("Toolbar did not contract after the menu closed");
                     bar.FullScreenButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                    if (testBar.RemoteKeyItems.OfType<MenuItem>().Single(item=>item.Header.ToString()!.Contains("Ctrl+Alt+End")).IsEnabled) throw new Exception("Secure attention sequence must be unavailable");
+                    if (testBar.RemoteKeyItems.OfType<MenuItem>().Any(item => item.Header.ToString()!.Contains("Ctrl+Alt+End")))
+                        throw new Exception("Unsupported secure attention sequence should not be listed");
                     int stopped = 0; testBar.SetClipboard(true, () => stopped++);
                     if (!testBar.ClipboardAction.IsEnabled) throw new Exception("Granted clipboard stop action unavailable");
                     testBar.ClipboardAction.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));

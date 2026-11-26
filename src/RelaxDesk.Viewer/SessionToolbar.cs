@@ -115,7 +115,7 @@ internal sealed class SessionToolbar : IDisposable
             item.Click+=(_,_)=>{ShortcutMenu.IsOpen=false;select?.Invoke(id);};displays.Items.Add(item);
         }
     }
-    readonly MenuItem clipboard = new() { Header = "剪贴板未授权 / 已关闭", IsEnabled = false };
+    readonly MenuItem clipboard = new() { Header = "停止剪贴板同步", ToolTip = "重新开启需重新连接。", IsEnabled = false, Visibility = Visibility.Collapsed };
     readonly MenuItem audio=new(){Header="声音未授权 / 已关闭",IsEnabled=false};
     readonly MenuItem statistics=new(){Header="连接统计（只读）",IsEnabled=false};
     readonly MenuItem videoSettings=new(){Header="视频设置（Host 未开放）",IsEnabled=false};
@@ -183,7 +183,11 @@ internal sealed class SessionToolbar : IDisposable
     public void SetTextInput(Action? open){openTextInput=open;textInput.IsEnabled=open is not null;}
     Action? disableClipboard;
     public void SetClipboard(bool enabled, Action? disable)
-    { clipboard.Header = enabled ? "停止剪贴板同步（重新开启需重新授权）" : "剪贴板未授权 / 已关闭"; clipboard.IsEnabled = enabled; disableClipboard = disable; }
+    {
+        clipboard.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+        clipboard.IsEnabled = enabled;
+        disableClipboard = disable;
+    }
     public SessionToolbar(Window owner, Action toggle, Action disconnect, Action<RemoteShortcut>? shortcut = null,Action? releaseInput=null, ConnectionBarPreferences? preferences=null)
     {
         this.owner = owner;
@@ -207,12 +211,12 @@ internal sealed class SessionToolbar : IDisposable
         full.ToolTip = "切换全屏和窗口（Ctrl+Alt+Break）";
         pin.Checked += (_, _) => { pin.ToolTip = "取消固定连接栏"; Reveal(); };
         pin.Unchecked += (_, _) => { pin.ToolTip = "固定连接栏"; Reveal(); };
-        pin.ToolTip = "固定连接栏，关闭自动收起";
+        pin.ToolTip = "固定连接栏";
         pin.IsChecked = this.preferences.Pinned;
         pin.Checked += (_, _) => this.preferences.Pinned = true;
         pin.Unchecked += (_, _) => this.preferences.Pinned = false;
         minimize.Click += (_, _) => owner.WindowState = WindowState.Minimized;
-        minimize.ToolTip = "最小化连接端窗口，保持会话";
+        minimize.ToolTip = "最小化";
         DisconnectButton.Click += (_, _) => disconnect();
 
         ShortcutsButton = new Button { Content = "会话菜单", Focusable = false, Padding = new(12, 6, 12, 6), Margin = new(3), ToolTip = "远程快捷键、显示和连接设置" };
@@ -233,8 +237,6 @@ internal sealed class SessionToolbar : IDisposable
             item.Click += (_, _) => { ShortcutMenu.IsOpen = false; shortcut?.Invoke(action); Reveal(); };
             remoteKeys.Items.Add(item);
         }
-        remoteKeys.Items.Add(new Separator());
-        remoteKeys.Items.Add(new MenuItem { Header = "Ctrl+Alt+End / 安全注意序列：不支持", IsEnabled = false });
         FilesAction.Click += (_, _) => { ShortcutMenu.IsOpen = false; openFiles?.Invoke(); };
         ShortcutMenu.Opened += (_, _) => releaseInput?.Invoke();
         ShortcutMenu.Items.Add(FilesAction);

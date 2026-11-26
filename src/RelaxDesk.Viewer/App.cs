@@ -109,7 +109,7 @@ public sealed partial class ViewerWindow : Window
     readonly Grid renderPanel = new();
     readonly CheckBox gpuRendering = new() { Content = "D3D11 GPU display", IsChecked = true };
     readonly CheckBox pinnedConnection = new() { Content = "使用固定指纹与凭证（可选高级方式）" };
-    readonly CheckBox requestClipboard = new() { Content = "同步双向文本剪贴板", IsChecked = true };
+    readonly CheckBox requestClipboard = new() { Content = "文本剪贴板", ToolTip = "双向同步。", IsChecked = true };
     AccessGate? sessionPermissions;
     ClipboardTextUpdate? pendingClipboard;
     int clipboardDispatchPending;

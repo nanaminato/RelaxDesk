@@ -7,7 +7,7 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
-    readonly CheckBox requestAudio=new(){Content="播放远程系统声音（连接后可静音）",IsChecked=true};
+    readonly CheckBox requestAudio = new() { Content = "播放远程声音", IsChecked = true };
     AudioStreamSession? audioSession;
     internal Func<IAudioEndpoint>? AudioSinkForVerification{get;set;}
     double audioVolume=1;bool audioMuted;
