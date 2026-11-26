@@ -18,7 +18,9 @@ public sealed partial class ViewerWindow
     {
         if (smoke?.ReconnectTest==true)return [SessionCapabilities.FileTransfer];
         if (smoke is not null&&!smoke.RichClipboardTest) return smoke.FileTransfer ? [SessionCapabilities.FileTransfer] : [];
-        var features = new List<string> { SessionCapabilities.FileTransfer, SessionCapabilities.ClipboardFiles };
+        var features = new List<string>();
+        if (requestFileClipboard.IsChecked == true)
+            features.AddRange([SessionCapabilities.FileTransfer, SessionCapabilities.ClipboardFiles]);
         if (requestClipboard.IsChecked == true) features.Add(SessionCapabilities.ClipboardText);
         if (requestClipboardImage.IsChecked == true) features.Add(SessionCapabilities.ClipboardImage);
         if (requestClipboardHtml.IsChecked == true) features.Add(SessionCapabilities.ClipboardHtml);

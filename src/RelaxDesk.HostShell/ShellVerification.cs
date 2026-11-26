@@ -76,6 +76,7 @@ internal static class ShellVerification
                 Console.WriteLine("PASS WPF Host administrator status rejects stale session events and clears controls on session end");
                 await Until(()=>window.DisplayEnumerationFinished);await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);Snapshot("host-idle.png");
                 if(!window.DisplayConfigurationEnabled||window.DisplayChoiceCount<2)throw new IOException("Physical display metadata choices missing");
+                if ((string)window.SharingAction.Content != "开始共享") throw new IOException("Idle share action has the wrong label");
                 int port=Port();await window.StartSharing("127.0.0.1",port,"test-hardware");await Until(()=>window.Status=="等待连接");
                 if(window.DisplayConfigurationEnabled)throw new IOException("Running Host allowed scope selection change");
                 using(var viewer=new SessionClient())
@@ -87,7 +88,9 @@ internal static class ShellVerification
                     var frame=await MediaProtocol.Read(viewer.Media,timeout.Token);
                     if(frame.Data.Length==0||frame.Codec!=MediaCodec.H264||window.RequestVisible)throw new IOException("Shell-approved video missing");
                     await Until(()=>window.Status=="正在共享");Snapshot("host-sharing.png");
-                    await window.StopSharing();await window.Host.Finished.WaitAsync(TimeSpan.FromSeconds(10));
+                    if ((string)window.SharingAction.Content != "停止共享" || !window.SharingAction.IsEnabled) throw new IOException("Running share action cannot stop sharing");
+                    window.SharingAction.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+                    await Until(()=>!window.Host.Running && (string)window.SharingAction.Content == "开始共享");
                 }
                 if(window.Host.Running||window.Host.Pending)throw new IOException("Stop left child/session running");
                 if(!window.DisplayConfigurationEnabled)throw new IOException("Stopped Host did not restore display choice");

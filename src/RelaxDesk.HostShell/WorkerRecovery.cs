@@ -25,8 +25,8 @@ internal sealed partial class HostWindow
     void UpdateRecoveryControls()
     {
         if(!RestartPending)return;
-        ip.IsEnabled=port.IsEnabled=start.IsEnabled=useService.IsEnabled=connectService.IsEnabled=false;
-        SetDisplayConfigurationEnabled(false);stop.IsEnabled=!closing;
+        ip.IsEnabled=port.IsEnabled=useService.IsEnabled=connectService.IsEnabled=false;
+        SetDisplayConfigurationEnabled(false);
     }
     async void RecoverWorker(HostEvent change)
     {
@@ -36,7 +36,7 @@ internal sealed partial class HostWindow
         try{WindowsSessionAccess.EnsureAllowed();}catch{allowed=false;}
         var delay=restartBudget.Next(RestartEnabled,change.ExitCode,allowed);
         if(delay is null)return;
-        using var wait=new CancellationTokenSource();restartWait=wait;UpdateRecoveryControls();
+        using var wait=new CancellationTokenSource();restartWait=wait;UpdateServiceControls();
         state.Text="等待重启 Host";detail.Text=$"{delay.Value.TotalSeconds} 秒后重新等待连接；旧授权不会恢复。";
         try
         {
@@ -50,7 +50,7 @@ internal sealed partial class HostWindow
         finally
         {
             restartWait=null;
-            if(!Host.Running){ip.IsEnabled=port.IsEnabled=true;SetDisplayConfigurationEnabled(true);stop.IsEnabled=false;if(wait.IsCancellationRequested){state.Text="已停止共享";detail.Text="已取消自动恢复。";}}
+            if(!Host.Running){ip.IsEnabled=port.IsEnabled=true;SetDisplayConfigurationEnabled(true);if(wait.IsCancellationRequested){state.Text="已停止共享";detail.Text="已取消自动恢复。";}}
             UpdateServiceControls();
             var ended=deferredExit;deferredExit=null;if(ended is not null)RecoverWorker(ended);
         }

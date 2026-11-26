@@ -7,9 +7,8 @@ namespace RelaxDesk.HostShell;
 internal sealed partial class HostWindow
 {
     string? selectedFileRoot;
-    bool usesAutomaticFileClipboard;
+    bool automaticSessionCapabilities;
     readonly CheckBox filesPermission = new() { Content = "允许文件传输及文件剪贴板", IsChecked = false, Visibility = Visibility.Collapsed, Margin = new(0, 8, 0, 0) };
-    readonly Button revokeFiles = new() { Content = "停止文件传输", Visibility = Visibility.Collapsed };
     readonly TextBlock filesScopeLabel = new() { TextWrapping = TextWrapping.Wrap, Margin = new(22, 4, 0, 0), Visibility = Visibility.Collapsed, FontSize = 12 };
     internal bool FilesChoiceVisible => filesPermission.Visibility == Visibility.Visible;
     internal bool FilesChoiceEnabled => filesPermission.IsEnabled;
@@ -43,14 +42,14 @@ internal sealed partial class HostWindow
     {
         filesPermission.IsChecked = false; filesPermission.IsEnabled = selectedFileRoot is not null;
         filesPermission.Content = selectedFileRoot is null ? "传输目录不可用" : "允许文件传输（文件复制粘贴另需勾选剪贴板）";
-        filesPermission.Visibility = requested && !usesAutomaticFileClipboard ? Visibility.Visible : Visibility.Collapsed;
+        filesPermission.Visibility = requested && !automaticSessionCapabilities ? Visibility.Visible : Visibility.Collapsed;
         filesScopeLabel.Text = selectedFileRoot is null ? "本次未开放任何文件目录。" : "仅此目录及其子目录：" + selectedFileRoot;
         filesScopeLabel.Visibility = filesPermission.Visibility;
     }
     internal async Task StopFiles()
     {
         string? id=displayedSessionId;if(id is null)return;
-        await Host.RevokeFiles(id);if(displayedSessionId!=id)return;revokeFiles.Visibility = Visibility.Collapsed;
+        await Host.RevokeFiles(id);if(displayedSessionId!=id)return;
         UpdateSavedGrant(grant => grant with { FileRoot = null });
         detail.Text = "已撤销此设备的文件传输权限。";
     }

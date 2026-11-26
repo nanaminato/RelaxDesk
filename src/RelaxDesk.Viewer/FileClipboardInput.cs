@@ -1,4 +1,5 @@
 using System.IO;
+using System.Windows.Controls;
 using RelaxDesk.Core;
 using RelaxDesk.Windows;
 
@@ -6,6 +7,7 @@ namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
+    readonly CheckBox requestFileClipboard = new() { Content = "同步双向文件剪贴板", IsChecked = true };
     TaskCompletionSource<ILocalFileClipboard?>? localFileClipboard;
     CancellationTokenSource? fileClipboardLifetime;
     ClipboardFiles? remoteClipboardFiles;

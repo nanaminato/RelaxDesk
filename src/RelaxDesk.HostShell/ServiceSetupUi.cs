@@ -20,7 +20,7 @@ internal sealed partial class HostWindow
     internal bool ServiceSetupBusy{get;private set;}
     internal string SetupNotice=>serviceSetupNotice.Text;
     internal string InstallationStatus=>serviceInstallation.Text;
-    internal bool SetupAllowsSharing=>start.IsEnabled;
+    internal bool SetupAllowsSharing=>!Host.Running&&!RestartPending&&start.IsEnabled;
     internal Button InstallServiceButton=>installService;
     internal Button EnableServiceButton=>enableService;
     internal Button UninstallServiceButton=>uninstallService;

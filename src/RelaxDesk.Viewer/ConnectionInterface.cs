@@ -78,7 +78,7 @@ public sealed partial class ViewerWindow
         display.Children.Add(new TextBlock { Text = "HDR 桌面由受控端转换为 SDR。屏幕选择须在受控端授权范围内。", TextWrapping = TextWrapping.Wrap, Foreground = Brushes.DimGray, Margin = new Thickness(0, 18, 0, 0) });
         connectionOptions.Items.Add(new TabItem { Header = "显示", Content = display });
         var resources = OptionsPanel("本地资源", "连接时请求以下资源；是否开放由受控端决定。");
-        resources.Children.Add(requestClipboard); resources.Children.Add(requestClipboardImage); resources.Children.Add(requestClipboardHtml); resources.Children.Add(requestAudio);
+        resources.Children.Add(requestClipboard); resources.Children.Add(requestClipboardImage); resources.Children.Add(requestClipboardHtml); resources.Children.Add(requestFileClipboard); resources.Children.Add(requestAudio);
         connectionOptions.Items.Add(new TabItem { Header = "本地资源", Content = resources });
         var advanced = OptionsPanel("连接设置", "自动传输会优先选择可用通道，必要时回退。");
         advanced.Children.Add(ConnectionField("媒体传输:", networkMode, networkMode));

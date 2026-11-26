@@ -32,7 +32,11 @@ internal sealed partial class HostWindow
     {
         useService.IsEnabled=!Host.Running&&!serviceConnecting&&!serviceCleaning&&!closing&&!ServiceSetupBusy;
         connectService.IsEnabled=ServiceRequired&&!Host.Running&&!serviceConnecting&&!serviceCleaning&&!ServiceReady&&!closing&&!ServiceSetupBusy;
-        start.IsEnabled=!Host.Running&&!savingLogin&&!checkingInputDeployment&&!serviceConnecting&&!serviceCleaning&&!closing&&!ServiceSetupBusy&&(!ServiceRequired||ServiceReady);
+        bool sharing = Host.Running || RestartPending;
+        start.Content = sharing ? "停止共享" : "开始共享";
+        start.Style = (Style)Resources[sharing ? "DangerButton" : "PrimaryButton"];
+        start.IsEnabled = !closing && !stoppingSharing && (sharing ||
+            !savingLogin && !checkingInputDeployment && !serviceConnecting && !serviceCleaning && !ServiceSetupBusy && (!ServiceRequired || ServiceReady));
         saveLogin.IsEnabled=!Host.Running&&!savingLogin&&!RestartPending&&!closing;
         UpdateServiceSetupControls();
         UpdateRecoveryControls();
