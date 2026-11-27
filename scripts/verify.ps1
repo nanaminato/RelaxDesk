@@ -95,6 +95,8 @@ try {
     if ($LASTEXITCODE) { throw 'Desktop pause/resume contracts failed' }
     Run-App $smokeDll --capture-refresh-contracts
     if($LASTEXITCODE){throw 'Explicit capture refresh contracts failed'}
+    Run-App $smokeDll --audio-stream-contracts
+    if($LASTEXITCODE){throw 'Audio stream pacing/discontinuity contracts failed'}
     Run-App $smokeDll --diagnostic-log-contracts (Join-Path $root 'build/diagnostic-log-verification')
     if($LASTEXITCODE){throw 'Bounded diagnostic log contracts failed'}
     foreach($networkMode in @('shaped','media-cut','control-cut')){
@@ -169,7 +171,7 @@ try {
             Run-App $viewer --statistics-contracts $hostDll (Join-Path $root 'build/statistics-wpf-verification') oversized
             if ($LASTEXITCODE) { throw 'Viewer UDP fallback statistics checks failed' }
         }
-        foreach($settingsMode in @('h264','deflate','audio','static')){
+        foreach($settingsMode in @('h264','deflate','audio','static','remember','automatic')){
             Run-App $viewer --video-settings-contracts $hostDll $settingsMode
             if($LASTEXITCODE){throw "Viewer video settings failed: $settingsMode"}
         }

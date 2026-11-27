@@ -40,7 +40,7 @@ internal static class RecoveryVerification
                     await Until(()=>window.Host.Generation>generation&&window.Status=="等待连接"&&!window.RestartPending);
                     using var viewer=new SessionClient();var connected=viewer.ConnectByApproval("127.0.0.1",port,timeout.Token);
                     await Until(()=>window.RequestVisible);if(connected.IsCompleted)throw new IOException("Recovery replayed approval");
-                    await window.Decide(true);await connected;var frame=await MediaProtocol.Read(viewer.Media,timeout.Token);
+                    await window.Decide(true);await connected;var frame=await viewer.Video.Read(timeout.Token);
                     if(frame.Data.Length==0)throw new IOException("Recovered media absent");
                     viewer.Dispose();await Until(()=>window.Status=="等待连接");
                 }

@@ -19,11 +19,15 @@ internal static class DiagnosticLogVerification
                 string secret = "fixture-credential-" + Guid.NewGuid().ToString("N");
                 using var scope = DiagnosticCorrelation.Begin(); string id = DiagnosticCorrelation.Current;
                 ViewerSessionLog.Record("connection-error", new IOException(secret));
+                var traffic = new RelaxDesk.Core.SessionTrafficSnapshot(new(1, 2), 3, new(4, 5), new(6, 7), new(8, 9));
+                ViewerSessionLog.Record("channel_traffic " + traffic.Report());
                 bool dispatched = false; await window.Dispatcher.InvokeAsync(() => dispatched = true);
                 if (!dispatched || !await log.Flush()) throw new IOException("Diagnostic path blocked WPF dispatcher");
                 string text = File.ReadAllText(log.FilePath);
                 if (text.Contains(secret) || !text.Contains("correlation_id=" + id) || !text.Contains("error_type=IOException") || !text.Contains("hresult=0x"))
                     throw new IOException("Viewer diagnostic privacy/correlation fields failed");
+                if (!text.Contains("operation=channel_traffic " + traffic.Report()))
+                    throw new IOException("Viewer diagnostic log dropped channel byte fields");
                 using (var held = new FileStream(log.FilePath, FileMode.Open, FileAccess.Read, FileShare.None))
                 {
                     ViewerSessionLog.Record("connection-error", new IOException(secret));

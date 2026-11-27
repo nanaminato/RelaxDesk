@@ -15,4 +15,10 @@
 ## 2026-11-27 落地状态
 - **环境固定与元数据采集**：已在 `scripts/RelaxDesk.Benchmark.psm1`（`run.json`）与 `scripts/accept-home.ps1`（`machine.json`）中增补 Git `Revision`、`WindowsEdition`、`PowerScheme`（`powercfg /GetActiveScheme`）及显卡当前分辨率与刷新率，连同二进制 SHA-256 哈希一并固化。
 - **分通道字节统计**：新增 `TrafficAccountingStream`（`src/RelaxDesk.Core/Transport/TrafficAccountingStream.cs`），在 Host 会话结束时输出 `channel_traffic control_rx=... control_tx=... video_tx=... file_rx=... file_tx=... clipboard_rx=... clipboard_tx=... audio_tx=...`，在 Viewer 结项报告中增补 `file_tx_bytes`、`file_rx_bytes`、`audio_rx_bytes`。
-- **自动化验证**：Native Release build、Managed Release build、`RelaxDesk.Tests`、`test-benchmark-tools.ps1` 及 Windows 契约测试全部通过；双机物理 Home Host → Server Viewer 实测与外部高速相机输入到光子测量标记为 `NOT_TESTED`。
+- **自动化验证**：此前的“全部通过”没有在本文保存逐项原始证据。首轮专项与失败见[复核记录](../../benchmarks/2026-11-27-accounting-pacing-validation.md)，后续完整自动回归以[会话回归记录](../../benchmarks/2026-11-27-session-access-regression.md)为准；双机物理 Home Host → Server Viewer 实测与外部高速相机输入到光子测量仍为 `NOT_TESTED`。
+
+## 本轮统计补齐
+
+Viewer 在认证/附属通道绑定完成后开始计量，补齐 control 收发、clipboard 收发，file/audio 使用流级应用协议字节，video 使用完整媒体帧字节；附属 worker 结束后取最终快照，组件单独失败不清零。普通诊断日志及验证模式 stdout 均输出 `channel_traffic`；旧的文件/音频 payload 字段保留，不能与流级字段重复相加。零计数表示该方向未使用或通道不存在，并非链路零开销。字段与范围见 [统计说明](../LIVE-STATISTICS.md#end-of-attempt-channel-accounting)。
+
+仍缺：NIC 实际流量、物理可见帧、外部输入到光子、真实静止/办公任务三轮及相同提交双机 TCP/UDP/Auto 对照。现有统计修复不关闭 P0 的双机证据退出条件。

@@ -22,10 +22,10 @@ internal sealed class HostDisplaySession
     public DisplaySwitchSession Switch {get;}
     public WindowsDisplaySelection? Active=>Volatile.Read(ref active);
     public bool NeedsRefresh=>Volatile.Read(ref needsRefresh);
-    public HostDisplaySession(WindowsDisplaySelection? initial,string? syntheticSelection=null,int requestedVersion=DisplayProtocol.TopologyVersion,bool scripted=false)
+    public HostDisplaySession(WindowsDisplaySelection? initial,string? syntheticSelection=null,int requestedVersion=DisplayProtocol.TopologyVersion,bool scripted=false,DisplayInfo[]? syntheticTopology=null)
     {
         synthetic=initial is null;this.scripted=scripted;active=initial;
-        catalog=initial?.Topology??[
+        catalog=initial?.Topology??syntheticTopology??[
             new("test-primary",new(0,0,640,360),0,96,96,true,false,new string('A',64)),
             new("test-left",new(-640,0,640,360),0,144,144,false,false,new string('B',64)),
             new("test-portrait",new(640,0,360,640),90,192,192,false,false,new string('C',64))];

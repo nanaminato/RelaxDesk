@@ -26,13 +26,13 @@ internal static class DisplaySwitchSmoke
             var reservation=new TcpListener(IPAddress.Loopback,0);reservation.Start();int port=((IPEndPoint)reservation.LocalEndpoint).Port;reservation.Stop();
             var arguments=restricted?new[]{"--display","test-primary","127.0.0.1",port.ToString(),"test-displays"}:new[]{"127.0.0.1",port.ToString(),"test-displays"};
             using var host=Process.Start(ChildProcess.Create(application,arguments))??throw new IOException("Display Host launch failed");using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            using var client=new SessionClient{RequestedDisplayVersion=1};Task<string>? logs=null;
+            using var client=new SessionClient();Task<string>? logs=null;
             try
             {
                 string pin=(await host.StandardOutput.ReadLineAsync(timeout.Token)??"").Split(": ")[1];string token=(await host.StandardOutput.ReadLineAsync(timeout.Token)??"").Split(": ")[1];_=await host.StandardOutput.ReadLineAsync(timeout.Token);
                 var connecting=client.Connect("127.0.0.1",port,pin,token,timeout.Token);string prompt=await host.StandardOutput.ReadLineAsync(timeout.Token)??"";
                 if(!prompt.Contains("APPROVE"))throw new IOException("Consent missing");await host.StandardInput.WriteLineAsync("APPROVE");await host.StandardInput.FlushAsync();logs=host.StandardOutput.ReadToEndAsync(timeout.Token);await connecting;
-                if(client.DisplayVersion!=1||client.DisplayState is null)throw new IOException("Display negotiation missing");
+                if(client.DisplayVersion!=DisplayProtocol.TopologyVersion||client.DisplayState is null)throw new IOException("Display negotiation missing");
                 long sequence=0,generation=1;
                 async Task Send(Packet packet)=>await Wire.Write(client.Control,packet,timeout.Token);
                 await Send(InputProtocol.Encode(new("move"),++sequence,1)); // Must be ignored before the first ready.
@@ -41,7 +41,7 @@ internal static class DisplaySwitchSmoke
                 {
                     while(true)
                     {
-                        var frame=await MediaProtocol.Read(client.Media,timeout.Token,true);bool decoded=await decoder.Decode(frame);
+                        var frame=await client.Video.Read(timeout.Token);bool decoded=await decoder.Decode(frame);
                         if(frame.DisplayGeneration==expected&&decoded)return frame;
                     }
                 }
@@ -63,6 +63,7 @@ internal static class DisplaySwitchSmoke
                         var reply=await SessionControl.Read(client.Control,timeout.Token);
                         if(reply.Kind!="display-state-v2"||reply.DisplayState?.Generation!=generation+1||reply.DisplayState.Selected!=id)throw new IOException("Switch response mismatch");generation++;
                         await Send(InputProtocol.Encode(new("move"),++sequence,generation)); // New generation before ready must also be ignored.
+                        await Send(new("display-configured-v2",++sequence,DisplayGeneration:generation));
                         var frame=await Pixels(generation);if(frame.Width!=640||frame.Height!=360||decoder.Generation<=decoderGeneration)throw new IOException("Decoder failed to reset on same-size switch");decoderGeneration=decoder.Generation;
                         await Send(new("display-ready-v2",++sequence,DisplayGeneration:generation));await Send(InputProtocol.Encode(new("move"),++sequence,generation));
                     }

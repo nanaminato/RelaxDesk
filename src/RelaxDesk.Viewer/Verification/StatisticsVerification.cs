@@ -5,10 +5,25 @@ using System.Net.Sockets;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
+using RelaxDesk.Core;
 namespace RelaxDesk.Viewer;
 
 public sealed partial class ViewerWindow
 {
+    sealed class StatisticsClipboard : IContentClipboard
+    {
+        readonly object sync = new();
+        long version = 1;
+        ClipboardContent content = new(Text: "statistics baseline");
+        public int Reads;
+        public bool TryRead(ClipboardFormats formats, out ClipboardContentSnapshot snapshot)
+        { lock(sync) { Interlocked.Increment(ref Reads); snapshot = new(version, content.Own()); return true; } }
+        public bool TryWrite(ClipboardContent value, long expected, out long written)
+        { lock(sync) { written = version; if(expected != version)return false; content = value.Own(); written = ++version; return true; } }
+        public void CopyText()
+        { lock(sync) { content = new(Text: "statistics local change"); version++; } }
+        public void Dispose() { }
+    }
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     static extern bool IsWindowEnabled(nint window);
     public static void VerifyStatistics(Application app,string hostApplication,string fixtures,bool udp=false,bool oversized=false,bool hostWithoutUdp=false,bool viewerWithoutUdp=false)
@@ -29,6 +44,8 @@ public sealed partial class ViewerWindow
             return await host.StandardOutput.ReadToEndAsync(timeout.Token);
         });
         var window=new ViewerWindow{ShowActivated=false};window.host.Text="127.0.0.1";window.port.Text=number.ToString();window.fingerprint.Text=pin;window.token.Password=token;window.pinnedConnection.IsChecked=true;window.gpuRendering.IsChecked=false;Task? running=null;
+        var clipboard = new StatisticsClipboard();
+        window.fileClipboardVerificationFactory = (_, _) => clipboard;
         window.networkMode.SelectedIndex = oversized || hostWithoutUdp || viewerWithoutUdp ? 0 : udp ? 2 : 1;
         async Task Until(Func<bool> condition){while(!condition())await Task.Delay(20,timeout.Token);}
         window.Loaded+=async(_,_)=>
@@ -46,6 +63,7 @@ public sealed partial class ViewerWindow
                     Console.WriteLine("PASS WPF forced UDP failed locally without requesting Host approval");
                 }
                 running=window.ConnectVideo();await Until(()=>window.smokeFrames>0);
+                await Until(()=>Volatile.Read(ref clipboard.Reads)>0);clipboard.CopyText();
                 if(window.sessionToolbar?.StatisticsAction.IsEnabled!=true||window.statisticsWindow is not null)throw new IOException("Statistics auto-opened or missing action");
                 var actual=window.statisticsSource??throw new IOException("Source missing");int snapshots=0;int switchPath=0;
                 window.statisticsSource=()=>
@@ -120,6 +138,11 @@ public sealed partial class ViewerWindow
                 window.statisticsSource=()=>throw new IOException("private statistics diagnostic fixture");window.OpenStatistics();var failed=window.statisticsWindow!;await Until(()=>failed.DisplayText.Contains("统计暂不可用"));int frames=window.smokeFrames;await Until(()=>window.smokeFrames>frames);failed.Close();await failed.Completion;
                 window.statisticsSource=actual;window.OpenStatistics();var last=window.statisticsWindow!;await Until(()=>last.Updates>0);window.StopConnection();await running;await last.Completion;
                 if(window.statisticsSource is not null||window.toolbarStatisticsSource is not null||window.statisticsWindow is not null)throw new IOException("Statistics survived disconnect");
+                if(window.lastChannelTraffic is not { Control: { ReadBytes: > 0, WrittenBytes: > 0 }, VideoReceivedBytes: > 0,
+                    Clipboard: { ReadBytes: > 0, WrittenBytes: > 0 } } traffic ||
+                    traffic.VideoReceivedBytes < snapshot.Pipeline.ApplicationBytes)
+                    throw new IOException("Final application channel counters missing or regressed");
+                Console.WriteLine("PASS Viewer final channel_traffic " + traffic.Report());
                 Console.WriteLine("PASS actual WPF statistics/Host/TLS: explicit menu, live frame/byte/stage/RTT samples, labeled application vs physical timing, close stops sampling, diagnostic failure preserves video and disconnect joins owned panel; synthetic source/CPU renderer only");window.Close();app.Shutdown();
             }
             catch(Exception e){Console.Error.WriteLine(e);Environment.ExitCode=1;window.StopConnection();if(running is not null)try{await running;}catch{}window.Close();app.Shutdown(1);}

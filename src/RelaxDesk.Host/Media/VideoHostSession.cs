@@ -37,7 +37,11 @@ internal static class VideoHostSession
         var originalDesktop = synthetic ? null : WindowsSessionAccess.Read();
         originalDesktop?.EnsureAllowed();
         var displaySelection=synthetic?null:new WindowsDisplaySelection(selectedDisplay);
-        var displays=new HostDisplaySession(displaySelection,synthetic?selectedDisplay:null,hello.DisplayVersion,backend=="test-topology");
+        // Oversized UDP fixtures must negotiate the geometry they actually send.
+        // The Viewer must continue rejecting frames outside its authorized display.
+        DisplayInfo[]? syntheticTopology = backend == "test-oversized-udp"
+            ? [new("test-primary",new(0,0,2560,1440),0,96,96,true,false,new string('A',64))] : null;
+        var displays=new HostDisplaySession(displaySelection,synthetic?selectedDisplay:null,hello.DisplayVersion,backend=="test-topology",syntheticTopology);
         int displayVersion=displays?.Version??0;
         var features = SessionCapabilities.RequireAll(grantedFeatures);
         var video=hello.VideoVersion==VideoSettingsProtocol.Version?new HostVideoSettings():null;

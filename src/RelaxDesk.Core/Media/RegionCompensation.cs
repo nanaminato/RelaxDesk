@@ -23,8 +23,8 @@ public readonly record struct RegionMove(int SourceX, int SourceY, RegionRect De
     public bool IsValid(int surfaceWidth, int surfaceHeight) =>
         Destination.IsValid(surfaceWidth, surfaceHeight) &&
         SourceX >= 0 && SourceY >= 0 &&
-        SourceX + Destination.Width <= surfaceWidth &&
-        SourceY + Destination.Height <= surfaceHeight;
+        (long)SourceX + Destination.Width <= surfaceWidth &&
+        (long)SourceY + Destination.Height <= surfaceHeight;
 }
 
 public sealed record RegionPatch(RegionRect Bounds, int UncompressedBytes, byte[] CompressedBgra, uint Sha256Prefix);
@@ -50,8 +50,8 @@ public enum RegionApplyOutcome
     RejectedIntegrity
 }
 
-// Experimental Stage B lossless region compensation engine (03-hybrid.md).
-// Off by default; never replaces hardware video unless explicitly enabled.
+// In-memory Stage B prototype (03-hybrid.md), not connected to a Host/Viewer session.
+// Receiver objects default to disabled; no production feature switch exists yet.
 // Enforces baseFrameSequence/videoEpoch/displayGeneration binding, applies move
 // rectangles before dirty patches with overlap-safe scratch copying, and
 // invalidates older compensation whenever a newer video frame arrives.
@@ -62,6 +62,7 @@ public static class RegionCompensationProtocol
     public const int MaxRectangles = 32;
     public const int MaxUncompressedPatchBytes = 2 * 1024 * 1024;
     public const int MaxTotalUncompressedBytes = 4 * 1024 * 1024;
+    public const int MaxTotalMoveBytes = 4 * 1024 * 1024;
     public const int MaxCompressedPayloadBytes = 2 * 1024 * 1024;
     const uint Magic = 0x31524452; // RDR1
 
@@ -253,9 +254,15 @@ public static class RegionCompensationProtocol
             packet.Moves.Length > MaxRectangles || packet.Patches.Length > MaxRectangles ||
             (packet.Moves.Length == 0 && packet.Patches.Length == 0))
             throw new InvalidDataException("Region compensation metadata out of bounds");
+        long totalMoveBytes = 0;
         foreach (var move in packet.Moves)
+        {
             if (!move.IsValid(packet.SurfaceWidth, packet.SurfaceHeight))
                 throw new InvalidDataException("Invalid move rectangle in compensation");
+            totalMoveBytes += move.Destination.Pixels * 4;
+        }
+        if (totalMoveBytes > MaxTotalMoveBytes)
+            throw new InvalidDataException("Region move staging budget exceeded");
         long totalUncompressed = 0, totalCompressed = 0;
         foreach (var patch in packet.Patches)
         {

@@ -35,7 +35,13 @@ public sealed partial class ViewerWindow
             window.videoFrameRate.SelectedValue=144;window.videoBitrate.SelectedValue=100_000_000;
             window.autoConnectionQuality.IsChecked=true;window.networkMode.SelectedIndex=1;
         }
-        if(mode=="remember")window.preferences=window.preferences with{FramesPerSecond=60,Bitrate=20_000_000};
+        if(mode=="remember")
+        {
+            window.preferences=window.preferences with{FramesPerSecond=60,Bitrate=20_000_000,AutomaticVideoQuality=false};
+            // Match the saved-preference load path; later connection UI changes
+            // snapshot these controls back into preferences.
+            window.ApplyVideoPreferenceValues();
+        }
         window.host.Text="127.0.0.1";window.port.Text=number.ToString();window.fingerprint.Text=pin;window.token.Password=token;window.pinnedConnection.IsChecked=true;window.gpuRendering.IsChecked=false;
         if(mode=="audio"){window.AudioSinkForVerification=()=>audio=new(()=>0,0);}
         async Task Until(Func<bool> condition){while(!condition()){if(running?.IsCompleted==true)throw new IOException("Viewer ended: "+window.status.Text);await Task.Delay(20,timeout.Token);}}
@@ -70,8 +76,10 @@ public sealed partial class ViewerWindow
                     window.ObserveAutomaticVideoQuality(Sample(0,20));window.ObserveAutomaticVideoQuality(Sample(1,150));window.ObserveAutomaticVideoQuality(Sample(2,150));
                     await Until(()=>window.videoSettingsSession is{Ready:true,Current:{FramesPerSecond:22,Bitrate:6_000_000,Generation:2}});generation=2;
                     if(window.preferences is not{FramesPerSecond:144,Bitrate:100_000_000,AutomaticVideoQuality:true})throw new IOException("Automatic adjustment changed saved caps");
+                    if(window.fileClient?.EffectiveRateLimitBytesPerSecond!=187_500)throw new IOException("Automatic file budget did not follow video target");
                     Click(0,"60 FPS");await Until(()=>window.videoSettingsSession?.Current.Generation==3&&window.videoSettingsSession.Ready);generation=3;
                     if(window.preferences.AutomaticVideoQuality||!Equals(window.videoFrameRate.SelectedValue,60))throw new IOException("Manual menu did not synchronize Advanced");
+                    if(window.fileClient?.EffectiveRateLimitBytesPerSecond!=20*1024*1024)throw new IOException("Manual quality retained adaptive file ceiling");
                     var auto=(MenuItem)window.sessionToolbar!.VideoSettingsAction.Items[2];auto.IsChecked=true;auto.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
                     await Until(()=>window.videoSettingsSession is{Ready:true,Current:{FramesPerSecond:30,Bitrate:6_000_000,Generation:4}});generation=4;
                     if(!window.preferences.AutomaticVideoQuality)throw new IOException("Automatic menu did not synchronize Advanced");

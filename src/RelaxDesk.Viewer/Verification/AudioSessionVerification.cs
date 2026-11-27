@@ -54,6 +54,9 @@ public sealed partial class ViewerWindow
                 if(sinks.Count!=4||window.sessionPermissions?.Allows(Core.SessionCapabilities.SystemAudio)==true)throw new IOException("Audio recovery budget replenished");
                 frames=window.smokeFrames;await Until(()=>window.smokeFrames>frames);window.StopConnection();await running;
                 if(!sinks.All(sink=>sink.Disposed))throw new IOException("Audio sink teardown incomplete");
+                if(window.lastChannelTraffic is not { Audio.ReadBytes: > 0 } traffic)
+                    throw new IOException("Audio channel traffic was lost after component shutdown");
+                Console.WriteLine("PASS Viewer final channel_traffic " + traffic.Report());
                 Console.WriteLine("PASS actual WPF Viewer/Host/TLS audio: default-on playback setting, audio attachment/toolbar, PCM volume, mute flush/no stale replay, three default-device replacements and exhaustion isolate audio, video survives and STA sinks dispose; synthetic endpoint only");
                 window.Close();app.Shutdown();
             }

@@ -39,7 +39,7 @@ internal static class ServiceVerification
                         using(var viewer=new SessionClient())
                         {
                             var connecting=viewer.ConnectByApproval("127.0.0.1",port,deadline.Token);await Until(()=>window.RequestVisible);Check(!connecting.IsCompleted);
-                            await window.Decide(true);await connecting;Check((await MediaProtocol.Read(viewer.Media,deadline.Token)).Data.Length>0);
+                            await window.Decide(true);await connecting;Check((await viewer.Video.Read(deadline.Token)).Data.Length>0);
                             if(abrupt)broker.Kill(true);else{await broker.StandardInput.WriteLineAsync("STOP");await broker.StandardInput.FlushAsync();}
                             Check(ConnectionRecovery.IsExplicitEnd(await SessionControl.Read(viewer.Control,deadline.Token)));
                             await Until(()=>!window.Host.Running&&!window.ServiceReady&&window.ServiceStatus.Contains("共享已停止",StringComparison.Ordinal));
@@ -65,7 +65,7 @@ internal static class ServiceVerification
                                 Check(!freshConnection.IsCompleted);
                                 await window.Decide(true);
                                 await freshConnection;
-                                Check((await MediaProtocol.Read(freshViewer.Media, deadline.Token)).Data.Length > 0);
+                                Check((await freshViewer.Video.Read(deadline.Token)).Data.Length > 0);
                                 await window.StopSharing();
                                 await window.Host.Finished;
                                 await window.DisconnectService();

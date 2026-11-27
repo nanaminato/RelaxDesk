@@ -15,8 +15,8 @@ internal static class NetworkImpairmentSmoke
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(40));
         using var running = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
         using var client = new SessionClient();
-        await using var relay = new NetworkImpairmentRelay(port);
-        Task? receiver = null; Task<string>? output = null;
+        await using var relay = new NetworkImpairmentRelay(port, connections: 5);
+        Task? receiver = null, audio = null; Task<string>? output = null;
         long frames = 0, gaps = 0, sequence = 0;
         bool passed = false;
         try
@@ -31,6 +31,7 @@ internal static class NetworkImpairmentSmoke
             await host.StandardInput.WriteLineAsync("APPROVE"); await host.StandardInput.FlushAsync();
             output = host.StandardOutput.ReadToEndAsync(deadline.Token);
             await connecting;
+            audio = Task.Run(async () => { while (true) await AudioProtocol.Read(client.AudioData!, running.Token); }, running.Token);
             var control = await relay.Connected(0, deadline.Token);
             var media = await relay.Connected(1, deadline.Token);
             receiver = Task.Run(async () =>
@@ -39,7 +40,7 @@ internal static class NetworkImpairmentSmoke
                 long previous = 0;
                 while (true)
                 {
-                    var frame = await MediaProtocol.Read(client.Media, running.Token, displayGeneration: client.DisplayVersion != 0, videoGeneration: client.VideoVersion != 0);
+                    var frame = await client.Video.Read(running.Token);
                     if (frame.Codec != MediaCodec.DeflateBgra || frame.Sequence <= previous) throw new InvalidDataException("Unexpected media ordering/codec");
                     if (previous != 0 && frame.Sequence > previous + 1) Interlocked.Increment(ref gaps);
                     var decoded = decoder.Decode(frame) ?? throw new InvalidDataException("Deflate frame not decoded");
@@ -110,13 +111,14 @@ internal static class NetworkImpairmentSmoke
             string? expectedWorker = mode == "media-cut" ? "media-send" : mode == "control-cut" ? "control-read" : null;
             if (expectedWorker is not null && !logs.Contains($"session_end worker={expectedWorker} stage={expectedWorker}", StringComparison.Ordinal))
                 throw new IOException("Independent channel failure was attributed to the wrong worker");
-            Console.WriteLine($"PASS network fixture mode={mode} clean Host exit=0, decoder disposed, release attempted; opaque TLS relay bounded to two connections / four 4KiB buffers; no physical capture/input/LAN/IP-loss claim");
+            Console.WriteLine($"PASS network fixture mode={mode} clean Host exit=0, decoder disposed, release attempted; complete profile relay bounded to five connections / ten 4KiB buffers; no physical capture/input/LAN/IP-loss claim");
             passed = true;
         }
         finally
         {
             running.Cancel(); client.Dispose();
             if (receiver is not null) try { await receiver; } catch { }
+            if (audio is not null) try { await audio; } catch { }
             if (!host.HasExited) { host.Kill(true); await host.WaitForExitAsync(); }
             if (!passed && output is not null) try { Console.Error.WriteLine(await output); Console.Error.WriteLine(await host.StandardError.ReadToEndAsync()); } catch { }
         }

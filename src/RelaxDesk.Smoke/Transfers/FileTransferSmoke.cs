@@ -43,6 +43,8 @@ internal static class FileTransferSmoke
         using var running = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
         var rtt = new ConcurrentBag<double>(); int frames = 0, udpDecoded = 0, keyFrameRequested = 0;
         long audioSequence = 0, audioWhileVideoOnUdp = 0;
+        var configuredVideo = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var configuredControl = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         try
         {
             string pin = (await host.StandardOutput.ReadLineAsync(timeout.Token) ?? throw new IOException("No pin")).Split(": ")[1];
@@ -52,17 +54,16 @@ internal static class FileTransferSmoke
             await host.StandardInput.WriteLineAsync("APPROVE"); await host.StandardInput.FlushAsync(); await connecting;
             if (client.Video.TransportName != (udp ? "UDP" : "TCP/TLS")) throw new IOException("Unexpected media transport");
             await Wire.Write(client.Control,new("display-ready-v2",1,DisplayGeneration:client.DisplayState!.Generation),timeout.Token);
-            relay?.EnableShaping(budget);
+            // Reserve room for PCM audio and files in the 4 Mbit/s fixture.
+            // An 8 Mbit/s video target alone already exceeds that shared link.
+            await Wire.Write(client.Control,new("video-settings-v2",2,VideoVersion:VideoSettingsProtocol.Version,VideoSettings:new(10,512_000,1)),timeout.Token);
             if (tcpRelay is not null && budget is not null)
             {
                 if (!udp) mediaLink = await tcpRelay.Connected(1, timeout.Token);
                 fileLink = await tcpRelay.Connected(udp ? 1 : 2, timeout.Token);
-                mediaLink?.ShareDownstream(budget);
-                fileLink.ShareDownstream(budget);
                 if (exerciseAudio)
                 {
                     audioLink = await tcpRelay.Connected(udp ? 3 : 4, timeout.Token);
-                    audioLink.ShareDownstream(budget);
                 }
             }
             if (!client.Features.Contains(SessionCapabilities.FileTransfer) || client.Data is null) throw new IOException("Current session file channel missing");
@@ -88,36 +89,61 @@ internal static class FileTransferSmoke
             }
             media = Task.Factory.StartNew(() =>
             {
+                try
+                {
                 using var decoder = new MediaDecoder(() => Interlocked.Exchange(ref keyFrameRequested, 1), preferHardware: false);
                 while (!running.IsCancellationRequested)
                 {
                     var frame = client.Video.Read(running.Token).GetAwaiter().GetResult();
                     if (decoder.Decode(frame) is null) continue;
                     Interlocked.Increment(ref frames);
+                    if (frame.VideoGeneration == 2) configuredVideo.TrySetResult();
                     if (client.Video.TransportName == "UDP") Interlocked.Increment(ref udpDecoded);
                 }
+                }
+                catch (Exception error) { configuredVideo.TrySetException(error); throw; }
             }, running.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
             control = Task.Run(async () =>
             {
-                long sequence = 1;
+                try
+                {
+                long sequence = 2;
                 while (true)
                 {
                     if (Interlocked.Exchange(ref keyFrameRequested, 0) != 0)
                         await Wire.Write(client.Control, new("keyframe-v2", ++sequence), running.Token);
                     var timer = Stopwatch.StartNew(); await Wire.Write(client.Control, new("ping-v2", ++sequence), running.Token);
                     var reply = await Wire.Read(client.Control, running.Token);
-                    while (reply.Kind == QuicRecoveryProtocol.OfferKind && autoRecovery)
+                    while (reply.Kind == "video-settings-state-v2" || reply.Kind == QuicRecoveryProtocol.OfferKind && autoRecovery)
                     {
-                        var result = await client.ProbeQuicRecovery(reply, running.Token);
-                        await Wire.Write(client.Control, result, running.Token);
+                        if (reply.Kind == "video-settings-state-v2")
+                        {
+                            if (configuredControl.Task.IsCompleted || reply != new Packet("video-settings-state-v2",VideoVersion:VideoSettingsProtocol.Version,VideoSettings:new(10,512_000,2)))
+                                throw new IOException("Unexpected mixed-transfer video settings state");
+                            configuredControl.TrySetResult();
+                        }
+                        else
+                        {
+                            var result = await client.ProbeQuicRecovery(reply, running.Token);
+                            await Wire.Write(client.Control, result, running.Token);
+                        }
                         reply = await Wire.Read(client.Control, running.Token);
                     }
                     if (reply.Kind != "pong-v2" || reply.Sequence != sequence) throw new IOException("Control failed during transfer");
                     rtt.Add(timer.Elapsed.TotalMilliseconds); await Task.Delay(25, running.Token);
                 }
+                }
+                catch (Exception error) { configuredControl.TrySetException(error); throw; }
             });
+            await Task.WhenAll(configuredVideo.Task, configuredControl.Task).WaitAsync(running.Token);
+            relay?.EnableShaping(budget);
+            if (budget is not null)
+            { mediaLink?.ShareDownstream(budget); fileLink?.ShareDownstream(budget); audioLink?.ShareDownstream(budget); }
+            Console.WriteLine("PASS mixed-transfer source configured at 512000 bit/s, 10 FPS before shared 524288 B/s shaping; fixture settings only");
             {
-                await using var files = new FileTransferClient(client.Data!, running.Token, maximumBytesPerSecond: 0);
+                // Give the active-upload assertion a real observation window.
+                // An unlimited loopback upload can finish between two frame/pong samples.
+                await using var files = new FileTransferClient(client.Data!, running.Token, maximumBytesPerSecond: 512 * 1024);
                 byte[] payload = new byte[(autoRecovery ? 5 : 2) * 1024 * 1024 + 17]; new Random(718).NextBytes(payload);
                 var pause = new TransferControl(); var paused = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); long reported = 0;
                 if (autoRecovery)
@@ -144,7 +170,11 @@ internal static class FileTransferSmoke
                     int controlBeforeUpload = rtt.Count;
                     pause.Paused = false; await uploading;
                     if (Volatile.Read(ref frames) <= beforeUpload || rtt.Count <= controlBeforeUpload)
-                        throw new IOException("Media or control stalled during active upload");
+                    {
+                        if (media.IsCompleted) await media;
+                        if (control.IsCompleted) await control;
+                        throw new IOException($"Media or control stalled during active upload: frames {beforeUpload}->{frames}, pongs {controlBeforeUpload}->{rtt.Count}");
+                    }
                 }
                 int beforeDownload = Volatile.Read(ref frames);
                 int udpBeforeDownload = Volatile.Read(ref udpDecoded);

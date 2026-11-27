@@ -12,7 +12,7 @@ internal static class TopologySmoke
         var reservation=new TcpListener(IPAddress.Loopback,0);reservation.Start();int port=((IPEndPoint)reservation.LocalEndpoint).Port;reservation.Stop();
         using var host=Process.Start(ChildProcess.Create(application,"--file-root",root,"127.0.0.1",port.ToString(),"test-topology"))??throw new IOException("Topology Host failed");
         using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(45));using var client=new SessionClient{RequestedDisplayVersion=2,RequestedFeatures=SessionCapabilities.All};
-        Task<string>? logs=null;Task? mediaReader=null;var frames=new ConcurrentDictionary<long,int>();var keyframes=new ConcurrentDictionary<long,bool>();
+        Task<string>? logs=null;Task? mediaReader=null,audioReader=null;var frames=new ConcurrentDictionary<long,int>();var keyframes=new ConcurrentDictionary<long,bool>();
         try
         {
             string pin=(await host.StandardOutput.ReadLineAsync(timeout.Token)??"").Split(": ")[1],token=(await host.StandardOutput.ReadLineAsync(timeout.Token)??"").Split(": ")[1];_=await host.StandardOutput.ReadLineAsync(timeout.Token);
@@ -20,6 +20,7 @@ internal static class TopologySmoke
             for(int i=0;i<1;i++)if(!(await host.StandardOutput.ReadLineAsync(timeout.Token)??"").Contains("APPROVE"))throw new IOException("Missing topology/file consent prompt");
             await host.StandardInput.WriteLineAsync("APPROVE");await host.StandardInput.FlushAsync();logs=host.StandardOutput.ReadToEndAsync(timeout.Token);await connecting;
             if(client.DisplayVersion!=2||client.Data is null||client.DisplayState is null)throw new IOException("Topology/file negotiation missing");
+            audioReader=Task.Run(async()=>{try{while(true)await AudioProtocol.Read(client.AudioData!,timeout.Token);}catch(Exception error)when(error is IOException or OperationCanceledException or ObjectDisposedException){} });
             await using var files=new FileTransferClient(client.Data,timeout.Token,supportsResume:client.SupportsFileResume);
             mediaReader=Task.Run(async()=>
             {
@@ -36,7 +37,7 @@ internal static class TopologySmoke
             }
             async Task<DisplaySessionInfo> State(string kind)
             {
-                while(true){var packet=await SessionControl.Read(client.Control,timeout.Token);if(packet.Kind=="pong-v2"){pongs++;continue;}if(packet.Kind!=kind||packet.DisplayState is null)throw new IOException("Unexpected display control response");return packet.DisplayState;}
+                while(true){var packet=await SessionControl.Read(client.Control,timeout.Token);if(packet.Kind=="pong-v2"){pongs++;continue;}if(packet.Kind!=kind||packet.DisplayState is null)throw new IOException("Unexpected display control response: "+packet.Kind);return packet.DisplayState;}
             }
             await Send(InputProtocol.Encode(new("move"),++sequence,1));await Pixels(1);await Send(new("display-ready-v2",++sequence,DisplayGeneration:1));await Send(InputProtocol.Encode(new("move"),++sequence,1));
             await Send(new("display-select-v2",++sequence,DisplayId:"test-left",DisplayGeneration:1));var selected=await State("display-state-v2");current=selected.Generation;
@@ -69,6 +70,6 @@ internal static class TopologySmoke
             if(host.ExitCode!=0||!text.Contains("native_live_resources=0")||text.Split("test_display_input generation=").Length!=7||text.Split("display_topology generation=").Length!=7)throw new IOException("Topology input barrier or cleanup failed");
             Console.WriteLine("PASS production Host/TLS/H264 topology: configuration ACK gates first media, no unavailable-generation media, six refreshes, only six confirmed-generation input callbacks, reused identity/new-screen union denied, heartbeat + scoped file listing survive headless states, zero native resources; synthetic surfaces/non-injecting callbacks only");
         }
-        finally{client.Dispose();if(!host.HasExited)host.Kill(true);await host.WaitForExitAsync();if(mediaReader is not null)try{await mediaReader;}catch(Exception){}if(logs is not null)try{await logs;}catch(Exception){}}
+        finally{client.Dispose();if(!host.HasExited)host.Kill(true);await host.WaitForExitAsync();if(mediaReader is not null)try{await mediaReader;}catch(Exception){}if(audioReader is not null)try{await audioReader;}catch(Exception){}if(logs is not null)try{await logs;}catch(Exception){}}
     }
 }

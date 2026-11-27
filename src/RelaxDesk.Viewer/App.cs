@@ -190,9 +190,13 @@ public sealed partial class ViewerWindow : Window
         }
         if (smoke?.CloseWhileStreaming == true && count >= smoke.Frames) Close();
     }
+    SessionTrafficSnapshot? lastChannelTraffic;
     async Task<AttemptResult> ConnectVideoAttempt(ConnectionTarget target, string? previousPin, CancellationToken lifetime, Action onConnected)
     {
         using var diagnosticScope=DiagnosticCorrelation.Begin();
+        lastChannelTraffic = null;
+        TrafficAccountingStream? controlTraffic = null, fileTraffic = null, clipboardTraffic = null, audioTraffic = null;
+        long videoReceivedBytes = 0;
         StopLocalPreview(); connectionCard.IsEnabled = false; disconnect.IsEnabled = true; connect.IsEnabled = false; using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime); session = cancellation; sequence = 0; ResetInputState();
         ++connectionGeneration; Exception? attemptError=null; bool established=false,restoreFullScreen=target.FullScreen; string[] retryFeatures=target.Features;long connectedAt=0;
         while (outgoing.Reader.TryRead(out _)) { }
@@ -340,9 +344,13 @@ public sealed partial class ViewerWindow : Window
             var permissionGate = new AccessGate(); permissionGate.Approve(connection.Features); sessionPermissions = permissionGate; inputVersion=connection.InputVersion;inputAuthorized=true;
             StartDisplaySession(connection);
             BeginVideoSettings(connection);
-            await StartFileSession(connection,cancellation.Token);
-            StartRichClipboard(connection,permissionGate,cancellation.Token);
-            StartAudio(connection,permissionGate,cancellation.Token);
+            controlTraffic = new(connection.Control, leaveOpen: true);
+            fileTraffic = new(connection.Data!);
+            clipboardTraffic = new(connection.ClipboardData!);
+            audioTraffic = connection.AudioData is null ? null : new(connection.AudioData);
+            await StartFileSession(connection,fileTraffic,cancellation.Token);
+            StartRichClipboard(connection,clipboardTraffic,permissionGate,cancellation.Token);
+            StartAudio(connection,audioTraffic,permissionGate,cancellation.Token);
             long initialCoalescedMoves = outgoing.CoalescedMoves;
             long initialDroppedPointerMoves = Interlocked.Read(ref droppedPointerMoves);
             BeginStatistics(()=>new(metrics.Snapshot(decoded.Dropped+Interlocked.Read(ref skipped),decoded.Depth),Volatile.Read(ref receivedFrames),Interlocked.Read(ref gpuFrames),Interlocked.Read(ref cpuFrames),Interlocked.Read(ref readbackBytes),Volatile.Read(ref rendererGenerations),connection.Video.TransportName,connection.VideoFallback,connection.ReadVideoNetworkStatistics(),connection.HostVideoQueue,outgoing.Depth,outgoing.CoalescedMoves-initialCoalescedMoves,connection.VideoTransportRevision,Interlocked.Read(ref droppedPointerMoves)-initialDroppedPointerMoves,Volatile.Read(ref viewportVideoWidth),Volatile.Read(ref viewportVideoHeight)),
@@ -380,7 +388,6 @@ public sealed partial class ViewerWindow : Window
             }
         }
 
-            var controlTraffic = new TrafficAccountingStream(connection.Control, leaveOpen: true);
             void ObserveQueue(Packet packet, double elapsed) => metrics.Add(packet.Kind is "input" or "input-v2" ? "input_queue" : "control_queue", elapsed);
             var writer = Task.Run(() => Observe(async () => { await foreach (var packet in outgoing.Reader.ReadAllAsync(cancellation.Token, ObserveQueue)) await Wire.Write(controlTraffic, packet, cancellation.Token); }, "control-write", "control-write"));
             Task recoveryProbe = Task.CompletedTask;
@@ -524,7 +531,9 @@ public sealed partial class ViewerWindow : Window
                         var frame = pendingRead.GetAwaiter().GetResult(); ioNotification?.GetAwaiter().GetResult(); pendingRead = null; ioNotification = null;
                         string? transport = autoRecoveryTest ? connection.Video.TransportName : null;
                         stage = "media-validate";
-                        Interlocked.Increment(ref receivedFrames); metrics.Traffic(MediaProtocol.HeaderSize + frame.Metadata.Length + frame.Data.Length);
+                        Interlocked.Increment(ref receivedFrames);
+                        int frameBytes = MediaProtocol.HeaderSize + frame.Metadata.Length + frame.Data.Length;
+                        Interlocked.Add(ref videoReceivedBytes, frameBytes); metrics.Traffic(frameBytes);
                         metrics.Add("capture",frame.CaptureMicroseconds/1000d);metrics.Add("encode",frame.EncodeMicroseconds/1000d);
                         if(displaySession is not null&&!displaySession.AcceptFrame(frame))continue;
                         if(!AcceptVideoFrame(frame)){Interlocked.Increment(ref skipped);continue;}
@@ -609,9 +618,13 @@ public sealed partial class ViewerWindow : Window
             await EndRichClipboard();
             await EndAudio();
             await EndFileSession();
+            lastChannelTraffic = new(controlTraffic?.Snapshot() ?? new(0, 0), Interlocked.Read(ref videoReceivedBytes),
+                fileTraffic?.Snapshot() ?? new(0, 0), clipboardTraffic?.Snapshot() ?? new(0, 0), audioTraffic?.Snapshot() ?? new(0, 0));
+            if (established && smoke is null) ViewerSessionLog.Record("channel_traffic " + lastChannelTraffic.Report());
+            if (established && smoke is null && App.VerificationMode) Console.WriteLine("channel_traffic " + lastChannelTraffic.Report());
             gpuViewportActive=false;if (nativeView is not null) { videoPanel.Children.Remove(nativeView); nativeView.Dispose(); nativeView = null; }
             session = null; ShowConnectedView(false);
-            string report = $"renderer={(gpuFrames > 0 && cpuFrames == 0 ? "d3d11" : "cpu-or-fallback")} gpu_frames={gpuFrames} cpu_frames={cpuFrames} full_frame_readback_bytes={readbackBytes} received_frames={receivedFrames} resizes={resizeCount} renderer_generations={rendererGenerations} keyframe_requests={keyframeRequests} simulated_device_losses={simulatedLosses} idle_repaints={idleRepaints} hidden={hiddenPresents} occluded={occludedPresents} gpu_busy={busyPresents} file_tx_bytes={viewerFileTx} file_rx_bytes={viewerFileRx} audio_rx_bytes={viewerAudioRx} " + metrics.Report(decoded.Dropped + skipped, decoded.Depth);
+            string report = $"renderer={(gpuFrames > 0 && cpuFrames == 0 ? "d3d11" : "cpu-or-fallback")} gpu_frames={gpuFrames} cpu_frames={cpuFrames} full_frame_readback_bytes={readbackBytes} received_frames={receivedFrames} resizes={resizeCount} renderer_generations={rendererGenerations} keyframe_requests={keyframeRequests} simulated_device_losses={simulatedLosses} idle_repaints={idleRepaints} hidden={hiddenPresents} occluded={occludedPresents} gpu_busy={busyPresents} file_tx_bytes={viewerFileTx} file_rx_bytes={viewerFileRx} audio_rx_bytes={viewerAudioRx} " + lastChannelTraffic.Report() + " " + metrics.Report(decoded.Dropped + skipped, decoded.Depth);
             if (smoke is not null && !smoke.ReconnectTest)
             {
                 var resources = GraphicsDiagnostics.Resources();

@@ -53,3 +53,22 @@ The text report preserves its existing keys for script compatibility and adds wo
 
 Connection-bar drag, pin, dwell and full-monitor coverage were subsequently
 validated in [the full-screen follow-up](../benchmarks/2026-11-26-fullscreen-bar-validation.md).
+
+## End-of-attempt channel accounting
+
+The Viewer final report and diagnostic `channel_traffic` record now include
+`control_rx_bytes`, `control_tx_bytes`, `video_rx_bytes`,
+`file_channel_rx_bytes`, `file_channel_tx_bytes`, `clipboard_rx_bytes`,
+`clipboard_tx_bytes`, `audio_channel_rx_bytes`, and `audio_channel_tx_bytes`.
+File, clipboard and audio totals are sampled after their workers stop, so an
+independent component shutdown does not erase its count. Reconnect starts a new
+attempt. Absent or unused channel directions report zero.
+
+Stream totals count successful application reads/writes including protocol
+framing after authentication/attachment, excluding the connection handshake,
+TLS/QUIC/IP overhead and unsuccessful/partial writes. Video counts complete
+media envelopes received by the Viewer across TCP/UDP/Auto, excluding lost UDP
+fragments, recovery probes, datagram heartbeats and QUIC retransmission. These
+are not NIC counters. Historical `file_tx_bytes`, `file_rx_bytes` and
+`audio_rx_bytes` remain payload-only fields; do not sum them with channel totals.
+The live media-rate display retains its existing video-only meaning.

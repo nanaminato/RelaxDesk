@@ -11,11 +11,11 @@ public sealed partial class ViewerWindow
     AudioStreamSession? audioSession;
     internal Func<IAudioEndpoint>? AudioSinkForVerification{get;set;}
     double audioVolume=1;bool audioMuted;
-    void StartAudio(SessionClient connection,AccessGate gate,CancellationToken ct)
+    void StartAudio(SessionClient connection,Stream? traffic,AccessGate gate,CancellationToken ct)
     {
         if(!gate.Allows(SessionCapabilities.SystemAudio))return;
         if(connection.AudioData is null){gate.RevokeFeature(SessionCapabilities.SystemAudio);if(connection.AudioFailure is{} reason)ViewerSessionLog.Record("audio-attach-disabled",new IOException(reason));return;}
-        var sound=new AudioStreamSession(connection.AudioData,false,AudioSinkForVerification??(()=>new WindowsAudio(false)),ct,message=>ViewerSessionLog.Record("audio-disabled",new IOException(message)),synchronizeVideo:true);
+        var sound=new AudioStreamSession(traffic!,false,AudioSinkForVerification??(()=>new WindowsAudio(false)),ct,message=>ViewerSessionLog.Record("audio-disabled",new IOException(message)),synchronizeVideo:true);
         audioSession=sound;sound.SetVolume(audioVolume,audioMuted);
         _=sound.Completion.ContinueWith(_=>Dispatcher.BeginInvoke(()=>
         {

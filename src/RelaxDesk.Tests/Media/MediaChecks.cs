@@ -131,6 +131,14 @@ internal static class MediaChecks
         // Subsequent video frame invalidates older compensation base.
         receiver.OnVideoFrameDecoded(11, 1, 2, width, height);
         Check(receiver.TryApply(decodedComp with { RegionVersion = 3 }, receiverBgra) == RegionApplyOutcome.RejectedBaseMismatch);
+        Check(!new RegionMove(int.MaxValue, 0, new(0, 0, 64, 64)).IsValid(width, height));
+        Check(receiver.TryApply(decodedComp with { Moves = [new(int.MaxValue, 0, new(0, 0, 64, 64))] }, receiverBgra) == RegionApplyOutcome.RejectedBoundsOrLimits);
+        // Individually valid moves must also fit the aggregate staging budget.
+        var excessiveMoves = decodedComp with { SurfaceWidth = 1920, SurfaceHeight = 1080,
+            Moves = [new(0, 0, new(0, 0, 1920, 1080))], Patches = [] };
+        try { RegionCompensationProtocol.Encode(excessiveMoves); throw new Exception("Unbounded move staging accepted"); }
+        catch (InvalidDataException) { count++; }
+        Check(receiverBgra.AsSpan().SequenceEqual(expectedAfterMove));
         return count;
     }
 }

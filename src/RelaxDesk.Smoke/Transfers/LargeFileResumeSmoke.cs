@@ -106,7 +106,8 @@ internal static class LargeFileResumeSmoke
     }
     sealed class Pair : IAsyncDisposable
     {
-        readonly SessionClient transport; readonly CancellationTokenSource stop; readonly Task control, media;
+        readonly SessionClient transport; readonly CancellationTokenSource stop; readonly Task control, media, audio;
+        Exception? workerFailure;
         readonly TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously); long replies;
         public Task Ready => ready.Task;
         public readonly FileTransferClient Files;
@@ -117,15 +118,18 @@ internal static class LargeFileResumeSmoke
             {
                 try
                 {
-                    long sequence = 0; while (true) { await Wire.Write(transport.Control, new("ping-v2", ++sequence), stop.Token); var response = await SessionControl.Read(transport.Control, stop.Token); if (response.Kind != "pong-v2" || response.Sequence != sequence) throw new IOException("Large-file control pong mismatch"); Interlocked.Increment(ref replies); pong(); await Task.Delay(1000, stop.Token); }
+                    long sequence = 0; while (true) { await Wire.Write(transport.Control, new("ping-v2", ++sequence), stop.Token); var response = await SessionControl.Read(transport.Control, stop.Token); if (response.Kind != "pong-v2" || response.Sequence != sequence) throw new IOException("Large-file control pong mismatch: " + response.Kind); Interlocked.Increment(ref replies); pong(); await Task.Delay(1000, stop.Token); }
                 }
-                catch (Exception e) when (e is IOException or OperationCanceledException or ObjectDisposedException) { }
+                catch (Exception e) when (e is IOException or OperationCanceledException or ObjectDisposedException) { if (!stop.IsCancellationRequested) Interlocked.CompareExchange(ref workerFailure, e, null); }
             });
-            media = Task.Run(async () => { try { while (true) { await MediaProtocol.Read(transport.Media, stop.Token); frame(); ready.TrySetResult(); } } catch (Exception e) when (e is IOException or OperationCanceledException or ObjectDisposedException) { ready.TrySetException(e); } });
+            media = Task.Run(async () => { try { while (true) { await transport.Video.Read(stop.Token); frame(); ready.TrySetResult(); } } catch (Exception e) when (e is IOException or OperationCanceledException or ObjectDisposedException) { if (!stop.IsCancellationRequested) Interlocked.CompareExchange(ref workerFailure, e, null); ready.TrySetException(e); } });
+            // The current profile includes audio. Consume it even though this
+            // fixture does not play samples, so its socket cannot back up.
+            audio = Task.Run(async () => { try { while (true) await AudioProtocol.Read(transport.AudioData!, stop.Token); } catch (Exception e) when (e is IOException or OperationCanceledException or ObjectDisposedException) { if (!stop.IsCancellationRequested) Interlocked.CompareExchange(ref workerFailure, e, null); } });
         }
         public async Task PongAfterTransfer(CancellationToken ct)
-        { long before = Volatile.Read(ref replies); using var wait = CancellationTokenSource.CreateLinkedTokenSource(ct); wait.CancelAfter(TimeSpan.FromSeconds(5)); while (Volatile.Read(ref replies) == before) await Task.Delay(20, wait.Token); if (control.IsCompleted || media.IsCompleted) throw new IOException("Control/media ended during large file IO"); }
+        { long before = Volatile.Read(ref replies); using var wait = CancellationTokenSource.CreateLinkedTokenSource(ct); wait.CancelAfter(TimeSpan.FromSeconds(5)); while (Volatile.Read(ref replies) == before) { if (Volatile.Read(ref workerFailure) is { } failure) throw new IOException("Large-file session worker failed", failure); await Task.Delay(20, wait.Token); } if (control.IsCompleted || media.IsCompleted || audio.IsCompleted) throw new IOException("Control/media/audio ended during large file IO", Volatile.Read(ref workerFailure)); }
         public void Cut() { stop.Cancel(); transport.Dispose(); }
-        public async ValueTask DisposeAsync() { Cut(); await Task.WhenAll(control, media); await Files.DisposeAsync(); stop.Dispose(); }
+        public async ValueTask DisposeAsync() { Cut(); await Task.WhenAll(control, media, audio); await Files.DisposeAsync(); stop.Dispose(); }
     }
 }

@@ -72,7 +72,7 @@ if (args.Length == 2 && args[1].StartsWith("--video-", StringComparison.Ordinal)
 if (args.Length == 2 && args[1] is "--reject-pin" or "--deny-v2" or "--reject-media") { await SecuritySmoke.Run(args[0], args[1]); return; }
 if (args is not [_, "--reject-token"]) throw new ArgumentException("Pass a Host path and a smoke test option");
 var reservation = new TcpListener(IPAddress.Loopback, 0); reservation.Start(); int port = ((IPEndPoint)reservation.LocalEndpoint).Port; reservation.Stop();
-var start = ChildProcess.Create(args[0], "127.0.0.1", port.ToString());
+var start = ChildProcess.Create(args[0], "127.0.0.1", port.ToString(), "test-hardware");
 using var host = Process.Start(start) ?? throw new Exception("Could not start host");
 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 try
@@ -85,12 +85,14 @@ try
     for (int attempt = 0; ; attempt++) { try { await client.ConnectAsync(IPAddress.Loopback, port, timeout.Token); break; } catch (SocketException) when (attempt < 20) { await Task.Delay(50, timeout.Token); } }
     using var tls = new SslStream(client.GetStream(), false, (_, cert, _, _) => cert?.GetCertHashString(HashAlgorithmName.SHA256) == fingerprint);
     await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = "RelaxDesk" }, timeout.Token);
-    await Wire.Write(tls, new Packet(FullControlProtocol.PinnedRequest, Text: "wrong-token"), timeout.Token);
+    await Wire.Write(tls, new Packet(FullControlProtocol.PinnedRequest, Text: "wrong-token", Capabilities: ["deflate"],
+        Features: SessionCapabilities.All, InputVersion: InputProtocol.Version, DisplayVersion: DisplayProtocol.TopologyVersion,
+        VideoVersion: VideoSettingsProtocol.Version), timeout.Token);
     try { await Wire.Read(tls, timeout.Token); throw new IOException("Wrong token accepted"); }
     catch (EndOfStreamException) { }
     await host.WaitForExitAsync(timeout.Token);
     if (host.ExitCode != 0) throw new IOException("Host crashed");
-    Console.WriteLine("PASS production host rejects wrong token before approval/capture");
+    Console.WriteLine("PASS loopback test Host rejects wrong token on an otherwise current profile before approval/capture");
 }
 catch { await host.WaitForExitAsync(timeout.Token); if (host.HasExited) { Console.Error.WriteLine(await host.StandardOutput.ReadToEndAsync()); Console.Error.WriteLine(await host.StandardError.ReadToEndAsync()); } throw; }
 finally { if (!host.HasExited) host.Kill(true); }

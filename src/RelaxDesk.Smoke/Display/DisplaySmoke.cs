@@ -10,7 +10,7 @@ internal static class DisplaySmoke
     public static async Task Run(string application)
     {
         var reservation=new TcpListener(IPAddress.Loopback,0);reservation.Start();int port=((IPEndPoint)reservation.LocalEndpoint).Port;reservation.Stop();
-        using var child=Process.Start(ChildProcess.Create(application,"--shell","--display","RelaxDesk-Missing-Display","127.0.0.1",port.ToString(),"dxgi"))??throw new IOException("Cannot launch Host");
+        using var child=Process.Start(ChildProcess.Create(application,"--shell","--display","RelaxDesk-Missing-Display","127.0.0.1",port.ToString(),"test-displays"))??throw new IOException("Cannot launch Host");
         using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(20));Task<string>? tail=null;
         try
         {
@@ -23,9 +23,9 @@ internal static class DisplaySmoke
             await child.StandardInput.WriteLineAsync("STOP");
             await child.StandardInput.FlushAsync();
             await child.WaitForExitAsync(timeout.Token);string output=await tail;
-            if(child.ExitCode!=0||!output.Contains("Selected display is no longer attached")||output.Contains("backend=")||output.Contains("capture_color")||output.Contains("media frames="))throw new IOException("Invalid screen did not fail before capture/media startup");
-            if(output.Contains("native-approval-request"))throw new IOException("Invalid screen opened a consent prompt");
-            Console.WriteLine("PASS production Host/TLS rejects missing selected display before consent and media startup");
+            if(child.ExitCode!=0||!output.Contains("Current display topology identity required")||output.Contains("backend=")||output.Contains("capture_color")||output.Contains("media frames="))throw new IOException("Invalid screen did not fail before capture/media startup: " + output);
+            if(output.Contains("approval-request"))throw new IOException("Invalid screen opened a consent prompt");
+            Console.WriteLine("PASS Host/TLS rejects a selected identity outside the synthetic catalog before consent and media startup; physical Windows display removal not tested");
         }
         finally
         {

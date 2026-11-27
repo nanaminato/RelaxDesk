@@ -19,14 +19,25 @@ internal static class FileProtocolChecks
         await using (var paced = new FileTransferClient(Stream.Null, default, 20 * 1024 * 1024))
         {
             Check(paced.EffectiveRateLimitBytesPerSecond == 20 * 1024 * 1024);
-            Check(FileTransferClient.LinkRateForVideoBitrate(128_000) == FileTransferClient.MinimumRateBytesPerSecond);
-            Check(FileTransferClient.LinkRateForVideoBitrate(512_000) == 16 * 1024);
+            Check(FileTransferClient.LinkRateForVideoBitrate(128_000) == 4_000);
+            Check(FileTransferClient.LinkRateForVideoBitrate(512_000) == 16_000);
             Check(FileTransferClient.LinkRateForVideoBitrate(8_000_000) == 250_000);
             paced.SetLinkRateCeiling(FileTransferClient.LinkRateForVideoBitrate(512_000));
-            Check(paced.EffectiveRateLimitBytesPerSecond == 16 * 1024);
+            Check(paced.EffectiveRateLimitBytesPerSecond == 16_000);
+            foreach (int bitrate in new[] { 100_000, 128_000, 256_000, 512_000, 800_000, 1_000_000, 4_000_000 })
+            {
+                long budget = FileTransferClient.LinkRateForVideoBitrate(bitrate);
+                Check(budget > 0 && budget * 32 <= bitrate);
+                paced.SetLinkRateCeiling(budget);
+                Check(paced.EffectiveRateLimitBytesPerSecond == budget);
+            }
+            paced.SetLinkRateCeiling(1);
+            Check(paced.EffectiveRateLimitBytesPerSecond == 1);
+            paced.SetLinkRateCeiling(30 * 1024 * 1024);
+            Check(paced.EffectiveRateLimitBytesPerSecond == 20 * 1024 * 1024);
             paced.SetLinkRateCeiling(0);
             Check(paced.EffectiveRateLimitBytesPerSecond == 20 * 1024 * 1024);
-            foreach (long badCeiling in new long[] { -1, 1, 16 * 1024 - 1, FileTransferClient.MaximumRateBytesPerSecond + 1 })
+            foreach (long badCeiling in new long[] { -1, FileTransferClient.MaximumRateBytesPerSecond + 1 })
             {
                 try { paced.SetLinkRateCeiling(badCeiling); throw new Exception("Invalid link rate ceiling accepted"); }
                 catch (ArgumentOutOfRangeException) { count++; }
@@ -41,6 +52,8 @@ internal static class FileProtocolChecks
             byte[] readBuf = new byte[3];
             Check(await accounting.ReadAsync(readBuf) == 3 && accounting.Read(readBuf.AsSpan()) == 3);
             Check(accounting.Snapshot() == new ChannelTrafficSnapshot(6, 6) && accounting.Snapshot().TotalBytes == 12);
+            Check(new SessionTrafficSnapshot(new(1, 2), 3, new(4, 5), new(6, 7), new(8, 9)).Report() ==
+                "control_rx_bytes=1 control_tx_bytes=2 video_rx_bytes=3 file_channel_rx_bytes=4 file_channel_tx_bytes=5 clipboard_rx_bytes=6 clipboard_tx_bytes=7 audio_channel_rx_bytes=8 audio_channel_tx_bytes=9");
         }
         long large = 4L * 1024 * 1024 * 1024 + 17;
         TransferLimits.ValidateChunk(large + 100, large, large, 100); count++;

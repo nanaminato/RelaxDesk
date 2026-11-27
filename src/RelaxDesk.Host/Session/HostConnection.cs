@@ -51,6 +51,10 @@ internal static class HostConnection
         }
         if (shell is null && hello.Kind != FullControlProtocol.Request) Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests a desktop session. Type APPROVE to allow this session:");
         string[] requestedFeatures = ValidateRequest(hello);
+        // Synthetic endpoints have a fixed catalog and must reject an invalid
+        // selected identity before consent, just as production checks its desktop.
+        if (synthetic && selectedDisplay is not null)
+            _ = new HostDisplaySession(null, selectedDisplay, hello.DisplayVersion);
         bool canVerifyDevice = hello.InputVersion == InputProtocol.Version && (shell is not null || synthetic);
         string? deviceFingerprint = canVerifyDevice && hello.DeviceKey is not null
             ? await VerifyDeviceIdentity(tls, cert, hello.DeviceKey, stop) : null;

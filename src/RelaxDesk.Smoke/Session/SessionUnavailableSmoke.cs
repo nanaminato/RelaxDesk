@@ -31,7 +31,7 @@ internal static class SessionUnavailableSmoke
             var connecting=client.Connect("127.0.0.1",port,pin,token,deadline.Token);
             if(!(await host.StandardOutput.ReadLineAsync(deadline.Token)??"").Contains("APPROVE"))throw new IOException("Consent prompt absent");
             await host.StandardInput.WriteLineAsync("APPROVE");await host.StandardInput.FlushAsync();logs=host.StandardOutput.ReadToEndAsync(deadline.Token);await connecting;
-            media=Task.Run(async()=>{try{while(true){_=await MediaProtocol.Read(client.Media,deadline.Token);Interlocked.Increment(ref frames);}}catch(EndOfStreamException){}catch(IOException){}},deadline.Token);
+            media=Task.Run(async()=>{try{while(true){_=await client.Video.Read(deadline.Token);Interlocked.Increment(ref frames);}}catch(EndOfStreamException){}catch(IOException){}},deadline.Token);
             if (physicalLock)
             {
                 while (Volatile.Read(ref frames) == 0) await Task.Delay(25, deadline.Token);

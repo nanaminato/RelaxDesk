@@ -181,6 +181,7 @@ count += await ClipboardChecks.Run();
 count += await ClipboardContentChecks.Run();
 count += await ClipboardFileChecks.Run();
 count += await FileProtocolChecks.Run();
+count += await FilePacingChecks.Run();
 count += await ConsentChecks.Run();
 count += await SessionAgentChecks.Run();
 count += RecoveryChecks.Run();
