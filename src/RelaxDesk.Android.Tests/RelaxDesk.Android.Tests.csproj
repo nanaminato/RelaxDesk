@@ -2,4 +2,5 @@
   <PropertyGroup><TargetFramework>net11.0</TargetFramework><OutputType>Exe</OutputType></PropertyGroup>
   <ItemGroup><ProjectReference Include="../RelaxDesk.Android.Media/RelaxDesk.Android.Media.csproj" /></ItemGroup>
   <ItemGroup><Compile Include="../RelaxDesk.Android/Security/ProviderDeviceKey.cs" Link="ProviderDeviceKey.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="../RelaxDesk.Android/Networking/ScreenOnlyAttachments.cs" Link="ScreenOnlyAttachments.cs" /></ItemGroup>
 </Project>

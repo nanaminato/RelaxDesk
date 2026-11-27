@@ -5,6 +5,7 @@ using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using RelaxDesk.Core;
+using RelaxDesk.Mobile;
 using RelaxDesk.Mobile.Media;
 
 // An isolated synthetic server, not a Windows Host or an Android runtime test.
@@ -16,7 +17,9 @@ internal static class SessionLoopbackTests
     internal static async Task<int> Run(string fixturePath)
     {
         using var fixture = File.OpenRead(fixturePath);
-        var firstFrame = await new TcpTlsVideoChannel(fixture, true, true).Read(default);
+        var recordedVideo = new TcpTlsVideoChannel(fixture, true, true);
+        var firstFrame = await recordedVideo.Read(default);
+        var secondFrame = await recordedVideo.Read(default);
         using var certificate = SessionCertificate.Create();
         using var otherCertificate = SessionCertificate.Create();
         string pin = certificate.GetCertHashString(HashAlgorithmName.SHA256);
@@ -29,7 +32,7 @@ internal static class SessionLoopbackTests
         }
 
         foreach (string mode in new[] { "ok", "confirm-first-pin", "wrong-pin", "decline-first-pin", "deny-approval", "unoffered-codec",
-            "wrong-clipboard-cert", "unexpected-frame-codec", "no-auto-takeover" })
+            "wrong-clipboard-cert", "unexpected-frame-codec", "no-auto-takeover", "screen-only" })
         {
             using var listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Start();
@@ -45,6 +48,7 @@ internal static class SessionLoopbackTests
                 {
                     Network = NetworkMode.Tcp,
                     H264Only = true,
+                    RequestFileResume = mode != "screen-only",
                     OpenDeviceKey = () =>
                     {
                         keyOpens++;
@@ -71,7 +75,7 @@ internal static class SessionLoopbackTests
                     rejected = e;
                 }
 
-                if (mode is "ok" or "confirm-first-pin" or "unexpected-frame-codec")
+                if (mode is "ok" or "confirm-first-pin" or "unexpected-frame-codec" or "screen-only")
                 {
                     Check(rejected is null, $"Valid password/device handshake: {rejected}");
                     Check(client.VerifiedFingerprint == pin && client.Capabilities is ["h264"] &&
@@ -80,13 +84,31 @@ internal static class SessionLoopbackTests
                         client.ClipboardData is not null && client.AudioData is not null, "All required v5 attachments");
                     var frame = await client.Video.Read(ct);
                     var gate = new AvcFrameGate();
-                    if (mode is "ok" or "confirm-first-pin")
+                    if (mode is "ok" or "confirm-first-pin" or "screen-only")
                         Check(frame.Data.SequenceEqual(firstFrame.Data) && gate.Accept(frame) == FrameAction.Reconfigure,
                             "Exact synthetic H.264 bootstrap through the Android gate");
                     else
                     {
                         try { _ = gate.Accept(frame); throw new InvalidOperationException("Unexpected codec reached decoder"); }
                         catch (InvalidDataException) { Check(true, "Android rejects an unexpected frame codec"); }
+                    }
+                    if (mode == "screen-only")
+                    {
+                        ScreenOnlyAttachments.DisableAfterBinding(client);
+                        foreach (string feature in SessionCapabilities.All)
+                        {
+                            var notice = await SessionControl.Read(client.Control, ct);
+                            Check(ScreenOnlyAttachments.IsUnavailableNotice(notice) && notice.Features is [var disabled] &&
+                                disabled == feature, "Optional component closure does not require reconnect");
+                        }
+
+                        var ping = new Packet("ping-v2", Sequence: 1);
+                        await Wire.Write(client.Control, ping, ct);
+                        Check(await SessionControl.Read(client.Control, ct) == new Packet("pong-v2", Sequence: 1),
+                            "Control still exchanges authenticated messages");
+                        var followingFrame = await client.Video.Read(ct);
+                        Check(followingFrame.Data.SequenceEqual(secondFrame.Data) && gate.Accept(followingFrame) == FrameAction.Decode,
+                            "Second frame arrives after closing optional streams");
                     }
                 }
                 else
@@ -102,11 +124,13 @@ internal static class SessionLoopbackTests
                 Check(keyOpens == (mode is "wrong-pin" or "decline-first-pin" ? 0 : 1), "No device key before confirmed pin");
                 Check(prompts == (mode is "confirm-first-pin" or "decline-first-pin" ? 1 : 0), "Only unpinned first contact prompts");
             }
-            finally
+            catch (Exception clientError)
             {
-                // Dispose the client first, so the server can verify EOF on negative paths.
-                await server;
+                try { await server; }
+                catch (Exception serverError) { throw new AggregateException(clientError, serverError); }
+                throw;
             }
+            await server;
 
             async Task Authenticate(SslStream tls, X509Certificate2 cert) =>
                 await tls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = cert }, ct);
@@ -153,6 +177,7 @@ internal static class SessionLoopbackTests
                 FullControlProtocol.RequireCurrent(request);
                 Check(request.Capabilities is ["h264"] && request.Network is null &&
                     request.QuicTicket is null && request.DeviceCredential is null, "H.264-only TCP offer");
+                if (mode == "screen-only") Check(!request.FileResume, "Unused transfer state not requested");
 
                 byte[] challenge = RandomNumberGenerator.GetBytes(32);
                 await Wire.Write(control, new(FullControlProtocol.DeviceChallenge, Data: challenge), ct);
@@ -211,6 +236,31 @@ internal static class SessionLoopbackTests
                     var frame = mode == "unexpected-frame-codec"
                         ? firstFrame with { Codec = MediaCodec.DeflateBgra, Data = [1] } : firstFrame;
                     await MediaProtocol.Write(channels[0], frame, ct);
+                    if (mode == "screen-only")
+                    {
+                        foreach (int i in new[] { 1, 3 })
+                            Check(await channels[i].ReadAsync(new byte[1], ct) == 0, "No file or audio payload written after binding");
+
+                        // Exercise the actual Core clipboard worker over TLS with
+                        // a provider that never accesses the platform clipboard.
+                        var grants = new AccessGate();
+                        grants.Approve(SessionCapabilities.All);
+                        bool receivedEof = false;
+                        await using (var clipboard = new ClipboardContentSession(channels[2], () => new NoClipboard(), grants, ct,
+                            message => receivedEof |= message.Contains("error_type=EndOfStreamException", StringComparison.Ordinal), receiveFiles: false))
+                        {
+                            await clipboard.Completion.WaitAsync(ct);
+                            Check(receivedEof, "Clipboard worker sees EOF, not a clipboard payload");
+                            Check(!ClipboardFormats.Granted(grants).Any && grants.Allows(SessionCapabilities.SystemAudio) &&
+                                grants.Allows(SessionCapabilities.FileTransfer), "Clipboard EOF revokes only clipboard grants");
+                        }
+                        foreach (string feature in SessionCapabilities.All)
+                            await Wire.Write(control, new("component-unavailable-v5", Features: [feature],
+                                Text: feature == SessionCapabilities.FileTransfer ? "transport" : null), ct);
+                        Check(await SessionControl.Read(control, ct) == new Packet("ping-v2", Sequence: 1), "Control remains open");
+                        await Wire.Write(control, new("pong-v2", Sequence: 1), ct);
+                        await MediaProtocol.Write(channels[0], secondFrame, ct);
+                    }
                 }
                 finally
                 {
@@ -219,7 +269,25 @@ internal static class SessionLoopbackTests
                 }
             }
         }
+        Check(!ScreenOnlyAttachments.IsUnavailableNotice(new("component-unavailable-v5", Features: ["unrecognized"])),
+            "Unknown component cannot be ignored");
+        Check(!ScreenOnlyAttachments.IsUnavailableNotice(new("component-unavailable-v5",
+            Features: [SessionCapabilities.SystemAudio], Data: [1])), "Arbitrary payload is not an availability notice");
+        Check(!ScreenOnlyAttachments.IsUnavailableNotice(new("component-unavailable-v5",
+            Features: [SessionCapabilities.SystemAudio], Text: "transport")), "Only file transfer has a transport reason");
         return checks;
+    }
+
+    sealed class NoClipboard : IContentClipboard
+    {
+        public bool TryRead(ClipboardFormats formats, out ClipboardContentSnapshot snapshot)
+        {
+            snapshot = new(0, null);
+            return true;
+        }
+        public bool TryWrite(ClipboardContent content, long expectedVersion, out long writtenVersion) =>
+            throw new InvalidOperationException("The probe must not offer clipboard content.");
+        public void Dispose() { }
     }
 
     static string NewTicket() => Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
