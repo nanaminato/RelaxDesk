@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
@@ -14,7 +15,7 @@ internal static class SessionLoopbackTests
     const string User = "loopback";
     const string Password = "generated-test-password";
 
-    internal static async Task<int> Run(string fixturePath)
+    internal static async Task<int> Run(string fixturePath, bool includeIdle)
     {
         using var fixture = File.OpenRead(fixturePath);
         var recordedVideo = new TcpTlsVideoChannel(fixture, true, true);
@@ -31,12 +32,17 @@ internal static class SessionLoopbackTests
             Interlocked.Increment(ref checks);
         }
 
-        foreach (string mode in new[] { "ok", "confirm-first-pin", "wrong-pin", "decline-first-pin", "deny-approval", "unoffered-codec",
-            "wrong-clipboard-cert", "unexpected-frame-codec", "no-auto-takeover", "screen-only" })
+        List<string> modes = ["ok", "confirm-first-pin", "wrong-pin", "decline-first-pin", "deny-approval", "unoffered-codec",
+            "wrong-clipboard-cert", "unexpected-frame-codec", "no-auto-takeover", "screen-only"];
+        if (includeIdle) modes.Add("idle-control");
+        foreach (string mode in modes)
         {
+            bool idle = mode == "idle-control";
+            bool screenOnly = idle || mode == "screen-only";
+            const int idlePings = 9;
             using var listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Start();
-            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(idle ? 65 : 12));
             var ct = deadline.Token;
             int port = ((IPEndPoint)listener.LocalEndpoint).Port;
 
@@ -48,7 +54,7 @@ internal static class SessionLoopbackTests
                 {
                     Network = NetworkMode.Tcp,
                     H264Only = true,
-                    RequestFileResume = mode != "screen-only",
+                    RequestFileResume = !screenOnly,
                     OpenDeviceKey = () =>
                     {
                         keyOpens++;
@@ -75,7 +81,7 @@ internal static class SessionLoopbackTests
                     rejected = e;
                 }
 
-                if (mode is "ok" or "confirm-first-pin" or "unexpected-frame-codec" or "screen-only")
+                if (screenOnly || mode is "ok" or "confirm-first-pin" or "unexpected-frame-codec")
                 {
                     Check(rejected is null, $"Valid password/device handshake: {rejected}");
                     Check(client.VerifiedFingerprint == pin && client.Capabilities is ["h264"] &&
@@ -84,7 +90,7 @@ internal static class SessionLoopbackTests
                         client.ClipboardData is not null && client.AudioData is not null, "All required v5 attachments");
                     var frame = await client.Video.Read(ct);
                     var gate = new AvcFrameGate();
-                    if (mode is "ok" or "confirm-first-pin" or "screen-only")
+                    if (screenOnly || mode is "ok" or "confirm-first-pin")
                         Check(frame.Data.SequenceEqual(firstFrame.Data) && gate.Accept(frame) == FrameAction.Reconfigure,
                             "Exact synthetic H.264 bootstrap through the Android gate");
                     else
@@ -92,7 +98,7 @@ internal static class SessionLoopbackTests
                         try { _ = gate.Accept(frame); throw new InvalidOperationException("Unexpected codec reached decoder"); }
                         catch (InvalidDataException) { Check(true, "Android rejects an unexpected frame codec"); }
                     }
-                    if (mode == "screen-only")
+                    if (screenOnly)
                     {
                         ScreenOnlyAttachments.DisableAfterBinding(client);
                         foreach (string feature in SessionCapabilities.All)
@@ -102,13 +108,47 @@ internal static class SessionLoopbackTests
                                 disabled == feature, "Optional component closure does not require reconnect");
                         }
 
-                        var ping = new Packet("ping-v2", Sequence: 1);
-                        await Wire.Write(client.Control, ping, ct);
-                        Check(await SessionControl.Read(client.Control, ct) == new Packet("pong-v2", Sequence: 1),
-                            "Control still exchanges authenticated messages");
-                        var followingFrame = await client.Video.Read(ct);
-                        Check(followingFrame.Data.SequenceEqual(secondFrame.Data) && gate.Accept(followingFrame) == FrameAction.Decode,
-                            "Second frame arrives after closing optional streams");
+                        if (idle)
+                        {
+                            using var foreground = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                            var quietMedia = client.Video.Read(foreground.Token);
+                            long sequence = 0;
+                            var heartbeat = ControlHeartbeat.Run(token =>
+                                Wire.Write(client.Control, new("ping-v2", Sequence: ++sequence), token), foreground.Token);
+                            var clock = Stopwatch.StartNew();
+                            try
+                            {
+                                for (long n = 1; n <= idlePings; n++)
+                                    Check(await SessionControl.Read(client.Control, ct) == new Packet("pong-v2", Sequence: n),
+                                        "Expected monotonically increasing pong during idle video");
+                                Check(clock.Elapsed > TimeSpan.FromSeconds(40) && !quietMedia.IsCompleted,
+                                    "Control survives over 40 seconds without a second media frame");
+                            }
+                            finally
+                            {
+                                foreground.Cancel();
+                                await ExpectForegroundCancellation(heartbeat);
+                                await ExpectForegroundCancellation(quietMedia);
+                            }
+                            Check(sequence == idlePings, "Cancellation stops heartbeats without a final write");
+
+                            async Task ExpectForegroundCancellation(Task task)
+                            {
+                                try { await task.WaitAsync(ct); }
+                                catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return; }
+                                throw new InvalidOperationException("Foreground worker completed without cancellation.");
+                            }
+                        }
+                        else
+                        {
+                            var ping = new Packet("ping-v2", Sequence: 1);
+                            await Wire.Write(client.Control, ping, ct);
+                            Check(await SessionControl.Read(client.Control, ct) == new Packet("pong-v2", Sequence: 1),
+                                "Control still exchanges authenticated messages");
+                            var followingFrame = await client.Video.Read(ct);
+                            Check(followingFrame.Data.SequenceEqual(secondFrame.Data) && gate.Accept(followingFrame) == FrameAction.Decode,
+                                "Second frame arrives after closing optional streams");
+                        }
                     }
                 }
                 else
@@ -177,7 +217,7 @@ internal static class SessionLoopbackTests
                 FullControlProtocol.RequireCurrent(request);
                 Check(request.Capabilities is ["h264"] && request.Network is null &&
                     request.QuicTicket is null && request.DeviceCredential is null, "H.264-only TCP offer");
-                if (mode == "screen-only") Check(!request.FileResume, "Unused transfer state not requested");
+                if (screenOnly) Check(!request.FileResume, "Unused transfer state not requested");
 
                 byte[] challenge = RandomNumberGenerator.GetBytes(32);
                 await Wire.Write(control, new(FullControlProtocol.DeviceChallenge, Data: challenge), ct);
@@ -236,7 +276,7 @@ internal static class SessionLoopbackTests
                     var frame = mode == "unexpected-frame-codec"
                         ? firstFrame with { Codec = MediaCodec.DeflateBgra, Data = [1] } : firstFrame;
                     await MediaProtocol.Write(channels[0], frame, ct);
-                    if (mode == "screen-only")
+                    if (screenOnly)
                     {
                         foreach (int i in new[] { 1, 3 })
                             Check(await channels[i].ReadAsync(new byte[1], ct) == 0, "No file or audio payload written after binding");
@@ -257,9 +297,16 @@ internal static class SessionLoopbackTests
                         foreach (string feature in SessionCapabilities.All)
                             await Wire.Write(control, new("component-unavailable-v5", Features: [feature],
                                 Text: feature == SessionCapabilities.FileTransfer ? "transport" : null), ct);
-                        Check(await SessionControl.Read(control, ct) == new Packet("ping-v2", Sequence: 1), "Control remains open");
-                        await Wire.Write(control, new("pong-v2", Sequence: 1), ct);
-                        await MediaProtocol.Write(channels[0], secondFrame, ct);
+                        for (long n = 1; n <= (idle ? idlePings : 1); n++)
+                        {
+                            var ping = await SessionControl.Read(control, ct);
+                            Check(ping == new Packet("ping-v2", Sequence: n) && grants.AcceptControl(ping), "Control remains open");
+                            await Wire.Write(control, new("pong-v2", Sequence: n), ct);
+                        }
+                        if (idle)
+                            Check(await control.ReadAsync(new byte[1], ct) == 0, "Foreground teardown closes control without an extra ping");
+                        else
+                            await MediaProtocol.Write(channels[0], secondFrame, ct);
                     }
                 }
                 finally

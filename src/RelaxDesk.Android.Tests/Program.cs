@@ -54,7 +54,9 @@ Check(wireGate.Accept(await channel.Read(default)) == FrameAction.Reconfigure, "
 Check(wireGate.Accept(await channel.Read(default)) == FrameAction.Decode, "Core wire -> delta");
 Check(stream.Position == stream.Length, "Exact frame boundaries");
 
-if (args is [var file])
+if (args is not ([] or [_] or [_, "--idle"]))
+    throw new ArgumentException("Usage: RelaxDesk.Android.Tests [probe.rdm2 [--idle]]");
+if (args is [var file, ..])
 {
     using var fixture = File.OpenRead(file);
     var reader = new TcpTlsVideoChannel(fixture, true, true);
@@ -70,5 +72,5 @@ if (args is [var file])
 }
 Console.WriteLine($"Android media contracts: {checks}");
 Console.WriteLine($"Android device proof contracts: {DeviceProofTests.Run()}");
-if (args is [var fixturePath])
-    Console.WriteLine($"Android pinned TLS loopback contracts: {await SessionLoopbackTests.Run(fixturePath)}");
+if (args is [var fixturePath, ..])
+    Console.WriteLine($"Android pinned TLS loopback contracts: {await SessionLoopbackTests.Run(fixturePath, includeIdle: args.Length == 2)}");
