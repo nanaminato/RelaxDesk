@@ -1,0 +1,125 @@
+name: RelaxDesk session admission preview
+on:
+  push:
+    branches: [release/session-admission-preview-1]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: session-admission-preview-1
+  cancel-in-progress: false
+
+jobs:
+  build-windows:
+    if: github.repository == 'nanaminato/RelaxDesk' && github.ref == 'refs/heads/release/session-admission-preview-1'
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+        with:
+          dotnet-version: 11.0.100
+      - name: Run protocol and TLS tests
+        shell: pwsh
+        run: dotnet run --project src/RelaxDesk.Tests -c Release
+      - name: Obtain pinned Inno compiler
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tool = Join-Path $env:RUNNER_TEMP 'inno-7.1.1.exe'
+          $inno = Join-Path $env:RUNNER_TEMP 'inno-7.1.1'
+          $url = 'https://github.com/jrsoftware/issrc/releases/download/is-7_1_1/innosetup-7.1.1-x64.exe'
+          Invoke-WebRequest $url -OutFile $tool
+          if ((Get-FileHash -Algorithm SHA256 $tool).Hash -cne '8A5A6711C3766A6E5FB74F280BA0E3551E719CE94538D901FDBD1F8F9920B3F0') {
+            throw 'Inno download SHA-256 mismatch'
+          }
+          $signature = Get-AuthenticodeSignature -LiteralPath $tool
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Pyrsys B.V.') {
+            throw 'Inno download signature mismatch'
+          }
+          $setup = Start-Process -FilePath $tool -ArgumentList @('/PORTABLE=1','/CURRENTUSER','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/DIR="'+$inno+'"')) -PassThru -Wait
+          if ($setup.ExitCode -ne 0) { throw 'Inno compiler setup failed' }
+          "RELAXDESK_INNO=$inno" >> $env:GITHUB_ENV
+      - name: Build both installers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/package-roles.ps1 -OutputDirectory 'build/preview-roles'
+          ./scripts/package-exe-installers.ps1 -RoleDirectory 'build/preview-roles' -CompilerDirectory $env:RELAXDESK_INNO -OutputDirectory 'build/preview-installers'
+      - name: Verify installer lifecycle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/test-exe-installers.ps1 -InstallerDirectory 'build/preview-installers' -OutputDirectory 'build/preview-installer-test' -RunUserIntegration -SkipMachineServicePreview
+      - name: Collect verified artifacts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $records = @(Get-Content build/preview-installers/installers.json -Raw | ConvertFrom-Json)
+          $result = Get-Content build/preview-installer-test/result.json -Raw | ConvertFrom-Json
+          if ($records.Count -ne 2 -or $result.status -ne 'PASS_ACTUAL_PER_USER_INSTALLER_LIFECYCLE_MACHINE_PREVIEW_SKIPPED') { throw 'Installer validation incomplete' }
+          New-Item -ItemType Directory build/preview-upload | Out-Null
+          foreach ($role in @('Host','Viewer')) {
+            $file = "RelaxDesk-$role-Setup-x64.exe"
+            $record = $records | Where-Object role -eq $role
+            $path = Join-Path 'build/preview-installers' $file
+            $digest = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+            if ($digest -cne $record.sha256 -or $record.application_revision -cne $env:GITHUB_SHA -or $record.recipe_revision -cne $env:GITHUB_SHA) { throw "Artifact mismatch: $role" }
+            Copy-Item $path build/preview-upload/
+            "$digest *$file" | Add-Content build/preview-upload/SHA256SUMS.txt -Encoding ascii
+          }
+          "Windows installer lifecycle: $($result.assertions) checks; machine-service preview skipped." >> $env:GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: relaxdesk-windows-x64-preview
+          path: build/preview-upload/*
+          if-no-files-found: error
+          compression-level: 0
+
+  publish:
+    needs: build-windows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: relaxdesk-windows-x64-preview
+          path: preview
+      - name: Stage, verify and publish the two installers
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cd preview
+          sha256sum --check SHA256SUMS.txt
+          tag=v0.4.2-preview.1
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release already exists. Will not overwrite it."
+            exit 1
+          fi
+          cat > notes.md <<NOTES
+          Windows x64 experimental preview from \`$GITHUB_SHA\`.
+
+          - Windows 11 Home 被控端：RelaxDesk-Host-Setup-x64.exe
+          - Windows Server / Windows 连接端：RelaxDesk-Viewer-Setup-x64.exe
+          - 两端请使用同一版本，连接端安装后可用 Win+R → rdesk。
+          - 包含登录限频、受信任设备凭证和显式单会话接管。
+          - 通过 Windows CI 当前用户安装、启动及卸载检查。未在真实多机上验证接管、键鼠释放或 Windows 系统服务。
+          - 安装包未做 Authenticode 签名。这是预览版，仅从本 Release 获取，可用 SHA256SUMS.txt 校验。
+          NOTES
+          gh release create "$tag" RelaxDesk-Host-Setup-x64.exe RelaxDesk-Viewer-Setup-x64.exe SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --title "RelaxDesk v0.4.2 Preview 1" --notes-file notes.md --draft --prerelease --latest=false
+          mkdir downloaded
+          gh release download "$tag" --dir downloaded
+          cmp SHA256SUMS.txt downloaded/SHA256SUMS.txt
+          (cd downloaded && sha256sum --check SHA256SUMS.txt)
+          gh release edit "$tag" --draft=false --prerelease --latest=false
+          gh release view "$tag" --json url,isDraft,isPrerelease,assets
