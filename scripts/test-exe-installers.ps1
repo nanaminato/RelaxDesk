@@ -196,7 +196,13 @@ try {
     Uninstall $viewerRole 'reject-running-viewer' $false
     Check ((Test-Path $viewerRole.key) -and !$launched.HasExited) 'Uninstaller terminated active Viewer'
     Uninstall $hostRole 'host-remove-while-viewer-running'
-    Until {!(Test-Path $hostRole.key) -and !(Test-Path (Join-Path $hostRole.root $hostRole.release))}
+    try { Until {!(Test-Path $hostRole.key) -and !(Test-Path (Join-Path $hostRole.root $hostRole.release))} }
+    catch {
+        Write-Host "Host uninstall remaining registration: $(Test-Path $hostRole.key)"
+        Get-ChildItem -LiteralPath $hostRole.root -Recurse -ErrorAction SilentlyContinue | Select-Object -First 20 -ExpandProperty FullName | Write-Host
+        Get-Content -LiteralPath (Join-Path $output 'host-remove-while-viewer-running.log') -Tail 30 -ErrorAction SilentlyContinue | Write-Host
+        throw
+    }
     Check ((Test-Path $viewerRole.key) -and (Test-Path $viewerRole.menu) -and (Test-Path -LiteralPath $aliasKey) -and !$launched.HasExited) 'Host uninstall affected Viewer'
     Check (!(Test-Path $hostRole.desktop) -and !(Test-Path $hostRole.menu) -and !(Test-Path $hostRole.registration) -and (Get-Content -LiteralPath $unknown -Raw) -eq 'retain unknown content') 'Host removal lost retained data or left owned integration'
     $null=$launched.CloseMainWindow();if(!$launched.WaitForExit(15000)){throw 'Owned test Viewer did not close'};$launched.Dispose();$launched=$null

@@ -418,15 +418,35 @@ begin
 end;
 
 procedure CurUninstallStepChanged(Step: TUninstallStep);
-var Root, Index: String;
+var Root, Index, Shortcut: String; I: Integer;
 begin
   if Step = usUninstall then begin
     Root := Canonical(ExpandConstant('{app}'));
     if not RegQueryStringValue(HKCU, Registration, 'Receipts', Index) or
        not VerifyReceipts(Root, Index, '') or
-       not OwnedShortcuts(Root, Index, '{#Release}') or
-       not PruneReleases(Root, Index, '{#Release}', False) then
-      RaiseException('无法清理旧版程序，已停止卸载。请关闭 RelaxDesk 后重试。');
-    PruneReleases(Root, Index, '{#Release}', True);
+       not OwnedShortcuts(Root, Index, '') or Running(Root) or
+       not PruneReleases(Root, Index, '', False) then
+      RaiseException('无法清理程序，已停止卸载。请关闭 RelaxDesk 后重试。');
+    // An overwritten Inno log may omit payload files reused on same-version
+    // reinstall. The verified receipt owns both current and older files.
+    PruneReleases(Root, Index, '', True);
+    for I := 0 to 1 do begin
+      Shortcut := ShortcutPath(I);
+      if not NoReparse(Shortcut) or (FileExists(Shortcut) and not DeleteFile(Shortcut)) then
+        RaiseException('无法移除已确认的快捷方式。');
+    end;
+#if Role == "Viewer"
+    if not OwnedViewerRunAlias(Root, Index) then
+      RaiseException('运行命令 rdesk 的注册已变化。');
+    if RegKeyExists(HKCU, '{#ViewerRunKey}') then begin
+      if not RegDeleteValue(HKCU, '{#ViewerRunKey}', '') then
+        RaiseException('无法清除 rdesk 的当前用户注册。');
+      RegDeleteKeyIfEmpty(HKCU, '{#ViewerRunKey}');
+    end;
+#endif
+    RegDeleteValue(HKCU, Registration, 'Shortcuts');
+    RegDeleteValue(HKCU, Registration, 'Receipts');
+    RegDeleteValue(HKCU, Registration, 'Root');
+    RegDeleteKeyIfEmpty(HKCU, Registration);
   end;
 end;
