@@ -96,6 +96,11 @@ try {
                 if(!$found){throw "Runtime notices missing: $($library.name)"}
             }
         }
+        # App Paths is registered under the executable's own name. The .NET
+        # apphost embeds the managed DLL name, so this copy opens the same Viewer.
+        if($role -eq 'Viewer'){
+            Copy-Item -LiteralPath (Join-Path $package 'Viewer/RelaxDesk.Viewer.exe') -Destination (Join-Path $package 'Viewer/rdesk.exe')
+        }
         $msquicNotices = Join-Path $package 'ThirdParty/MsQuic-2.5.12'
         [void][IO.Directory]::CreateDirectory($msquicNotices)
         Copy-Item -LiteralPath (Join-Path $root 'src/RelaxDesk.Native/third_party/msquic/LICENSE') -Destination $msquicNotices

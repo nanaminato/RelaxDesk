@@ -121,10 +121,11 @@ try {
         $registered=Get-ItemProperty -LiteralPath $role.key
         Check ($registered.DisplayVersion -eq $installers[0].package_version -and [IO.Path]::GetFullPath($registered.InstallLocation).TrimEnd('\') -ieq $role.root) 'Wrong uninstall identity/location/version'
         $expected=Join-Path (Join-Path $role.root $role.release) $role.entry
+        $expectedAlias=Join-Path (Split-Path $expected -Parent) 'rdesk.exe'
         if($role.name -eq 'Host'){
             Check (!(Test-Path -LiteralPath $aliasKey)) 'Host installer registered the Viewer alias'
         }else{
-            Check ((Get-Item -LiteralPath $aliasKey).GetValue('') -ieq $expected) 'Viewer Run alias points to the wrong EXE'
+            Check ((Get-Item -LiteralPath $aliasKey).GetValue('') -ieq $expectedAlias -and (Test-Path -LiteralPath $expectedAlias -PathType Leaf)) 'Viewer Run alias points to the wrong EXE'
         }
         foreach($path in @($role.desktop,$role.menu)){
             $target,$arguments=[InstallerLinkTest]::Read($path)
@@ -155,7 +156,7 @@ try {
         Install $role ($role.name+'-repeat-install') $role.root
         Check ((Get-ItemProperty -LiteralPath $role.registration).Receipts.Split(';').Count -eq 1) 'Repeated install duplicated receipt/version state'
         if($role.name -eq 'Viewer'){
-            Check ((Get-Item -LiteralPath $aliasKey).GetValue('') -ieq $expected) 'Viewer reinstall did not preserve the Run alias'
+            Check ((Get-Item -LiteralPath $aliasKey).GetValue('') -ieq $expectedAlias -and (Test-Path -LiteralPath $expectedAlias -PathType Leaf)) 'Viewer reinstall did not preserve the Run alias'
         }
     }
     Install $hostRole 'reject-second-install-root' (Join-Path $output 'second-host-root') $false
@@ -167,8 +168,8 @@ try {
     Check ((Get-Content -LiteralPath $restorePath -Raw) -eq 'operator changed this file' -and (Test-Path $viewerRole.key)) 'Modified file was overwritten/deleted'
     [IO.File]::WriteAllBytes($restorePath,$restoreBytes);$restorePath=$null;$restoreBytes=$null
     $unknown=Join-Path $hostRole.root 'operator-notes.txt';[IO.File]::WriteAllText($unknown,'retain unknown content')
-    $viewerExe=Join-Path (Join-Path $viewerRole.root $viewerRole.release) $viewerRole.entry
-    $info=[Diagnostics.ProcessStartInfo]::new('rdesk.exe');$info.UseShellExecute=$true;$info.WindowStyle='Minimized';$info.WorkingDirectory=$output
+    $viewerExe=Join-Path (Join-Path $viewerRole.root $viewerRole.release) 'Viewer/rdesk.exe'
+    $info=[Diagnostics.ProcessStartInfo]::new('rdesk.exe');$info.UseShellExecute=$true;$info.Verb='open';$info.WindowStyle='Minimized';$info.WorkingDirectory=$output
     $shellProcess=[Diagnostics.Process]::Start($info)
     if(!$shellProcess){throw 'Shell launch via rdesk.exe returned no process'}
     try {

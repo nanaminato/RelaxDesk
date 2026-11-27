@@ -1,5 +1,6 @@
 ; RelaxDesk-owned installer recipe. Inno Setup is an external build tool.
 #define ViewerRunKey "Software\Microsoft\Windows\CurrentVersion\App Paths\rdesk.exe"
+#define ViewerRunEntry "Viewer\rdesk.exe"
 [Setup]
 AppId=RelaxDesk.{#Role}
 AppName={#Title}
@@ -46,7 +47,7 @@ Root: HKCU; Subkey: "Software\RelaxDesk\Installations\{#Role}"; ValueType: strin
 Root: HKCU; Subkey: "Software\RelaxDesk\Installations\{#Role}"; ValueType: string; ValueName: "Shortcuts"; ValueData: ""; Flags: createvalueifdoesntexist uninsdeletevalue uninsdeletekeyifempty
 
 #if Role == "Viewer"
-Root: HKCU; Subkey: "{#ViewerRunKey}"; ValueType: string; ValueData: "{app}\{#Release}\{#Entry}"; Flags: uninsdeletevalue uninsdeletekeyifempty
+Root: HKCU; Subkey: "{#ViewerRunKey}"; ValueType: string; ValueData: "{app}\{#Release}\{#ViewerRunEntry}"; Flags: uninsdeletevalue uninsdeletekeyifempty
 #endif
 
 [Icons]
@@ -288,7 +289,8 @@ begin
   if not RegQueryStringValue(HKCU, '{#ViewerRunKey}', '', Target) then exit;
   while Index <> '' do begin
     Item := Token(Index, ';'); Release := Token(Item, '=');
-    if CompareText(Target, AddBackslash(Root) + Release + '\{#Entry}') = 0 then begin
+    if (CompareText(Target, AddBackslash(Root) + Release + '\{#ViewerRunEntry}') = 0) or
+       (CompareText(Target, AddBackslash(Root) + Release + '\{#Entry}') = 0) then begin
       Result := True; exit;
     end;
   end;
