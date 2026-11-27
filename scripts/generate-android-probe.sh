@@ -7,6 +7,7 @@ trap 'rm -f "$raw"' EXIT
 ffmpeg -hide_banner -loglevel error -f lavfi -i 'testsrc2=size=640x360:rate=24' \
     -frames:v 48 -c:v libx264 -threads 1 -profile:v main -pix_fmt yuv420p -preset ultrafast -tune zerolatency \
     -x264-params 'keyint=48:min-keyint=48:scenecut=0:cabac=1:aud=1:repeat-headers=1' -f h264 -y "$raw"
+mkdir -p src/RelaxDesk.Android/Assets
 python3 - "$raw" src/RelaxDesk.Android/Assets/probe.rdm2 <<'PY'
 import pathlib, re, struct, sys
 raw = pathlib.Path(sys.argv[1]).read_bytes()

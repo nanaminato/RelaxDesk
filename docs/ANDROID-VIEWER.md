@@ -35,9 +35,12 @@ A0→A1 先验证 Android Keystore 签名及 Core 的本地 TLS 互通，再接�
 ## 复现与测量
 
 ```sh
-# Linux: 完整 JDK 21（需要 javac/jar）、Android SDK 37.0、Build Tools 37.0.0
+# Linux: 完整 JDK 21（需要 javac/jar）、Android SDK 37.0、Build Tools 37.0.0、Platform Tools
 # .NET SDK 11.0.100 + Android workload；ffmpeg（libx264）、Python 3
 dotnet workload install android --skip-manifest-update
+dotnet workload config --update-mode
+dotnet workload --version
+dotnet workload list
 bash scripts/generate-android-probe.sh
 dotnet run --project src/RelaxDesk.Android.Tests -c Release -- src/RelaxDesk.Android/Assets/probe.rdm2
 dotnet build src/RelaxDesk.Android -c Debug -m:1 \
@@ -52,3 +55,17 @@ dotnet build src/RelaxDesk.Android -c Debug -m:1 \
 - ARM64 独立 Debug APK 构建 **0 错误、0 警告**；校验了调试签名、打包的托管程序集和素材字节，API 最低声明 29。此次工具链为 .NET Android workload `37.0.0-preview.6.59`；它只供分支试验，尚不能作为生产发布基础。托管程序集已嵌入，生成的 Debug 清单仍带运行时网络权限；应用未实现或启动任何网络功能。
 - ADB 没有连接设备；没有安装或运行 APK，没有 Windows Host 到 Android 的连接、真实硬件解码、输入或性能结果。首次 Android 运行需特别检查 Surface 重建（前后台、旋转、结束）是否等待过久。
 - 下一步：设备签名和严格指纹固定 TCP/TLS 垂直切片，与现有 Core 走合成 TLS 互通，覆盖错误 pin、设备证明、首次本机批准、接管不自动接受及取消清理。先确认实际 Android 工具链，再决定是否切换或补做 Kotlin 对照。
+
+### 干净检出和 16 KiB APK 静态检查
+
+在全新 Linux 环境重建，修复了首次生成素材时 Git 未保留空 `Assets` 目录的问题。确认构建 0 警告、0 错误。此次工具链是 SDK 11.0.100、Microsoft JDK 21.0.13.1+2-LTS、Android SDK 37.0 rev 2、Build Tools 37.0.0 和 Platform Tools 37.0.3。工作负载命令显示模式 `workload-set`，但版本为 `11.0.100-manifests.08e30c08`，实际来自 SDK 自带的 manifests；不是可传给 `--version` 的 workload-set 版本。Android manifest 为 `37.0.0-preview.6.59/11.0.100-preview.6`，未来更换工具链时重新核对这两条输出，而不是静默更新。见 [Microsoft workload 版本说明](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-workload-sets#check-the-update-mode-and-version)。
+
+```sh
+apk=src/RelaxDesk.Android/bin/Debug/net11.0-android37.0/android-arm64/com.relaxdesk.viewer.probe-Signed.apk
+"$ANDROID_HOME/build-tools/37.0.0/apksigner" verify "$apk"
+python3 scripts/check-android-apk-pages.py "$apk" "$ANDROID_HOME/build-tools/37.0.0/zipalign"
+```
+
+对重建包（SHA-256 `dc2e47fc4909b81618dcdc377a2551a9a92bc29b6e054b5256fb9995aaf985e6`）重新校验签名：通过。ZIP 对齐校验通过；包内 11 个 ARM64 原生库（含运行时）均为压缩条目，全部解包检查，33 个 ELF LOAD 段满足 16 KiB 对齐，11 个 RELRO 段通过。用本地合成的未对齐 ZIP 和 4 KiB ELF LOAD 两个反例确认程序会分别拒绝。**这不是 16 KiB 手机安装或启动结果**；后续用 `adb shell getconf PAGE_SIZE` 确认环境，再验证安装、严格页模式启动及解码。见 [Android 16 KiB 指南](https://developer.android.com/guide/practices/page-sizes)。
+
+A1 的 Android 17 真机验收还需检查直接连接局域网的 `ACCESS_LOCAL_NETWORK`：只在网络功能实现后声明、只在明确连接时请求，拒绝/撤销时不要拨号；获准后仍然先校验证书指纹，再走设备证明和 Host 审批。当前离线探针不请求此权限。[Android 局域网权限](https://developer.android.com/privacy-and-security/local-network-permission#android-17-enforcement)
