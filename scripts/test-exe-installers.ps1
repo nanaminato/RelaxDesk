@@ -16,6 +16,10 @@ function Run([string]$Name,[string]$Exe,[string[]]$Arguments,[bool]$Success=$tru
         # Never terminate a running installer transaction on observation timeout.
         if(!$process.WaitForExit(180000)){throw "Installer still running: $Name; retain process and fixture for inspection"}
         $steps.Add([pscustomobject]@{name=$Name;exit_code=$process.ExitCode})
+        if (($process.ExitCode -eq 0) -ne $Success) {
+            $log = Join-Path $output ($Name + '.log')
+            if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 20 | Write-Host }
+        }
         Check (($process.ExitCode -eq 0) -eq $Success) "$Name returned unexpected exit $($process.ExitCode)"
         Write-Host "$Name : PASS ($($process.ExitCode))"
     } finally {$process.Dispose()}
