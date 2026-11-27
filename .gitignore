@@ -40,3 +40,6 @@ Thumbs.db
 
 # Local .NET CLI home
 .dotnet/
+
+# Locally generated RelaxDesk Android probe data
+/src/RelaxDesk.Android/Assets/probe.rdm2

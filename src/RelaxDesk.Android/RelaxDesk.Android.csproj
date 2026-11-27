@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net11.0-android37.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <SupportedOSPlatformVersion>29</SupportedOSPlatformVersion>
+    <ApplicationId>com.relaxdesk.viewer.probe</ApplicationId>
+    <ApplicationTitle>RelaxDesk Media Probe</ApplicationTitle>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>0.1</ApplicationDisplayVersion>
+    <AndroidPackageFormats>apk</AndroidPackageFormats>
+    <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
+    <AndroidIncludeDebugSymbols>false</AndroidIncludeDebugSymbols>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../RelaxDesk.Android.Media/RelaxDesk.Android.Media.csproj" />
+  </ItemGroup>
+  <Target Name="RequireProbeAsset" BeforeTargets="PrepareForBuild" Condition="!Exists('Assets/probe.rdm2')">
+    <Error Text="Generate the synthetic probe asset with scripts/generate-android-probe.sh before building." />
+  </Target>
+</Project>
