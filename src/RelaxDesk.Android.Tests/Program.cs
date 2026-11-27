@@ -69,3 +69,4 @@ if (args is [var file])
     Check(count == 48, "Generated fixture frame count");
 }
 Console.WriteLine($"Android media contracts: {checks}");
+Console.WriteLine($"Android device proof contracts: {DeviceProofTests.Run()}");

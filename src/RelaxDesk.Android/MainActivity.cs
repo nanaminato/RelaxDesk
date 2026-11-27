@@ -5,7 +5,7 @@ using Android.Widget;
 
 namespace RelaxDesk.Mobile;
 
-// A local test tool, not a network client. No permissions or background work.
+// A local test tool, not a network client. No permission prompts or background service.
 [Activity(Label = "RelaxDesk Media Probe", MainLauncher = true, Exported = true)]
 public sealed class MainActivity : Activity, ISurfaceHolderCallback
 {
@@ -35,6 +35,27 @@ public sealed class MainActivity : Activity, ISurfaceHolderCallback
         play.Click += (_, _) => StartPlayback();
         root.AddView(status);
         root.AddView(play);
+        var keyProbe = new Button(this) { Text = "本地设备密钥自检" };
+        var keyStatus = new TextView(this);
+        keyProbe.Click += async (_, _) =>
+        {
+            keyProbe.Enabled = false;
+            keyStatus.Text = "正在验证 Android Keystore…";
+            string result;
+            try
+            {
+                await Task.Run(DeviceKeyProbe.Run);
+                result = "签名验证通过：同一密钥可重开，证书指纹变化时拒绝。";
+            }
+            catch (Exception e) { result = $"设备密钥自检未通过：{e.GetType().Name}"; }
+            if (!IsDestroyed)
+            {
+                keyStatus.Text = result;
+                keyProbe.Enabled = true;
+            }
+        };
+        root.AddView(keyProbe);
+        root.AddView(keyStatus);
         root.AddView(stage, new LinearLayout.LayoutParams(-1, 0, 1));
         SetContentView(root);
     }

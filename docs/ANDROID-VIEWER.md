@@ -69,3 +69,11 @@ python3 scripts/check-android-apk-pages.py "$apk" "$ANDROID_HOME/build-tools/37.
 对重建包（SHA-256 `dc2e47fc4909b81618dcdc377a2551a9a92bc29b6e054b5256fb9995aaf985e6`）重新校验签名：通过。ZIP 对齐校验通过；包内 11 个 ARM64 原生库（含运行时）均为压缩条目，全部解包检查，33 个 ELF LOAD 段满足 16 KiB 对齐，11 个 RELRO 段通过。用本地合成的未对齐 ZIP 和 4 KiB ELF LOAD 两个反例确认程序会分别拒绝。**这不是 16 KiB 手机安装或启动结果**；后续用 `adb shell getconf PAGE_SIZE` 确认环境，再验证安装、严格页模式启动及解码。见 [Android 16 KiB 指南](https://developer.android.com/guide/practices/page-sizes)。
 
 A1 的 Android 17 真机验收还需检查直接连接局域网的 `ACCESS_LOCAL_NETWORK`：只在网络功能实现后声明、只在明确连接时请求，拒绝/撤销时不要拨号；获准后仍然先校验证书指纹，再走设备证明和 Host 审批。当前离线探针不请求此权限。[Android 局域网权限](https://developer.android.com/privacy-and-security/local-network-permission#android-17-enforcement)
+
+### A1：设备证明离线自检
+
+沿用 Core 的证书绑定设备证明，不改 Host 或协议。在离线 APK 中按「本地设备密钥自检」，会在当前应用的 Android Keystore 中创建或重开同一把 P-256 测试密钥，使用平台 `SHA256withECDSA` 对 Core 提供的完整消息签名；只导出公开 SPKI。适配器严格解析平台返回的 DER 签名，补齐为协议规定的 64 字节 P1363。没有失败时自动换密钥、软件私钥回退、联网或收集设备 ID。这个测试别名仅用于探针，不代表已经决定正式版的密钥轮换、配对或生物认证策略。参考 [Android Keystore](https://developer.android.com/reference/android/security/keystore/KeyGenParameterSpec) 和 [RelaxKonOS 平台实现](https://github.com/nanaminato/RelaxKonOS/blob/9feaa76fa5b3c26e7f260c742e1bea0b05d3f86d/Client/RelaxKonOS.Client.Android/app/src/main/java/app/relaxkonos/mobile/security/OwnerDeviceKeys.kt#L62-L116)；两项目的签名输入和线格式不同。
+
+Linux 合约测试用 DER 签名替身，通过 Core 验证绑定正确的签名，并拒绝修改过的挑战、证书指纹、错误公钥及非规范 DER。设备侧还需实际按自检按钮，确认同进程重开成功、进程重启后仍能签名、清除测试应用数据后重新生成，然后再做受控 TLS 登录。自检不证明 TEE/StrongBox 硬件保护，不代表 Host 连接、凭证保存、首次批准或重连已经可用。
+
+本次 Linux 复验：Android 媒体检查 **74** 项、设备证明检查 **20** 项、既有 Core 检查 **13,947** 项通过。ARM64 Debug APK 构建 0 警告、0 错误；SHA-256 `cb6d63251e5e4920b7cc6d1eac48649a467c9487a87874f61b33e4d72a5a28c5`；APK v3 签名与 16 KiB 静态检查通过（11 库，33 LOAD、11 RELRO）。ADB 无设备，未安装或运行本次 APK，未验证实际 Keystore 签名、视频、Host 互通和性能。下一步是固定指纹的 TCP/TLS 回环验证，并在接入视频前核对 Core 的编解码能力声明与 Android 实际支持项。
