@@ -27,6 +27,48 @@ function Uninstall($Role,[string]$Name,[bool]$Success=$true){
     Run $Name (Join-Path $Role.root 'unins000.exe') @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/LOG='+(Join-Path $output ($Name+'.log')))) $Success
 }
 function Until([scriptblock]$Predicate){$watch=[Diagnostics.Stopwatch]::StartNew();while(!(& $Predicate)){if($watch.Elapsed.TotalSeconds -gt 30){throw 'Fixture state did not settle'};Start-Sleep -Milliseconds 100}}
+# Use the native Shell link reader. WScript.Shell in pwsh on the hosted
+# Windows runner can return an empty TargetPath for an installed link.
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+using System.Text;
+
+public static class InstallerLinkTest
+{
+    [ComImport, Guid("000214F9-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IShellLinkW
+    {
+        void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder path, int length, IntPtr fileData, uint flags);
+        void GetIDList(out IntPtr pidl);
+        void SetIDList(IntPtr pidl);
+        void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder text, int length);
+        void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string text);
+        void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder path, int length);
+        void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string path);
+        void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder text, int length);
+    }
+
+    public static string[] Read(string file)
+    {
+        var cls = Type.GetTypeFromCLSID(new Guid("00021401-0000-0000-C000-000000000046"), true);
+        object obj = Activator.CreateInstance(cls);
+        try
+        {
+            ((IPersistFile)obj).Load(file, 0); // STGM_READ; loading never edits the link.
+            var link = (IShellLinkW)obj;
+            var path = new StringBuilder(260);
+            var args = new StringBuilder(32768);
+            link.GetPath(path, path.Capacity, IntPtr.Zero, 4); // SLGP_RAWPATH
+            if (path.Length == 0) link.GetPath(path, path.Capacity, IntPtr.Zero, 0);
+            link.GetArguments(args, args.Capacity);
+            return new[] { path.ToString(), args.ToString() };
+        }
+        finally { Marshal.FinalReleaseComObject(obj); }
+    }
+}
+'@
 $aliasSubkey='Software\Microsoft\Windows\CurrentVersion\App Paths\rdesk.exe'
 $aliasKey='HKCU:\'+$aliasSubkey
 try {
@@ -80,18 +122,11 @@ try {
         }else{
             Check ((Get-Item -LiteralPath $aliasKey).GetValue('') -ieq $expected) 'Viewer Run alias points to the wrong EXE'
         }
-        $shell=New-Object -ComObject WScript.Shell
-        try {
-            foreach($path in @($role.desktop,$role.menu)){
-                $link=$shell.CreateShortcut($path)
-                try {
-                    $target=[string]$link.TargetPath
-                    $arguments=[string]$link.Arguments
-                    $resolved=if($target -and [IO.Path]::IsPathFullyQualified($target)) { [IO.Path]::GetFullPath($target) } else { '' }
-                    Check ($resolved -ieq $expected -and $arguments.Length -eq 0 -and (Test-Path -LiteralPath $resolved -PathType Leaf)) ("Shortcut does not launch the role EXE directly: {0}; target=[{1}]; expected=[{2}]; argument length={3}" -f $path,$target,$expected,$arguments.Length)
-                } finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($link) }
-            }
-        } finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) }
+        foreach($path in @($role.desktop,$role.menu)){
+            $target,$arguments=[InstallerLinkTest]::Read($path)
+            $resolved=if($target -and [IO.Path]::IsPathFullyQualified($target)) { [IO.Path]::GetFullPath($target) } else { '' }
+            Check ($resolved -ieq $expected -and $arguments.Length -eq 0 -and (Test-Path -LiteralPath $resolved -PathType Leaf)) ("Shortcut does not launch the role EXE directly: {0}; target=[{1}]; expected=[{2}]; argument length={3}" -f $path,$target,$expected,$arguments.Length)
+        }
         $payload=Join-Path $role.root $role.release
         $manifest=@(Get-Content -LiteralPath (Join-Path $payload 'SHA256SUMS.json') -Raw | ConvertFrom-Json)
         foreach($member in $manifest){if((Get-FileHash -LiteralPath (Join-Path $payload $member.path) -Algorithm SHA256).Hash -ine $member.sha256){throw 'Installed payload hash mismatch'}}
