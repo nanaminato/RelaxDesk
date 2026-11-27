@@ -81,7 +81,17 @@ try {
             Check ((Get-Item -LiteralPath $aliasKey).GetValue('') -ieq $expected) 'Viewer Run alias points to the wrong EXE'
         }
         $shell=New-Object -ComObject WScript.Shell
-        try{foreach($path in @($role.desktop,$role.menu)){$link=$shell.CreateShortcut($path);try{Check ($link.TargetPath -ieq $expected -and $link.Arguments -eq '') 'Shortcut does not launch the role EXE directly'}finally{[void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($link)}}}finally{[void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)}
+        try {
+            foreach($path in @($role.desktop,$role.menu)){
+                $link=$shell.CreateShortcut($path)
+                try {
+                    $target=[string]$link.TargetPath
+                    $arguments=[string]$link.Arguments
+                    $resolved=if($target -and [IO.Path]::IsPathFullyQualified($target)) { [IO.Path]::GetFullPath($target) } else { '' }
+                    Check ($resolved -ieq $expected -and $arguments.Length -eq 0 -and (Test-Path -LiteralPath $resolved -PathType Leaf)) ("Shortcut does not launch the role EXE directly: {0}; target=[{1}]; expected=[{2}]; argument length={3}" -f $path,$target,$expected,$arguments.Length)
+                } finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($link) }
+            }
+        } finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) }
         $payload=Join-Path $role.root $role.release
         $manifest=@(Get-Content -LiteralPath (Join-Path $payload 'SHA256SUMS.json') -Raw | ConvertFrom-Json)
         foreach($member in $manifest){if((Get-FileHash -LiteralPath (Join-Path $payload $member.path) -Algorithm SHA256).Hash -ine $member.sha256){throw 'Installed payload hash mismatch'}}
