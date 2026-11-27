@@ -1,11 +1,11 @@
-param([Parameter(Mandatory)][string]$InstallerDirectory,[Parameter(Mandatory)][string]$OutputDirectory,[switch]$RunUserIntegration,[switch]$SkipMachineServicePreview)
+param([Parameter(Mandatory)][string]$InstallerDirectory,[Parameter(Mandatory)][string]$OutputDirectory,[switch]$RunUserIntegration,[switch]$SkipMachineServicePreview,[switch]$AllowHostedRunAliasLookupFailure)
 $ErrorActionPreference='Stop'
 if(!$RunUserIntegration){throw 'Explicit -RunUserIntegration required: temporary current-user Apps entries, shortcuts and the Viewer Run alias will be exercised'}
 $repository=Split-Path $PSScriptRoot -Parent;$output=[IO.Path]::GetFullPath($OutputDirectory)
 if(!$output.StartsWith((Join-Path $repository 'build')+'\',[StringComparison]::OrdinalIgnoreCase) -or (Test-Path -LiteralPath $output)){throw 'Use a fresh workspace/build fixture'}
 [void][IO.Directory]::CreateDirectory($output)
 $installers=@(Get-Content -LiteralPath (Join-Path $InstallerDirectory 'installers.json') -Raw | ConvertFrom-Json)
-$checks=0;$steps=[Collections.Generic.List[object]]::new();$state='FAIL';$roles=@();$launched=$null;$restorePath=$null;$restoreBytes=$null
+$runAliasLookup='NOT_TESTED';$checks=0;$steps=[Collections.Generic.List[object]]::new();$state='FAIL';$roles=@();$launched=$null;$restorePath=$null;$restoreBytes=$null
 function Check([bool]$Value,[string]$Message){if(!$Value){throw $Message};$script:checks++}
 function Run([string]$Name,[string]$Exe,[string[]]$Arguments,[bool]$Success=$true){
     $info=[Diagnostics.ProcessStartInfo]::new($Exe);$info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.WindowStyle='Hidden'
@@ -170,7 +170,20 @@ try {
     $unknown=Join-Path $hostRole.root 'operator-notes.txt';[IO.File]::WriteAllText($unknown,'retain unknown content')
     $viewerExe=Join-Path (Join-Path $viewerRole.root $viewerRole.release) 'Viewer/rdesk.exe'
     $info=[Diagnostics.ProcessStartInfo]::new('rdesk.exe');$info.UseShellExecute=$true;$info.Verb='open';$info.WindowStyle='Minimized';$info.WorkingDirectory=$output
-    $shellProcess=[Diagnostics.Process]::Start($info)
+    try {
+        $shellProcess=[Diagnostics.Process]::Start($info)
+        $runAliasLookup='PASS_SHELL_EXECUTE'
+    } catch {
+        $cause=$_.Exception.GetBaseException()
+        if (!$AllowHostedRunAliasLookupFailure -or $env:GITHUB_ACTIONS -ne 'true' -or
+            $cause -isnot [ComponentModel.Win32Exception] -or $cause.NativeErrorCode -ne 2) { throw }
+        $runAliasLookup='FAILED_HOSTED_SHELL_FILE_NOT_FOUND'
+        Write-Warning 'Hosted Windows Shell did not resolve the registered short command. Verify the installed apphost and lifecycle by absolute path; no Win+R claim.'
+        $info=[Diagnostics.ProcessStartInfo]::new($viewerExe)
+        $info.UseShellExecute=$false
+        $info.WorkingDirectory=Split-Path $viewerExe -Parent
+        $shellProcess=[Diagnostics.Process]::Start($info)
+    }
     if(!$shellProcess){throw 'Shell launch via rdesk.exe returned no process'}
     try {
         if($shellProcess.MainModule.FileName -ine $viewerExe){throw 'Shell resolved rdesk.exe to a different application'}
@@ -196,6 +209,6 @@ try {
     if($launched){try{if(!$launched.HasExited){$null=$launched.CloseMainWindow();$null=$launched.WaitForExit(10000)}}finally{$launched.Dispose()}}
     if($restorePath -and $restoreBytes){[IO.File]::WriteAllBytes($restorePath,$restoreBytes)}
     # On failure, leave receipts/logs for inspection instead of forcing deletion.
-    [pscustomobject]@{status=$state;assertions=$checks;steps=$steps.ToArray();fixture=$output;real_scm_or_uac='NOT_TESTED';home_dual_pc='NOT_TESTED'} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $output 'result.json') -Encoding utf8
+    [pscustomobject]@{status=$state;assertions=$checks;steps=$steps.ToArray();fixture=$output;run_alias_lookup=$runAliasLookup;real_scm_or_uac='NOT_TESTED';home_dual_pc='NOT_TESTED'} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $output 'result.json') -Encoding utf8
 }
 Write-Host "PASS actual EXE installer lifecycle: $checks checks; $output/result.json"

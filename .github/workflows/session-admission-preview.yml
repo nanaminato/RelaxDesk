@@ -54,7 +54,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          ./scripts/test-exe-installers.ps1 -InstallerDirectory 'build/preview-installers' -OutputDirectory 'build/preview-installer-test' -RunUserIntegration -SkipMachineServicePreview
+          ./scripts/test-exe-installers.ps1 -InstallerDirectory 'build/preview-installers' -OutputDirectory 'build/preview-installer-test' -RunUserIntegration -SkipMachineServicePreview -AllowHostedRunAliasLookupFailure
       - name: Collect verified artifacts
         shell: pwsh
         run: |
@@ -72,6 +72,7 @@ jobs:
             Copy-Item $path build/preview-upload/
             "$digest *$file" | Add-Content build/preview-upload/SHA256SUMS.txt -Encoding ascii
           }
+          Set-Content build/preview-upload/validation.txt -Value "Checks: $($result.assertions); Win+R alias Shell lookup: $($result.run_alias_lookup); physical acceptance: NOT_TESTED."
           "Windows installer lifecycle: $($result.assertions) checks; machine-service preview skipped." >> $env:GITHUB_STEP_SUMMARY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -110,7 +111,8 @@ jobs:
 
           - Windows 11 Home 被控端：RelaxDesk-Host-Setup-x64.exe
           - Windows Server / Windows 连接端：RelaxDesk-Viewer-Setup-x64.exe
-          - 两端请使用同一版本，连接端安装后可用 Win+R → rdesk。
+          - 两端请使用同一版本。本预览版推荐从开始菜单或桌面快捷方式打开连接端。
+          - 短命令检查：$(cat validation.txt)。若显示 FAILED_HOSTED_SHELL_FILE_NOT_FOUND，Windows CI 未能通过短命令启动；请使用开始菜单。
           - 包含登录限频、受信任设备凭证和显式单会话接管。
           - 通过 Windows CI 当前用户安装、启动及卸载检查。未在真实多机上验证接管、键鼠释放或 Windows 系统服务。
           - 安装包未做 Authenticode 签名。这是预览版，仅从本 Release 获取，可用 SHA256SUMS.txt 校验。
