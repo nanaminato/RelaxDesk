@@ -49,22 +49,8 @@ internal static class HostConnection
             }
             else if (hello.Kind != FullControlProtocol.PinnedRequest || hello.Text is null || !CryptographicOperations.FixedTimeEquals(System.Text.Encoding.UTF8.GetBytes(hello.Text), System.Text.Encoding.UTF8.GetBytes(token))) throw new AuthenticationException("Pairing rejected");
         }
-        FullControlProtocol.RequireCurrent(hello);
         if (shell is null && hello.Kind != FullControlProtocol.Request) Console.WriteLine($"Viewer {client.Client.RemoteEndPoint} requests a desktop session. Type APPROVE to allow this session:");
-        if(hello.AudioTicket is not null||hello.ClipboardTicket is not null||hello.Input is not null||hello.InputVersion is not (0 or InputProtocol.Version))throw new AuthenticationException("Invalid input negotiation request");
-        if(!DisplayProtocol.Supported(hello.DisplayVersion)||hello.DisplayVersion!=0&&hello.InputVersion!=InputProtocol.Version||hello.DisplayState is not null||hello.DisplayId is not null||hello.DisplayGeneration!=0)throw new AuthenticationException("Invalid display negotiation request");
-        var requestedFeatures = SessionCapabilities.Validate(hello.Features);
-        if(!VideoSettingsProtocol.Supported(hello.VideoVersion)||hello.VideoSettings is not null)throw new AuthenticationException("Invalid video configuration request");
-        if(hello.FileScope is not null||hello.FileResume&&!requestedFeatures.Contains(SessionCapabilities.FileTransfer))throw new AuthenticationException("Invalid file resume request");
-        if (hello.QuicPort != 0 || hello.QuicTicket is not null || hello.QuicSend is not null ||
-            hello.Network is not (null or NetworkMode.Auto or NetworkMode.Tcp or NetworkMode.Udp))
-            throw new AuthenticationException("Invalid network mode request");
-        if (hello.QueryVideoQueue is not null || hello.VideoQueue is not null)
-            throw new AuthenticationException("Unexpected video queue statistics on session request");
-        if (hello.QuicRecovery is not null && (hello.QuicRecovery != true || hello.Network != NetworkMode.Auto))
-            throw new AuthenticationException("Invalid QUIC recovery capability");
-        if (hello.PointerBrotli is not null && hello.PointerBrotli != true)
-            throw new AuthenticationException("Invalid pointer compression request");
+        string[] requestedFeatures = ValidateRequest(hello);
         bool canVerifyDevice = hello.InputVersion == InputProtocol.Version && (shell is not null || synthetic);
         string? deviceFingerprint = canVerifyDevice && hello.DeviceKey is not null
             ? await VerifyDeviceIdentity(tls, cert, hello.DeviceKey, stop) : null;
@@ -89,9 +75,38 @@ internal static class HostConnection
             await Wire.Write(tls, new("denied-v2"), denied.Token);
             return;
         }
-        await using var elevated = synthetic && deviceFingerprint is not null && backend is ("test-admin-lifecycle" or "test-admin-worker-loss")
+        await RunApproved(listener, client, tls, identity, hello, backend, selectedFileRoot, shell, stop, fileResumes, selectedDisplay);
+    }
+
+    internal static string[] ValidateRequest(Packet hello)
+    {
+        FullControlProtocol.RequireCurrent(hello);
+        if(hello.AudioTicket is not null||hello.ClipboardTicket is not null||hello.Input is not null||hello.InputVersion is not (0 or InputProtocol.Version))throw new AuthenticationException("Invalid input negotiation request");
+        if(!DisplayProtocol.Supported(hello.DisplayVersion)||hello.DisplayVersion!=0&&hello.InputVersion!=InputProtocol.Version||hello.DisplayState is not null||hello.DisplayId is not null||hello.DisplayGeneration!=0)throw new AuthenticationException("Invalid display negotiation request");
+        var requestedFeatures = SessionCapabilities.Validate(hello.Features);
+        if(!VideoSettingsProtocol.Supported(hello.VideoVersion)||hello.VideoSettings is not null)throw new AuthenticationException("Invalid video configuration request");
+        if(hello.FileScope is not null||hello.FileResume&&!requestedFeatures.Contains(SessionCapabilities.FileTransfer))throw new AuthenticationException("Invalid file resume request");
+        if (hello.QuicPort != 0 || hello.QuicTicket is not null || hello.QuicSend is not null ||
+            hello.Network is not (null or NetworkMode.Auto or NetworkMode.Tcp or NetworkMode.Udp))
+            throw new AuthenticationException("Invalid network mode request");
+        if (hello.QueryVideoQueue is not null || hello.VideoQueue is not null)
+            throw new AuthenticationException("Unexpected video queue statistics on session request");
+        if (hello.QuicRecovery is not null && (hello.QuicRecovery != true || hello.Network != NetworkMode.Auto))
+            throw new AuthenticationException("Invalid QUIC recovery capability");
+        if (hello.PointerBrotli is not null && hello.PointerBrotli != true)
+            throw new AuthenticationException("Invalid pointer compression request");
+        return requestedFeatures;
+    }
+
+    internal static async Task RunApproved(TcpListener listener, TcpClient client, SslStream tls, HostMediaIdentity identity,
+        Packet hello, string backend, string? selectedFileRoot, ShellBridge.Session? shell, CancellationToken stop,
+        FileTransferResumeStore? fileResumes, string? selectedDisplay, AttachmentRouter? attachments = null,
+        SingleSessionAdmission.Lease? lease = null, SingleSessionAdmission? admission = null, string? credential = null)
+    {
+        bool synthetic = backend.StartsWith("test-", StringComparison.Ordinal);
+        await using var elevated = synthetic && hello.DeviceKey is not null && backend is ("test-admin-lifecycle" or "test-admin-worker-loss")
                 ? await AdminInputFixture.Start(backend == "test-admin-worker-loss", stop) : null;
-        if (shell is not null) ShellBridge.Emit("approved", sessionId: shell.Id);
+        if (shell is not null && attachments is null) ShellBridge.Emit("approved", sessionId: shell.Id);
         if(selectedFileRoot is null)
         {
             selectedFileRoot=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RelaxDesk","Transfers");
@@ -99,10 +114,10 @@ internal static class HostConnection
         }
         var availableFeatures=SessionCapabilities.All;
         await VideoHostSession.Run(listener, client, tls, identity, hello, backend, stop,
-            availableFeatures, selectedFileRoot,fileResumes,selectedDisplay,elevated,shell?.Id);
+            availableFeatures, selectedFileRoot,fileResumes,selectedDisplay,elevated,shell?.Id,attachments,lease,admission,credential);
     }
 
-    static async Task<string> VerifyDeviceIdentity(SslStream tls, X509Certificate2 certificate, string publicKey, CancellationToken stop)
+    internal static async Task<string> VerifyDeviceIdentity(SslStream tls, X509Certificate2 certificate, string publicKey, CancellationToken stop)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop);
         deadline.CancelAfter(TimeSpan.FromSeconds(5));
@@ -121,7 +136,7 @@ internal static class HostConnection
         { throw new AuthenticationException("Invalid device credentials", error); }
     }
 
-    static async Task<string?> RequestConsent(TcpClient client, ShellBridge.Session? shell, string[] features, bool fullControl,
+    internal static async Task<string?> RequestConsent(TcpClient client, ShellBridge.Session? shell, string[] features, bool fullControl,
         string? deviceFingerprint, CancellationToken stop, bool passwordLogin = false, bool reconnectOnly = false)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop);

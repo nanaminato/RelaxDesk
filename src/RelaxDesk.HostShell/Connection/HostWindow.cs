@@ -275,7 +275,8 @@ internal sealed partial class HostWindow:Window
         string? id = displayedSessionId;
         if (id is null) return;
         allow.IsEnabled = deny.IsEnabled = false;
-        if (accepted && passwordLoginRequest && activeDeviceFingerprint is { } fingerprint && !KnownDevice(fingerprint))
+        bool newDevice = accepted && passwordLoginRequest && activeDeviceFingerprint is { } device && !KnownDevice(device);
+        if (newDevice && activeDeviceFingerprint is { } fingerprint)
         {
             try
             {
@@ -286,7 +287,7 @@ internal sealed partial class HostWindow:Window
             if (displayedSessionId != id || revokedDuringRun.Contains(fingerprint)) return;
         }
         activeInput = accepted;
-        await Host.Decide(accepted,id);
+        await Host.Decide(accepted,id,newDevice);
         if (displayedSessionId != id) return;
         CloseRequest();
         if (CaptureDeviceTrust(accepted) is { } remember) await SaveDeviceTrust(remember);
@@ -357,6 +358,10 @@ internal sealed partial class HostWindow:Window
                     LocalizedText.Bind(state,"Text","Ui.HostWindow.Text402");LocalizedText.Bind(detail,"Text","Ui.HostWindow.Text474");
                     OpenRequest(displayedSessionId);
                 }
+                break;
+            case "admission-input-cleanup-failed":
+                LocalizedText.Bind(state,"Text","Admission.HostCleanupFailed");
+                LocalizedText.Bind(detail,"Text","Admission.HostCleanupAction");
                 break;
             case "admin-starting":
                 adminStartupNotice = null;

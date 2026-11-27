@@ -1,3 +1,4 @@
+using RelaxDesk.Windows;
 using RelaxDesk.SharedUI;
 using RelaxDesk.Core.Localization;
 using System.IO;
@@ -100,6 +101,7 @@ internal sealed partial class HostWindow
         forgetDevice.IsEnabled = false;
         try
         {
+            await Host.RevokeDevice(fingerprint);
             if (fingerprint == activeDeviceFingerprint && displayedSessionId is { } active)
             {
                 rememberDevice.IsChecked = false;

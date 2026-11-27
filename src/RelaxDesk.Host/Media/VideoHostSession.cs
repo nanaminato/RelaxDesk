@@ -25,7 +25,8 @@ internal static class VideoHostSession
         public TaskCompletionSource<Packet> Result { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
     public static async Task Run(TcpListener listener, TcpClient controlSocket, SslStream control, HostMediaIdentity identity,
-        Packet hello, string backend, CancellationToken stop, string[]? grantedFeatures = null, string? selectedFileRoot = null, FileTransferResumeStore? fileResumes=null,string? selectedDisplay=null,AdminInputConnection? elevated=null,string? shellSessionId=null)
+        Packet hello, string backend, CancellationToken stop, string[]? grantedFeatures = null, string? selectedFileRoot = null, FileTransferResumeStore? fileResumes=null,string? selectedDisplay=null,AdminInputConnection? elevated=null,string? shellSessionId=null, AttachmentRouter? attachments=null,
+        SingleSessionAdmission.Lease? lease=null, SingleSessionAdmission? admission=null, string? credential=null)
     {
         var certificate = identity.Certificate;
         string[] capabilities = (hello.Capabilities ?? []).Intersect(["h264", "deflate"]).ToArray();
@@ -61,7 +62,27 @@ internal static class VideoHostSession
         var dataTicket = fileRoot is null ? null : new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15));
         var clipboardTicket=SessionCapabilities.RichClipboard(features)?new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15)):null;
         var audioTicket=features.Contains(SessionCapabilities.SystemAudio)?new SessionTicket(DateTimeOffset.UtcNow.AddSeconds(15)):null;
-        await Wire.Write(control, new Packet(FullControlProtocol.Approved, Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features, DataTicket: dataTicket?.Value,FileResume:resumeFiles,FileScope:fileScope,InputVersion:hello.InputVersion,ClipboardTicket:clipboardTicket?.Value,DisplayVersion:displayVersion,DisplayState:displays?.Switch.Snapshot,AudioTicket:audioTicket?.Value,VideoVersion:video is null?0:VideoSettingsProtocol.Version,VideoSettings:video?.Current, QuicPort:datagrams?.Port ?? 0, QuicTicket:quicTicket?.Value, QuicRecovery: hello.QuicRecovery), stop);
+        using var mediaSlot = attachments?.Register("media-v2", ticket);
+        using var dataSlot = dataTicket is null ? null : attachments?.Register("data-v2", dataTicket);
+        using var clipboardSlot = clipboardTicket is null ? null : attachments?.Register("clipboard-v2", clipboardTicket);
+        using var audioSlot = audioTicket is null ? null : attachments?.Register("audio-v2", audioTicket);
+
+        async Task<IncomingConnection> Attach(AttachmentRouter.Slot? slot, int limit, CancellationToken ct)
+        {
+            if (slot is not null) return await slot.Read(ct);
+            var socket = await listener.AcceptTcpClientAsync(ct);
+            var stream = new SslStream(socket.GetStream(), false);
+            try
+            {
+                socket.NoDelay = true;
+                await stream.AuthenticateAsServerAsync(new SslServerAuthenticationOptions
+                    { ServerCertificate = certificate, EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, ct);
+                return new(socket, stream, await Wire.Read(stream, ct, limit));
+            }
+            catch { socket.Dispose(); stream.Dispose(); throw; }
+        }
+
+        await Wire.Write(control, new Packet(FullControlProtocol.Approved, Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features, DataTicket: dataTicket?.Value,FileResume:resumeFiles,FileScope:fileScope,InputVersion:hello.InputVersion,ClipboardTicket:clipboardTicket?.Value,DisplayVersion:displayVersion,DisplayState:displays?.Switch.Snapshot,AudioTicket:audioTicket?.Value,VideoVersion:video is null?0:VideoSettingsProtocol.Version,VideoSettings:video?.Current, QuicPort:datagrams?.Port ?? 0, QuicTicket:quicTicket?.Value, QuicRecovery: hello.QuicRecovery, DeviceCredential: credential), stop);
         using var attach = CancellationTokenSource.CreateLinkedTokenSource(stop); attach.CancelAfter(TimeSpan.FromSeconds(15));
         int quicBudget = 0;
         if (datagrams is not null)
@@ -99,19 +120,18 @@ internal static class VideoHostSession
         }
         else if (hello.Network == NetworkMode.Udp) return;
 
-        using var mediaSocket = quicBudget == 0 || hello.Network == NetworkMode.Auto ? await listener.AcceptTcpClientAsync(attach.Token) : null;
-        using var media = mediaSocket is null ? null : new SslStream(mediaSocket.GetStream(), false);
-        if (media is not null)
+        using var mediaConnection = quicBudget == 0 || hello.Network == NetworkMode.Auto ? await Attach(mediaSlot, 8192, attach.Token) : null;
+        var mediaSocket = mediaConnection?.Socket;
+        var media = mediaConnection?.Stream;
+        if (mediaConnection is not null)
         {
-            mediaSocket!.NoDelay = true;
-            mediaSocket.SendBufferSize = 64 * 1024;
-            await media.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = certificate, EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, attach.Token);
-            var binding = await Wire.Read(media, attach.Token, 8 * 1024);
+            mediaSocket!.SendBufferSize = 64 * 1024;
+            var binding = mediaConnection.First;
             if (!VideoSettingsProtocol.Empty(binding) || !DisplayProtocol.Empty(binding) ||
                 binding.Kind != "media-v2" || binding.Network is not null || binding.QuicPort != 0 ||
                 binding.QuicTicket is not null || binding.QuicSend is not null || !ticket.Consume(binding.Text, DateTimeOffset.UtcNow))
                 throw new AuthenticationException("Media binding rejected");
-            await Wire.Write(media, new Packet("media-approved-v2"), attach.Token);
+            await Wire.Write(media!, new Packet("media-approved-v2"), attach.Token);
         }
         IVideoFrameChannel videoChannel = quicBudget != 0
             ? new DatagramVideoChannel(quicBudget, datagrams!.SendAsync, datagrams!.ReceiveAsync, displayVersion != 0, video is not null)
@@ -119,44 +139,51 @@ internal static class VideoHostSession
         IVideoFrameChannel? standbyVideo = (quicBudget != 0 || hello.QuicRecovery == true) && media is not null
             ? new TcpTlsVideoChannel(media, displayVersion != 0, video is not null) : null;
         HostSessionLog.Write($"media_transport={videoChannel.TransportName}");
-        using var dataSocket = dataTicket is null ? null : await listener.AcceptTcpClientAsync(attach.Token);
-        using var data = dataSocket is null ? null : new SslStream(dataSocket.GetStream(), false);
-        if (data is not null)
+        using var dataConnection = dataTicket is null ? null : await Attach(dataSlot, 8192, attach.Token);
+        var dataSocket = dataConnection?.Socket;
+        var data = dataConnection?.Stream;
+        if (dataConnection is not null)
         {
-            dataSocket!.NoDelay = true;
-            await data.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = certificate, EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, attach.Token);
-            var dataBinding = await Wire.Read(data, attach.Token, 8 * 1024);
-            if (!VideoSettingsProtocol.Empty(dataBinding)||!DisplayProtocol.Empty(dataBinding)||dataBinding.Kind != "data-v2" || !dataTicket!.Consume(dataBinding.Text, DateTimeOffset.UtcNow)) throw new AuthenticationException("File data binding rejected");
-            await Wire.Write(data, new("data-approved-v2"), attach.Token);
+            var binding = dataConnection.First;
+            if (!VideoSettingsProtocol.Empty(binding) || !DisplayProtocol.Empty(binding) || binding.Kind != "data-v2" ||
+                !dataTicket!.Consume(binding.Text, DateTimeOffset.UtcNow))
+                throw new AuthenticationException("File data binding rejected");
+            await Wire.Write(data!, new("data-approved-v2"), attach.Token);
         }
-        using var clipboardSocket=clipboardTicket is null?null:await listener.AcceptTcpClientAsync(attach.Token);
-        using var clipboardData=clipboardSocket is null?null:new SslStream(clipboardSocket.GetStream(),false);
-        if(clipboardData is not null)
+        using var clipboardConnection = clipboardTicket is null ? null : await Attach(clipboardSlot, 8192, attach.Token);
+        var clipboardSocket = clipboardConnection?.Socket;
+        var clipboardData = clipboardConnection?.Stream;
+        if (clipboardConnection is not null)
         {
-            clipboardSocket!.NoDelay=true;
-            await clipboardData.AuthenticateAsServerAsync(new SslServerAuthenticationOptions{ServerCertificate=certificate,EnabledSslProtocols=SslProtocols.Tls12|SslProtocols.Tls13},attach.Token);
-            var clipboardBinding=await Wire.Read(clipboardData,attach.Token,8*1024);
-            if(clipboardBinding!=new Packet("clipboard-v2",Text:clipboardBinding.Text)||!clipboardTicket!.Consume(clipboardBinding.Text,DateTimeOffset.UtcNow))throw new AuthenticationException("Clipboard binding rejected");
-            await Wire.Write(clipboardData,new("clipboard-approved-v2"),attach.Token);
+            var binding = clipboardConnection.First;
+            if (binding != new Packet("clipboard-v2", Text: binding.Text) || !clipboardTicket!.Consume(binding.Text, DateTimeOffset.UtcNow))
+                throw new AuthenticationException("Clipboard binding rejected");
+            await Wire.Write(clipboardData!, new("clipboard-approved-v2"), attach.Token);
         }
-        TcpClient? audioSocket=null;SslStream? audioData=null;
-        if(audioTicket is not null)
+        IncomingConnection? audioConnection = null;
+        if (audioTicket is not null)
         {
-            using var audioAttach=CancellationTokenSource.CreateLinkedTokenSource(stop);audioAttach.CancelAfter(TimeSpan.FromSeconds(5));
+            using var audioAttach = CancellationTokenSource.CreateLinkedTokenSource(stop);
+            audioAttach.CancelAfter(TimeSpan.FromSeconds(5));
             try
             {
-                audioSocket=await listener.AcceptTcpClientAsync(audioAttach.Token);audioSocket.NoDelay=true;
-                audioData=new(audioSocket.GetStream(),false);
-                await audioData.AuthenticateAsServerAsync(new SslServerAuthenticationOptions{ServerCertificate=certificate,EnabledSslProtocols=SslProtocols.Tls12|SslProtocols.Tls13},audioAttach.Token);
-                var audioBinding=await Wire.Read(audioData,audioAttach.Token,8192);
-                if(audioBinding!=new Packet("audio-v2",Text:audioBinding.Text)||!audioTicket.Consume(audioBinding.Text,DateTimeOffset.UtcNow))throw new AuthenticationException("Audio binding rejected");
-                await Wire.Write(audioData,new("audio-approved-v2"),audioAttach.Token);
+                audioConnection = await Attach(audioSlot, 8192, audioAttach.Token);
+                var binding = audioConnection.First;
+                if (binding != new Packet("audio-v2", Text: binding.Text) || !audioTicket.Consume(binding.Text, DateTimeOffset.UtcNow))
+                    throw new AuthenticationException("Audio binding rejected");
+                await Wire.Write(audioConnection.Stream, new("audio-approved-v2"), audioAttach.Token);
             }
-            catch(Exception e)when(!stop.IsCancellationRequested&&e is IOException or AuthenticationException or OperationCanceledException or SocketException)
-            {HostSessionLog.Write($"audio_disabled stage=attach error_type={e.GetType().Name}");audioData?.Dispose();audioSocket?.Dispose();audioData=null;audioSocket=null;}
+            catch (Exception e) when (!stop.IsCancellationRequested && e is IOException or AuthenticationException or OperationCanceledException or SocketException)
+            {
+                HostSessionLog.Write($"audio_disabled stage=attach error_type={e.GetType().Name}");
+                audioConnection?.Dispose(); audioConnection = null;
+            }
+            catch { audioConnection?.Dispose(); throw; }
         }
-        using var ownedAudioSocket=audioSocket;using var ownedAudioData=audioData;
-        listener.Stop();
+        using var ownedAudio = audioConnection;
+        var audioSocket = audioConnection?.Socket;
+        var audioData = audioConnection?.Stream;
+        if (attachments is null) listener.Stop();
         using var session = CancellationTokenSource.CreateLinkedTokenSource(stop);
         var queue = new LatestQueue<QueuedFrame>(QuicSendStatistics.HostVideoQueueCapacity);
         var gate = new AccessGate(); gate.Approve(features,hello.InputVersion,displayVersion,hello.VideoVersion);
@@ -587,7 +614,9 @@ internal static class VideoHostSession
         Task networkQuality = Observe(WatchNetworkQuality(), "udp-network-quality", failures, session.Token);
         Task quicRecovery = Observe(WatchQuicRecovery(), "udp-recovery", failures, session.Token);
         Task simulatedTransition = Observe(SimulateLocalElevation(), "local-desktop-transition", failures, session.Token);
+        if (lease is not null) admission!.MarkReady(lease);
         Task first = await Task.WhenAny(observedInput, observedSender, observedProducer, observedClipboard,observedSession,observedAdmin,observedTcpFallback,networkQuality,quicRecovery,simulatedTransition);
+        if (lease is not null) admission!.MarkStopping(lease);
         string worker = failures.First?.Worker ?? (first == observedInput ? "control-read" : first == observedSender ? "media-send" : "capture-encode");
         var failure = failures.First;
         bool inputWorkerFailed = failure?.Worker == "admin-input";
@@ -603,11 +632,13 @@ internal static class VideoHostSession
         // suspend a resumable transfer instead of looking like a file denial.
         fileSession.Cancel();
         gate.Revoke();
+        Exception? inputReleaseError = null;
         if (elevated is not null)
         {
             try { await elevated.End(CancellationToken.None); }
             catch (Exception error) when (error is IOException or OperationCanceledException or ObjectDisposedException or InvalidDataException)
             {
+                inputReleaseError = error;
                 HostSessionLog.Write($"admin_input_release_unconfirmed error_type={error.GetType().Name}");
             }
             finally { await elevated.DisposeAsync(); }
@@ -623,7 +654,7 @@ internal static class VideoHostSession
                 await controlWrite.WaitAsync(terminal.Token);
                 try
                 {
-                    var reason = desktopEnd switch
+                    var reason = lease?.Replacement.IsCancellationRequested == true ? SessionEndReason.ReplacedByViewer : desktopEnd switch
                     {
                         "session-locked" => SessionEndReason.WindowsLocked,
                         "physical-console-session-changed" => SessionEndReason.WindowsSessionChanged,
@@ -652,7 +683,13 @@ internal static class VideoHostSession
             try { await fileWorker; } catch (Exception error) { HostSessionLog.Write($"file_worker_shutdown error_type={error.GetType().Name} hresult=0x{error.HResult:X8}"); }
             await audioWorker;
             if(fileResumes is not null&&(stop.IsCancellationRequested||inputWorkerFailed||failure?.Error is WindowsSessionUnavailableException))await fileResumes.Clear();
-            gate.Revoke(); try{inputDesktop?.ReleaseAll();}catch(IOException error){HostSessionLog.Write($"input_cleanup_deferred error_type={error.GetType().Name}");}
+            gate.Revoke();
+            try { inputDesktop?.ReleaseAll(); }
+            catch (IOException error)
+            {
+                inputReleaseError ??= error;
+                HostSessionLog.Write($"input_cleanup_deferred error_type={error.GetType().Name}");
+            }
             try
             {
                 var resources = GraphicsDiagnostics.Resources();
@@ -660,6 +697,8 @@ internal static class VideoHostSession
             }
             catch (Exception error) when (error is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException)
             { HostSessionLog.Write($"session_cleanup native_live_resources=unavailable error_type={error.GetType().Name} input_release_attempted=True"); }
+            if (lease?.Replacement.IsCancellationRequested == true && inputReleaseError is not null)
+                throw new SessionInputCleanupException(inputReleaseError);
         }
     }
     sealed class TestDesktopPauseClock : TimeProvider

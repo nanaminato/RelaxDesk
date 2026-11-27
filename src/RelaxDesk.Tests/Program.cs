@@ -2,7 +2,8 @@ using System.Buffers.Binary;
 using System.Globalization;
 using RelaxDesk.Core;
 using RelaxDesk.Core.Localization;
-int count = 0;
+int count = await SessionAdmissionChecks.Run();
+Console.WriteLine($"PASS {count} session admission checks");
 void Check(bool result) { if (!result) throw new Exception($"Test {count + 1} failed"); count++; }
 async Task Reject(byte[] bytes) { try { await Wire.Read(new MemoryStream(bytes)); throw new Exception("Accepted malformed packet"); } catch (Exception e) when (e is InvalidDataException or EndOfStreamException or System.Text.Json.JsonException) { count++; } }
 var gate = new AccessGate(); var input = new Packet("input", 1, Code: 65);

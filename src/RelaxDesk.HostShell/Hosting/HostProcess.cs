@@ -88,12 +88,14 @@ internal sealed class HostProcess
         catch(Exception e) when(e is IOException or ObjectDisposedException or InvalidOperationException) { }
         finally {commands.Release();}
     }
-    public Task Decide(bool allow,string? expectedSessionId=null)
+    public Task Decide(bool allow,string? expectedSessionId=null,bool newDevice=false)
     {
         var child=process;string? id=expectedSessionId??SessionId;
         if(child is null||!Pending||id is null||id!=SessionId)return Task.CompletedTask;
-        Pending=false;return Send(child,(allow?"APPROVE":"DENY")+" "+id);
+        Pending=false;return Send(child,(allow?(newDevice?"APPROVE_NEW":"APPROVE"):"DENY")+" "+id);
     }
+    public Task RevokeDevice(string fingerprint) =>
+        process is { } child ? Send(child, "REVOKE " + fingerprint) : Task.CompletedTask;
     public Task Disconnect(string? expectedSessionId=null)=>SessionCommand("DISCONNECT",expectedSessionId);
     Task SessionCommand(string command,string? expectedSessionId)
     {

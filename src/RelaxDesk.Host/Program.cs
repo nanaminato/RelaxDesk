@@ -210,6 +210,12 @@ await using var fileResumes=selectedFileRoot is null?null:new FileTransferResume
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Cancel(); listener.Stop(); };
 try
 {
+    if (!syntheticBackend)
+    {
+        await new HostAdmission(listener, mediaIdentity, shell!, verifier!, backend, selectedFileRoot,
+            fileResumes, selectedDisplay, stop.Token).Run();
+        return;
+    }
     do
     {
         string token = syntheticBackend ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : "";
@@ -233,6 +239,7 @@ try
     } while (persistent && !stop.IsCancellationRequested);
 }
 catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
+catch (SocketException) when (stop.IsCancellationRequested) { }
 finally
 {
     listener.Stop();

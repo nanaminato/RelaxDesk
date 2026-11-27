@@ -1,19 +1,19 @@
 using System.IO;
 using System.Text.Json;
 
-namespace RelaxDesk.HostShell;
+namespace RelaxDesk.Windows;
 
-internal sealed class DeviceTrustStore(string file, SemaphoreSlim? operationGate = null)
+public sealed class DeviceTrustStore(string file, SemaphoreSlim? operationGate = null)
 {
     const int MaximumEntries = 32;
     const int MaximumBytes = 64 * 1024;
     readonly string path = Path.GetFullPath(file);
     readonly SemaphoreSlim operations = operationGate ?? new(1);
 
-    internal static DeviceTrustStore CurrentUser() => new(Path.Combine(
+    public static DeviceTrustStore CurrentUser() => new(Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RelaxDesk", "password-device-trust.json"));
 
-    internal static bool IsFingerprint(string? value) =>
+    public static bool IsFingerprint(string? value) =>
         value is { Length: 64 } && value.All(c => char.IsAsciiDigit(c) || c is >= 'A' and <= 'F');
 
     public Task<string[]> Load() => Run(Read);
@@ -46,7 +46,7 @@ internal sealed class DeviceTrustStore(string file, SemaphoreSlim? operationGate
     {
         Guard();
         if (!File.Exists(path)) return [];
-        using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
         if (input.Length is < 2 or > MaximumBytes) throw new InvalidDataException("Device trust file length invalid");
         var result = JsonSerializer.Deserialize<string[]>(input) ?? throw new InvalidDataException("Missing Device trust records");
         if (result.Length > MaximumEntries) throw new InvalidDataException("Too many Device trust records");

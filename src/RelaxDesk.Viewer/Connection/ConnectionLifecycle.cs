@@ -88,6 +88,12 @@ public sealed partial class ViewerWindow
                     SetConnectionPhase(result.Error is RemoteSessionEndedException ? ConnectionPhase.Disconnected : ConnectionPhase.Failed);
                     LocalizedText.Bind(status,"Text",()=>result.Error switch
                     {
+                        HostAdmissionException { Reason: "admission-busy-v5" } => Strings.Get("Admission.Busy"),
+                        HostAdmissionException { Reason: "admission-pending-v5" } => Strings.Get("Admission.Pending"),
+                        HostAdmissionException { Reason: "admission-rate-limited-v5" } => Strings.Get("Admission.RateLimited"),
+                        HostAdmissionException { Reason: "admission-stale-v5" } => Strings.Get("Admission.Stale"),
+                        HostAdmissionException { Reason: "takeover-cancel-v5" } => Strings.Get("Admission.Cancelled"),
+                        RemoteSessionEndedException { Reason: SessionEndReason.ReplacedByViewer } => Strings.Get("Admission.Replaced"),
                         HostConsentRejectedException => Strings.Get("Ui.ConnectionLifecycle.Text028"),
                         PasswordLoginRejectedException => Strings.Get("Ui.ConnectionLifecycle.Text150"),
                         FullControlInputUnavailableException => Strings.Get("Ui.ConnectionLifecycle.Text036"),

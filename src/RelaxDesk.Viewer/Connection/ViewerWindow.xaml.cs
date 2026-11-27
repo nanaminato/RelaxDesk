@@ -95,6 +95,25 @@ public sealed partial class ViewerWindow
         cancellation.ThrowIfCancellationRequested();
         return Task.FromResult(accepted);
     }
+    Task<bool> ConfirmSessionTakeover(CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var panel = new StackPanel { Margin = new Thickness(20) };
+        panel.Children.Add(new TextBlock { Text = Strings.Get("Admission.TakeoverBody"), TextWrapping = TextWrapping.Wrap, MaxWidth = 420 });
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
+        var proceed = new Button { Content = Strings.Get("Admission.TakeoverAction"), Margin = new Thickness(0, 0, 8, 0), Padding = new Thickness(12, 5, 12, 5) };
+        var cancel = new Button { Content = Strings.Get("Admission.Cancel"), IsCancel = true, IsDefault = true, Padding = new Thickness(12, 5, 12, 5) };
+        actions.Children.Add(proceed); actions.Children.Add(cancel); panel.Children.Add(actions);
+        var dialog = new Window { Owner = this, Title = Strings.Get("Admission.TakeoverTitle"), Content = panel,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner, SizeToContent = SizeToContent.WidthAndHeight,
+            ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false };
+        proceed.Click += (_, _) => dialog.DialogResult = true;
+        using var registration = ct.Register(() => _ = Dispatcher.BeginInvoke(() => { if (dialog.IsVisible) dialog.Close(); }));
+        bool result = dialog.ShowDialog() == true;
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(result);
+    }
+
     void ApplyInvitation()
     {
         if (string.IsNullOrWhiteSpace(invitation.Text)) return;

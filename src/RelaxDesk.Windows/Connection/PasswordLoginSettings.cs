@@ -8,6 +8,7 @@ namespace RelaxDesk.Windows;
 public static class PasswordLoginSettings
 {
     const string HostKey = @"Software\RelaxDesk\HostLogin";
+    const string DeviceCredentialKey = @"Software\RelaxDesk\DeviceCredentials";
     const string ViewerKey = @"Software\RelaxDesk\ServerPins";
 
     public static PasswordVerifier? Read()
@@ -31,10 +32,28 @@ public static class PasswordLoginSettings
         return key?.GetValue(endpoint) as string;
     }
 
+    public static string? ReadDeviceCredential(string endpoint)
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(DeviceCredentialKey);
+        return key?.GetValue(endpoint) is string { Length: <= 800 } credential ? credential : null;
+    }
+
+    public static void SaveDeviceCredential(string endpoint, string credential)
+    {
+        if (credential.Length is < 16 or > 800) throw new ArgumentException("Invalid device credential", nameof(credential));
+        using var key = Registry.CurrentUser.CreateSubKey(DeviceCredentialKey);
+        key.SetValue(endpoint, credential, RegistryValueKind.String);
+    }
+
     public static void SaveServerPin(string endpoint, string? pin)
     {
         using var key = Registry.CurrentUser.CreateSubKey(ViewerKey);
-        if (pin is null) key.DeleteValue(endpoint, throwOnMissingValue: false);
+        if (pin is null)
+        {
+            key.DeleteValue(endpoint, throwOnMissingValue: false);
+            using var credentials = Registry.CurrentUser.OpenSubKey(DeviceCredentialKey, writable: true);
+            credentials?.DeleteValue(endpoint, throwOnMissingValue: false);
+        }
         else key.SetValue(endpoint, pin, RegistryValueKind.String);
     }
 
