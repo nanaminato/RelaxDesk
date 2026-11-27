@@ -430,6 +430,8 @@ begin
     // An overwritten Inno log may omit payload files reused on same-version
     // reinstall. The verified receipt owns both current and older files.
     PruneReleases(Root, Index, '', True);
+    if NoReparse(AddBackslash(Root) + 'receipts') then
+      RemoveDir(AddBackslash(Root) + 'receipts'); // empty only; never discard unrecognized files
     for I := 0 to 1 do begin
       Shortcut := ShortcutPath(I);
       if not NoReparse(Shortcut) or (FileExists(Shortcut) and not DeleteFile(Shortcut)) then

@@ -207,7 +207,17 @@ try {
     Check (!(Test-Path $hostRole.desktop) -and !(Test-Path $hostRole.menu) -and !(Test-Path $hostRole.registration) -and (Get-Content -LiteralPath $unknown -Raw) -eq 'retain unknown content') 'Host removal lost retained data or left owned integration'
     $null=$launched.CloseMainWindow();if(!$launched.WaitForExit(15000)){throw 'Owned test Viewer did not close'};$launched.Dispose();$launched=$null
     Uninstall $viewerRole 'viewer-remove'
-    Until {!(Test-Path $viewerRole.key) -and !(Test-Path $viewerRole.root)}
+    try {
+        Until {
+            !(Test-Path $viewerRole.key) -and !(Test-Path (Join-Path $viewerRole.root $viewerRole.release)) -and
+                @(Get-ChildItem -LiteralPath $viewerRole.root -Recurse -File -Force -ErrorAction SilentlyContinue).Count -eq 0
+        }
+    } catch {
+        Write-Host "Viewer uninstall remaining registration: $(Test-Path $viewerRole.key)"
+        Get-ChildItem -LiteralPath $viewerRole.root -Recurse -Force -ErrorAction SilentlyContinue | Select-Object -First 20 -ExpandProperty FullName | Write-Host
+        Get-Content -LiteralPath (Join-Path $output 'viewer-remove.log') -Tail 35 -ErrorAction SilentlyContinue | Write-Host
+        throw
+    }
     Check (!(Test-Path $viewerRole.desktop) -and !(Test-Path $viewerRole.menu) -and !(Test-Path $viewerRole.registration)) 'Viewer left owned integration'
     Check (!(Test-Path -LiteralPath $aliasKey)) 'Viewer left its Run alias after uninstall'
     $state=if($SkipMachineServicePreview){'PASS_ACTUAL_PER_USER_INSTALLER_LIFECYCLE_MACHINE_PREVIEW_SKIPPED'}else{'PASS_ACTUAL_PER_USER_INSTALLER_LIFECYCLE'}
