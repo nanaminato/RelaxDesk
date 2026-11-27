@@ -45,6 +45,7 @@ internal static class UnifiedSessionChecks
                 }
                 using var control=await Accept();var hello=await Wire.Read(control,ct);FullControlProtocol.RequireCurrent(hello);
                 if(hello.Kind!=FullControlProtocol.Request)throw new IOException("Wrong approval mode");
+                if(hello.Capabilities is not ["h264", "deflate"])throw new InvalidOperationException("Default mixed-codec offer changed");
                 await Wire.Write(control,response,ct);
                 if(mode is not ("all" or "bad-media-cert" or "bad-file-cert" or "bad-clipboard-cert" or "bad-audio-cert" or "bad-audio-ack"))return;
                 var channels=new List<SslStream>();

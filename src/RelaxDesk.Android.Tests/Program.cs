@@ -70,3 +70,5 @@ if (args is [var file])
 }
 Console.WriteLine($"Android media contracts: {checks}");
 Console.WriteLine($"Android device proof contracts: {DeviceProofTests.Run()}");
+if (args is [var fixturePath])
+    Console.WriteLine($"Android pinned TLS loopback contracts: {await SessionLoopbackTests.Run(fixturePath)}");

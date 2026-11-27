@@ -76,7 +76,7 @@ internal static class DeviceProofTests
 
     // Managed stand-in for a DER-returning provider; intentionally not a
     // substitute for running the Android probe against Android Keystore.
-    sealed class DerProvider(ECDsa key) : ProviderDeviceKey(key.ExportSubjectPublicKeyInfo())
+    internal sealed class DerProvider(ECDsa key) : ProviderDeviceKey(key.ExportSubjectPublicKeyInfo())
     {
         public int SignCount { get; private set; }
         protected override byte[] SignSha256Der(byte[] transcript)

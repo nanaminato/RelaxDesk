@@ -128,6 +128,8 @@ public sealed class SessionClient : IDisposable
             return QuicRecoveryProtocol.Result(offer.Sequence, 0);
         }
     }
+    // Leave the existing Windows mixed-codec offer unchanged by default.
+    public bool H264Only { get; init; }
     public string[] RequestedFeatures { get; init; } = SessionCapabilities.All;
     public string[] Features { get; private set; } = [];
     public int RequestedInputVersion {get;init;}=InputProtocol.Version;
@@ -206,7 +208,7 @@ public sealed class SessionClient : IDisposable
         {
             await Wire.Write(Control, new Packet(userName is not null ? FullControlProtocol.PasswordRequest : approvalOnly ? FullControlProtocol.Request : FullControlProtocol.PinnedRequest,
                 Data: secret, Text: userName ?? (approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token), ReconnectOnly: reconnectOnly,
-                Capabilities: ["h264", "deflate"], PointerBrotli: RequestPointerCompression ? true : null,
+                Capabilities: H264Only ? ["h264"] : ["h264", "deflate"], PointerBrotli: RequestPointerCompression ? true : null,
                 Features: requestedFeatures.Length == 0 ? null : requestedFeatures, FileResume:requestResume,InputVersion:RequestedInputVersion,
                 DisplayVersion:RequestedDisplayVersion,VideoVersion:RequestedVideoVersion, Network:requestedNetwork,
                 DeviceKey: deviceKey is null ? null : DeviceIdentity.Export(deviceKey), QuicRecovery: requestQuicRecovery ? true : null,
@@ -262,6 +264,8 @@ public sealed class SessionClient : IDisposable
             throw new FullControlInputUnavailableException();
         if (approval.Kind != FullControlProtocol.Approved || approval.Text is null || approval.Capabilities is not { Length: > 0 }) throw new AuthenticationException("Host approval/capabilities missing");
         FullControlProtocol.RequireCurrent(approval);
+        if (H264Only && approval.Capabilities is not ["h264"])
+            throw new InvalidDataException("Host did not accept the H.264-only codec offer");
         if (approval.DeviceCredential is { } issued)
         {
             if (userName is null || !deviceChallenged || issued.Length is < 16 or > 800)
