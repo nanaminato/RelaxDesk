@@ -52,6 +52,8 @@ public sealed class ViewerPreferencesStore(string file)
         using var input = File.OpenRead(path);
         if (input.Length > 16_384) throw new InvalidDataException("Preferences file too large");
         var result = JsonSerializer.Deserialize<ViewerPreferences>(input) ?? throw new InvalidDataException("Missing preferences");
+        // Format 2 removed optional resource requests; retain fields common to both formats.
+        if (result.Format == 1) result = result with { Format = 2 };
         result.Validate();
         return result;
     }

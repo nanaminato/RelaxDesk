@@ -17,7 +17,7 @@ public sealed partial class ViewerWindow
         if (!App.VerificationMode)
             preferencesStore = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RelaxDesk", "preferences", "viewer.json"));
         try { if (preferencesStore is not null) preferences = preferencesStore.Load(); }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or System.Security.SecurityException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException or System.Security.SecurityException)
         { LocalizedText.Bind(status,"Text","Ui.ViewerPreferencesUi.Text294"); }
         ConfigureVideoPreferenceChoices();
         ApplyPreferences();
@@ -91,7 +91,7 @@ public sealed partial class ViewerWindow
         preferencesOperation = preferencesOperation.ContinueWith(_ =>
         {
             try { store.Save(snapshot); }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or System.Security.SecurityException)
             { ViewerSessionLog.Record("viewer-preferences-save-failed", new IOException("Viewer preferences unavailable")); }
         }, TaskScheduler.Default);
     }

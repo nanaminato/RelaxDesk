@@ -46,7 +46,7 @@ try {
         $receipt=Join-Path $work ($release+'.hashes');[IO.File]::WriteAllLines($receipt,$lines,[Text.UTF8Encoding]::new($true))
         $title=if($role -eq 'Host'){'RelaxDesk 被控端'}else{'RelaxDesk 连接端'}
         $entryExe=if($role -eq 'Host'){'HostUi\RelaxDesk.HostShell.exe'}else{'Viewer\RelaxDesk.Viewer.exe'}
-        $query=if($role -eq 'Host'){'SELECT ExecutablePath FROM Win32_Process WHERE Name=''RelaxDesk.HostShell.exe'' OR Name=''RelaxDesk.Host.exe'''}else{'SELECT ExecutablePath FROM Win32_Process WHERE Name=''RelaxDesk.Viewer.exe'''}
+        $query=if($role -eq 'Host'){'SELECT ExecutablePath FROM Win32_Process WHERE Name=''RelaxDesk.HostShell.exe'' OR Name=''RelaxDesk.Host.exe'''}else{'SELECT ExecutablePath FROM Win32_Process WHERE Name=''RelaxDesk.Viewer.exe'' OR Name=''rdesk.exe'''}
         $query=$query.Replace("'","''")
         $compilerOptions = @('--quiet')
         if($CheckOnly){$compilerOptions += '--output=no'}

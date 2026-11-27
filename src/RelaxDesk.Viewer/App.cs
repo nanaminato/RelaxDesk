@@ -304,8 +304,23 @@ public sealed partial class ViewerWindow : Window
                 {
             if (target.UserName is not null)
             {
+                string endpoint = new IPEndPoint(IPAddress.Parse(target.Host), target.Port).ToString();
+                string? credential = null;
+                if (!App.VerificationMode)
+                {
+                    try { credential = PasswordLoginSettings.ReadDeviceCredential(endpoint); }
+                    catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+                    { ViewerSessionLog.Record("device-credential-read-failed", error); }
+                }
                 await connection.ConnectWithPassword(target.Host, target.Port, previousPin ?? target.Pin,
-                    target.UserName, target.Token, ConfirmPasswordServer, connecting.Token, reconnectOnly: previousPin is not null);
+                    target.UserName, target.Token, ConfirmPasswordServer, connecting.Token, reconnectOnly: previousPin is not null,
+                    deviceCredential: credential, confirmTakeover: ConfirmSessionTakeover);
+                if (!App.VerificationMode && connection.IssuedDeviceCredential is { } issued)
+                {
+                    try { PasswordLoginSettings.SaveDeviceCredential(endpoint, issued); }
+                    catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+                    { ViewerSessionLog.Record("device-credential-save-failed", error); }
+                }
                 if (previousPin is null && target.Pin.Length == 0)
                 {
                     try { PasswordLoginSettings.SaveServerPin(new IPEndPoint(IPAddress.Parse(target.Host), target.Port).ToString(), connection.VerifiedFingerprint); }

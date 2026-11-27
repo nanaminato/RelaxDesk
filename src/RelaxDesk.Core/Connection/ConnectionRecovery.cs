@@ -3,6 +3,10 @@ using System.Security.Authentication;
 namespace RelaxDesk.Core;
 
 public enum ConnectionPhase { Idle, Connecting, Authenticating, AwaitingApproval, Negotiating, Connected, Reconnecting, Disconnected, Failed }
+public sealed class HostAdmissionException(string reason) : AuthenticationException(reason)
+{
+    public string Reason { get; } = reason;
+}
 public sealed class HostConsentRejectedException() : AuthenticationException("Host declined this connection");
 public sealed class FullControlInputUnavailableException() : AuthenticationException("Host could not start its administrator input worker");
 public enum UdpMediaFailure { LocalUnavailable, HostUnavailable, AttachmentFailed }
@@ -16,7 +20,7 @@ public sealed class UdpMediaUnavailableException(UdpMediaFailure reason, Excepti
 {
     public UdpMediaFailure Reason { get; } = reason;
 }
-public enum SessionEndReason { WindowsSessionUnavailable = 1, WindowsLocked = 2, WindowsSessionChanged = 3, WindowsDesktopUnavailable = 4, InputWorkerUnavailable = 5 }
+public enum SessionEndReason { WindowsSessionUnavailable = 1, WindowsLocked = 2, WindowsSessionChanged = 3, WindowsDesktopUnavailable = 4, InputWorkerUnavailable = 5, ReplacedByViewer = 6 }
 public sealed class RemoteSessionEndedException(SessionEndReason? reason = null) : IOException("Host explicitly ended this session")
 {
     public SessionEndReason? Reason { get; } = reason;

@@ -150,16 +150,19 @@ public sealed class SessionClient : IDisposable
         return ConnectInternal(host, port, fingerprint, "", true, ct);
     }
     public Task ConnectWithPassword(string host, int port, string fingerprint, string userName, string password,
-        Func<string, CancellationToken, Task<bool>> confirmServer, CancellationToken ct, bool reconnectOnly = false)
+        Func<string, CancellationToken, Task<bool>> confirmServer, CancellationToken ct, bool reconnectOnly = false,
+        string? deviceCredential = null, Func<CancellationToken, Task<bool>>? confirmTakeover = null)
     {
         if (!PasswordVerifier.ValidUserName(userName) || OpenDeviceKey is null)
             throw new AuthenticationException("Password login requires a user name and a device key");
-        return ConnectInternal(host, port, fingerprint, "", true, ct, userName, password, confirmServer, reconnectOnly);
+        return ConnectInternal(host, port, fingerprint, "", true, ct, userName, password, confirmServer, reconnectOnly, deviceCredential, confirmTakeover);
     }
+
+    public string? IssuedDeviceCredential { get; private set; }
 
     async Task ConnectInternal(string host, int port, string fingerprint, string token, bool approvalOnly, CancellationToken ct,
         string? userName = null, string? password = null, Func<string, CancellationToken, Task<bool>>? confirmServer = null,
-        bool reconnectOnly = false)
+        bool reconnectOnly = false, string? deviceCredential = null, Func<CancellationToken, Task<bool>>? confirmTakeover = null)
     {
         var requestedFeatures = SessionCapabilities.RequireAll(RequestedFeatures);
         if(RequestedInputVersion!=InputProtocol.Version||RequestedDisplayVersion!=DisplayProtocol.TopologyVersion||RequestedVideoVersion!=VideoSettingsProtocol.Version)throw new InvalidDataException("Unsupported session profile; update both endpoints");
@@ -202,7 +205,8 @@ public sealed class SessionClient : IDisposable
                 Capabilities: ["h264", "deflate"], PointerBrotli: RequestPointerCompression ? true : null,
                 Features: requestedFeatures.Length == 0 ? null : requestedFeatures, FileResume:requestResume,InputVersion:RequestedInputVersion,
                 DisplayVersion:RequestedDisplayVersion,VideoVersion:RequestedVideoVersion, Network:requestedNetwork,
-                DeviceKey: deviceKey is null ? null : DeviceIdentity.Export(deviceKey), QuicRecovery: requestQuicRecovery ? true : null), ct);
+                DeviceKey: deviceKey is null ? null : DeviceIdentity.Export(deviceKey), QuicRecovery: requestQuicRecovery ? true : null,
+                DeviceCredential: userName is null || (deviceCredential is null && confirmTakeover is null) ? null : deviceCredential ?? ""), ct);
         }
         finally { if (secret is not null) CryptographicOperations.ZeroMemory(secret); }
         PhaseChanged?.Invoke(ConnectionPhase.AwaitingApproval);
@@ -221,11 +225,45 @@ public sealed class SessionClient : IDisposable
             await Wire.Write(Control, new(FullControlProtocol.DeviceProof, Data: signature), proofDeadline.Token);
             approval = await Wire.Read(Control, ct);
         }
+        if (approval.Kind == "takeover-offer-v5")
+        {
+            if (userName is null || !deviceChallenged || reconnectOnly || confirmTakeover is null ||
+                approval.Text is not { Length: 64 } offer || !offer.All(char.IsAsciiHexDigit) ||
+                approval != new Packet("takeover-offer-v5", Text: offer))
+                throw new InvalidDataException("Invalid take-over offer");
+
+            using var decision = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            decision.CancelAfter(TimeSpan.FromSeconds(28));
+            bool confirmed;
+            try { confirmed = await confirmTakeover(decision.Token); }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            { throw new HostAdmissionException("takeover-cancel-v5"); }
+            decision.Token.ThrowIfCancellationRequested();
+            if (!confirmed)
+            {
+                await Wire.Write(Control, new("takeover-cancel-v5"), decision.Token);
+                throw new HostAdmissionException("takeover-cancel-v5");
+            }
+            await Wire.Write(Control, new("takeover-confirm-v5", Text: offer), decision.Token);
+            approval = await Wire.Read(Control, ct);
+        }
+        if (approval == new Packet(FullControlProtocol.PasswordRejected)) throw new PasswordLoginRejectedException();
+        if (approval.Kind is "admission-busy-v5" or "admission-pending-v5" or "admission-rate-limited-v5" or "admission-stale-v5")
+        {
+            if (approval != new Packet(approval.Kind)) throw new InvalidDataException("Invalid admission status");
+            throw new HostAdmissionException(approval.Kind);
+        }
         if (approval == new Packet("denied-v2")) throw new HostConsentRejectedException();
         if (approval == new Packet(FullControlProtocol.InputUnavailable))
             throw new FullControlInputUnavailableException();
         if (approval.Kind != FullControlProtocol.Approved || approval.Text is null || approval.Capabilities is not { Length: > 0 }) throw new AuthenticationException("Host approval/capabilities missing");
         FullControlProtocol.RequireCurrent(approval);
+        if (approval.DeviceCredential is { } issued)
+        {
+            if (userName is null || !deviceChallenged || issued.Length is < 16 or > 800)
+                throw new InvalidDataException("Invalid device credential");
+            IssuedDeviceCredential = issued;
+        }
         if(approval.Input is not null||approval.InputVersion is not (0 or InputProtocol.Version)||approval.InputVersion!=0&&approval.InputVersion!=RequestedInputVersion)throw new AuthenticationException("Unrequested/invalid input version");
         if (deviceKey is not null && (!deviceChallenged || approval.InputVersion != InputProtocol.Version))
             throw new AuthenticationException("Incomplete full-control handshake");

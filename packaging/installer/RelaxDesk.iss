@@ -1,5 +1,6 @@
 ; RelaxDesk-owned installer recipe. Inno Setup is an external build tool.
 #define ViewerRunKey "Software\Microsoft\Windows\CurrentVersion\App Paths\rdesk.exe"
+#define ViewerRunEntry "Viewer\rdesk.exe"
 [Setup]
 AppId=RelaxDesk.{#Role}
 AppName={#Title}
@@ -43,9 +44,10 @@ Source: "{#CompilerLicense}"; DestDir: "{app}\receipts\{#Release}"; DestName: "I
 [Registry]
 Root: HKCU; Subkey: "Software\RelaxDesk\Installations\{#Role}"; ValueType: string; ValueName: "Root"; ValueData: "{app}"; Flags: uninsdeletevalue uninsdeletekeyifempty
 Root: HKCU; Subkey: "Software\RelaxDesk\Installations\{#Role}"; ValueType: string; ValueName: "Receipts"; ValueData: "{code:GetReceiptIndex}"; Flags: uninsdeletevalue uninsdeletekeyifempty
+Root: HKCU; Subkey: "Software\RelaxDesk\Installations\{#Role}"; ValueType: string; ValueName: "Shortcuts"; ValueData: ""; Flags: createvalueifdoesntexist uninsdeletevalue uninsdeletekeyifempty
 
 #if Role == "Viewer"
-Root: HKCU; Subkey: "{#ViewerRunKey}"; ValueType: string; ValueData: "{app}\{#Release}\{#Entry}"; Flags: uninsdeletevalue uninsdeletekeyifempty
+Root: HKCU; Subkey: "{#ViewerRunKey}"; ValueType: string; ValueData: "{app}\{#Release}\{#ViewerRunEntry}"; Flags: uninsdeletevalue uninsdeletekeyifempty
 #endif
 
 [Icons]
@@ -57,7 +59,7 @@ Filename: "{app}\{#Release}\{#Entry}"; Description: "打开 {#Title}"; WorkingDi
 
 [Code]
 const Registration = 'Software\RelaxDesk\Installations\{#Role}';
-var ReceiptIndex: String;
+var ReceiptIndex, PreviousDesktopHash: String;
     TreeEntries: Integer;
 
 function NativeAttributes(Path: String): LongWord;
@@ -207,29 +209,75 @@ begin
   except Log('Cannot establish application process ownership.'); end;
 end;
 
+function ShortcutPath(Index: Integer): String;
+begin
+  if Index = 0 then Result := ExpandConstant('{userprograms}\RelaxDesk\{#Title}.lnk')
+  else Result := ExpandConstant('{userdesktop}\{#Title}.lnk');
+end;
+
 function OwnedShortcuts(Root, Index, KeepRelease: String): Boolean;
-var Shell, Link: Variant; Shortcut, Item, Release, Remaining: String; I: Integer; Owned: Boolean;
+var Shell, Link: Variant; Shortcut, Item, Release, Remaining, RecordText, KeyRelease,
+    MenuHash, DesktopHash, Digest, Target, Arguments: String;
+    I: Integer; Owned, HasHashes: Boolean;
 begin
   Result := False;
-  Shell := CreateOleObject('WScript.Shell');
+  HasHashes := RegQueryStringValue(HKCU, Registration, 'Shortcuts', RecordText) and (RecordText <> '');
+  if HasHashes then begin
+    KeyRelease := Token(RecordText, ':');
+    MenuHash := Token(RecordText, ':');
+    DesktopHash := RecordText;
+    if (Pos(KeyRelease + '=', Index) = 0) or not Hex(MenuHash, 64) or
+       ((DesktopHash <> '') and not Hex(DesktopHash, 64)) then exit;
+  end;
   for I := 0 to 1 do begin
-    if I = 0 then Shortcut := ExpandConstant('{userprograms}\RelaxDesk\{#Title}.lnk')
-    else Shortcut := ExpandConstant('{userdesktop}\{#Title}.lnk');
-    if not NoReparse(Shortcut) then exit;
+    Shortcut := ShortcutPath(I);
+    if not NoReparse(Shortcut) or DirExists(Shortcut) then exit;
     if FileExists(Shortcut) then begin
-      Link := Shell.CreateShortcut(Shortcut); Remaining := Index; Owned := False;
-      while Remaining <> '' do begin
-        Item := Token(Remaining, ';'); Release := Token(Item, '=');
-        if (CompareText(Link.TargetPath, AddBackslash(Root) + Release + '\{#Entry}') = 0) and
-           (Link.Arguments = '') then Owned := True;
+      if HasHashes then begin
+        if I = 0 then Digest := MenuHash else Digest := DesktopHash;
+        Owned := (Digest <> '') and (CompareText(Digest, GetSHA256OfFile(Shortcut)) = 0);
+        Release := KeyRelease;
+      end else begin
+        // Compatibility for packages made before shortcut receipts.
+        if Index = '' then exit;
+        Shell := CreateOleObject('WScript.Shell');
+        Link := Shell.CreateShortcut(Shortcut); Remaining := Index; Owned := False;
+        Target := Link.TargetPath;
+        Arguments := Link.Arguments;
+        while Remaining <> '' do begin
+          Item := Token(Remaining, ';'); Release := Token(Item, '=');
+          if (CompareText(Target, AddBackslash(Root) + Release + '\{#Entry}') = 0) and
+             (Arguments = '') then begin Owned := True; break; end;
+        end;
       end;
-      if not Owned then exit;
-      if (KeepRelease <> '') and
-         (CompareText(Link.TargetPath, AddBackslash(Root) + KeepRelease + '\{#Entry}') <> 0) then
+      if not Owned then begin Log('Shortcut ownership check failed: ' + Shortcut); exit; end;
+      if (KeepRelease <> '') and (CompareText(Release, KeepRelease) <> 0) then
         if not DeleteFile(Shortcut) then exit;
     end;
   end;
   Result := True;
+end;
+
+function RecordShortcuts: Boolean;
+var Menu, Desktop, MenuHash, DesktopHash: String;
+begin
+  Result := False;
+  Menu := ShortcutPath(0); Desktop := ShortcutPath(1);
+  if not NoReparse(Menu) or not NoReparse(Desktop) or not FileExists(Menu) then exit;
+  MenuHash := GetSHA256OfFile(Menu);
+  if not Hex(MenuHash, 64) then exit;
+  if WizardIsTaskSelected('desktopicon') then begin
+    if not FileExists(Desktop) then exit;
+    DesktopHash := GetSHA256OfFile(Desktop);
+    if not Hex(DesktopHash, 64) then exit;
+  end else if FileExists(Desktop) then begin
+    // With the task unselected, Inno leaves the old link alone. Only remove
+    // the exact file verified before installation, never a newly added link.
+    if (PreviousDesktopHash = '') or
+       (CompareText(PreviousDesktopHash, GetSHA256OfFile(Desktop)) <> 0) or
+       not DeleteFile(Desktop) then exit;
+  end;
+  Result := RegWriteStringValue(HKCU, Registration, 'Shortcuts', '{#Release}:' + MenuHash + ':' + DesktopHash);
 end;
 
 #if Role == "Viewer"
@@ -241,7 +289,8 @@ begin
   if not RegQueryStringValue(HKCU, '{#ViewerRunKey}', '', Target) then exit;
   while Index <> '' do begin
     Item := Token(Index, ';'); Release := Token(Item, '=');
-    if CompareText(Target, AddBackslash(Root) + Release + '\{#Entry}') = 0 then begin
+    if (CompareText(Target, AddBackslash(Root) + Release + '\{#ViewerRunEntry}') = 0) or
+       (CompareText(Target, AddBackslash(Root) + Release + '\{#Entry}') = 0) then begin
       Result := True; exit;
     end;
   end;
@@ -317,6 +366,8 @@ begin
     Result := '运行命令 rdesk 已被其他程序注册。请先检查现有注册项，安装器不会覆盖它。'; exit;
   end;
 #endif
+  PreviousDesktopHash := '';
+  if FileExists(ShortcutPath(1)) then PreviousDesktopHash := GetSHA256OfFile(ShortcutPath(1));
   ReceiptIndex := Existing;
   if Pos('{#Release}=', ReceiptIndex) = 0 then begin
     if ReceiptIndex <> '' then ReceiptIndex := ReceiptIndex + ';';
@@ -332,6 +383,7 @@ begin
     Current := '{#Release}={#ReceiptHash}';
     if not VerifyReceipts(Root, ReceiptIndex, '{#Release}') then
       RaiseException('安装后校验失败；请保留安装日志，不要启动应用。');
+    if not RecordShortcuts then RaiseException('无法确认安装器创建的快捷方式。请保留安装日志。');
     if (ReceiptIndex <> Current) then begin
       if Running(Root) or not OwnedShortcuts(Root, ReceiptIndex, '{#Release}') or
          not PruneReleases(Root, ReceiptIndex, '{#Release}', False) then
@@ -366,15 +418,37 @@ begin
 end;
 
 procedure CurUninstallStepChanged(Step: TUninstallStep);
-var Root, Index: String;
+var Root, Index, Shortcut: String; I: Integer;
 begin
   if Step = usUninstall then begin
     Root := Canonical(ExpandConstant('{app}'));
     if not RegQueryStringValue(HKCU, Registration, 'Receipts', Index) or
        not VerifyReceipts(Root, Index, '') or
-       not OwnedShortcuts(Root, Index, '{#Release}') or
-       not PruneReleases(Root, Index, '{#Release}', False) then
-      RaiseException('无法清理旧版程序，已停止卸载。请关闭 RelaxDesk 后重试。');
-    PruneReleases(Root, Index, '{#Release}', True);
+       not OwnedShortcuts(Root, Index, '') or Running(Root) or
+       not PruneReleases(Root, Index, '', False) then
+      RaiseException('无法清理程序，已停止卸载。请关闭 RelaxDesk 后重试。');
+    // An overwritten Inno log may omit payload files reused on same-version
+    // reinstall. The verified receipt owns both current and older files.
+    PruneReleases(Root, Index, '', True);
+    if NoReparse(AddBackslash(Root) + 'receipts') then
+      RemoveDir(AddBackslash(Root) + 'receipts'); // empty only; never discard unrecognized files
+    for I := 0 to 1 do begin
+      Shortcut := ShortcutPath(I);
+      if not NoReparse(Shortcut) or (FileExists(Shortcut) and not DeleteFile(Shortcut)) then
+        RaiseException('无法移除已确认的快捷方式。');
+    end;
+#if Role == "Viewer"
+    if not OwnedViewerRunAlias(Root, Index) then
+      RaiseException('运行命令 rdesk 的注册已变化。');
+    if RegKeyExists(HKCU, '{#ViewerRunKey}') then begin
+      if not RegDeleteValue(HKCU, '{#ViewerRunKey}', '') then
+        RaiseException('无法清除 rdesk 的当前用户注册。');
+      RegDeleteKeyIfEmpty(HKCU, '{#ViewerRunKey}');
+    end;
+#endif
+    RegDeleteValue(HKCU, Registration, 'Shortcuts');
+    RegDeleteValue(HKCU, Registration, 'Receipts');
+    RegDeleteValue(HKCU, Registration, 'Root');
+    RegDeleteKeyIfEmpty(HKCU, Registration);
   end;
 end;

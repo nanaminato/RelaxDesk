@@ -1,11 +1,11 @@
-param([Parameter(Mandatory)][string]$InstallerDirectory,[Parameter(Mandatory)][string]$OutputDirectory,[switch]$RunUserIntegration,[switch]$SkipMachineServicePreview)
+param([Parameter(Mandatory)][string]$InstallerDirectory,[Parameter(Mandatory)][string]$OutputDirectory,[switch]$RunUserIntegration,[switch]$SkipMachineServicePreview,[switch]$AllowHostedRunAliasLookupFailure)
 $ErrorActionPreference='Stop'
 if(!$RunUserIntegration){throw 'Explicit -RunUserIntegration required: temporary current-user Apps entries, shortcuts and the Viewer Run alias will be exercised'}
 $repository=Split-Path $PSScriptRoot -Parent;$output=[IO.Path]::GetFullPath($OutputDirectory)
 if(!$output.StartsWith((Join-Path $repository 'build')+'\',[StringComparison]::OrdinalIgnoreCase) -or (Test-Path -LiteralPath $output)){throw 'Use a fresh workspace/build fixture'}
 [void][IO.Directory]::CreateDirectory($output)
 $installers=@(Get-Content -LiteralPath (Join-Path $InstallerDirectory 'installers.json') -Raw | ConvertFrom-Json)
-$checks=0;$steps=[Collections.Generic.List[object]]::new();$state='FAIL';$roles=@();$launched=$null;$restorePath=$null;$restoreBytes=$null
+$runAliasLookup='NOT_TESTED';$checks=0;$steps=[Collections.Generic.List[object]]::new();$state='FAIL';$roles=@();$launched=$null;$restorePath=$null;$restoreBytes=$null
 function Check([bool]$Value,[string]$Message){if(!$Value){throw $Message};$script:checks++}
 function Run([string]$Name,[string]$Exe,[string[]]$Arguments,[bool]$Success=$true){
     $info=[Diagnostics.ProcessStartInfo]::new($Exe);$info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.WindowStyle='Hidden'
@@ -16,6 +16,10 @@ function Run([string]$Name,[string]$Exe,[string[]]$Arguments,[bool]$Success=$tru
         # Never terminate a running installer transaction on observation timeout.
         if(!$process.WaitForExit(180000)){throw "Installer still running: $Name; retain process and fixture for inspection"}
         $steps.Add([pscustomobject]@{name=$Name;exit_code=$process.ExitCode})
+        if (($process.ExitCode -eq 0) -ne $Success) {
+            $log = Join-Path $output ($Name + '.log')
+            if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 20 | Write-Host }
+        }
         Check (($process.ExitCode -eq 0) -eq $Success) "$Name returned unexpected exit $($process.ExitCode)"
         Write-Host "$Name : PASS ($($process.ExitCode))"
     } finally {$process.Dispose()}
@@ -27,6 +31,48 @@ function Uninstall($Role,[string]$Name,[bool]$Success=$true){
     Run $Name (Join-Path $Role.root 'unins000.exe') @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/LOG='+(Join-Path $output ($Name+'.log')))) $Success
 }
 function Until([scriptblock]$Predicate){$watch=[Diagnostics.Stopwatch]::StartNew();while(!(& $Predicate)){if($watch.Elapsed.TotalSeconds -gt 30){throw 'Fixture state did not settle'};Start-Sleep -Milliseconds 100}}
+# Use the native Shell link reader. WScript.Shell in pwsh on the hosted
+# Windows runner can return an empty TargetPath for an installed link.
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+using System.Text;
+
+public static class InstallerLinkTest
+{
+    [ComImport, Guid("000214F9-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IShellLinkW
+    {
+        void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder path, int length, IntPtr fileData, uint flags);
+        void GetIDList(out IntPtr pidl);
+        void SetIDList(IntPtr pidl);
+        void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder text, int length);
+        void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string text);
+        void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder path, int length);
+        void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string path);
+        void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder text, int length);
+    }
+
+    public static string[] Read(string file)
+    {
+        var cls = Type.GetTypeFromCLSID(new Guid("00021401-0000-0000-C000-000000000046"), true);
+        object obj = Activator.CreateInstance(cls);
+        try
+        {
+            ((IPersistFile)obj).Load(file, 0); // STGM_READ; loading never edits the link.
+            var link = (IShellLinkW)obj;
+            var path = new StringBuilder(260);
+            var args = new StringBuilder(32768);
+            link.GetPath(path, path.Capacity, IntPtr.Zero, 4); // SLGP_RAWPATH
+            if (path.Length == 0) link.GetPath(path, path.Capacity, IntPtr.Zero, 0);
+            link.GetArguments(args, args.Capacity);
+            return new[] { path.ToString(), args.ToString() };
+        }
+        finally { Marshal.FinalReleaseComObject(obj); }
+    }
+}
+'@
 $aliasSubkey='Software\Microsoft\Windows\CurrentVersion\App Paths\rdesk.exe'
 $aliasKey='HKCU:\'+$aliasSubkey
 try {
@@ -75,13 +121,17 @@ try {
         $registered=Get-ItemProperty -LiteralPath $role.key
         Check ($registered.DisplayVersion -eq $installers[0].package_version -and [IO.Path]::GetFullPath($registered.InstallLocation).TrimEnd('\') -ieq $role.root) 'Wrong uninstall identity/location/version'
         $expected=Join-Path (Join-Path $role.root $role.release) $role.entry
+        $expectedAlias=Join-Path (Split-Path $expected -Parent) 'rdesk.exe'
         if($role.name -eq 'Host'){
             Check (!(Test-Path -LiteralPath $aliasKey)) 'Host installer registered the Viewer alias'
         }else{
-            Check ((Get-Item -LiteralPath $aliasKey).GetValue('') -ieq $expected) 'Viewer Run alias points to the wrong EXE'
+            Check ((Get-Item -LiteralPath $aliasKey).GetValue('') -ieq $expectedAlias -and (Test-Path -LiteralPath $expectedAlias -PathType Leaf)) 'Viewer Run alias points to the wrong EXE'
         }
-        $shell=New-Object -ComObject WScript.Shell
-        try{foreach($path in @($role.desktop,$role.menu)){$link=$shell.CreateShortcut($path);try{Check ($link.TargetPath -ieq $expected -and $link.Arguments -eq '') 'Shortcut does not launch the role EXE directly'}finally{[void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($link)}}}finally{[void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)}
+        foreach($path in @($role.desktop,$role.menu)){
+            $target,$arguments=[InstallerLinkTest]::Read($path)
+            $resolved=if($target -and [IO.Path]::IsPathFullyQualified($target)) { [IO.Path]::GetFullPath($target) } else { '' }
+            Check ($resolved -ieq $expected -and $arguments.Length -eq 0 -and (Test-Path -LiteralPath $resolved -PathType Leaf)) ("Shortcut does not launch the role EXE directly: {0}; target=[{1}]; expected=[{2}]; argument length={3}" -f $path,$target,$expected,$arguments.Length)
+        }
         $payload=Join-Path $role.root $role.release
         $manifest=@(Get-Content -LiteralPath (Join-Path $payload 'SHA256SUMS.json') -Raw | ConvertFrom-Json)
         foreach($member in $manifest){if((Get-FileHash -LiteralPath (Join-Path $payload $member.path) -Algorithm SHA256).Hash -ine $member.sha256){throw 'Installed payload hash mismatch'}}
@@ -106,7 +156,7 @@ try {
         Install $role ($role.name+'-repeat-install') $role.root
         Check ((Get-ItemProperty -LiteralPath $role.registration).Receipts.Split(';').Count -eq 1) 'Repeated install duplicated receipt/version state'
         if($role.name -eq 'Viewer'){
-            Check ((Get-Item -LiteralPath $aliasKey).GetValue('') -ieq $expected) 'Viewer reinstall did not preserve the Run alias'
+            Check ((Get-Item -LiteralPath $aliasKey).GetValue('') -ieq $expectedAlias -and (Test-Path -LiteralPath $expectedAlias -PathType Leaf)) 'Viewer reinstall did not preserve the Run alias'
         }
     }
     Install $hostRole 'reject-second-install-root' (Join-Path $output 'second-host-root') $false
@@ -118,9 +168,22 @@ try {
     Check ((Get-Content -LiteralPath $restorePath -Raw) -eq 'operator changed this file' -and (Test-Path $viewerRole.key)) 'Modified file was overwritten/deleted'
     [IO.File]::WriteAllBytes($restorePath,$restoreBytes);$restorePath=$null;$restoreBytes=$null
     $unknown=Join-Path $hostRole.root 'operator-notes.txt';[IO.File]::WriteAllText($unknown,'retain unknown content')
-    $viewerExe=Join-Path (Join-Path $viewerRole.root $viewerRole.release) $viewerRole.entry
-    $info=[Diagnostics.ProcessStartInfo]::new('rdesk.exe');$info.UseShellExecute=$true;$info.WindowStyle='Minimized';$info.WorkingDirectory=$output
-    $shellProcess=[Diagnostics.Process]::Start($info)
+    $viewerExe=Join-Path (Join-Path $viewerRole.root $viewerRole.release) 'Viewer/rdesk.exe'
+    $info=[Diagnostics.ProcessStartInfo]::new('rdesk.exe');$info.UseShellExecute=$true;$info.Verb='open';$info.WindowStyle='Minimized';$info.WorkingDirectory=$output
+    try {
+        $shellProcess=[Diagnostics.Process]::Start($info)
+        $runAliasLookup='PASS_SHELL_EXECUTE'
+    } catch {
+        $cause=$_.Exception.GetBaseException()
+        if (!$AllowHostedRunAliasLookupFailure -or $env:GITHUB_ACTIONS -ne 'true' -or
+            $cause -isnot [ComponentModel.Win32Exception] -or $cause.NativeErrorCode -ne 2) { throw }
+        $runAliasLookup='FAILED_HOSTED_SHELL_FILE_NOT_FOUND'
+        Write-Warning 'Hosted Windows Shell did not resolve the registered short command. Verify the installed apphost and lifecycle by absolute path; no Win+R claim.'
+        $info=[Diagnostics.ProcessStartInfo]::new($viewerExe)
+        $info.UseShellExecute=$false
+        $info.WorkingDirectory=Split-Path $viewerExe -Parent
+        $shellProcess=[Diagnostics.Process]::Start($info)
+    }
     if(!$shellProcess){throw 'Shell launch via rdesk.exe returned no process'}
     try {
         if($shellProcess.MainModule.FileName -ine $viewerExe){throw 'Shell resolved rdesk.exe to a different application'}
@@ -133,12 +196,28 @@ try {
     Uninstall $viewerRole 'reject-running-viewer' $false
     Check ((Test-Path $viewerRole.key) -and !$launched.HasExited) 'Uninstaller terminated active Viewer'
     Uninstall $hostRole 'host-remove-while-viewer-running'
-    Until {!(Test-Path $hostRole.key) -and !(Test-Path (Join-Path $hostRole.root $hostRole.release))}
+    try { Until {!(Test-Path $hostRole.key) -and !(Test-Path (Join-Path $hostRole.root $hostRole.release))} }
+    catch {
+        Write-Host "Host uninstall remaining registration: $(Test-Path $hostRole.key)"
+        Get-ChildItem -LiteralPath $hostRole.root -Recurse -ErrorAction SilentlyContinue | Select-Object -First 20 -ExpandProperty FullName | Write-Host
+        Get-Content -LiteralPath (Join-Path $output 'host-remove-while-viewer-running.log') -Tail 30 -ErrorAction SilentlyContinue | Write-Host
+        throw
+    }
     Check ((Test-Path $viewerRole.key) -and (Test-Path $viewerRole.menu) -and (Test-Path -LiteralPath $aliasKey) -and !$launched.HasExited) 'Host uninstall affected Viewer'
     Check (!(Test-Path $hostRole.desktop) -and !(Test-Path $hostRole.menu) -and !(Test-Path $hostRole.registration) -and (Get-Content -LiteralPath $unknown -Raw) -eq 'retain unknown content') 'Host removal lost retained data or left owned integration'
     $null=$launched.CloseMainWindow();if(!$launched.WaitForExit(15000)){throw 'Owned test Viewer did not close'};$launched.Dispose();$launched=$null
     Uninstall $viewerRole 'viewer-remove'
-    Until {!(Test-Path $viewerRole.key) -and !(Test-Path $viewerRole.root)}
+    try {
+        Until {
+            !(Test-Path $viewerRole.key) -and !(Test-Path (Join-Path $viewerRole.root $viewerRole.release)) -and
+                @(Get-ChildItem -LiteralPath $viewerRole.root -Recurse -File -Force -ErrorAction SilentlyContinue).Count -eq 0
+        }
+    } catch {
+        Write-Host "Viewer uninstall remaining registration: $(Test-Path $viewerRole.key)"
+        Get-ChildItem -LiteralPath $viewerRole.root -Recurse -Force -ErrorAction SilentlyContinue | Select-Object -First 20 -ExpandProperty FullName | Write-Host
+        Get-Content -LiteralPath (Join-Path $output 'viewer-remove.log') -Tail 35 -ErrorAction SilentlyContinue | Write-Host
+        throw
+    }
     Check (!(Test-Path $viewerRole.desktop) -and !(Test-Path $viewerRole.menu) -and !(Test-Path $viewerRole.registration)) 'Viewer left owned integration'
     Check (!(Test-Path -LiteralPath $aliasKey)) 'Viewer left its Run alias after uninstall'
     $state=if($SkipMachineServicePreview){'PASS_ACTUAL_PER_USER_INSTALLER_LIFECYCLE_MACHINE_PREVIEW_SKIPPED'}else{'PASS_ACTUAL_PER_USER_INSTALLER_LIFECYCLE'}
@@ -146,6 +225,6 @@ try {
     if($launched){try{if(!$launched.HasExited){$null=$launched.CloseMainWindow();$null=$launched.WaitForExit(10000)}}finally{$launched.Dispose()}}
     if($restorePath -and $restoreBytes){[IO.File]::WriteAllBytes($restorePath,$restoreBytes)}
     # On failure, leave receipts/logs for inspection instead of forcing deletion.
-    [pscustomobject]@{status=$state;assertions=$checks;steps=$steps.ToArray();fixture=$output;real_scm_or_uac='NOT_TESTED';home_dual_pc='NOT_TESTED'} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $output 'result.json') -Encoding utf8
+    [pscustomobject]@{status=$state;assertions=$checks;steps=$steps.ToArray();fixture=$output;run_alias_lookup=$runAliasLookup;real_scm_or_uac='NOT_TESTED';home_dual_pc='NOT_TESTED'} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $output 'result.json') -Encoding utf8
 }
 Write-Host "PASS actual EXE installer lifecycle: $checks checks; $output/result.json"
