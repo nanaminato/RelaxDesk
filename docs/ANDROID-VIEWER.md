@@ -123,3 +123,19 @@ Android 保留完整 v5 绑定与 Host 同意，之后关闭未使用的辅助�
 此版本仅接受批准中的初始显示及视频代次，复用 Core 检查显示范围和帧尺寸。不会发送虚假的 `display-configured-v2` 或 `display-ready-v2`。后续持续播放应独立测试 v2 同尺寸显示切换：配置完成后 ACK，再等待对应代次帧实际呈现才允许输入；不把本机 Surface 重建当成远端切换。参考 [拓扑顺序](DISPLAY-TOPOLOGY.md) 和 `DisplaySwitchSmoke`。
 
 Linux 测试使用与 Android Activity 相同的连接实现，验证认证、四通道绑定及关闭、获批 AVC 首帧交给替身、拒绝超前显示代次、首帧前取消和端点输入校验。默认 TLS 回环 **159** 项、含静止场景 **204** 项，媒体 **74** 项、设备证明 **20** 项通过。ARM64 Debug APK 构建 0 警告、0 错误，v3 签名和 16 KiB 静态验证通过，包内确认目标 SDK 37、局域网权限及不可由外部应用启动的探针 Activity。SHA-256 `46a3bce1ed7bfca85fa2a138d0feeb57c4f76291c3dfaafd637696bdbd69960b`。ADB 无设备，未跑 Android 运行时、实际权限流程、Keystore、硬件解码、真实 Windows 会话或性能。
+
+### 使用 Android 模拟器验证首帧探针
+
+模拟器和开发终端须在同一台机器。用 `-p:RuntimeIdentifier=android-x64` 重建调试 APK，安装在 x86-64 Android 模拟器。不要用 x86-64 包测试 ARM64 手机。另起一个本地终端执行：
+
+```sh
+bash scripts/generate-android-probe.sh
+dotnet run --project src/RelaxDesk.Android.Tests -c Release -- \
+  --serve-probe src/RelaxDesk.Android/Assets/probe.rdm2
+```
+
+测试程序只监听主机的 `127.0.0.1`，生成临时证书、测试密码及绑定票据，不读取真实桌面或外设。在模拟器的首帧探针中输入 `10.0.2.2` 和终端 `READY` 行显示的端口、指纹及测试账号。该地址是 [Android Emulator 到开发主机回环的别名](https://developer.android.com/studio/run/emulator-networking-address)。使用一次性测试密码，不要将终端输出贴到公开日志；结束后停止夹具。
+
+可分开观察：Android 权限弹窗、Keystore 签名、Host 看到四条绑定、Host 写入首帧、App 报告 Surface 提交。夹具自动批准合成桌面，不能代替 Windows 的真实同意、硬件编码或真实局域网。模拟器即便报告硬件解码器，也不能作为手机硬件解码和性能的证据。
+
+外部客户端夹具冒烟已在 Linux 通过：独立进程以合成凭据完成证书固定、P-256 证明、媒体及三个辅助通道绑定，校验首帧，放慢替身呈现至超过一个心跳周期后正常断开；辅助通道没有应用载荷。含静止场景的 **204** 项回环、**74** 项媒体和 **20** 项设备证明检查通过。这个结果不替代真机或模拟器验收。

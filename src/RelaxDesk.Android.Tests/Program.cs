@@ -1,6 +1,12 @@
 using RelaxDesk.Mobile.Media;
 using RelaxDesk.Core;
 
+if (args is ["--serve-probe", var syntheticAsset])
+{
+    await AndroidProbeFixtureHost.Run(syntheticAsset);
+    return;
+}
+
 int checks = 0;
 void Check(bool pass, string message)
 {
@@ -55,7 +61,7 @@ Check(wireGate.Accept(await channel.Read(default)) == FrameAction.Decode, "Core 
 Check(stream.Position == stream.Length, "Exact frame boundaries");
 
 if (args is not ([] or [_] or [_, "--idle"]))
-    throw new ArgumentException("Usage: RelaxDesk.Android.Tests [probe.rdm2 [--idle]]");
+    throw new ArgumentException("Usage: RelaxDesk.Android.Tests [probe.rdm2 [--idle]] | --serve-probe probe.rdm2");
 if (args is [var file, ..])
 {
     using var fixture = File.OpenRead(file);
