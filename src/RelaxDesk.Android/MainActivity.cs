@@ -5,7 +5,7 @@ using Android.Widget;
 
 namespace RelaxDesk.Mobile;
 
-// A local test tool, not a network client. No permission prompts or background service.
+// Local media and key checks; the separate network probe is user-launched.
 [Activity(Label = "RelaxDesk Media Probe", MainLauncher = true, Exported = true)]
 public sealed class MainActivity : Activity, ISurfaceHolderCallback
 {
@@ -56,6 +56,9 @@ public sealed class MainActivity : Activity, ISurfaceHolderCallback
         };
         root.AddView(keyProbe);
         root.AddView(keyStatus);
+        var remote = new Button(this) { Text = "局域网首帧连接探针" };
+        remote.Click += (_, _) => StartActivity(typeof(RemoteProbeActivity));
+        root.AddView(remote);
         root.AddView(stage, new LinearLayout.LayoutParams(-1, 0, 1));
         SetContentView(root);
     }

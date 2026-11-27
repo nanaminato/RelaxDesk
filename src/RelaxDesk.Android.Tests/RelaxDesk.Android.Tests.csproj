@@ -4,4 +4,5 @@
   <ItemGroup><Compile Include="../RelaxDesk.Android/Security/ProviderDeviceKey.cs" Link="ProviderDeviceKey.cs" /></ItemGroup>
   <ItemGroup><Compile Include="../RelaxDesk.Android/Networking/ScreenOnlyAttachments.cs" Link="ScreenOnlyAttachments.cs" /></ItemGroup>
   <ItemGroup><Compile Include="../RelaxDesk.Android/Networking/ControlHeartbeat.cs" Link="ControlHeartbeat.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="../RelaxDesk.Android/Networking/FirstFrameSession.cs" Link="FirstFrameSession.cs" /></ItemGroup>
 </Project>

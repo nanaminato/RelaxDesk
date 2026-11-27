@@ -14,8 +14,17 @@ internal static class SurfaceProbe
     public static async Task<string> Play(System.IO.Stream stream, Surface surface, CancellationToken ct)
     {
         var frames = new TcpTlsVideoChannel(stream, displayGeneration: true, videoGeneration: true);
+        return await Decode(await frames.Read(ct), frames, surface, ct);
+    }
+
+    public static Task<string> PlayFirst(MediaFrame frame, Surface surface, CancellationToken ct) =>
+        Decode(frame with { Timestamp100ns = 0 }, null, surface, ct);
+
+    static async Task<string> Decode(MediaFrame first, IVideoFrameChannel? frames, Surface surface, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        int expected = frames is null ? 1 : 48;
         var gate = new AvcFrameGate();
-        var first = await frames.Read(ct);
         if (gate.Accept(first) != FrameAction.Reconfigure ||
             !AvcAccessUnit.TryGetCodecSpecificData(first.Data, out var sequence, out var picture))
             throw new InvalidDataException("Missing first AVC bootstrap");
@@ -88,9 +97,9 @@ internal static class SurfaceProbe
             Submit(first);
             // Probe asset contains one fixed-size GOP. The live decoder will
             // own recreation and IDR requests rather than treat them as EOF.
-            for (int i = 1; i < 48; i++)
+            for (int i = 1; i < expected; i++)
             {
-                var frame = await frames.Read(ct);
+                var frame = await frames!.Read(ct);
                 if (gate.Accept(frame) != FrameAction.Decode)
                     throw new InvalidDataException("Unexpected discontinuity in test asset");
                 Submit(frame);
@@ -102,7 +111,7 @@ internal static class SurfaceProbe
             {
                 ct.ThrowIfCancellationRequested();
                 if (!Drain(5000)) continue;
-                if (submitted != 48) throw new InvalidDataException($"解码输出帧数不符：{submitted}/48");
+                if (submitted != expected) throw new InvalidDataException($"解码输出帧数不符：{submitted}/{expected}");
                 return $"{candidate.Name}：向 Surface 提交 {submitted} 帧，首帧提交 {firstOutput} ms（不是上屏延迟）";
             }
             throw new TimeoutException("Timed out waiting for decoder EOS");

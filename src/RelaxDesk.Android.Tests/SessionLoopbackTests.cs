@@ -33,12 +33,14 @@ internal static class SessionLoopbackTests
         }
 
         List<string> modes = ["ok", "confirm-first-pin", "wrong-pin", "decline-first-pin", "deny-approval", "unoffered-codec",
-            "wrong-clipboard-cert", "unexpected-frame-codec", "no-auto-takeover", "screen-only"];
+            "wrong-clipboard-cert", "unexpected-frame-codec", "no-auto-takeover", "screen-only", "app-first", "app-wrong-display", "app-cancel"];
         if (includeIdle) modes.Add("idle-control");
         foreach (string mode in modes)
         {
             bool idle = mode == "idle-control";
-            bool screenOnly = idle || mode == "screen-only";
+            bool app = mode is "app-first" or "app-wrong-display" or "app-cancel";
+            bool screenOnly = idle || app || mode == "screen-only";
+            var bound = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             const int idlePings = 9;
             using var listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Start();
@@ -48,6 +50,39 @@ internal static class SessionLoopbackTests
 
             var server = Serve();
             int keyOpens = 0, prompts = 0;
+            if (app)
+            {
+                using var cancel = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                int presented = 0;
+                Exception? failure = null;
+                try
+                {
+                    var run = FirstFrameSession.Run("127.0.0.1", port, pin, User, Password,
+                        () => new DeviceProofTests.DerProvider(ECDsa.Create(ECCurve.NamedCurves.nistP256)),
+                        (frame, _) =>
+                        {
+                            Check(frame.Data.SequenceEqual(firstFrame.Data), "App presents the approved AVC sample");
+                            presented++;
+                            return Task.FromResult("fake Surface submission");
+                        }, cancel.Token);
+                    if (mode == "app-cancel")
+                    {
+                        await bound.Task.WaitAsync(ct);
+                        cancel.Cancel();
+                    }
+                    Check(await run == "fake Surface submission", "App returns the renderer outcome");
+                }
+                catch (Exception e) when (e is InvalidDataException or OperationCanceledException) { failure = e; }
+                await server;
+                Check(mode switch
+                {
+                    "app-first" => failure is null && presented == 1,
+                    "app-wrong-display" => failure is InvalidDataException && presented == 0,
+                    "app-cancel" => failure is OperationCanceledException && !ct.IsCancellationRequested && presented == 0,
+                    _ => false
+                }, $"Unexpected app outcome for {mode}: {failure}");
+                continue;
+            }
             try
             {
                 using var client = new SessionClient
@@ -273,6 +308,20 @@ internal static class SessionLoopbackTests
                             "Channel binds only its own ticket");
                         await Wire.Write(tls, new(name + "-approved-v2"), ct);
                     }
+                    if (app)
+                    {
+                        // First frame does not require a display-configured
+                        // message. The read-only probe also must send no ready.
+                        foreach (var optional in channels.Skip(1))
+                            Check(await optional.ReadAsync(new byte[1], ct) == 0, "Probe binds and closes unused attachment");
+                        bound.TrySetResult();
+                        if (mode != "app-cancel")
+                            await MediaProtocol.Write(channels[0],
+                                mode == "app-wrong-display" ? firstFrame with { DisplayGeneration = 2 } : firstFrame, ct);
+                        Check(await control.ReadAsync(new byte[1], ct) == 0,
+                            "App closes without any unverified display ACK or other control message");
+                        return;
+                    }
                     var frame = mode == "unexpected-frame-codec"
                         ? firstFrame with { Codec = MediaCodec.DeflateBgra, Data = [1] } : firstFrame;
                     await MediaProtocol.Write(channels[0], frame, ct);
@@ -322,6 +371,13 @@ internal static class SessionLoopbackTests
             Features: [SessionCapabilities.SystemAudio], Data: [1])), "Arbitrary payload is not an availability notice");
         Check(!ScreenOnlyAttachments.IsUnavailableNotice(new("component-unavailable-v5",
             Features: [SessionCapabilities.SystemAudio], Text: "transport")), "Only file transfer has a transport reason");
+        foreach (var address in new[] { "relaxdesk.example", "8.8.8.8", "0.0.0.0", "224.0.0.5", "::", "ff02::1" })
+            Check(!FirstFrameSession.TryEndpoint(address, "5000", pin, out _, out _, out _), "Only explicit local IPs accepted");
+        Check(!FirstFrameSession.TryEndpoint("127.0.0.1", "65536", pin, out _, out _, out _), "Reject invalid port");
+        Check(!FirstFrameSession.TryEndpoint("127.0.0.1", "5000", "", out _, out _, out _), "Reject missing pin");
+        Check(FirstFrameSession.TryEndpoint("::ffff:192.168.1.10", "5000", pin.ToLowerInvariant(),
+            out var normalized, out var normalizedPort, out var normalizedPin) &&
+            normalized == "192.168.1.10" && normalizedPort == 5000 && normalizedPin == pin, "Normalize before pinned connection");
         return checks;
     }
 
