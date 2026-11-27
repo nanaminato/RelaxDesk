@@ -11,3 +11,8 @@
 
 ## 验收
 同提交 TCP/UDP/Auto 对照，保存配置、校准、原始数据、失败及 P50/P95；区分提交与可见帧、应用与链路字节。运行 native build、Release build、RelaxDesk.Tests 及相关 Windows contracts；无法运行则明确标记。不得宣称达到 MSTSC 百分比。
+
+## 2026-11-27 落地状态
+- **环境固定与元数据采集**：已在 `scripts/RelaxDesk.Benchmark.psm1`（`run.json`）与 `scripts/accept-home.ps1`（`machine.json`）中增补 Git `Revision`、`WindowsEdition`、`PowerScheme`（`powercfg /GetActiveScheme`）及显卡当前分辨率与刷新率，连同二进制 SHA-256 哈希一并固化。
+- **分通道字节统计**：新增 `TrafficAccountingStream`（`src/RelaxDesk.Core/Transport/TrafficAccountingStream.cs`），在 Host 会话结束时输出 `channel_traffic control_rx=... control_tx=... video_tx=... file_rx=... file_tx=... clipboard_rx=... clipboard_tx=... audio_tx=...`，在 Viewer 结项报告中增补 `file_tx_bytes`、`file_rx_bytes`、`audio_rx_bytes`。
+- **自动化验证**：Native Release build、Managed Release build、`RelaxDesk.Tests`、`test-benchmark-tools.ps1` 及 Windows 契约测试全部通过；双机物理 Home Host → Server Viewer 实测与外部高速相机输入到光子测量标记为 `NOT_TESTED`。

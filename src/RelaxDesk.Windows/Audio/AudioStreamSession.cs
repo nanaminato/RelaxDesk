@@ -24,7 +24,8 @@ public sealed class AudioStreamSession:IAsyncDisposable
     public string? Failure{get;private set;}
     public long Packets{get;private set;}
     public long PayloadBytes{get;private set;}
-    long lateDrops;int deviceRestarts;
+    public long SuppressedSilentFrames => Interlocked.Read(ref suppressedSilent);
+    long lateDrops,suppressedSilent;int deviceRestarts;
     int stopped,disposed;
     void Log(string value){try{log?.Invoke(value);}catch{/* Optional diagnostics cannot terminate the screen session. */}}
     public AudioStreamSession(Stream stream,bool sending,Func<IAudioEndpoint> factory,CancellationToken parent,Action<string>? log=null,bool synchronizeVideo=false)
@@ -75,7 +76,7 @@ public sealed class AudioStreamSession:IAsyncDisposable
     }
     void Device()
     {
-        IAudioEndpoint? endpoint=null;int retries=0,seenFlush=0;long sequence=0,lastTimestamp=0;
+        IAudioEndpoint? endpoint=null;int retries=0,seenFlush=0,silentStreak=0;long sequence=0,lastTimestamp=0;
         AudioFrame? pending=null;int offset=0;long lastCheck=0,seenDiscontinuity=0;bool discontinuity=true,invalidated=false;
         try
         {
@@ -100,7 +101,7 @@ public sealed class AudioStreamSession:IAsyncDisposable
                             try{endpoint=factory();}
                             catch(System.Runtime.InteropServices.COMException e)when(unchecked((uint)e.HResult) is 0x88890004 or 0x80070490 or 0x88890010){Log($"audio_device_retry attempt={retries}");}
                         }
-                        invalidated=false;discontinuity=true;pending=null;incoming.Flush();continue;
+                        invalidated=false;discontinuity=true;silentStreak=0;pending=null;incoming.Flush();continue;
                     }
                 }
                 if(sending)
@@ -111,7 +112,20 @@ public sealed class AudioStreamSession:IAsyncDisposable
                     if(frame is not null)
                     {
                         if(frame.Timestamp100ns>=lastTimestamp)
-                        {lastTimestamp=frame.Timestamp100ns;outgoing.Writer.TryWrite(frame with{Sequence=++sequence,Discontinuity=discontinuity||frame.Discontinuity});discontinuity=false;}
+                        {
+                            lastTimestamp=frame.Timestamp100ns;
+                            if(AudioProtocol.IsSilent(frame.Data))
+                            {
+                                if(++silentStreak>2)
+                                {
+                                    Interlocked.Increment(ref suppressedSilent);
+                                    discontinuity=true;
+                                    continue;
+                                }
+                            }
+                            else silentStreak=0;
+                            outgoing.Writer.TryWrite(frame with{Sequence=++sequence,Discontinuity=discontinuity||frame.Discontinuity});discontinuity=false;
+                        }
                         // Drain the capture backlog before polling again. One
                         // sleep per device packet falls behind small periods.
                         continue;
@@ -167,6 +181,6 @@ public sealed class AudioStreamSession:IAsyncDisposable
             outgoing.Writer.TryComplete();incoming.Flush();deviceDone.TrySetResult();
         }
     }
-    async Task Join(){await Task.WhenAll(transport,deviceDone.Task);Log($"audio_session role={(sending?"capture":"playback")} packets={Packets} application_pcm_bytes={PayloadBytes} device_retries={deviceRestarts} late_drops={lateDrops} buffered_frames={incoming.BufferedFrames}");}
+    async Task Join(){await Task.WhenAll(transport,deviceDone.Task);Log($"audio_session role={(sending?"capture":"playback")} packets={Packets} application_pcm_bytes={PayloadBytes} suppressed_silent_frames={SuppressedSilentFrames} device_retries={deviceRestarts} late_drops={lateDrops} buffered_frames={incoming.BufferedFrames}");}
     public async ValueTask DisposeAsync(){if(Interlocked.Exchange(ref disposed,1)!=0){await Completion;return;}Stop();await Completion;lifetime.Dispose();}
 }

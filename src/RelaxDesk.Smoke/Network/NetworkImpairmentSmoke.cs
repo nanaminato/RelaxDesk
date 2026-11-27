@@ -39,7 +39,7 @@ internal static class NetworkImpairmentSmoke
                 long previous = 0;
                 while (true)
                 {
-                    var frame = await MediaProtocol.Read(client.Media, running.Token);
+                    var frame = await MediaProtocol.Read(client.Media, running.Token, displayGeneration: client.DisplayVersion != 0, videoGeneration: client.VideoVersion != 0);
                     if (frame.Codec != MediaCodec.DeflateBgra || frame.Sequence <= previous) throw new InvalidDataException("Unexpected media ordering/codec");
                     if (previous != 0 && frame.Sequence > previous + 1) Interlocked.Increment(ref gaps);
                     var decoded = decoder.Decode(frame) ?? throw new InvalidDataException("Deflate frame not decoded");

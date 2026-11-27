@@ -4,12 +4,13 @@ public sealed record VideoSettings(int FramesPerSecond,int Bitrate,int Generatio
 public static class VideoSettingsProtocol
 {
     public const int Version=1;
+    public const int MinimumBitrate=100_000,MaximumBitrate=100_000_000;
     public static readonly VideoSettings Default=new(30,8_000_000,1);
     public static bool Supported(int version)=>version is 0 or Version;
     public static bool Empty(Packet p)=>p.VideoVersion==0&&p.VideoSettings is null;
     public static VideoSettings Validate(VideoSettings settings)
     {
-        if(settings is null||settings.FramesPerSecond is <5 or >144||settings.Bitrate is <1_000_000 or >100_000_000||settings.Generation is <1 or >1_000_000)throw new InvalidDataException("Invalid video settings");return settings;
+        if(settings is null||settings.FramesPerSecond is <5 or >144||settings.Bitrate is <MinimumBitrate or >MaximumBitrate||settings.Generation is <1 or >1_000_000)throw new InvalidDataException("Invalid video settings");return settings;
     }
     public static bool ValidCommand(Packet p)=>p.Sequence>0&&p.VideoVersion==Version&&p.VideoSettings is{} settings&&Valid(settings)&&p==new Packet("video-settings-v2",p.Sequence,VideoVersion:Version,VideoSettings:settings);
     static bool Valid(VideoSettings settings){try{Validate(settings);return true;}catch(InvalidDataException){return false;}}

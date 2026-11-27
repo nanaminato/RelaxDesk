@@ -14,3 +14,9 @@ QuicBitrateController.Target 使用 Math.Max(1_000_000, ceiling*scale/1000)，�
 
 ## 验收
 512/256 kbit/s、RTT 150/300ms、1/5/10% 丢包分别及组合测试；记录实际码率、控制 RTT P95、冻结时间、恢复时间、队列上限、文件并发影响。稳定静态后丢最后一帧必须可恢复。与旧版 A/B，禁止以降低文字可读性掩盖退化。
+
+## 2026-11-27 落地状态
+- **亚 Mbps 目标码率与策略/编码器下限对齐**：已修复 `QuicBitrateController.Target` 原先 `Math.Max(1_000_000, ...)` 超过亚 Mbps `ceiling` 的缺陷；定义 `PolicyFloor = 100_000`，将 `VideoSettingsProtocol.MinimumBitrate` 与原生 `rd_encoder_set_bitrate` 下限统一对齐至 `100_000`（100 kbps），支持 `ceiling = 128k / 256k / 512k / 800k / 1M / 4M`；新增 `QuicBitrateController.FramesPerSecond` 在低码率下自动将采集/编码帧率平稳降至最低 5 FPS。
+- **RTT 增长抑制升档与避免控制环冲突**：`QuicBitrateController.Observe(QuicPathStatistics)` 跟踪路径最小 RTT，当 RTT 膨胀超过 `max(40ms, minRtt/2)` 时抑制处于满量程时的盲目升档，同时不因单纯延迟额外削减码率，不与 MsQuic 拥塞控制冲突。
+- **共享链路预算与文件动态限速**：`FileTransferClient` 新增 `SetLinkRateCeiling` 与 `LinkRateForVideoBitrate`（限制后台文件传输不超过当前目标视频码率的 25%，下限 16 KiB/s），并在 Viewer 自动画质调整中实时联动；`OutgoingControlQueue` 保持鼠标移动仅在相邻移动间合并、绝不跨越按键/点击边界。
+- **静态尾帧丢失恢复与 QUIC 全场景验证**：`DatagramVideoChannel` 心跳（`RDH1`）扩展为 12 字节并携带最新已发帧序号；当桌面静止且最后一帧在 UDP 丢失时，Viewer 收到心跳即刻检测序号缺口并自动发送 `keyframe-v2` 恢复；`--quic-production`（15 个 UDP / Auto / 回退 / 恢复 / 整形 / 持续丢包 / 超大帧场景）与 `--network-impairment shaped` 全部通过。

@@ -32,6 +32,7 @@ internal sealed class AutoFallbackVideoChannel(
         using var stopUdpRead = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
         var datagram = udp.Read(stopUdpRead.Token);
         string reason = "udp-host-fallback";
+        bool viewerRequestedFallback = false;
         try
         {
             while (await Task.WhenAny(pendingStandby, datagram).WaitAsync(cancellation) == pendingStandby || pendingStandby.IsCompleted)
@@ -50,16 +51,30 @@ internal sealed class AutoFallbackVideoChannel(
                 }
                 catch (Exception error) when (!cancellation.IsCancellationRequested && QuicDatagramAttachment.Recoverable(error))
                 {
-                    reason = error is DatagramSilenceException ? "udp-datagrams-silent" : "udp-interrupted";
-                    using var request = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-                    request.CancelAfter(TimeSpan.FromSeconds(2));
-                    await Wire.Write(standby, new("media-fallback-v2"), request.Token);
+                    if (!pendingStandby.IsCompleted)
+                    {
+                        reason = error is DatagramSilenceException ? "udp-datagrams-silent" : "udp-interrupted";
+                        viewerRequestedFallback = true;
+                        using var request = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+                        request.CancelAfter(TimeSpan.FromSeconds(2));
+                        await Wire.Write(standby, new("media-fallback-v2"), request.Token);
+                    }
                 }
             }
 
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
             deadline.CancelAfter(TimeSpan.FromSeconds(5));
-            var recovered = await pendingStandby.WaitAsync(deadline.Token);
+            MediaFrame recovered;
+            while (true)
+            {
+                recovered = await pendingStandby.WaitAsync(deadline.Token);
+                if (!viewerRequestedFallback && recovered.Sequence <= lastUdpSequence)
+                {
+                    standbyFrame = pendingStandby = Observe(tcp.Read(CancellationToken.None));
+                    continue;
+                }
+                break;
+            }
             if (!recovered.KeyFrame && recovered.Codec == MediaCodec.H264)
                 throw new InvalidDataException("TCP fallback did not begin with a key frame");
             closeUdp();

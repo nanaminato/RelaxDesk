@@ -19,6 +19,7 @@ internal static class AudioChecks
         }
         var half=AudioProtocol.Gain(sample.Data,0.5,false);Check(BinaryPrimitives.ReadInt16LittleEndian(half)==-16384&&BinaryPrimitives.ReadInt16LittleEndian(half.AsSpan(2))==16384);
         Check(AudioProtocol.Gain(sample.Data,1,false).SequenceEqual(sample.Data));Check(AudioProtocol.Gain(sample.Data,1,true).All(value=>value==0));Check(AudioProtocol.Gain(sample.Data,0,false).All(value=>value==0));
+        Check(!AudioProtocol.IsSilent(sample.Data)&&AudioProtocol.IsSilent(new byte[1920])&&AudioProtocol.IsSilent([]));
         foreach(double gain in new[]{-1,1.01,double.NaN,double.PositiveInfinity}){try{AudioProtocol.Gain(sample.Data,gain,false);throw new Exception("Invalid gain accepted");}catch(ArgumentException){count++;}}
         var buffer=new AudioJitterBuffer();for(int i=1;i<=100;i++)buffer.Push(sample with{Sequence=i,Timestamp100ns=i,Discontinuity=false});
         Check(buffer.BufferedFrames==9600&&buffer.Dropped==80);Check(buffer.TryTake(out var oldest)&&oldest!.Sequence==81);

@@ -47,6 +47,8 @@ public static class AudioProtocol
         for(int i=0;i<data.Length;i+=2)BinaryPrimitives.WriteInt16LittleEndian(result.AsSpan(i),(short)Math.Clamp(Math.Round(BinaryPrimitives.ReadInt16LittleEndian(data[i..])*volume),short.MinValue,short.MaxValue));
         return result;
     }
+    public static bool IsSilent(ReadOnlySpan<byte> data) =>
+        !data.ContainsAnyExcept((byte)0);
 }
 
 // An optional audio failure must be handled by its owner, never a video queue.

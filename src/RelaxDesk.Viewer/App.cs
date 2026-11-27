@@ -380,14 +380,15 @@ public sealed partial class ViewerWindow : Window
             }
         }
 
+            var controlTraffic = new TrafficAccountingStream(connection.Control, leaveOpen: true);
             void ObserveQueue(Packet packet, double elapsed) => metrics.Add(packet.Kind is "input" or "input-v2" ? "input_queue" : "control_queue", elapsed);
-            var writer = Task.Run(() => Observe(async () => { await foreach (var packet in outgoing.Reader.ReadAllAsync(cancellation.Token, ObserveQueue)) await Wire.Write(connection.Control, packet, cancellation.Token); }, "control-write", "control-write"));
+            var writer = Task.Run(() => Observe(async () => { await foreach (var packet in outgoing.Reader.ReadAllAsync(cancellation.Token, ObserveQueue)) await Wire.Write(controlTraffic, packet, cancellation.Token); }, "control-write", "control-write"));
             Task recoveryProbe = Task.CompletedTask;
             var control = Task.Run(() => Observe(async () =>
             {
                 while (true)
                 {
-                    var packet = await SessionControl.Read(connection.Control, cancellation.Token);
+                    var packet = await SessionControl.Read(controlTraffic, cancellation.Token);
                     if(ConnectionRecovery.IsExplicitEnd(packet))throw new RemoteSessionEndedException(packet.EndReason);
                     if (packet.Kind == "pong-v2")
                     {
@@ -452,6 +453,7 @@ public sealed partial class ViewerWindow : Window
             var receiver = Task.Factory.StartNew(() =>
             {
                 void KeyFrame() { Interlocked.Increment(ref keyframeRequests); Dispatcher.BeginInvoke(() => { if(!ReferenceEquals(session,cancellation)||cancellation.IsCancellationRequested)return; if (!outgoing.Writer.TryWrite(new Packet("keyframe-v2", ++sequence))) cancellation.Cancel(); }); }
+                connection.MissingVideoTailDetected = KeyFrame;
                 void Diagnostic(string message) => Dispatcher.BeginInvoke(() => {if(ReferenceEquals(session,cancellation)&&!cancellation.IsCancellationRequested)status.Text = message;});
                 MediaDecoder decoder = new(KeyFrame, Diagnostic, smoke?.HardwareDecode ?? true); D3D11Renderer? renderer = null;
                 DecodedSurface? retained = null; Task<MediaFrame>? pendingRead = null; Task? ioNotification = null;
@@ -601,13 +603,15 @@ public sealed partial class ViewerWindow : Window
             heartbeat?.Stop(); cancellation.Cancel();EndStatistics();EndVideoSettings(); EndDisplaySession(); EndViewport(); ResetInputState(); CompositionTarget.Rendering -= Rendering; ReleaseHeldInputs(); pointerPresentationChanged=null; SetPointerPresentation(false); cpu.Clear(); image.Visibility = Visibility.Visible;
             restoreFullScreen=fullScreen;
             if(established)retryFeatures=SessionCapabilities.All;
+            long viewerFileTx = fileClient?.UploadedBytes ?? 0, viewerFileRx = fileClient?.DownloadedBytes ?? 0;
+            long viewerAudioRx = audioSession?.PayloadBytes ?? 0;
             sessionPermissions?.Revoke(); sessionPermissions = null;
             await EndRichClipboard();
             await EndAudio();
             await EndFileSession();
             gpuViewportActive=false;if (nativeView is not null) { videoPanel.Children.Remove(nativeView); nativeView.Dispose(); nativeView = null; }
             session = null; ShowConnectedView(false);
-            string report = $"renderer={(gpuFrames > 0 && cpuFrames == 0 ? "d3d11" : "cpu-or-fallback")} gpu_frames={gpuFrames} cpu_frames={cpuFrames} full_frame_readback_bytes={readbackBytes} received_frames={receivedFrames} resizes={resizeCount} renderer_generations={rendererGenerations} keyframe_requests={keyframeRequests} simulated_device_losses={simulatedLosses} idle_repaints={idleRepaints} hidden={hiddenPresents} occluded={occludedPresents} gpu_busy={busyPresents} " + metrics.Report(decoded.Dropped + skipped, decoded.Depth);
+            string report = $"renderer={(gpuFrames > 0 && cpuFrames == 0 ? "d3d11" : "cpu-or-fallback")} gpu_frames={gpuFrames} cpu_frames={cpuFrames} full_frame_readback_bytes={readbackBytes} received_frames={receivedFrames} resizes={resizeCount} renderer_generations={rendererGenerations} keyframe_requests={keyframeRequests} simulated_device_losses={simulatedLosses} idle_repaints={idleRepaints} hidden={hiddenPresents} occluded={occludedPresents} gpu_busy={busyPresents} file_tx_bytes={viewerFileTx} file_rx_bytes={viewerFileRx} audio_rx_bytes={viewerAudioRx} " + metrics.Report(decoded.Dropped + skipped, decoded.Depth);
             if (smoke is not null && !smoke.ReconnectTest)
             {
                 var resources = GraphicsDiagnostics.Resources();

@@ -185,6 +185,11 @@ internal static class VideoHostSession
         var audioData = audioConnection?.Stream;
         if (attachments is null) listener.Stop();
         using var session = CancellationTokenSource.CreateLinkedTokenSource(stop);
+        var controlTraffic = new TrafficAccountingStream(control, leaveOpen: true);
+        var dataTraffic = data is null ? null : new TrafficAccountingStream(data);
+        var clipboardTraffic = clipboardData is null ? null : new TrafficAccountingStream(clipboardData);
+        var audioTraffic = audioData is null ? null : new TrafficAccountingStream(audioData);
+        long mediaSentBytes = 0;
         var queue = new LatestQueue<QueuedFrame>(QuicSendStatistics.HostVideoQueueCapacity);
         var gate = new AccessGate(); gate.Approve(features,hello.InputVersion,displayVersion,hello.VideoVersion);
         using var controlWrite = new SemaphoreSlim(1);
@@ -192,7 +197,7 @@ internal static class VideoHostSession
         {
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(session.Token); deadline.CancelAfter(TimeSpan.FromSeconds(2));
             await controlWrite.WaitAsync(deadline.Token);
-            try { await Wire.Write(control, packet, deadline.Token); }
+            try { await Wire.Write(controlTraffic, packet, deadline.Token); }
             finally { controlWrite.Release(); }
         }
         using var audioLifetime=CancellationTokenSource.CreateLinkedTokenSource(session.Token);
@@ -200,24 +205,24 @@ internal static class VideoHostSession
         {
             try
             {
-                if(audioData is not null&&gate.Allows(SessionCapabilities.SystemAudio))
+                if(audioTraffic is not null&&gate.Allows(SessionCapabilities.SystemAudio))
                 {
-                    await using var sound=new AudioStreamSession(audioData,true,()=>synthetic?new TestAudioEndpoint(backend=="test-audio-failure"):new WindowsAudio(true),audioLifetime.Token,HostSessionLog.Write);
+                    await using var sound=new AudioStreamSession(audioTraffic,true,()=>synthetic?new TestAudioEndpoint(backend=="test-audio-failure"):new WindowsAudio(true),audioLifetime.Token,HostSessionLog.Write);
                     await sound.Completion;
                 }
             }
             catch(Exception e){HostSessionLog.Write($"audio_disabled stage=worker error_type={e.GetType().Name}");}
             finally
             {
-                gate.RevokeFeature(SessionCapabilities.SystemAudio);audioData?.Dispose();
+                gate.RevokeFeature(SessionCapabilities.SystemAudio);audioTraffic?.Dispose();
                 if(!session.IsCancellationRequested)try{await WriteControl(new("component-unavailable-v5",Features:[SessionCapabilities.SystemAudio]));}catch(Exception e){HostSessionLog.Write($"audio_notification_failed error_type={e.GetType().Name}");}
             }
         });
         var clipboardReady=new TaskCompletionSource<IFileClipboardPublisher?>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var fileSession = CancellationTokenSource.CreateLinkedTokenSource(session.Token);
-        var fileWorker = data is null ? Task.CompletedTask : Task.Run(async () =>
+        var fileWorker = dataTraffic is null ? Task.CompletedTask : Task.Run(async () =>
         {
-            try { await new FileTransferServer(fileRoot!, gate,resumeFiles?fileResumes:null,()=>!stop.IsCancellationRequested,token=>clipboardReady.Task.WaitAsync(token),clipboardSources).Run(data, fileSession.Token); }
+            try { await new FileTransferServer(fileRoot!, gate,resumeFiles?fileResumes:null,()=>!stop.IsCancellationRequested,token=>clipboardReady.Task.WaitAsync(token),clipboardSources).Run(dataTraffic, fileSession.Token); }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException or OperationCanceledException or System.Text.Json.JsonException)
             {
                 gate.RevokeFeature(SessionCapabilities.FileTransfer);
@@ -228,7 +233,7 @@ internal static class VideoHostSession
                     catch (Exception) when (session.IsCancellationRequested) { }
                 }
             }
-            finally { data.Dispose();if(fileResumes is not null&&(stop.IsCancellationRequested))await fileResumes.Clear(); }
+            finally { dataTraffic.Dispose();if(fileResumes is not null&&(stop.IsCancellationRequested))await fileResumes.Clear(); }
         }, session.Token);
         using var clipboardLifetime=CancellationTokenSource.CreateLinkedTokenSource(session.Token);
         IContentClipboard CreateRichClipboard()
@@ -240,7 +245,7 @@ internal static class VideoHostSession
             }
             catch{clipboardReady.TrySetResult(null);throw;}
         }
-        await using var richClipboard=new ClipboardContentSession(clipboardData??throw new InvalidDataException("Current clipboard channel missing"),CreateRichClipboard,gate,clipboardLifetime.Token,HostSessionLog.Write,receiveFiles:false);
+        await using var richClipboard=new ClipboardContentSession(clipboardTraffic??throw new InvalidDataException("Current clipboard channel missing"),CreateRichClipboard,gate,clipboardLifetime.Token,HostSessionLog.Write,receiveFiles:false);
         var clipboardSender = Task.Run(async () =>
         {
             await richClipboard.Completion;
@@ -349,8 +354,15 @@ internal static class VideoHostSession
                     throw new InvalidDataException("Invalid TCP media fallback request");
                 if (Volatile.Read(ref currentProbe) is not null)
                 {
-                    AbortRecoveredPath();
+                    if (Volatile.Read(ref activeRecovered)?.Adaptation.UnderLoss == true)
+                    {
+                        HostSessionLog.Write("media_transport=TCP/TLS fallback=udp-recovered-persistent-loss");
+                        AbortRecoveredPath("udp-recovered-persistent-loss");
+                    }
+                    else AbortRecoveredPath();
                 }
+                else if (adaptation?.UnderLoss == true)
+                    RequestTcpFallback("udp-persistent-loss");
                 else RequestTcpFallback();
             }
             await Task.Delay(Timeout.Infinite, session.Token);
@@ -399,7 +411,7 @@ internal static class VideoHostSession
         {
             while (true)
             {
-                var packet = await SessionControl.Read(control, session.Token);
+                var packet = await SessionControl.Read(controlTraffic, session.Token);
                 if (packet.Kind == QuicRecoveryProtocol.ResultKind && Volatile.Read(ref currentProbe) is { } probe)
                 {
                     if (packet.Sequence > 0 && packet.Sequence < probe.Attempt &&
@@ -496,6 +508,7 @@ internal static class VideoHostSession
         {
             bool usingStandby = quicBudget == 0 && standbyVideo is not null;
             bool usingRecoveredUdp = false;
+            bool oversized = backend == "test-oversized-udp";
             Task<QueuedFrame>? pending = null;
             var metrics = new PipelineMetrics(); var pacing = Stopwatch.StartNew(); double last = 0; long stale = 0;
             try
@@ -524,7 +537,7 @@ internal static class VideoHostSession
                     }
                     var queued = await pending;
                     pending = null;
-                    if (Stopwatch.GetElapsedTime(queued.EnqueuedAt).TotalMilliseconds > 250)
+                    if (!oversized && Stopwatch.GetElapsedTime(queued.EnqueuedAt).TotalMilliseconds > 250)
                     { stale++; Interlocked.Exchange(ref forceKeyFrame, 1); continue; }
                     if (desktopPause.IsPaused) continue;
                     var frame = queued.Frame;
@@ -570,12 +583,14 @@ internal static class VideoHostSession
                             continue;
                         // The length check runs before any UDP fragment is sent.
                         usingStandby = true;
-                        datagrams?.Dispose();
                         await standbyVideo.Write(frame, deadline.Token);
+                        datagrams?.Dispose();
                     }
                     metrics.Add("send", timer.Elapsed.TotalMilliseconds); metrics.Add("capture", frame.CaptureMicroseconds / 1000d); metrics.Add("encode", frame.EncodeMicroseconds / 1000d);
                     double now = pacing.Elapsed.TotalMilliseconds; if (last > 0) metrics.Add("frame_interval", now - last); last = now;
-                    metrics.Frame(MediaProtocol.HeaderSize + frame.Metadata.Length + frame.Data.Length);
+                    int frameBytes = MediaProtocol.HeaderSize + frame.Metadata.Length + frame.Data.Length;
+                    Interlocked.Add(ref mediaSentBytes, frameBytes);
+                    metrics.Frame(frameBytes);
                     firstFrameSent.TrySetResult();
                 }
             }
@@ -663,7 +678,7 @@ internal static class VideoHostSession
                         null => inputWorkerFailed ? SessionEndReason.InputWorkerUnavailable : (SessionEndReason?)null,
                         _ => SessionEndReason.WindowsSessionUnavailable
                     };
-                    await Wire.Write(control, new("session-ended-v2", Text: "host-ended", EndReason: reason), terminal.Token);
+                    await Wire.Write(controlTraffic, new("session-ended-v2", Text: "host-ended", EndReason: reason), terminal.Token);
                 }
                 finally { controlWrite.Release(); }
             }
@@ -682,6 +697,7 @@ internal static class VideoHostSession
             try { await Task.WhenAll(observedInput, observedSender, observedProducer, observedClipboard,observedSession,observedAdmin,observedTcpFallback,networkQuality,quicRecovery,simulatedTransition); } catch (Exception) { /* Causal failure is reported above; join all workers. */ }
             try { await fileWorker; } catch (Exception error) { HostSessionLog.Write($"file_worker_shutdown error_type={error.GetType().Name} hresult=0x{error.HResult:X8}"); }
             await audioWorker;
+            HostSessionLog.Write($"channel_traffic control_rx={controlTraffic.ReadBytes} control_tx={controlTraffic.WrittenBytes} video_tx={Interlocked.Read(ref mediaSentBytes)} file_rx={dataTraffic?.ReadBytes ?? 0} file_tx={dataTraffic?.WrittenBytes ?? 0} clipboard_rx={clipboardTraffic?.ReadBytes ?? 0} clipboard_tx={clipboardTraffic?.WrittenBytes ?? 0} audio_tx={audioTraffic?.WrittenBytes ?? 0}");
             if(fileResumes is not null&&(stop.IsCancellationRequested||inputWorkerFailed||failure?.Error is WindowsSessionUnavailableException))await fileResumes.Clear();
             gate.Revoke();
             try { inputDesktop?.ReleaseAll(); }
@@ -726,6 +742,7 @@ internal static class VideoHostSession
         MediaCodec codec = backend is not ("test-deflate" or "test-oversized-udp") && capabilities.Contains("h264") ? MediaCodec.H264 : MediaCodec.DeflateBgra;
         var encodeMetrics = new PipelineMetrics(); long uploaded = 0; uint accepted = 0; int gpuSamples = 0;
         long dxgiFrames = 0, dxgiEmpty = 0, dxgiFull = 0, dxgiMove = 0, dxgiRepeatedTime = 0;
+        long dxgiDesktopChanges = 0, dxgiPointerOnly = 0, dxgiUnknownChanges = 0, dxgiIdlePolls = 0;
         long dxgiPointerBytes = 0, dxgiWirePointerBytes = 0;
         ulong dxgiCopiedPixels = 0, dxgiFullEquivalentPixels = 0;
         long dxgiRegionCopies = 0, dxgiFullCopies = 0;
@@ -774,7 +791,9 @@ internal static class VideoHostSession
                     if(displays is not null&&!displays.Switch.Configured){ct.WaitHandle.WaitOne(50);continue;}
                     if(video?.Pending is{} desired&&desired!=activeVideo)
                     {stage="video-settings-apply";encoder?.Dispose();encoder=null;activeVideo=desired;forceNextKeyFrame=true;videoKeyAttempts=0;}
-                    if(ct.WaitHandle.WaitOne(pacer.Delay(activeVideo.FramesPerSecond)))break;pacer.Started();
+                    int desiredBitrate = bitrateTarget?.Invoke(activeVideo.Bitrate) ?? activeVideo.Bitrate;
+                    int effectiveFps = QuicBitrateController.FramesPerSecond(activeVideo.FramesPerSecond, desiredBitrate);
+                    if(ct.WaitHandle.WaitOne(pacer.Delay(effectiveFps)))break;pacer.Started();
                     stage="capture-init";
                     if(backend=="test-topology-init-race"&&sequence>=4&&!injectedTopologyRace&&displays?.Switch.Ready==true){injectedTopologyRace=true;throw new ExternalException("Injected output disappeared during initialization",unchecked((int)0x887A0002));}
                     stage = "capture-init"; capture ??= synthetic ? null : CreateCapture(backend,displaySelection);
@@ -788,8 +807,8 @@ internal static class VideoHostSession
                     long captureStarted = Stopwatch.GetTimestamp();
                     int testWidth = backend == "test-resolution" && sequence >= 30 ? 1920 : 1280; int testHeight = backend == "test-resolution" && sequence >= 30 ? 1080 : 720;
                     bool oversizedTest = backend == "test-oversized-udp" && sequence == 0;
-                    if (oversizedTest) { testWidth = 2560; testHeight = 1440; }
                     if(displays is not null&&synthetic){var bounds=displays.Bounds;testWidth=bounds.Width;testHeight=bounds.Height;}
+                    if (oversizedTest) { testWidth = 2560; testHeight = 1440; }
                     bool forceRequested=requestedKeyFrame();bool refresh=forceRequested||forceNextKeyFrame||video?.Pending is not null||queue.Dropped!=previousDrops;
                     var frame = synthetic ? backend is ("test-video-settings-static" or "test-desktop-pause")&&sequence>0?(refresh?staticFrame:null):new CapturedFrame(testWidth, testHeight, CodecVerification.Pattern(testWidth, testHeight, (int)(sequence % 200)), new(Stopwatch.GetTimestamp(), 1, [], [], 0, 0, false, 0, 0, 0, 0, 0, 0, [])) : CaptureFrameRefresh.Read(capture!,refresh);
                     if (oversizedTest && frame?.Bgra is { } pixels) new Random(1).NextBytes(pixels);
@@ -797,14 +816,21 @@ internal static class VideoHostSession
                     double captureMs = Stopwatch.GetElapsedTime(captureStarted).TotalMilliseconds;
                     if (frame is null)
                     {
+                        if (capture is DxgiCaptureBackend) dxgiIdlePolls++;
                         // The static synthetic source has no blocking capture call.
-                        if (synthetic) ct.WaitHandle.WaitOne(10);
+                        if (synthetic || capture is GdiCaptureBackend) ct.WaitHandle.WaitOne(10);
                         continue;
                     }
                     if (capture is DxgiCaptureBackend)
                     {
                         var metadata = frame.Metadata;
                         dxgiFrames++;
+                        switch (metadata.Classify(lastDxgiTimestamp == long.MinValue ? 0 : lastDxgiTimestamp))
+                        {
+                            case CaptureChangeKind.DesktopChanged: dxgiDesktopChanges++; break;
+                            case CaptureChangeKind.PointerOnly: dxgiPointerOnly++; break;
+                            default: dxgiUnknownChanges++; break;
+                        }
                         if (frame.CopyPixels > 0)
                         {
                             ulong full = (ulong)frame.Width * (ulong)frame.Height;
@@ -841,7 +867,6 @@ internal static class VideoHostSession
                     previousDrops = queue.Dropped; long encodeStarted = Stopwatch.GetTimestamp();
                     if (encoder is not null && (encoderWidth != frame.Width || encoderHeight != frame.Height)) { encoder.Dispose(); encoder = null; force = true; }
                     stage = "encoder-init";
-                    int desiredBitrate = bitrateTarget?.Invoke(activeVideo.Bitrate) ?? activeVideo.Bitrate;
                     if (encoder is null && codec == MediaCodec.H264)
                     {
                         try { encoder = new(capture as DxgiCaptureBackend, frame.Width, frame.Height, hardware: !forceSoftware && backend != "test-software" && (synthetic || capture is DxgiCaptureBackend),fps:activeVideo.FramesPerSecond,bitrate:desiredBitrate); }
@@ -959,8 +984,8 @@ internal static class VideoHostSession
             }
             Release(encoder, "encoder-dispose"); Release(capture, "capture-dispose");
             queue.Complete(); Console.WriteLine($"encode_stages upload_bytes={uploaded} accepted_setting_mask={accepted} gpu_timestamp_samples={gpuSamples} " + encodeMetrics.Report(0, queue.Depth));
-            if (dxgiFrames != 0)
-                HostSessionLog.Write($"dxgi_changes frames={dxgiFrames} no_dirty={dxgiEmpty} full_dirty={dxgiFull} with_moves={dxgiMove} repeated_present_time={dxgiRepeatedTime} pointer_bytes={dxgiPointerBytes} encoded_pointer_bytes={dxgiWirePointerBytes}");
+            if (dxgiFrames != 0 || dxgiIdlePolls != 0)
+                HostSessionLog.Write($"dxgi_changes frames={dxgiFrames} desktop_changed={dxgiDesktopChanges} pointer_only={dxgiPointerOnly} unknown_change={dxgiUnknownChanges} idle_polls={dxgiIdlePolls} no_dirty={dxgiEmpty} full_dirty={dxgiFull} with_moves={dxgiMove} repeated_present_time={dxgiRepeatedTime} pointer_bytes={dxgiPointerBytes} encoded_pointer_bytes={dxgiWirePointerBytes}");
             if (dxgiFullEquivalentPixels != 0)
                 HostSessionLog.Write($"dxgi_surface_copy region_frames={dxgiRegionCopies} full_frames={dxgiFullCopies} copied_pixels={dxgiCopiedPixels} full_equivalent_pixels={dxgiFullEquivalentPixels}");
             if (producerFailure is null && cleanupFailure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(cleanupFailure).Throw();

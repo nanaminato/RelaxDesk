@@ -8,9 +8,9 @@ internal static class VideoSettingsChecks
         void Reject(Action action){bool failed=false;try{action();}catch(Exception e)when(e is InvalidDataException or InvalidOperationException or ArgumentOutOfRangeException){failed=true;}Check(failed);}
         var initial=VideoSettingsProtocol.Default;
         foreach(int fps in new[]{0,4,145,int.MaxValue})Reject(()=>VideoSettingsProtocol.Validate(initial with{FramesPerSecond=fps}));
-        foreach(int bitrate in new[]{0,999999,100000001,int.MaxValue})Reject(()=>VideoSettingsProtocol.Validate(initial with{Bitrate=bitrate}));
+        foreach(int bitrate in new[]{0,99999,100000001,int.MaxValue})Reject(()=>VideoSettingsProtocol.Validate(initial with{Bitrate=bitrate}));
         foreach(int gen in new[]{0,-1,1000001})Reject(()=>VideoSettingsProtocol.Validate(initial with{Generation=gen}));
-        Check(VideoSettingsProtocol.Validate(new(5,1_000_000,1)) is not null&&VideoSettingsProtocol.Validate(new(144,100_000_000,1_000_000)) is not null);
+        Check(VideoSettingsProtocol.Validate(new(5,100_000,1)) is not null&&VideoSettingsProtocol.Validate(new(5,1_000_000,1)) is not null&&VideoSettingsProtocol.Validate(new(144,100_000_000,1_000_000)) is not null);
         var command=new Packet("video-settings-v2",1,VideoVersion:1,VideoSettings:initial with{FramesPerSecond=15});var gate=new AccessGate();
         Check(!gate.AcceptControl(command));gate.Approve();Check(!gate.AcceptControl(command));gate.Approve(videoVersion:1);Check(gate.AcceptControl(command));Check(!gate.AcceptControl(command));
         Check(!gate.AcceptControl(command with{Sequence=2,Text="extra"}));Check(!gate.AcceptControl(command with{Sequence=2,VideoVersion=2}));Check(gate.AcceptControl(command with{Sequence=2}));

@@ -18,6 +18,14 @@ public static class CaptureRefreshContracts
         Check(CaptureFrameRefresh.Read(capture,true)?.Bgra is [1,2,3,4]&&capture.CachedReads==1);
         capture.Fresh=true;Check(CaptureFrameRefresh.Read(capture,true) is not null&&capture.CachedReads==1);
         capture.Fail=true;bool failed=false;try{CaptureFrameRefresh.Read(capture,true);}catch(IOException){failed=true;}Check(failed&&capture.CachedReads==1);
+        var initialMeta = new CaptureMetadata(100, 1, [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], [], 0, 0, false, 0, 0, 0, 0, 0, 0, []);
+        Check(initialMeta.Classify(0) == CaptureChangeKind.DesktopChanged);
+        var pointerOnlyMeta = new CaptureMetadata(100, 0, [], [], 10, 20, true, 1, 1, 2, 1, 0, 0, [128, 128]);
+        Check(pointerOnlyMeta.Classify(100) == CaptureChangeKind.PointerOnly);
+        var unchangedMeta = new CaptureMetadata(0, 0, [], [], 0, 0, false, 0, 0, 0, 0, 0, 0, []);
+        Check(unchangedMeta.Classify(100) == CaptureChangeKind.Unchanged);
+        var unknownMeta = new CaptureMetadata(100, 1, [], [], 0, 0, false, 0, 0, 0, 0, 0, 0, []);
+        Check(unknownMeta.Classify(100) == CaptureChangeKind.Unknown);
         Console.WriteLine($"PASS {count} capture refresh contracts: normal idle stays idle, explicit refresh uses owned cached image, fresh frames win and access errors never fall back; fake capture, no physical desktop claim");
     }
 }

@@ -115,34 +115,60 @@ using (var unrelated = System.Security.Cryptography.ECDsa.Create(System.Security
 count += await InputChecks.Run();
 count += await MediaChecks.Run();
 var adaptive = new QuicBitrateController();
-adaptive.Observe(new(100, 0));
-adaptive.Observe(new(200, 8));
+foreach (int ceiling in new[] { 128_000, 256_000, 512_000, 800_000, 1_000_000, 4_000_000 })
+    Check(adaptive.Target(ceiling) == ceiling);
+Check(adaptive.Target(50_000) == 50_000 && adaptive.Target(0) == 0);
+Check(QuicBitrateController.FramesPerSecond(30, 8_000_000) == 30);
+Check(QuicBitrateController.FramesPerSecond(30, 256_000) == 16);
+Check(QuicBitrateController.FramesPerSecond(30, 128_000) == 8);
+Check(QuicBitrateController.FramesPerSecond(30, 100_000) == 6);
+Check(QuicBitrateController.FramesPerSecond(30, 64_000) == 5);
+Check(QuicBitrateController.FramesPerSecond(5, 64_000) == 5);
+adaptive.Observe(new QuicSendStatistics(100, 0));
+adaptive.Observe(new QuicSendStatistics(200, 8));
 Check(adaptive.Target(8_000_000) == 8_000_000);
-adaptive.Observe(new(300, 16));
+adaptive.Observe(new QuicSendStatistics(300, 16));
 Check(adaptive.Target(8_000_000) == 6_000_000 && adaptive.Target(4_000_000) == 3_000_000);
-for (ulong sent = 400; sent <= 800; sent += 100) adaptive.Observe(new(sent, 16));
+Check(adaptive.Target(512_000) == 384_000 && adaptive.Target(256_000) == 192_000 && adaptive.Target(128_000) == 100_000);
+for (ulong sent = 400; sent <= 800; sent += 100) adaptive.Observe(new QuicSendStatistics(sent, 16));
 Check(adaptive.Target(8_000_000) == 6_000_000);
-adaptive.Observe(new(900, 16));
+adaptive.Observe(new QuicSendStatistics(900, 16));
 Check(adaptive.Target(8_000_000) == 6_800_000);
-adaptive.Observe(new(905, 20));
-Check(adaptive.Target(1_000_000) == 1_000_000 && adaptive.Target(8_000_000) == 6_800_000);
+adaptive.Observe(new QuicSendStatistics(905, 20));
+Check(adaptive.Target(1_000_000) == 850_000 && adaptive.Target(8_000_000) == 6_800_000);
+var subMegabit = new QuicBitrateController();
+subMegabit.Observe(new QuicPathStatistics(20_000, 1_000, 0, 0, 0, new(100, 0)));
+for (ulong i = 1; i <= 12; i++)
+{
+    subMegabit.Observe(new QuicPathStatistics(20_000, 1_000, 0, 0, 0, new(100 + i * 50, i * 10)));
+    foreach (int ceiling in new[] { 128_000, 256_000, 512_000, 800_000, 1_000_000, 4_000_000 })
+        Check(subMegabit.Target(ceiling) <= ceiling && subMegabit.Target(ceiling) >= QuicBitrateController.PolicyFloor);
+}
+Check(subMegabit.Target(128_000) == 100_000 && subMegabit.Target(256_000) == 100_000 && subMegabit.Target(512_000) == 100_000);
+int beforeRttInflation = subMegabit.Target(4_000_000);
+for (ulong i = 13; i <= 20; i++)
+    subMegabit.Observe(new QuicPathStatistics(120_000, 5_000, 0, 0, 0, new(100 + i * 50, 120)));
+Check(subMegabit.Target(4_000_000) == beforeRttInflation);
+for (ulong i = 21; i <= 26; i++)
+    subMegabit.Observe(new QuicPathStatistics(25_000, 1_000, 0, 0, 0, new(100 + i * 50, 120)));
+Check(subMegabit.Target(4_000_000) > beforeRttInflation);
 var sparseAdaptive = new QuicBitrateController();
-sparseAdaptive.Observe(new(100, 0));
-sparseAdaptive.Observe(new(200, 8));
-sparseAdaptive.Observe(new(300, 16));
-for (int sample = 0; sample < 24; sample++) sparseAdaptive.Observe(new(300, 16));
+sparseAdaptive.Observe(new QuicSendStatistics(100, 0));
+sparseAdaptive.Observe(new QuicSendStatistics(200, 8));
+sparseAdaptive.Observe(new QuicSendStatistics(300, 16));
+for (int sample = 0; sample < 24; sample++) sparseAdaptive.Observe(new QuicSendStatistics(300, 16));
 Check(sparseAdaptive.Target(8_000_000) == 6_000_000);
-for (ulong sample = 1; sample < 24; sample++) sparseAdaptive.Observe(new(300 + sample * 4, 16));
+for (ulong sample = 1; sample < 24; sample++) sparseAdaptive.Observe(new QuicSendStatistics(300 + sample * 4, 16));
 Check(sparseAdaptive.Target(8_000_000) == 6_000_000);
-sparseAdaptive.Observe(new(396, 16));
+sparseAdaptive.Observe(new QuicSendStatistics(396, 16));
 Check(sparseAdaptive.Target(8_000_000) == 6_800_000);
 var severeLoss = new QuicBitrateController();
-severeLoss.Observe(new(100, 0));
-for (ulong i = 1; i <= 5; i++) severeLoss.Observe(new(100 + i * 40, i * 10));
+severeLoss.Observe(new QuicSendStatistics(100, 0));
+for (ulong i = 1; i <= 5; i++) severeLoss.Observe(new QuicSendStatistics(100 + i * 40, i * 10));
 Check(!severeLoss.PreferReliableMedia && severeLoss.Target(8_000_000) < 8_000_000);
-severeLoss.Observe(new(340, 60));
+severeLoss.Observe(new QuicSendStatistics(340, 60));
 Check(severeLoss.PreferReliableMedia);
-severeLoss.Observe(new(380, 60));
+severeLoss.Observe(new QuicSendStatistics(380, 60));
 Check(!severeLoss.PreferReliableMedia);
 Check(QuicSendStatistics.FromCounters(100, 8, 3) == new QuicSendStatistics(100, 5));
 Check(QuicSendStatistics.FromCounters(100, 2, 7) == new QuicSendStatistics(100, 0));

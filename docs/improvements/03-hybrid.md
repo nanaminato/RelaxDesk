@@ -11,3 +11,7 @@
 
 ## 验收
 静态60秒、光标单动、文字输入、窗口移动、滚动停止、视频切换；比较带宽、清晰度（RGB 像素差及文字截图）、输入延迟、CPU/GPU。测试乱序、丢失最后帧、重复补偿、重连、多屏/DPI/HDR、缓存驱逐与恶意长度。不得出现永久花屏或旧区域覆盖；收益不足则保留阶段 A，停止复杂方案。
+
+## 2026-11-27 落地状态
+- **阶段 A（低风险静态省流与变化分类）**：在 `Capture.cs` 新增 `CaptureChangeKind`（`DesktopChanged`、`PointerOnly`、`Unchanged`、`Unknown`）及 `CaptureMetadata.Classify`；在 `VideoHostSession` 的 `dxgi_changes` 日志中统计 `desktop_changed`、`pointer_only`、`unknown_change` 与 `idle_polls`；DXGI 超时无变化时暂停编码和发送，仅维持控制/UDP 心跳（实测 4 秒静态窗口 `video_fragments=0`）；`GdiCaptureBackend` 新增帧缓存与 `SequenceEqual` 比对，画面无变化时跳过重复编码并在显式刷新时复用缓存帧；指针形状继续通过 Brotli 编码器（`CaptureMetadataCodec.PointerEncoder`）按形状变化缓存压缩传输。
+- **阶段 B（可关闭实验性无损区域补偿）**：在 `src/RelaxDesk.Core/Media/RegionCompensation.cs` 实现 `RegionCompensationProtocol` 与 `ReceiverState`（默认关闭 `Enabled = false`），支持 64/128 像素 tile 量化与相邻矩形合并、先 Move（重叠安全暂存复制）后 Dirty 补丁应用、严格校验 `DisplayGeneration` / `VideoEpoch` / `BaseFrameSequence` / `RegionVersion` 与 SHA-256 摘要前缀、限制最大矩形数与解压字节上限，并在新视频帧到达时自动使旧补偿失效。

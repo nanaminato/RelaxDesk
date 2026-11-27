@@ -1,6 +1,8 @@
 using System.Diagnostics;
 namespace RelaxDesk.Windows;
 
+public enum CaptureChangeKind { DesktopChanged, PointerOnly, Unchanged, Unknown }
+
 public record CaptureMetadata(long Timestamp, uint Accumulated, byte[] DirtyRectangles, byte[] MoveRectangles,
     int PointerX, int PointerY, bool PointerVisible, uint PointerType, uint PointerWidth, uint PointerHeight,
     uint PointerPitch, int HotspotX, int HotspotY, byte[] PointerShape)
@@ -9,6 +11,16 @@ public record CaptureMetadata(long Timestamp, uint Accumulated, byte[] DirtyRect
     // accept 3 and ignore the shape when its payload is empty.
     public const uint HostManagedPointer = 3;
     public bool UsesHostPointer => PointerType == HostManagedPointer || PointerShape.Length != 0;
+
+    public CaptureChangeKind Classify(long previousDesktopTimestamp) =>
+        DirtyRectangles.Length != 0 || MoveRectangles.Length != 0 ||
+        (Timestamp != 0 && Timestamp != previousDesktopTimestamp) || Accumulated > 1
+            ? CaptureChangeKind.DesktopChanged
+            : Timestamp != 0 && Timestamp == previousDesktopTimestamp && Accumulated == 0
+                ? CaptureChangeKind.PointerOnly
+                : Timestamp == 0 && Accumulated == 0
+                    ? CaptureChangeKind.Unchanged
+                    : CaptureChangeKind.Unknown;
 }
 
 // A GPU frame is borrowed until the backend's next Capture/Dispose. Re-query
@@ -26,12 +38,22 @@ public interface ICaptureBackend : IDisposable
 public sealed class GdiCaptureBackend : ICaptureBackend
 {
     readonly Desktop desktop;
+    CapturedFrame? cached;
     public GdiCaptureBackend(WindowsDisplaySelection? selection=null)=>desktop=new(selection);
     public string Name => "gdi";
-    public CapturedFrame Capture(int timeoutMilliseconds = 100) => new(desktop.Width, desktop.Height, desktop.Capture(includePointer: false),
-        new(Stopwatch.GetTimestamp(), 1, [], [], 0, 0, false, 0, 0, 0, 0, 0, 0, []));
+    public CapturedFrame? Capture(int timeoutMilliseconds = 100)
+    {
+        byte[] pixels = desktop.Capture(includePointer: false);
+        int width = desktop.Width, height = desktop.Height;
+        if (cached is { Bgra: { } previous } && cached.Width == width && cached.Height == height &&
+            pixels.AsSpan().SequenceEqual(previous))
+            return null;
+        return cached = new(width, height, pixels,
+            new(Stopwatch.GetTimestamp(), 1, [], [], 0, 0, false, 0, 0, 0, 0, 0, 0, []));
+    }
+    public CapturedFrame? CachedFrame() => cached;
     public byte[] ReadPixels(CapturedFrame frame) => frame.Bgra ?? throw new InvalidOperationException("No GDI pixels");
-    public void Dispose() => desktop.Dispose();
+    public void Dispose() { cached = null; desktop.Dispose(); }
 }
 
 public sealed class DxgiCaptureBackend : ICaptureBackend

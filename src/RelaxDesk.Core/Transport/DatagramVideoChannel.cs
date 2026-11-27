@@ -7,6 +7,7 @@ namespace RelaxDesk.Core;
 public sealed class DatagramVideoChannel : IVideoFrameChannel
 {
     static readonly byte[] Heartbeat = [0x52, 0x44, 0x48, 0x31]; // RDH1
+    const uint HeartbeatMagic = 0x31484452; // RDH1
     public static readonly TimeSpan HeartbeatInterval = TimeSpan.FromMilliseconds(750);
     public static readonly TimeSpan SilenceLimit = TimeSpan.FromSeconds(3);
     const uint Magic = 0x31464452; // RDF1
@@ -70,9 +71,10 @@ public sealed class DatagramVideoChannel : IVideoFrameChannel
     readonly TimeProvider clock;
     readonly int fragmentBytes;
     readonly bool detectSilence;
+    readonly Action? missingTailDetected;
     readonly SortedList<long, Assembly> pending = new(MaxPending);
-    long retiredSequence;
-    long lastDelivered, delivered, missing, discardedAssemblies;
+    long retiredSequence, lastSentSequence;
+    long lastDelivered, delivered, missing, discardedAssemblies, probedTailSequence;
     long lastArrival, lastMediaTimestamp;
     double arrivalJitter = double.NaN;
     int depth;
@@ -87,7 +89,8 @@ public sealed class DatagramVideoChannel : IVideoFrameChannel
     public DatagramVideoChannel(int datagramBytes,
         Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask> send,
         Func<CancellationToken, ValueTask<ReadOnlyMemory<byte>>> receive,
-        bool displayGeneration = false, bool videoGeneration = false, TimeProvider? clock = null, bool detectSilence = false)
+        bool displayGeneration = false, bool videoGeneration = false, TimeProvider? clock = null, bool detectSilence = false,
+        Action? missingTailDetected = null)
     {
         if (datagramBytes is < QuicMediaAttachment.MinDatagramBytes or > QuicMediaAttachment.MaxDatagramBytes) throw new ArgumentOutOfRangeException(nameof(datagramBytes));
         fragmentBytes = datagramBytes - HeaderSize;
@@ -97,6 +100,7 @@ public sealed class DatagramVideoChannel : IVideoFrameChannel
         this.videoGeneration = videoGeneration;
         this.clock = clock ?? TimeProvider.System;
         this.detectSilence = detectSilence;
+        this.missingTailDetected = missingTailDetected;
     }
 
     public string TransportName => "UDP";
@@ -124,6 +128,7 @@ public sealed class DatagramVideoChannel : IVideoFrameChannel
             if (!remaining.IsEmpty) frame.Data.AsSpan(skip, remaining.Length).CopyTo(remaining);
             await send(datagram.AsMemory(0, HeaderSize + count), cancellation);
         }
+        Interlocked.Exchange(ref lastSentSequence, frame.Sequence);
     }
 
     static Span<byte> CopyPart(ReadOnlySpan<byte> source, Span<byte> destination, scoped ref int skip)
@@ -140,7 +145,15 @@ public sealed class DatagramVideoChannel : IVideoFrameChannel
         return destination[bytes..];
     }
 
-    public ValueTask SendHeartbeat(CancellationToken cancellation) => send(Heartbeat, cancellation);
+    public ValueTask SendHeartbeat(CancellationToken cancellation)
+    {
+        long latest = Interlocked.Read(ref lastSentSequence);
+        if (latest <= 0) return send(Heartbeat, cancellation);
+        byte[] probe = new byte[12];
+        BinaryPrimitives.WriteUInt32LittleEndian(probe, HeartbeatMagic);
+        BinaryPrimitives.WriteInt64LittleEndian(probe.AsSpan(4), latest);
+        return send(probe, cancellation);
+    }
 
     public async Task<MediaFrame> Read(CancellationToken cancellation)
     {
@@ -155,9 +168,15 @@ public sealed class DatagramVideoChannel : IVideoFrameChannel
             { throw new DatagramSilenceException(); }
             while (pending.Count != 0 && clock.GetElapsedTime(pending.GetValueAtIndex(0).Started) >= Lifetime)
                 RetireThrough(pending.GetKeyAtIndex(0));
-            if (message.Span.SequenceEqual(Heartbeat))
+            if (IsHeartbeat(message.Span, out long latestSent))
             {
                 silence?.CancelAfter(SilenceLimit);
+                if (latestSent > Math.Max(retiredSequence, lastDelivered) &&
+                    pending.Count == 0 && latestSent != probedTailSequence)
+                {
+                    probedTailSequence = latestSent;
+                    missingTailDetected?.Invoke();
+                }
                 continue;
             }
             cancellation.ThrowIfCancellationRequested();
@@ -175,9 +194,23 @@ public sealed class DatagramVideoChannel : IVideoFrameChannel
             lastArrival = arrival;
             lastMediaTimestamp = frame.Timestamp100ns;
             lastDelivered = frame.Sequence;
+            probedTailSequence = 0;
             Interlocked.Increment(ref delivered);
             return frame;
         }
+    }
+
+    static bool IsHeartbeat(ReadOnlySpan<byte> message, out long latestSequence)
+    {
+        latestSequence = 0;
+        if (message.Length is not (4 or 12) || BinaryPrimitives.ReadUInt32LittleEndian(message) != HeartbeatMagic)
+            return false;
+        if (message.Length == 12)
+        {
+            latestSequence = BinaryPrimitives.ReadInt64LittleEndian(message[4..]);
+            if (latestSequence <= 0) return false;
+        }
+        return true;
     }
 
     MediaFrame? Add(ReadOnlySpan<byte> message)

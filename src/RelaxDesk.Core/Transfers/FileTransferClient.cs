@@ -34,19 +34,30 @@ public sealed class FileTransferClient : IAsyncDisposable
     readonly CancellationTokenSource lifetime;
     readonly CancellationToken sessionToken;
     readonly Task heartbeat;
-    readonly long rate; // Zero disables upload/download pacing; chunk and authorization bounds still apply.
+    long rate; // Zero disables upload/download pacing; chunk and authorization bounds still apply.
+    long linkRateCeiling; // Zero means no link-adaptive cap.
     public bool SupportsResume { get; }
     public bool SupportsClipboardFiles{get;}
-    public long UploadedBytes { get; private set; }
-    public long DownloadedBytes { get; private set; }
+    public long UploadedBytes => Interlocked.Read(ref uploadedBytes);
+    public long DownloadedBytes => Interlocked.Read(ref downloadedBytes);
+    public long EffectiveRateLimitBytesPerSecond
+    {
+        get
+        {
+            long user = Interlocked.Read(ref rate), link = Interlocked.Read(ref linkRateCeiling);
+            return user == 0 ? link : link == 0 ? user : Math.Min(user, link);
+        }
+    }
+    long uploadedBytes, downloadedBytes;
     long sent, received;
     int disposed, failed;
     public event Action? Closed;
     public bool Active => Volatile.Read(ref disposed) == 0 && !lifetime.IsCancellationRequested;
     void FailChannel() { if (Interlocked.Exchange(ref failed, 1) != 0) return; try { lifetime.Cancel(); } catch (ObjectDisposedException) { } data.Dispose(); Closed?.Invoke(); }
+    public const long MinimumRateBytesPerSecond = 16 * 1024, MaximumRateBytesPerSecond = 1024L * 1024 * 1024;
     public FileTransferClient(Stream data, CancellationToken session, long maximumBytesPerSecond = 20 * 1024 * 1024, bool supportsResume = false,bool supportsClipboardFiles=false)
     {
-        if (maximumBytesPerSecond != 0 && (maximumBytesPerSecond is < 64 * 1024 or > 1024L * 1024 * 1024)) throw new ArgumentOutOfRangeException(nameof(maximumBytesPerSecond));
+        if (maximumBytesPerSecond != 0 && (maximumBytesPerSecond is < 64 * 1024 or > MaximumRateBytesPerSecond)) throw new ArgumentOutOfRangeException(nameof(maximumBytesPerSecond));
         this.data = data; rate = maximumBytesPerSecond; SupportsResume = supportsResume; sessionToken = session; lifetime = CancellationTokenSource.CreateLinkedTokenSource(session);
         SupportsClipboardFiles=supportsClipboardFiles;
         heartbeat = Task.Run(async () =>
@@ -64,6 +75,16 @@ public sealed class FileTransferClient : IAsyncDisposable
             { if (!lifetime.IsCancellationRequested) FailChannel(); }
         });
     }
+    public void SetLinkRateCeiling(long bytesPerSecond)
+    {
+        if (bytesPerSecond < 0 || bytesPerSecond != 0 && (bytesPerSecond < MinimumRateBytesPerSecond || bytesPerSecond > MaximumRateBytesPerSecond))
+            throw new ArgumentOutOfRangeException(nameof(bytesPerSecond));
+        Interlocked.Exchange(ref linkRateCeiling, bytesPerSecond);
+    }
+    // Share link budget with interactive control/video: reserve >=75% for video/control,
+    // clamping background file transfer to 25% of target video bitrate (floor 16 KiB/s).
+    public static long LinkRateForVideoBitrate(int videoBitrateBitsPerSecond) =>
+        videoBitrateBitsPerSecond <= 0 ? 0 : Math.Clamp(videoBitrateBitsPerSecond / 32L, MinimumRateBytesPerSecond, MaximumRateBytesPerSecond);
     async Task Send(TransferMessage message, CancellationToken ct = default)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token, ct); deadline.CancelAfter(TimeSpan.FromSeconds(15));
@@ -204,11 +225,12 @@ public sealed class FileTransferClient : IAsyncDisposable
                 int size = await source.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, length - offset)), ct);
                 if (size == 0) throw new IOException("Source file changed during transfer");
                 if (resumable) resume!.BeforeChunk(source, hash, offset); hash.AppendData(buffer, 0, size); if (resumable) resume!.AfterChunk(hash, offset + size);
-                await Send(new("chunk", id, Offset: offset, Data: buffer.AsSpan(0, size).ToArray())); UploadedBytes += size;
+                await Send(new("chunk", id, Offset: offset, Data: buffer.AsSpan(0, size).ToArray())); Interlocked.Add(ref uploadedBytes, size);
                 var acknowledgement = await Response(id, "progress"); offset += size;
                 if (acknowledgement.Offset != offset) throw new InvalidDataException("Upload acknowledgement offset mismatch");
                 if (notification.ElapsedMilliseconds >= 100 || offset == length) { Report(progress, offset, length, clock, start); notification.Restart(); }
-                double delay = rate == 0 ? 0 : size * 1000d / rate - chunkClock.Elapsed.TotalMilliseconds; if (delay > 0) await Task.Delay(TimeSpan.FromMilliseconds(delay), ct);
+                long activeRate = EffectiveRateLimitBytesPerSecond;
+                double delay = activeRate == 0 ? 0 : size * 1000d / activeRate - chunkClock.Elapsed.TotalMilliseconds; if (delay > 0) await Task.Delay(TimeSpan.FromMilliseconds(delay), ct);
             }
             ct.ThrowIfCancellationRequested(); await Send(new("complete", id, Hash: Convert.ToHexString(hash.GetHashAndReset()))); await Response(id, "result"); active = false; success = true;
             if (resumable) { await CommitAcknowledged(id); await resume!.DisposeAsync(); }
@@ -273,10 +295,11 @@ public sealed class FileTransferClient : IAsyncDisposable
                 }
                 if (message.Kind != "chunk") throw new InvalidDataException("Unexpected download operation");
                 TransferLimits.ValidateChunk(ready.Length, offset, message.Offset, message.Data!.Length); var chunkClock = Stopwatch.StartNew();
-                DownloadedBytes += message.Data.Length; await sink.Write(offset, message.Data, ct); offset += message.Data.Length;
+                Interlocked.Add(ref downloadedBytes, message.Data.Length); await sink.Write(offset, message.Data, ct); offset += message.Data.Length;
                 if (notification.ElapsedMilliseconds >= 100 || offset == ready.Length) { Report(progress, offset, ready.Length, clock, start); notification.Restart(); }
                 await WaitPause(control, ct); ct.ThrowIfCancellationRequested();
-                double delay = rate == 0 ? 0 : message.Data.Length * 1000d / rate - chunkClock.Elapsed.TotalMilliseconds; if (delay > 0) await Task.Delay(TimeSpan.FromMilliseconds(delay), ct);
+                long activeRate = EffectiveRateLimitBytesPerSecond;
+                double delay = activeRate == 0 ? 0 : message.Data.Length * 1000d / activeRate - chunkClock.Elapsed.TotalMilliseconds; if (delay > 0) await Task.Delay(TimeSpan.FromMilliseconds(delay), ct);
                 await Send(new("progress", id, Offset: offset));
             }
         }

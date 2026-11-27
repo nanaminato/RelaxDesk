@@ -79,9 +79,11 @@ try {
     $env:DOTNET_CLI_HOME = Join-Path $root '.dotnet'
     $shell = (Get-Process -Id $PID).Path
     $os = Get-CimInstance Win32_OperatingSystem
-    $gpu = @(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion,PNPDeviceID,CurrentHorizontalResolution,CurrentVerticalResolution)
+    $gpu = @(Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion,PNPDeviceID,CurrentHorizontalResolution,CurrentVerticalResolution,CurrentRefreshRate)
+    $powerScheme = $null
+    try { $powerScheme = (& "$env:SystemRoot/System32/powercfg.exe" /GetActiveScheme 2>$null | Out-String).Trim() } catch { }
     $revision = if ($PackageRoot) { (Get-Content -Raw (Join-Path $root 'package.json') | ConvertFrom-Json).revision } else { & git rev-parse HEAD }
-    [pscustomobject]@{collected_at=(Get-Date -Format o);revision=$revision;os=$os.Caption;version=$os.Version;build=$os.BuildNumber;gpu=$gpu;diagnostic_only=[bool]$DiagnosticOnly;manual_physical_scanout='NOT_TESTED';manual_input='NOT_TESTED';dual_pc_lan='NOT_TESTED'} | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $output 'machine.json') -Encoding utf8
+    [pscustomobject]@{collected_at=(Get-Date -Format o);revision=$revision;os=$os.Caption;version=$os.Version;build=$os.BuildNumber;power_scheme=$powerScheme;gpu=$gpu;diagnostic_only=[bool]$DiagnosticOnly;manual_physical_scanout='NOT_TESTED';manual_input='NOT_TESTED';dual_pc_lan='NOT_TESTED'} | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $output 'machine.json') -Encoding utf8
     if (!$PackageRoot) { $null = Run-Step 'sdk' 'dotnet' @('--info') }
     if (!$SkipBuild) {
         if ((Run-Step 'native-build' $shell @('-NoProfile','-File',"$PSScriptRoot/build-native.ps1",'-BuildDirectory',$NativeBuildDirectory) 300) -ne 'PASS') { throw 'Native build failed; dependent tests not run.' }

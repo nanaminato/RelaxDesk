@@ -9,3 +9,8 @@
 - 可参考 FreeRDP、TigerVNC、Xpra 的区域更新，Sunshine/Moonlight 的媒体管线，RustDesk 的会话设计，WebRTC/MsQuic 的网络机制。只研究设计，未选许可证前不复制第三方代码。
 
 验收：并发文件/音频/视频、跨 DPI、断线重连、VPN/仅 TCP 转发与 UDP 不通场景；保留安全授权和回退，记录真实连接成功率、资源与操作延迟。
+
+## 2026-11-27 落地状态
+- **音频静音省流与隔离**：在 `AudioProtocol.IsSilent` 与 `AudioStreamSession` 中实现静音帧检测与流量抑制，连续静音超过 2 帧后暂停发送并在恢复发声时自动标记 `Discontinuity = true`；通过 `--audio-stream-contracts` 11 项实时环回契约测试，且音频异常仅撤销音频特性、绝不中断远程控制。
+- **大文件复制与弱网共存**：`FileTransferClient` 支持动态链路速率上限（`SetLinkRateCeiling`），与 Viewer 自动画质调整联动，同时保留既有资源管理器复制粘贴 UX 与断点续传。
+- **多屏、剪贴板与仅 TCP/UDP 不通回退**：已通过 18 项显示拓扑/负坐标/DPI 契约、65 项拓扑移除/重连契约、624 项视口缩放/裁剪契约、50 项显示器切换屏障契约、89 项富剪贴板与 37 项文件剪贴板契约，以及 `--quic-production` 中 Host/Viewer 无 UDP 时自动无损回退 TCP/TLS 的全部验证。

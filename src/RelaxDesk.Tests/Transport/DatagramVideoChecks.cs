@@ -105,6 +105,28 @@ internal static class DatagramVideoChecks
             Check(idle.ReadStatistics() == new DatagramVideoStatistics(0, 0, 0, DiscardedAssemblies: 1));
         }
         packets.Clear();
+        await channel.Write(frame with { Sequence = 9 }, CancellationToken.None);
+        packets.Clear();
+        await channel.SendHeartbeat(CancellationToken.None);
+        var tailHeartbeat = packets.Single();
+        Check(tailHeartbeat.Length == 12 && BinaryPrimitives.ReadInt64LittleEndian(tailHeartbeat.AsSpan(4)) == 9);
+        int missingTailNotifications = 0;
+        incoming.Enqueue(tailHeartbeat);
+        incoming.Enqueue(tailHeartbeat);
+        await channel.Write(frame with { Sequence = 9 }, CancellationToken.None);
+        foreach (var packet in packets.Skip(1)) incoming.Enqueue(packet);
+        using (var stop = new CancellationTokenSource())
+        {
+            var tailReader = new DatagramVideoChannel(1200, (_, _) => ValueTask.CompletedTask, _ =>
+            {
+                if (incoming.TryDequeue(out var message)) return ValueTask.FromResult<ReadOnlyMemory<byte>>(message);
+                stop.Cancel();
+                return ValueTask.FromCanceled<ReadOnlyMemory<byte>>(stop.Token);
+            }, videoGeneration: true, clock: clock, missingTailDetected: () => missingTailNotifications++);
+            var recoveredTail = await tailReader.Read(stop.Token);
+            Check(recoveredTail.Sequence == 9 && missingTailNotifications == 1);
+        }
+        packets.Clear();
         await channel.Write(frame with { Sequence = 3 }, CancellationToken.None);
         Check(incoming.Count == 0);
 

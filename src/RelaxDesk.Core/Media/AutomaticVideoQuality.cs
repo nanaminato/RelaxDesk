@@ -52,9 +52,9 @@ public sealed class AutomaticVideoQuality
         if (sample.Seconds - lastChange < 10) return null;
         int fps = current.FramesPerSecond, bitrate = current.Bitrate;
         if (badWindows >= 2)
-        { fps = Math.Max(5, fps * 3 / 4); bitrate = Math.Max(1_000_000, bitrate * 3 / 4); }
+        { fps = Math.Max(5, fps * 3 / 4); bitrate = Math.Max(VideoSettingsProtocol.MinimumBitrate, bitrate * 3 / 4); }
         else if (healthyWindows >= 6)
-        { fps = Math.Min(fpsCeiling, fps + Math.Max(5, fps / 4)); bitrate = Math.Min(bitrateCeiling, bitrate + Math.Max(1_000_000, bitrate / 4)); }
+        { fps = Math.Min(fpsCeiling, fps + Math.Max(5, fps / 4)); bitrate = Math.Min(bitrateCeiling, bitrate + Math.Max(250_000, bitrate / 4)); }
         else return null;
         fps = Math.Min(fps, fpsCeiling); bitrate = Math.Min(bitrate, bitrateCeiling);
         badWindows = healthyWindows = 0;

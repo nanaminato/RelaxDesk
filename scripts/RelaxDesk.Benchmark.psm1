@@ -42,18 +42,25 @@ function Get-BenchmarkProcesses {
 function Write-BenchmarkManifest {
     param([string]$Output, [int]$Frames, [string[]]$Modes, [string[]]$Applications)
     $graphics = @(); $graphicsError = $null
-    try { $graphics = @(Get-CimInstance Win32_VideoController -OperationTimeoutSec 2 | Select-Object Name,DriverVersion) }
+    try { $graphics = @(Get-CimInstance Win32_VideoController -OperationTimeoutSec 2 | Select-Object Name,DriverVersion,CurrentHorizontalResolution,CurrentVerticalResolution,CurrentRefreshRate) }
     catch { $graphicsError = $_.Exception.Message }
+    $revision = $null
+    try { $revision = (& git -C $PSScriptRoot rev-parse HEAD 2>$null).Trim() } catch { }
+    $powerScheme = $null
+    try { $powerScheme = (& "$env:SystemRoot/System32/powercfg.exe" /GetActiveScheme 2>$null | Out-String).Trim() } catch { }
+    $edition = $null
+    try { $edition = (Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction Stop).EditionID } catch { }
     $binaries = @($Applications)
     foreach ($application in $Applications) {
         $binaries += @(Get-ChildItem -LiteralPath (Split-Path $application) -Filter 'RelaxDesk.*.dll' -File | Select-Object -ExpandProperty FullName)
     }
     $binaries = @($binaries | Select-Object -Unique)
     $manifest = [ordered]@{
-        SchemaVersion = 1; CollectedUtc = [DateTime]::UtcNow.ToString('O')
+        SchemaVersion = 1; CollectedUtc = [DateTime]::UtcNow.ToString('O'); Revision = $revision
         Source = 'synthetic-loopback'; PhysicalAcceptance = 'NOT_TESTED'
-        Frames = $Frames; Modes = $Modes; OsVersion = [Environment]::OSVersion.VersionString
-        LogicalProcessors = [Environment]::ProcessorCount; Graphics = $graphics; GraphicsQueryError = $graphicsError
+        Frames = $Frames; Modes = $Modes; OsVersion = [Environment]::OSVersion.VersionString; WindowsEdition = $edition
+        PowerScheme = $powerScheme; LogicalProcessors = [Environment]::ProcessorCount
+        Graphics = $graphics; GraphicsQueryError = $graphicsError
         Applications = @(Get-FileHash -LiteralPath $binaries -Algorithm SHA256 | Select-Object Path,Hash)
         CpuUnits = 'percent of all logical processors'; GpuUnits = 'separate driver engine labels; no aggregate'
     }

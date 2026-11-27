@@ -52,6 +52,7 @@ public sealed partial class ViewerWindow
             var request=model.Request(fps,bitrate);
             if(!outgoing.TryWrite(new("video-settings-v2",++sequence,VideoVersion:VideoSettingsProtocol.Version,VideoSettings:request)))session.Cancel();
         }
+        fileClient?.SetLinkRateCeiling(preferences.AutomaticVideoQuality ? FileTransferClient.LinkRateForVideoBitrate(bitrate) : 0);
         RefreshVideoSettingsMenu();
     }
     void SetAutomaticVideoQuality(bool enabled)

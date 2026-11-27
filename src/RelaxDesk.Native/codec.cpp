@@ -206,7 +206,7 @@ struct decoder_context {
 };
 }
 RD int32_t rd_encoder_set_bitrate(void* encoder, uint32_t bitrate) {
-    if (!encoder || bitrate < 1000000 || bitrate > 100000000) return E_INVALIDARG;
+    if (!encoder || bitrate < 100000 || bitrate > 100000000) return E_INVALIDARG;
     auto* context = static_cast<encoder_context*>(encoder);
     return codec_property(context->transform.Get(), CODECAPI_AVEncCommonMeanBitRate, bitrate);
 }

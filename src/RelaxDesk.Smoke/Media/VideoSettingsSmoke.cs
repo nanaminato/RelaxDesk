@@ -26,13 +26,13 @@ internal static class VideoSettingsSmoke
                 int need=0;using var decoder=new MediaDecoder(()=>Interlocked.Exchange(ref need,1));var keys=new HashSet<int>();
                 while(!running.IsCancellationRequested)
                 {
-                    var frame=MediaProtocol.Read(client.Media,running.Token,videoGeneration:true).GetAwaiter().GetResult();Interlocked.Increment(ref received);if(frame.KeyFrame)keys.Add(frame.VideoGeneration);
+                    var frame=MediaProtocol.Read(client.Media,running.Token,displayGeneration:client.DisplayVersion!=0,videoGeneration:true).GetAwaiter().GetResult();Interlocked.Increment(ref received);if(frame.KeyFrame)keys.Add(frame.VideoGeneration);
                     var pixels=decoder.Decode(frame);if(pixels is not null){if(pixels.Pixels.Length==0||!keys.Contains(frame.VideoGeneration))throw new IOException("New video epoch decoded without key frame");observed[frame.VideoGeneration]=(decoder.Generation,true,frame.Codec);}
                     if(Interlocked.Exchange(ref need,0)!=0)Send("keyframe-v2").GetAwaiter().GetResult();
                 }
             },running.Token,TaskCreationOptions.LongRunning,TaskScheduler.Default);
             await Until(()=>observed.ContainsKey(1));int previous=observed[1].Decoder;var state=client.VideoSettings;
-            foreach(var target in deflate?new[]{(15,8_000_000),(144,8_000_000),(30,8_000_000)}:new[]{(15,8_000_000),(15,2_000_000),(120,60_000_000),(144,100_000_000),(30,20_000_000)})
+            foreach(var target in deflate?new[]{(15,8_000_000),(144,8_000_000),(30,8_000_000)}:new[]{(15,8_000_000),(15,2_000_000),(10,512_000),(5,128_000),(120,60_000_000),(144,100_000_000),(30,20_000_000)})
             {
                 await Task.Delay(1100,timeout.Token);if(staticDesktop&&state!.Generation==1&&Interlocked.Read(ref received)!=1)throw new IOException("Static fixture unexpectedly updated before settings request");await Send("video-settings-v2",new(target.Item1,target.Item2,state!.Generation));
                 var ack=await Wire.Read(client.Control,timeout.Token);if(ack.VideoSettings is null||ack!=new Packet("video-settings-state-v2",VideoVersion:1,VideoSettings:ack.VideoSettings)||ack.VideoSettings!=new VideoSettings(target.Item1,target.Item2,state.Generation+1))throw new IOException("Video settings acknowledgement mismatch");
@@ -41,7 +41,7 @@ internal static class VideoSettingsSmoke
             }
             running.Cancel();client.Dispose();try{await receiver;}catch(Exception e)when(e is IOException or OperationCanceledException or ObjectDisposedException){}
             await host.WaitForExitAsync(timeout.Token);string logs=await output;
-            if(host.ExitCode!=0||!logs.Contains("native_live_resources=0")||!logs.Contains($"video_settings generation={state!.Generation}"))throw new IOException("Video settings Host cleanup missing");
+            if(host.ExitCode!=0||!logs.Contains("native_live_resources=0")||!logs.Contains($"video_settings generation={state!.Generation}")||!logs.Contains("channel_traffic control_rx="))throw new IOException("Video settings Host cleanup missing");
             if(!GraphicsDiagnostics.Resources().Empty)throw new IOException("Video settings decoder native resources leaked");
             Console.WriteLine($"PASS production Host/TLS video settings codec={(deflate?"deflate":"H264")} static_no_desktop_updates={staticDesktop}: negotiated bounds, {state.Generation-1} live same-size epoch changes, real decode/keyframe resets, heartbeat continuity and zero native resources; synthetic source only, no physical quality/FPS guarantee");
             passed=true;

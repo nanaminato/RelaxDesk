@@ -85,6 +85,18 @@ public static class AudioStreamContracts
             Check(received.Timestamp100ns == actual.Timestamp100ns && received.Data.SequenceEqual(actual.Data), "Capture changed real sample timing/data");
             await Task.Delay(100, timeout.Token);
             Check(sender.Packets == 1, "Capture inserted extra silence after a real packet");
+            long baseTs = actual.Timestamp100ns;
+            for (int i = 1; i <= 6; i++)
+                endpoint.Capture.Enqueue(new(i + 1, baseTs + i * 100_000, false, new byte[1920]));
+            var firstSilence = await AudioProtocol.Read(reader, timeout.Token);
+            var secondSilence = await AudioProtocol.Read(reader, timeout.Token);
+            Check(AudioProtocol.IsSilent(firstSilence.Data) && AudioProtocol.IsSilent(secondSilence.Data), "Initial drain silence missing");
+            await Until(() => sender.SuppressedSilentFrames == 4);
+            Check(sender.Packets == 3, "Sustained silence was not suppressed");
+            var resumed = new AudioFrame(8, baseTs + 700_000, false, Enumerable.Repeat((byte)77, 1920).ToArray());
+            endpoint.Capture.Enqueue(resumed);
+            var receivedResumed = await AudioProtocol.Read(reader, timeout.Token);
+            Check(receivedResumed.Discontinuity && receivedResumed.Data.SequenceEqual(resumed.Data), "Audio resume after silence suppression did not mark discontinuity");
         });
         await WithPair(async (writer, reader) =>
         {

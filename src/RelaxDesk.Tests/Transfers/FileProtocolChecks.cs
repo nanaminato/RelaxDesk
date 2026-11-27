@@ -16,6 +16,32 @@ internal static class FileProtocolChecks
             try { _ = new FileTransferClient(Stream.Null, default, rate); throw new Exception("Invalid rate accepted"); }
             catch (ArgumentOutOfRangeException) { count++; }
         }
+        await using (var paced = new FileTransferClient(Stream.Null, default, 20 * 1024 * 1024))
+        {
+            Check(paced.EffectiveRateLimitBytesPerSecond == 20 * 1024 * 1024);
+            Check(FileTransferClient.LinkRateForVideoBitrate(128_000) == FileTransferClient.MinimumRateBytesPerSecond);
+            Check(FileTransferClient.LinkRateForVideoBitrate(512_000) == 16 * 1024);
+            Check(FileTransferClient.LinkRateForVideoBitrate(8_000_000) == 250_000);
+            paced.SetLinkRateCeiling(FileTransferClient.LinkRateForVideoBitrate(512_000));
+            Check(paced.EffectiveRateLimitBytesPerSecond == 16 * 1024);
+            paced.SetLinkRateCeiling(0);
+            Check(paced.EffectiveRateLimitBytesPerSecond == 20 * 1024 * 1024);
+            foreach (long badCeiling in new long[] { -1, 1, 16 * 1024 - 1, FileTransferClient.MaximumRateBytesPerSecond + 1 })
+            {
+                try { paced.SetLinkRateCeiling(badCeiling); throw new Exception("Invalid link rate ceiling accepted"); }
+                catch (ArgumentOutOfRangeException) { count++; }
+            }
+        }
+        using (var inner = new MemoryStream())
+        using (var accounting = new TrafficAccountingStream(inner, leaveOpen: true))
+        {
+            await accounting.WriteAsync(new byte[] { 1, 2, 3, 4 });
+            accounting.Write([5, 6]);
+            inner.Position = 0;
+            byte[] readBuf = new byte[3];
+            Check(await accounting.ReadAsync(readBuf) == 3 && accounting.Read(readBuf.AsSpan()) == 3);
+            Check(accounting.Snapshot() == new ChannelTrafficSnapshot(6, 6) && accounting.Snapshot().TotalBytes == 12);
+        }
         long large = 4L * 1024 * 1024 * 1024 + 17;
         TransferLimits.ValidateChunk(large + 100, large, large, 100); count++;
         Reject(() => TransferLimits.ValidateChunk(large + 100, large, large, 101));

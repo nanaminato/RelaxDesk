@@ -86,6 +86,51 @@ internal static class MediaChecks
         Check(pressed.ReleaseAll().SequenceEqual(new[] { 256, 65, 17 })); Check(pressed.ReleaseAll().Length == 0);
         pressed.Update(65, false); pressed.Update(65, true); Check(pressed.ReleaseAll().Length == 0);
         pressed.Update(17, false); pressed.Update(256, false); Check(pressed.ReleaseButtons().SequenceEqual(new[] { 256 }) && pressed.ReleaseAll().SequenceEqual(new[] { 17 }));
+
+        // Stage B experimental lossless region compensation contracts (03-hybrid.md).
+        var tiles64 = RegionCompensationProtocol.PlanTiles([new(10, 10, 50, 50), new(60, 10, 120, 50)], 256, 256, 64);
+        Check(tiles64.SequenceEqual([new RegionRect(0, 0, 128, 64)]));
+        var tiles128 = RegionCompensationProtocol.PlanTiles([new(5, 5, 20, 20), new(200, 200, 250, 250)], 256, 256, 128);
+        Check(tiles128.SequenceEqual([new RegionRect(0, 0, 128, 128), new RegionRect(128, 128, 256, 256)]));
+
+        int width = 128, height = 128;
+        byte[] sourceBgra = new byte[width * height * 4];
+        byte[] receiverBgra = new byte[width * height * 4];
+        for (int i = 0; i < sourceBgra.Length; i++) sourceBgra[i] = receiverBgra[i] = (byte)(i * 31 + 7);
+        // Overlapping move: shift (0,0)-(64,64) to (32,0)-(96,64), then paint dirty patch at (0,0)-(32,64).
+        var move = new RegionMove(0, 0, new(32, 0, 96, 64));
+        byte[] expectedAfterMove = (byte[])sourceBgra.Clone();
+        for (int y = 0; y < 64; y++)
+            sourceBgra.AsSpan(y * width * 4, 64 * 4).CopyTo(expectedAfterMove.AsSpan((y * width + 32) * 4, 64 * 4));
+        for (int y = 0; y < 64; y++)
+            for (int x = 0; x < 32; x++)
+            {
+                int idx = (y * width + x) * 4;
+                expectedAfterMove[idx] = 200; expectedAfterMove[idx + 1] = 100; expectedAfterMove[idx + 2] = 50; expectedAfterMove[idx + 3] = 255;
+            }
+        var dirtyPatch = RegionCompensationProtocol.CreatePatch(expectedAfterMove, width, height, new(0, 0, 32, 64));
+        var compensation = new RegionCompensationPacket(1, 2, 10, 1, width, height, [move], [dirtyPatch]);
+        byte[] encodedComp = RegionCompensationProtocol.Encode(compensation);
+        var decodedComp = RegionCompensationProtocol.Decode(encodedComp);
+        Check(decodedComp.DisplayGeneration == 1 && decodedComp.VideoEpoch == 2 && decodedComp.BaseFrameSequence == 10 && decodedComp.RegionVersion == 1);
+
+        int refreshRequests = 0;
+        var receiver = new RegionCompensationProtocol.ReceiverState(() => refreshRequests++, enabled: false);
+        receiver.OnVideoFrameDecoded(10, 1, 2, width, height);
+        Check(receiver.TryApply(decodedComp, receiverBgra) == RegionApplyOutcome.IgnoredDisabled);
+        receiver.Enabled = true;
+        Check(receiver.TryApply(decodedComp with { VideoEpoch = 1 }, receiverBgra) == RegionApplyOutcome.RejectedStaleEpoch);
+        Check(receiver.TryApply(decodedComp with { BaseFrameSequence = 9 }, receiverBgra) == RegionApplyOutcome.RejectedBaseMismatch && refreshRequests == 0);
+        Check(receiver.TryApply(decodedComp with { BaseFrameSequence = 11 }, receiverBgra) == RegionApplyOutcome.RejectedBaseMismatch && refreshRequests == 1);
+        Check(receiver.TryApply(decodedComp, receiverBgra) == RegionApplyOutcome.Applied);
+        Check(receiverBgra.AsSpan().SequenceEqual(expectedAfterMove));
+        Check(receiver.TryApply(decodedComp, receiverBgra) == RegionApplyOutcome.RejectedDuplicateOrRegressedVersion);
+        var corruptedPatch = dirtyPatch with { Sha256Prefix = dirtyPatch.Sha256Prefix ^ 1u };
+        Check(receiver.TryApply(decodedComp with { RegionVersion = 2, Patches = [corruptedPatch] }, receiverBgra) == RegionApplyOutcome.RejectedIntegrity && refreshRequests == 2);
+        Check(receiverBgra.AsSpan().SequenceEqual(expectedAfterMove));
+        // Subsequent video frame invalidates older compensation base.
+        receiver.OnVideoFrameDecoded(11, 1, 2, width, height);
+        Check(receiver.TryApply(decodedComp with { RegionVersion = 3 }, receiverBgra) == RegionApplyOutcome.RejectedBaseMismatch);
         return count;
     }
 }

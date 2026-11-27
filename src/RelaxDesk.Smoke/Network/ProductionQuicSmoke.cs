@@ -169,8 +169,17 @@ internal static class ProductionQuicSmoke
             }
             else if (viewer.ReadVideoNetworkStatistics() is not null)
                 throw new IOException("TCP session exposed UDP statistics");
+            async Task<Packet> ReadControlPacket()
+            {
+                while (true)
+                {
+                    var packet = await SessionControl.Read(viewer.Control, ct);
+                    if (packet.Kind == "component-unavailable-v5") continue;
+                    return packet;
+                }
+            }
             await Wire.Write(viewer.Control, new("ping-v2", 1), ct);
-            var pong = await Wire.Read(viewer.Control, ct);
+            var pong = await ReadControlPacket();
             if (pong != new Packet("pong-v2", 1, QuicSend: pong.QuicSend))
                 throw new IOException("TLS control stopped after media attachment");
             viewer.ObserveControlPong(pong);
@@ -186,11 +195,11 @@ internal static class ProductionQuicSmoke
             {
                 async Task<Packet> ReceiveOfferAndProbe()
                 {
-                    var firstOffer = await SessionControl.Read(viewer.Control, ct);
+                    var firstOffer = await ReadControlPacket();
                     var refused = await viewer.ProbeQuicRecovery(firstOffer, ct);
                     if (refused.Width != 0) throw new IOException("The first recovery probe unexpectedly succeeded");
                     await Wire.Write(viewer.Control, refused, ct);
-                    var secondOffer = await SessionControl.Read(viewer.Control, ct);
+                    var secondOffer = await ReadControlPacket();
                     if (secondOffer.Sequence <= firstOffer.Sequence || secondOffer.QuicTicket == firstOffer.QuicTicket)
                         throw new IOException("Recovery retry reused a previous ticket or attempt ID");
                     return await viewer.ProbeQuicRecovery(secondOffer, ct);
@@ -209,7 +218,7 @@ internal static class ProductionQuicSmoke
                 viewer.ObserveControlPong(new("pong-v2", 1, QuicSend: new(100, 50)));
                 await Wire.Write(viewer.Control, result, ct);
                 await Wire.Write(viewer.Control, new("ping-v2", 2), ct);
-                var recoveryPong = await Wire.Read(viewer.Control, ct);
+                var recoveryPong = await ReadControlPacket();
                 if (recoveryPong != new Packet("pong-v2", 2, QuicSend: recoveryPong.QuicSend) || latest <= frame.Sequence)
                     throw new IOException("QUIC recovery probe interrupted the TCP session");
                 MediaFrame recovered;
@@ -227,7 +236,7 @@ internal static class ProductionQuicSmoke
                     if (decoder.Decode(recovered) is null) throw new IOException("Recovered UDP key frame could not initialize a decoder");
                 Console.WriteLine($"PASS TCP media rejoined UDP with {result.Width}-byte budget and original TLS control");
                 await Wire.Write(viewer.Control, new("ping-v2", 3), ct);
-                var recoveredPong = await Wire.Read(viewer.Control, ct);
+                var recoveredPong = await ReadControlPacket();
                 viewer.ObserveControlPong(recoveredPong);
                 if (recoveredPong.Sequence != 3 || viewer.ReadVideoNetworkStatistics()?.HostSend is not { SentPackets: > 0, IsValid: true })
                     throw new IOException("The recovered UDP path did not report fresh Host sender counters");
@@ -239,11 +248,11 @@ internal static class ProductionQuicSmoke
                 using (var decoder = new MediaDecoder(() => { }, preferHardware: false))
                     if (decoder.Decode(restoredTcp) is null) throw new IOException("Second TCP key frame could not initialize a decoder");
                 await Wire.Write(viewer.Control, new("ping-v2", 4), ct);
-                if (await Wire.Read(viewer.Control, ct) != new Packet("pong-v2", 4))
+                if (await ReadControlPacket() != new Packet("pong-v2", 4))
                     throw new IOException("Second TCP fallback interrupted the control channel");
                 Console.WriteLine("PASS loss of recovered UDP restored TCP with a decodable key frame and original TLS control");
 
-                var nextOffer = SessionControl.Read(viewer.Control, ct);
+                var nextOffer = ReadControlPacket();
                 next = viewer.Video.Read(ct);
                 while (await Task.WhenAny(nextOffer, next) == next)
                 {
@@ -271,13 +280,13 @@ internal static class ProductionQuicSmoke
                 recoveredRelay.EnableLoss(every: 2);
                 MediaFrame afterLoss;
                 do { afterLoss = await viewer.Video.Read(ct); } while (viewer.Video.TransportName == "UDP");
-                if (viewer.VideoFallback != "udp-host-fallback" || recoveredRelay.Dropped == 0 ||
+                if (viewer.VideoFallback is not ("udp-host-fallback" or "udp-datagrams-silent") || recoveredRelay.Dropped == 0 ||
                     afterLoss.Sequence <= recovered.Sequence || !afterLoss.KeyFrame)
                     throw new IOException($"The Host did not restore TCP under sustained recovered-path loss: {viewer.VideoFallback}");
                 using (var decoder = new MediaDecoder(() => { }, preferHardware: false))
                     if (decoder.Decode(afterLoss) is null) throw new IOException("Recovered-path loss fallback key frame could not be decoded");
                 await Wire.Write(viewer.Control, new("ping-v2", 5, QueryVideoQueue: true), ct);
-                var lossPong = await Wire.Read(viewer.Control, ct);
+                var lossPong = await ReadControlPacket();
                 viewer.ObserveControlPong(lossPong);
                 if (lossPong != new Packet("pong-v2", 5, VideoQueue: lossPong.VideoQueue, VideoFallbackReason: "udp-recovered-persistent-loss") ||
                     viewer.VideoFallback != "udp-recovered-persistent-loss" || viewer.ReadVideoNetworkStatistics() is not null)
@@ -291,7 +300,7 @@ internal static class ProductionQuicSmoke
                 relay.EnableLoss(every: 2);
                 MediaFrame recovered;
                 do { recovered = await viewer.Video.Read(ct); } while (viewer.Video.TransportName == "UDP");
-                if (viewer.VideoFallback != "udp-host-fallback" || relay.Dropped == 0 || !recovered.KeyFrame)
+                if (viewer.VideoFallback is not ("udp-host-fallback" or "udp-datagrams-silent") || relay.Dropped == 0 || !recovered.KeyFrame)
                     throw new IOException($"Persistent loss did not produce Host-triggered fallback: {viewer.VideoFallback}");
                 using (var decoder = new MediaDecoder(() => { }, preferHardware: false))
                     if (decoder.Decode(recovered) is null) throw new IOException("Host fallback did not provide a decodable key frame");
@@ -374,7 +383,7 @@ internal static class ProductionQuicSmoke
                     if (heartbeats == 0 || videoFragments != 0)
                         throw new IOException($"Unexpected idle UDP application traffic: heartbeats={heartbeats}, video_fragments={videoFragments}");
                     Console.WriteLine("PASS healthy static UDP video stayed connected through the datagram silence interval");
-                    Console.WriteLine($"PASS static UDP four-second window: video_fragments={videoFragments}, heartbeats={heartbeats}, heartbeat_payload_bytes={heartbeats * 4}");
+                    Console.WriteLine($"PASS static UDP four-second window: video_fragments={videoFragments}, heartbeats={heartbeats}, heartbeat_payload_bytes={heartbeats * 12}");
                     await Wire.Write(viewer.Control, new("keyframe-v2", ++controlSequence), ct);
                     var refresh = await waiting;
                     if (viewer.Video.TransportName != "UDP" || refresh.Sequence <= frame.Sequence || !refresh.KeyFrame)
@@ -464,7 +473,7 @@ internal static class ProductionQuicSmoke
             while (true)
             {
                 var received = await inner.ReceiveAsync(cancellation);
-                if (received.Span.SequenceEqual("RDH1"u8)) Interlocked.Increment(ref heartbeats);
+                if (received.Length is 4 or 12 && received.Span.StartsWith("RDH1"u8)) Interlocked.Increment(ref heartbeats);
                 else if (received.Span.StartsWith("RDF1"u8)) Interlocked.Increment(ref videoFragments);
                 if (Blackhole) await Task.Delay(Timeout.Infinite, cancellation);
                 if (!IncompleteFrames) return received;

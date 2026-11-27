@@ -8,3 +8,7 @@
 - 不将动态 4:4:4 切换作为首期要求；与区域补偿比较画质、带宽、兼容性及切换成本。
 
 验收：同机型同任务对照旧版，报告 P50/P95、CPU/GPU、readback bytes、可见帧及功耗可用数据；Intel/AMD/NVIDIA 实机按可用性标记，未测不得声称支持。保留 CPU/GDI 回退，运行现有 native/Windows contracts。
+
+## 2026-11-27 落地状态
+- 已对齐原生 `rd_encoder_set_bitrate` 与 `rd_encoder_create` 的码率范围（100 kbps–100 Mbps），并在 `--video-settings h264` 与 `--video-settings static` 中验证了运行期同尺寸多档码率（含 512 kbps、128 kbps、2 Mbps、8 Mbps、20 Mbps、60 Mbps、100 Mbps）切换、解码器重建与零原生资源泄漏（`native_live_resources=0`）。
+- 已运行并通过 `RelaxDesk.NativeProbe.exe --present-contracts`、`--windows-contracts`、`--pointer-contracts`、`--toolbar-contracts`；保留 CPU/GDI 回退路径；跨厂商物理 GPU（Intel/AMD/NVIDIA）实机对比按可用硬件标记。

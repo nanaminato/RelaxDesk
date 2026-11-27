@@ -38,7 +38,10 @@ public sealed class SessionClient : IDisposable
             Volatile.Write(ref hostSend, pong.QuicSend);
         if (pong.VideoQueue is not null) Volatile.Write(ref hostVideoQueue, pong.VideoQueue);
         if (pong.VideoFallbackReason is { } fallback && Video.TransportName == "TCP/TLS")
-            Interlocked.CompareExchange(ref videoFallback, fallback, "udp-host-fallback");
+        {
+            if (Interlocked.CompareExchange(ref videoFallback, fallback, "udp-host-fallback") != "udp-host-fallback")
+                Interlocked.CompareExchange(ref videoFallback, fallback, "udp-datagrams-silent");
+        }
     }
 
     public VideoNetworkStatistics? ReadVideoNetworkStatistics()
@@ -84,6 +87,7 @@ public sealed class SessionClient : IDisposable
     public Func<ECDsa>? OpenDeviceKey { get; init; }
     public bool RequestPointerCompression { get; init; }
     public bool RequestQuicRecovery { get; init; }
+    public Action? MissingVideoTailDetected { get; set; }
     public bool SupportsQuicRecovery { get; private set; }
     long lastQuicRecoveryAttempt;
 
@@ -97,7 +101,7 @@ public sealed class SessionClient : IDisposable
         {
             var (candidate, budget) = await ProbeQuicMedia(offer.QuicPort, offer.QuicTicket!, cancellation);
             var channel = new DatagramVideoChannel(budget, candidate.SendAsync, candidate.ReceiveAsync,
-                DisplayVersion != 0, VideoVersion != 0, detectSilence: true);
+                DisplayVersion != 0, VideoVersion != 0, detectSilence: true, missingTailDetected: () => MissingVideoTailDetected?.Invoke());
             if (Video is not AutoFallbackVideoChannel automatic ||
                 Interlocked.CompareExchange(ref quic, candidate, null) is not null)
             {
@@ -320,7 +324,7 @@ public sealed class SessionClient : IDisposable
                 if (candidate is not null)
                 {
                     quic = candidate;
-                    Video = datagramVideo = new DatagramVideoChannel(budget, candidate.SendAsync, candidate.ReceiveAsync, DisplayVersion != 0, VideoVersion != 0, detectSilence: true);
+                    Video = datagramVideo = new DatagramVideoChannel(budget, candidate.SendAsync, candidate.ReceiveAsync, DisplayVersion != 0, VideoVersion != 0, detectSilence: true, missingTailDetected: () => MissingVideoTailDetected?.Invoke());
                     candidate = null;
                 }
             }
