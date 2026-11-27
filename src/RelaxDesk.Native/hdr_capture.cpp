@@ -19,6 +19,7 @@ struct hdr_capture {
     GraphicsCaptureItem item{nullptr};
     Direct3D11CaptureFramePool pool{nullptr};
     GraphicsCaptureSession session{nullptr};
+    bool embedded_cursor=true;
     std::shared_ptr<hdr_notifications> notifications=std::make_shared<hdr_notifications>();
     GraphicsCaptureItem::Closed_revoker closed_subscription;
     Direct3D11CaptureFramePool::FrameArrived_revoker frame_subscription;
@@ -53,6 +54,13 @@ void capture_context::start_hdr_capture(){
         capture->frame_subscription=capture->pool.FrameArrived(winrt::auto_revoke,
             [notifications=capture->notifications](auto const&,auto const&){SetEvent(notifications->available.get());});
         capture->session=capture->pool.CreateCaptureSession(capture->item);
+        // Embedded cursors cannot be removed by the Viewer on mouse leave.
+        // Windows 10 2004+ supports cursor-free WGC; use the Viewer's local
+        // cursor until this backend supplies independent pointer shapes.
+        if(auto cursor_session=capture->session.try_as<IGraphicsCaptureSession2>()){
+            cursor_session.IsCursorCaptureEnabled(false);
+            capture->embedded_cursor=false;
+        }
         capture->session.StartCapture();
         hdr_session=std::move(capture);
     }catch(const winrt::hresult_error& error){check(error.code(),"start Windows Graphics Capture FP16");}
@@ -84,9 +92,10 @@ void capture_context::acquire_hdr(uint32_t timeout,rd_frame& result){
             check(DXGI_ERROR_ACCESS_LOST,"HDR capture resolution changed; recreate capture and encoder");
         ComPtr<IDXGIResource> resource;check(pixels.As(&resource),"HDR capture surface resource");
         DXGI_OUTDUPL_FRAME_INFO info{};info.LastPresentTime.QuadPart=ticks();info.AccumulatedFrames=1;
-        // WGC composites the cursor. No separate DXGI pointer or dirty metadata is available.
+        // No separate DXGI pointer or dirty metadata is available.
         accept_surface(info,resource.Get());
         result={};result.width=desc.Width;result.height=desc.Height;
         result.timestamp=last_desktop_time;result.accumulated=1;
+        result.pointer_type=hdr_session->embedded_cursor?3:0;
     }catch(const winrt::hresult_error& error){check(error.code(),"acquire Windows Graphics Capture FP16 frame");}
 }

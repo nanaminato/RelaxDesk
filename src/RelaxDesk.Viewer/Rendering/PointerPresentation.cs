@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace RelaxDesk.Viewer;
 
@@ -9,6 +10,7 @@ public sealed partial class ViewerWindow
 {
     volatile bool remotePointerVisible;
     Action<bool>? pointerPresentationChanged;
+    DispatcherTimer? pointerPresentationTimer;
     [StructLayout(LayoutKind.Sequential)] struct CursorPoint { public int X, Y; }
     [DllImport("user32.dll")] static extern bool GetCursorPos(out CursorPoint point);
     [DllImport("user32.dll")] static extern nint WindowFromPoint(CursorPoint point);
@@ -16,6 +18,15 @@ public sealed partial class ViewerWindow
 
     void ConfigurePointerPresentation()
     {
+        // WPF and the native video child do not share mouse tracking. In particular,
+        // crossing into non-client areas or another HWND can leave the last hit stale.
+        // Recheck while a remote pointer is shown, even when video and mouse messages stop.
+        pointerPresentationTimer = new DispatcherTimer(DispatcherPriority.Input, Dispatcher)
+        {
+            Interval = TimeSpan.FromMilliseconds(50)
+        };
+        pointerPresentationTimer.Tick += (_, _) => RefreshPointerPresentation();
+        Closed += (_, _) => pointerPresentationTimer.Stop();
         MouseMove += (_, _) => RefreshPointerPresentation();
         MouseLeave += (_, _) => SetPointerPresentation(false);
         Activated += (_, _) => RefreshPointerPresentation();
@@ -64,6 +75,8 @@ public sealed partial class ViewerWindow
     {
         if (remotePointerVisible == visible) return;
         remotePointerVisible = visible;
+        if (visible) pointerPresentationTimer?.Start();
+        else pointerPresentationTimer?.Stop();
         pointerPresentationChanged?.Invoke(visible);
     }
 }

@@ -48,6 +48,18 @@ public sealed partial class ViewerWindow
                 window.RefreshPointerPresentation(center, owner, false); Check(!window.remotePointerVisible);
                 window.RefreshPointerPresentation(center, (nint)123, true); Check(!window.remotePointerVisible);
                 window.RefreshPointerPresentation(window.videoPanel.PointToScreen(new Point(-1, -1)), owner, true); Check(!window.remotePointerVisible);
+                // No move/leave or video event: the periodic hit test must still remove
+                // a stale pointer and notify the renderer to repaint its retained frame.
+                int hiddenNotifications = 0;
+                window.pointerPresentationChanged = visible => { if (!visible) hiddenNotifications++; };
+                window.desktopView = false;
+                window.SetPointerPresentation(true);
+                Check(window.pointerPresentationTimer!.IsEnabled);
+                await Task.Delay(200);
+                Check(!window.remotePointerVisible && hiddenNotifications == 1);
+                Check(!window.pointerPresentationTimer.IsEnabled);
+                window.pointerPresentationChanged = null;
+                window.desktopView = true;
                 Check(window.TryViewportLayout(out var view));
                 if (view.DestinationHeight < window.videoPanel.ActualHeight - 2)
                 {
@@ -74,7 +86,7 @@ public sealed partial class ViewerWindow
                 await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
                 nativeCenter = native.PointToScreen(new Point(100, 50));
                 window.RefreshPointerPresentation(nativeCenter, native.Handle, true); Check(window.remotePointerVisible);
-                window.StopLocalPreview(); Check(!window.remotePointerVisible);
+                window.StopLocalPreview(); Check(!window.remotePointerVisible && !window.pointerPresentationTimer!.IsEnabled);
                 Console.WriteLine($"PASS {checks} cursor presentation checks: CPU retained pixels/no trails, inactive/outside/letterbox/occluded regions, native move/leave, fullscreen toolbar/menu, re-entry and disconnect; synthetic hit-test inputs, no desktop cursor injection");
             }
             catch (Exception error) { Console.Error.WriteLine(error); Environment.ExitCode = 1; }

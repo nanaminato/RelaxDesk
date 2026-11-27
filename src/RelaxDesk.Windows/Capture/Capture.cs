@@ -95,7 +95,7 @@ public sealed class DxgiCaptureBackend : ICaptureBackend
         byte[] shape = Blob(2, pointerShape);
         if (reusePointerShape) pointerShape = shape;
         var metadata = new CaptureMetadata(info.Timestamp, info.Accumulated, Blob(0), Blob(1), info.PointerX, info.PointerY,
-            info.PointerVisible != 0 && shape.Length != 0, shape.Length == 0 ? CaptureMetadata.HostManagedPointer : info.PointerType, info.PointerWidth, info.PointerHeight, info.PointerPitch,
+            info.PointerVisible != 0 && shape.Length != 0, info.PointerType, info.PointerWidth, info.PointerHeight, info.PointerPitch,
             info.HotspotX, info.HotspotY, shape);
         ulong copyPixels = 0;
         if (captureCopyMetricsAvailable)

@@ -14,9 +14,37 @@ FP16 Windows Graphics Capture frame pool. It maps the resulting linear scRGB
 through the existing SDR-white normalization and highlight shoulder before
 encoding. The same physical ramp read `16, 32, 64, 128, 192, 243` after
 conversion. Readback was used only to measure the test. Production conversion
-stays on the GPU. The Windows capture border and cursor behavior apply to
-this HDR path. SDR still uses Desktop Duplication. GDI remains the compatibility
+stays on the GPU. The Windows capture border applies to this HDR path.
+On Windows 10 2004+ cursor capture is disabled using
+[IsCursorCaptureEnabled](https://learn.microsoft.com/en-us/uwp/api/windows.graphics.capture.graphicscapturesession.iscursorcaptureenabled)
+so a Host cursor cannot remain baked into the frame at the edge after the
+Viewer pointer leaves. This path uses a local arrow, without remote cursor
+shape changes. Earlier Windows versions without this interface retain the
+embedded cursor limitation. Rebuild Host native DLL and managed capture code
+together. SDR still uses Desktop Duplication. GDI remains the compatibility
 path for rotated monitors and all-displays capture.
+
+### Cursor-leave regression verification
+
+Build native code with `scripts/build-native.ps1 -BuildDirectory build/native-cursor-verified`.
+Build Host and Viewer with `dotnet build <project.csproj> --artifacts-path build/cursor-fix
+-p:RelaxDeskNativePath=E:/RelaxDesk/build/native-cursor-verified/Release/RelaxDesk.Native.dll`.
+Run the built Viewer with `--pointer-contracts`: 24 checks passed, including
+retained CPU pixels and a timer-driven hide/repaint notification without mouse
+or video events. Native `--capture-contracts`: 55 WARP checks passed. Core test
+executable: 13,948 protocol/access/TLS/localization checks passed. Native and
+managed builds passed; these automated checks do not exercise real WGC HDR
+cursor capture. No performance measurements or installer packages were produced.
+
+Physical acceptance remains required: connect two Windows Home PCs, test both
+SDR/DXGI and HDR/WGC with GPU rendering and CPU fallback, and move the cursor
+through all four edges, the title bar, letterbox, scrollbars and toolbar. Repeat
+while dragging and while the desktop is idle, deactivate/reactivate the Viewer,
+and re-enter. Confirm no remote cursor remains at an edge, no trails or double
+cursors appear, and held buttons release normally. On HDR/WGC Windows 10 2004+
+expect a local arrow; also check I-beam/resize regions to document this limitation.
+Record OS version, capture backend and renderer. Older WGC versions that lack
+cursor exclusion retain the documented limitation.
 
 Run `RelaxDesk.NativeProbe.exe` from the local console with HDR on to check the
 capture path. The expected report includes `capture_api: Windows.Graphics.Capture`,
