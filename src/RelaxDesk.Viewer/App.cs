@@ -74,6 +74,7 @@ public sealed class App : Application
             else if(args is ["--localization-contracts",var languageOutput])ViewerWindow.VerifyLocalization(app,languageOutput);
             else if(args is ["--automatic-quality-contracts",var qualityFixtures])ViewerWindow.VerifyAutomaticQuality(app,qualityFixtures);
             else if(args is ["--pointer-contracts"])ViewerWindow.VerifyPointerPresentation(app);
+            else if(args is ["--remote-pointer-probe",var pointerAddress,var pointerPort,var pointerUser,var pointerOutput,"gpu" or "cpu"])ViewerWindow.VerifyRemotePointer(app,pointerAddress,int.Parse(pointerPort),pointerUser,pointerOutput,args[^1]=="gpu");
             else if(args is ["--video-settings-contracts",var settingsHost,var settingsMode])ViewerWindow.VerifyVideoSettings(app,settingsHost,settingsMode);
             else if(args is ["--topology-race-contracts",var raceHost])ViewerWindow.VerifyDisplaySession(app,raceHost,initializationRace:true);
             else if(args is ["--topology-session-contracts",var topologyHost])ViewerWindow.VerifyDisplaySession(app,topologyHost,true);
@@ -106,6 +107,7 @@ public sealed partial class ViewerWindow : Window
     bool closing;
     readonly OutgoingControlQueue outgoing = new(256);
     CancellationTokenSource? session; long sequence;
+    Action<MediaFrame>? pointerFrameForVerification;
     readonly ViewerSmokeSettings? smoke;
     int smokeFrames;
     public ViewerWindow(ViewerSmokeSettings? smoke = null)
@@ -518,7 +520,7 @@ public sealed partial class ViewerWindow : Window
                             {
                                 stage = "gpu-present";
                                 var idleViewport=CurrentViewport;
-                                if (AcceptVideoFrame(retained.Frame)&&(displaySession is null||displaySession.AcceptFrame(retained.Frame))&&renderer.Present(retained.Surface, retained.Frame.Metadata,idleViewport,showPointer:remotePointerVisible))
+                                if (AcceptVideoFrame(retained.Frame)&&(displaySession is null||displaySession.AcceptFrame(retained.Frame))&&renderer.Present(retained.Surface, retained.Frame.Metadata,idleViewport,showPointer:remotePointerVisible,systemPointer:true))
                                 {
                                     Interlocked.Increment(ref idleRepaints);_ = Dispatcher.BeginInvoke(()=>{if(ReferenceEquals(session,cancellation)&&!cancellation.IsCancellationRequested)ViewportDrawn(idleViewport);});
                                 }
@@ -531,6 +533,7 @@ public sealed partial class ViewerWindow : Window
                         var frame = pendingRead.GetAwaiter().GetResult(); ioNotification?.GetAwaiter().GetResult(); pendingRead = null; ioNotification = null;
                         string? transport = autoRecoveryTest ? connection.Video.TransportName : null;
                         stage = "media-validate";
+                        pointerFrameForVerification?.Invoke(frame);
                         Interlocked.Increment(ref receivedFrames);
                         int frameBytes = MediaProtocol.HeaderSize + frame.Metadata.Length + frame.Data.Length;
                         Interlocked.Add(ref videoReceivedBytes, frameBytes); metrics.Traffic(frameBytes);
@@ -542,7 +545,9 @@ public sealed partial class ViewerWindow : Window
                         if (smoke?.SimulateGap == true && !simulatedGap && receivedFrames == 15) { simulatedGap = true; continue; }
                         if (gpu)
                         {
+                            byte[]? expectedPointerMetadata = pointerFrameForVerification is null ? null : CaptureMetadataCodec.Encode(CaptureMetadataCodec.Decode(frame.Metadata));
                             frame = frame with { Metadata = nativePointer.Decode(frame.Metadata) };
+                            if (expectedPointerMetadata is not null && !frame.Metadata.AsSpan().SequenceEqual(expectedPointerMetadata)) throw new InvalidDataException("GPU pointer metadata differs from CPU decode");
                             try
                             {
                                 if (smoke?.SimulateDeviceLoss == true && simulatedLosses < 3 && gpuFrames >= 10 * (simulatedLosses + 1)) { simulatedLosses++; throw new System.Runtime.InteropServices.ExternalException("Simulated device removal for recovery test", unchecked((int)0x887A0005)); }
@@ -554,14 +559,15 @@ public sealed partial class ViewerWindow : Window
                                 if (renderer is null) { renderer = new(surface.Surface, hwnd); rendererGenerations++; }
                                 nativeView!.SetVideoSize(frame.Width, frame.Height);
                                 stage = "gpu-present"; InjectPipelineFault(stage);
-                                var drawnViewport=CurrentViewport;bool shown = renderer.Present(surface.Surface, frame.Metadata,drawnViewport,showPointer:remotePointerVisible);
+                                var drawnViewport=CurrentViewport;
+                                bool shown = renderer.Present(surface.Surface, frame.Metadata,drawnViewport,showPointer:remotePointerVisible,systemPointer:true);
                                 if(smoke is not null && receivedFrames==1)Console.WriteLine("render_environment="+renderer.Diagnostics());
                                 metrics.Add("decode", surface.DecodeMilliseconds); metrics.Add("gpu_draw_submit", renderer.Timing.DrawMs); metrics.Add("present_call", renderer.Timing.PresentMs);
                                 metrics.Add("readback", surface.Timing.ReadbackMs); Interlocked.Add(ref readbackBytes, checked((long)surface.Timing.ReadbackBytes));
                                 CollectRenderState();
                                 if (shown)
                                 {
-                                    nativeView.SetHostPointer(CaptureMetadataCodec.UsesHostPointer(frame.Metadata));
+                                    nativeView.SetHostPointer(CaptureMetadataCodec.UsesHostPointer(frame.Metadata), surface.Metadata);
                                     Presented(true, frame, surface.DecodeMilliseconds,drawnViewport,transport);
                                 }
                                 else Interlocked.Increment(ref skipped);

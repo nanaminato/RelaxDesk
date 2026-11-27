@@ -18,7 +18,7 @@ public sealed partial class ViewerWindow
     internal static void VerifyPointerPresentation(Application app)
     {
         var window = new ViewerWindow { ShowActivated = false };
-        int checks = 0;
+        int checks = SystemCursorVerification.Run();
         void Check(bool value) { if (!value) throw new IOException($"Pointer presentation check {checks + 1}"); checks++; }
         window.Loaded += async (_, _) =>
         {
@@ -87,7 +87,7 @@ public sealed partial class ViewerWindow
                 nativeCenter = native.PointToScreen(new Point(100, 50));
                 window.RefreshPointerPresentation(nativeCenter, native.Handle, true); Check(window.remotePointerVisible);
                 window.StopLocalPreview(); Check(!window.remotePointerVisible && !window.pointerPresentationTimer!.IsEnabled);
-                Console.WriteLine($"PASS {checks} cursor presentation checks: CPU retained pixels/no trails, inactive/outside/letterbox/occluded regions, native move/leave, fullscreen toolbar/menu, re-entry and disconnect; synthetic hit-test inputs, no desktop cursor injection");
+                Console.WriteLine($"PASS {checks} cursor presentation checks: native color/alpha/AND/XOR pixels, padded pitch/hotspots/disposal, CPU retained pixels/no trails, inactive/outside/letterbox/occluded regions, native move/leave, fullscreen toolbar/menu, re-entry and disconnect; synthetic hit-test inputs, no desktop cursor injection");
             }
             catch (Exception error) { Console.Error.WriteLine(error); Environment.ExitCode = 1; }
             finally

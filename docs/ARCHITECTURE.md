@@ -113,7 +113,13 @@ Default Viewer now connects by IP/port with `request-v2` and a fresh 128-bit req
 ## Remote cursor ownership
 
 Viewer cursor ownership follows the presented desktop frame. DXGI pointer shapes
-are composited by the Viewer. WGC disables cursor capture on Windows 10 2004+
+use a Windows cursor owned by the Viewer when GPU video is active; they are
+not drawn into the video SwapChain. Color/alpha, monochrome AND/XOR and masked
+color shapes retain their remote hotspot, with bitmap pitch repacked for Win32.
+Cursor movement follows the local mouse, independently of video arrival, and
+its size stays independent of viewport zoom. WPF CPU video still composites
+the pointer into its retained bitmap. See [cursor validation](CURSOR-PRESENTATION.md).
+WGC disables cursor capture on Windows 10 2004+
 and uses the Viewer's local arrow; remote cursor shape changes are not yet
 available on that path. Earlier WGC versions retain an embedded cursor and
 cannot hide it when the Viewer pointer leaves. The production GDI backend
@@ -121,8 +127,8 @@ captures without a cursor and uses the local arrow. Capture metadata
 reserves pointer type 3 with no shape payload for frames whose pointer is embedded
 or hidden by the Host. Older readers already accept that value with an empty
 shape. A Viewer with no Host pointer indication uses a local arrow. Native video
-suppresses the local cursor only inside the active video viewport, while WPF bitmap
-video applies the cursor to the clipped image. Toolbar and menu HWNDs retain their
+selects the remote cursor only inside the active video viewport; a hidden Host
+pointer remains hidden there. Toolbar and menu HWNDs retain their
 local cursor behavior.
 
 While a remote pointer is visible, an input-priority 50 ms timer rechecks the

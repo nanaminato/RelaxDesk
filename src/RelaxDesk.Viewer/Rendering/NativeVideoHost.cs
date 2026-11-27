@@ -21,6 +21,10 @@ public sealed class NativeVideoHost : HwndHost
     sealed record VideoSize(int Width,int Height);
     VideoSize? videoSize;
     volatile bool hostPointer;
+    RemoteSystemCursor? systemCursor;
+    CaptureMetadata? systemCursorShape;
+    bool systemCursorVisible;
+    CaptureMetadata? cursorMetadata;
     static readonly nint arrowCursor = LoadCursor(0, 32512);
     ViewportOptions viewport=new();
     public void SetViewport(ViewportOptions options){if(!options.Valid)throw new ArgumentException("Invalid viewport");Volatile.Write(ref viewport,options);RenderInvalidated?.Invoke();}
@@ -62,6 +66,7 @@ public sealed class NativeVideoHost : HwndHost
     }
     protected override void DestroyWindowCore(HandleRef hwnd)
     {
+        ClearSystemCursor(); systemCursorShape = null; cursorMetadata = null; systemCursorVisible = false; hostPointer = false;
         if (keyboardAttached) { ComponentDispatcher.ThreadFilterMessage -= FilterKeyboard; keyboardAttached = false; }
         keyboardOwned = false;
         if (previousIme != 0) { ImmAssociateContext(hwnd.Handle, previousIme); previousIme = 0; }
@@ -78,16 +83,58 @@ public sealed class NativeVideoHost : HwndHost
     [StructLayout(LayoutKind.Sequential)] struct Point { public int X,Y; }
     [DllImport("user32.dll")] static extern bool ClientToScreen(nint hwnd,ref Point point);
     [DllImport("user32.dll")] static extern bool ScreenToClient(nint hwnd,ref Point point);
-    internal void SetHostPointer(bool value)
+    internal void SetHostPointer(bool value, CaptureMetadata? pointer = null)
     {
-        if (hostPointer == value) return;
+        var previousMetadata = cursorMetadata;
+        if (hostPointer == value && (ReferenceEquals(previousMetadata, pointer) ||
+            (previousMetadata is not null && pointer is not null && previousMetadata.PointerType == pointer.PointerType &&
+             previousMetadata.PointerVisible == pointer.PointerVisible && previousMetadata.PointerWidth == pointer.PointerWidth &&
+             previousMetadata.PointerHeight == pointer.PointerHeight && previousMetadata.PointerPitch == pointer.PointerPitch &&
+             previousMetadata.HotspotX == pointer.HotspotX && previousMetadata.HotspotY == pointer.HotspotY &&
+             previousMetadata.PointerShape.AsSpan().SequenceEqual(pointer.PointerShape)))) return;
         hostPointer = value;
+        cursorMetadata = pointer;
         _ = Dispatcher.BeginInvoke(() =>
         {
             nint child = Handle;
+            if (child == 0) return;
+            if (pointer is { PointerShape.Length: > 0 })
+            {
+                if (systemCursorShape is null || systemCursorShape.PointerType != pointer.PointerType || systemCursorShape.PointerWidth != pointer.PointerWidth || systemCursorShape.PointerHeight != pointer.PointerHeight ||
+                    systemCursorShape.PointerPitch != pointer.PointerPitch || systemCursorShape.HotspotX != pointer.HotspotX || systemCursorShape.HotspotY != pointer.HotspotY ||
+                    !systemCursorShape.PointerShape.AsSpan().SequenceEqual(pointer.PointerShape))
+                {
+                    RemoteSystemCursor next;
+                    try { next = new RemoteSystemCursor(pointer); }
+                    catch (Exception error) when (error is System.IO.IOException or ArgumentException)
+                    {
+                        ViewerSessionLog.Record("remote-cursor-create", error);
+                        ClearSystemCursor(); systemCursorShape = null;
+                        systemCursorVisible = false; hostPointer = false;
+                        if (GetCursorPos(out var failedPoint) && WindowFromPoint(failedPoint) == child) UpdateCursor(child, failedPoint);
+                        return;
+                    }
+                    var previous = systemCursor;
+                    systemCursor = next; systemCursorShape = pointer;
+                    if (previous is not null && GetCursor() == previous.Handle) SetCursor(next.Handle);
+                    previous?.Dispose();
+                }
+                systemCursorVisible = pointer.PointerVisible;
+            }
+            else
+            {
+                ClearSystemCursor(); systemCursorShape = null; systemCursorVisible = false;
+            }
             if (child != 0 && GetCursorPos(out var point) && WindowFromPoint(point) == child)
                 UpdateCursor(child, point);
         });
+    }
+
+    void ClearSystemCursor()
+    {
+        if (systemCursor is null) return;
+        if (GetCursor() == systemCursor.Handle) SetCursor(arrowCursor);
+        systemCursor.Dispose(); systemCursor = null;
     }
 
     void UpdateCursor(nint hwnd, Point point)
@@ -96,7 +143,7 @@ public sealed class NativeVideoHost : HwndHost
             LocalPointerOverlay?.Invoke(point.X, point.Y) != true &&
             ScreenToClient(hwnd, ref point) && GetClientRect(hwnd, out var bounds) &&
             TryPosition(point.X, point.Y, bounds.Right, bounds.Bottom, false, out _, out _);
-        nint desired = showHost ? 0 : arrowCursor;
+        nint desired = showHost ? (systemCursorVisible ? systemCursor?.Handle ?? 0 : 0) : arrowCursor;
         if (GetCursor() != desired) SetCursor(desired);
     }
     bool SendRichPosition(nint hwnd,nint packed,bool dragging,bool screen=false,bool standaloneMove=false)
