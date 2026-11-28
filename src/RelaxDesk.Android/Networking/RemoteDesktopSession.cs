@@ -90,16 +90,18 @@ internal sealed class RemoteDesktopSession : IDisposable
     public async Task RunAsync(
         string host,
         int port,
-        string pin,
+        string savedPin,
         string user,
         string password,
         Func<ECDsa> openKey,
+        Func<string, CancellationToken, Task<bool>> confirmServer,
+        Action<string>? onFingerprintVerified,
         Surface? initialSurface,
         CancellationToken ct)
     {
-        if (!FirstFrameSession.TryEndpoint(host, port.ToString(System.Globalization.CultureInfo.InvariantCulture), pin,
-                out host, out port, out pin))
-            throw new AuthenticationException("需要有效的局域网 IP、端口和已核对的 64 位 SHA-256 证书指纹。");
+        host = host.Trim();
+        if (string.IsNullOrWhiteSpace(host) || port is < 1 or > 65535)
+            throw new AuthenticationException("Invalid host or port.");
 
         ct.ThrowIfCancellationRequested();
         StatusChanged?.Invoke("正在建立 TLS 连接并等待被控端批准…");
@@ -115,9 +117,12 @@ internal sealed class RemoteDesktopSession : IDisposable
         using (var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
         {
             connectCts.CancelAfter(TimeSpan.FromSeconds(50));
-            await client.ConnectWithPassword(host, port, pin, user, password, (_, _) => Task.FromResult(false), connectCts.Token)
+            await client.ConnectWithPassword(host, port, savedPin ?? "", user, password, confirmServer, connectCts.Token)
                 .ConfigureAwait(false);
         }
+
+        if (!string.IsNullOrEmpty(client.VerifiedFingerprint))
+            onFingerprintVerified?.Invoke(client.VerifiedFingerprint);
 
         ScreenOnlyAttachments.DisableAfterBinding(client);
         var initialDisplay = client.DisplayState ?? throw new InvalidDataException("Missing approved display.");

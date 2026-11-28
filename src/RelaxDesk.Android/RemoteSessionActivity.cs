@@ -50,7 +50,8 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     LinearLayout sessionPill = null!;
     LinearLayout pillButtonsContainer = null!;
     HorizontalScrollView extraKeysBar = null!;
-    EditText hostInput = null!, portInput = null!, pinInput = null!, userInput = null!, passInput = null!;
+    EditText hostInput = null!, portInput = null!, userInput = null!, passInput = null!;
+    string savedFingerprint = "";
     Button connectBtn = null!, backListBtn = null!, modeBtn = null!, collapseBtn = null!;
     Button keysToggleBtn = null!, hudToggleBtn = null!, disconnectBtn = null!;
     Button ctrlBtn = null!, altBtn = null!, shiftBtn = null!, winBtn = null!;
@@ -108,7 +109,6 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         statusText = FindViewById<TextView>(Resource.Id.connect_status)!;
         hostInput = FindViewById<EditText>(Resource.Id.input_host)!;
         portInput = FindViewById<EditText>(Resource.Id.input_port)!;
-        pinInput = FindViewById<EditText>(Resource.Id.input_pin)!;
         userInput = FindViewById<EditText>(Resource.Id.input_user)!;
         passInput = FindViewById<EditText>(Resource.Id.input_password)!;
         backListBtn = FindViewById<Button>(Resource.Id.btn_back_list)!;
@@ -153,7 +153,6 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     {
         hostInput.Hint = AndroidStrings.Get("hint_host");
         portInput.Hint = AndroidStrings.Get("hint_port");
-        pinInput.Hint = AndroidStrings.Get("hint_pin");
         userInput.Hint = AndroidStrings.Get("hint_user");
         passInput.Hint = AndroidStrings.Get("hint_password");
         backListBtn.Text = AndroidStrings.Get("back_list");
@@ -203,7 +202,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             pcName = Intent?.GetStringExtra(ExtraName) ?? intentHost;
             hostInput.Text = intentHost;
             portInput.Text = (Intent?.GetIntExtra(ExtraPort, 48200) ?? 48200).ToString();
-            pinInput.Text = Intent?.GetStringExtra(ExtraPin) ?? "";
+            savedFingerprint = Intent?.GetStringExtra(ExtraPin) ?? "";
             userInput.Text = Intent?.GetStringExtra(ExtraUser) ?? "";
             passInput.RequestFocus();
             return;
@@ -216,7 +215,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             pcName = latest.Name;
             hostInput.Text = latest.Host;
             portInput.Text = latest.Port.ToString();
-            pinInput.Text = latest.Fingerprint;
+            savedFingerprint = latest.Fingerprint;
             userInput.Text = latest.Username;
         }
         else
@@ -269,8 +268,8 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     void StartConnect()
     {
         if (!foreground || requestingPermission || session is not null) return;
-        if (!FirstFrameSession.TryEndpoint(hostInput.Text ?? "", portInput.Text ?? "", pinInput.Text ?? "",
-                out var ip, out var port, out var pin))
+        string ip = (hostInput.Text ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(ip) || !int.TryParse(portInput.Text, out int port) || port is < 1 or > 65535)
         {
             statusText.Text = AndroidStrings.Get("err_invalid_endpoint");
             return;
@@ -293,7 +292,8 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         }
 
         string displayName = string.IsNullOrWhiteSpace(pcName) ? ip : pcName;
-        ConnectionStore.SaveOrUpdate(this, new SavedHostEntry(displayName, ip, port, pin, username, DateTime.UtcNow.Ticks));
+        string pinToUse = savedFingerprint;
+        ConnectionStore.SaveOrUpdate(this, new SavedHostEntry(displayName, ip, port, pinToUse, username, DateTime.UtcNow.Ticks));
 
         var cts = new CancellationTokenSource();
         var activeSession = new RemoteDesktopSession();
@@ -327,8 +327,15 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             string endMessage = AndroidStrings.Get("disconnected");
             try
             {
-                await activeSession.RunAsync(ip, port, pin, username, password,
-                    AndroidDeviceKey.OpenProbeKey, activeSurface, cts.Token);
+                await activeSession.RunAsync(ip, port, pinToUse, username, password,
+                    AndroidDeviceKey.OpenProbeKey,
+                    ConfirmServerCertificateAsync,
+                    verifiedPin =>
+                    {
+                        savedFingerprint = verifiedPin;
+                        ConnectionStore.SaveOrUpdate(this, new SavedHostEntry(displayName, ip, port, verifiedPin, username, DateTime.UtcNow.Ticks));
+                    },
+                    activeSurface, cts.Token);
             }
             catch (System.OperationCanceledException) when (cts.IsCancellationRequested) { endMessage = AndroidStrings.Get("disconnected"); }
             catch (HostConsentRejectedException) { endMessage = "Host rejected connection."; }
@@ -352,6 +359,29 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
                 statusText.Text = endMessage;
             });
         });
+    }
+
+    Task<bool> ConfirmServerCertificateAsync(string fingerprint, CancellationToken ct)
+    {
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var reg = ct.Register(() => tcs.TrySetResult(false));
+        RunOnUiThread(() =>
+        {
+            if (IsDestroyed || IsFinishing)
+            {
+                tcs.TrySetResult(false);
+                return;
+            }
+            string formatted = string.Join(":", Enumerable.Range(0, fingerprint.Length / 2).Select(i => fingerprint.Substring(i * 2, 2)));
+            new AlertDialog.Builder(this)
+                .SetTitle("核对主机 TLS 证书指纹")!
+                .SetMessage($"首次连接或主机证书已变更，请核对 Windows 被控端显示的 SHA-256 指纹：\n\n{formatted}")!
+                .SetCancelable(false)!
+                .SetPositiveButton("信任并连接", (_, _) => tcs.TrySetResult(true))!
+                .SetNegativeButton(AndroidStrings.Get("cancel"), (_, _) => tcs.TrySetResult(false))!
+                .Show();
+        });
+        return tcs.Task;
     }
 
     void Disconnect()

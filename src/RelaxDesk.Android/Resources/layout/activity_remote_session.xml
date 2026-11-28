@@ -195,14 +195,6 @@
             android:textColorHint="#A0BEC8D7" />
 
         <EditText
-            android:id="@+id/input_pin"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:singleLine="true"
-            android:textColor="#FFFFFFFF"
-            android:textColorHint="#A0BEC8D7" />
-
-        <EditText
             android:id="@+id/input_user"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

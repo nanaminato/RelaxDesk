@@ -135,7 +135,6 @@ public sealed class MainActivity : Activity
         var nameEdit = AddDialogField(container, AndroidStrings.Get("hint_name"), existing?.Name ?? "");
         var hostEdit = AddDialogField(container, AndroidStrings.Get("hint_host"), existing?.Host ?? "");
         var portEdit = AddDialogField(container, AndroidStrings.Get("hint_port"), (existing?.Port ?? 48200).ToString(), InputTypes.ClassNumber);
-        var pinEdit = AddDialogField(container, AndroidStrings.Get("hint_pin"), existing?.Fingerprint ?? "");
         var userEdit = AddDialogField(container, AndroidStrings.Get("hint_user"), existing?.Username ?? "");
 
         var builder = new AlertDialog.Builder(this)
@@ -143,8 +142,8 @@ public sealed class MainActivity : Activity
             .SetView(container)!
             .SetPositiveButton(AndroidStrings.Get("save"), (_, _) =>
             {
-                if (!FirstFrameSession.TryEndpoint(hostEdit.Text ?? "", portEdit.Text ?? "", pinEdit.Text ?? "",
-                        out var ip, out var port, out var pin))
+                string ip = (hostEdit.Text ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(ip) || !int.TryParse(portEdit.Text, out int port) || port is < 1 or > 65535)
                 {
                     Toast.MakeText(this, AndroidStrings.Get("err_invalid_endpoint"), ToastLength.Long)?.Show();
                     return;
@@ -157,7 +156,7 @@ public sealed class MainActivity : Activity
                 }
                 string displayName = (nameEdit.Text ?? "").Trim();
                 if (displayName.Length == 0) displayName = ip;
-                ConnectionStore.SaveOrUpdate(this, new SavedHostEntry(displayName, ip, port, pin, user, DateTime.UtcNow.Ticks));
+                ConnectionStore.SaveOrUpdate(this, new SavedHostEntry(displayName, ip, port, existing?.Fingerprint ?? "", user, DateTime.UtcNow.Ticks));
                 RefreshPcList();
             })!
             .SetNegativeButton(AndroidStrings.Get("cancel"), (_, _) => { })!;
