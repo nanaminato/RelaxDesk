@@ -1,0 +1,109 @@
+name: RelaxDesk Android emulator smoke
+on:
+  push:
+    branches: [feat/android-viewer]
+    paths:
+      - '.github/workflows/android-viewer-smoke.yml'
+      - 'scripts/test-android-emulator.py'
+      - 'src/RelaxDesk.Android/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-viewer-smoke
+  cancel-in-progress: true
+
+jobs:
+  install-and-sign:
+    if: github.repository == 'nanaminato/RelaxDesk' && github.ref == 'refs/heads/feat/android-viewer'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 22
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+        with:
+          dotnet-version: 11.0.100
+      - name: Require accelerated guest
+        run: |
+          test -c /dev/kvm
+          sudo chgrp "$(id -gn)" /dev/kvm
+          sudo chmod g+rw /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
+      - name: Set up pinned Android SDK and x86-64 image
+        run: |
+          set -euo pipefail
+          sdk="$RUNNER_TEMP/relaxdesk-sdk"
+          mkdir -p "$sdk"/{platforms,build-tools,system-images/android-37.0/default}
+          get() {
+            local url="$1" checksum="$2" target="$3" archive
+            archive="$(mktemp)"
+            curl -fsSL --retry 2 --max-time 240 "$url" -o "$archive"
+            printf '%s  %s\n' "$checksum" "$archive" | sha1sum -c
+            unzip -q "$archive" -d "$target"
+            rm "$archive"
+          }
+          base=https://dl.google.com/android/repository
+          get "$base/emulator-linux_x64-16982698.zip" 68cef99afee0bdc875acb671082cb75a46a4ab79 "$sdk"
+          get "$base/sys-img/android/x86_64-37.0_r06.zip" 8842a57a6b146423debb46c1496a9c0986aa1b9e "$sdk/system-images/android-37.0/default"
+          get "$base/platform-37.0_r02.zip" ed8ebf7f8822a4de5686d427f237d2fa30ff7410 "$sdk/platforms"
+          get "$base/build-tools_r37_linux.zip" 70954e99f4c3d9d46ee70fa32624672fe7cd6ebe "$sdk/build-tools"
+          get "$base/platform-tools_r37.0.3-linux.zip" e1579b288a7ae4e9bc28dedec6a154d78b3c04ed "$sdk"
+          mv "$sdk/build-tools/android-37.0" "$sdk/build-tools/37.0.0"
+          test -x "$JAVA_HOME_21_X64/bin/javac"
+          printf 'ANDROID_HOME=%s\nANDROID_SDK_ROOT=%s\nJAVA_HOME=%s\n' "$sdk" "$sdk" "$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+      - name: Build and verify emulator APK
+        run: |
+          set -euo pipefail
+          dotnet workload install android --skip-manifest-update --source https://api.nuget.org/v3/index.json
+          command -v ffmpeg
+          bash scripts/generate-android-probe.sh
+          dotnet build src/RelaxDesk.Android -c Debug -m:1 \
+            -p:AndroidSdkDirectory="$ANDROID_HOME" -p:JavaSdkDirectory="$JAVA_HOME" -p:RuntimeIdentifier=android-x64
+          apk="$PWD/src/RelaxDesk.Android/bin/Debug/net11.0-android37.0/android-x64/com.relaxdesk.viewer.probe-Signed.apk"
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify "$apk"
+          echo "PROBE_APK=$apk" >> "$GITHUB_ENV"
+      - name: Boot API 37, install APK and run Keystore checks
+        run: |
+          set -euo pipefail
+          export ANDROID_AVD_HOME="$RUNNER_TEMP/relaxdesk-avd"
+          export ANDROID_SERIAL=emulator-5554
+          mkdir -p "$ANDROID_AVD_HOME/RelaxDeskSmoke.avd"
+          printf 'path=%s/RelaxDeskSmoke.avd\npath.rel=RelaxDeskSmoke.avd\ntarget=android-37\n' "$ANDROID_AVD_HOME" > "$ANDROID_AVD_HOME/RelaxDeskSmoke.ini"
+          cat > "$ANDROID_AVD_HOME/RelaxDeskSmoke.avd/config.ini" <<'CONFIG'
+          AvdId=RelaxDeskSmoke
+          abi.type=x86_64
+          hw.cpu.arch=x86_64
+          hw.cpu.ncore=2
+          hw.ramSize=4096
+          hw.keyboard=yes
+          hw.lcd.width=540
+          hw.lcd.height=960
+          hw.lcd.density=240
+          hw.gpu.enabled=yes
+          hw.gpu.mode=swiftshader
+          image.sysdir.1=system-images/android-37.0/default/x86_64/
+          disk.dataPartition.size=2048M
+          PlayStore.enabled=false
+          tag.id=default
+          tag.display=Default
+          CONFIG
+          adb="$ANDROID_HOME/platform-tools/adb"
+          export PATH="$ANDROID_HOME/platform-tools:$PATH"
+          "$adb" start-server
+          emulator="$ANDROID_HOME/emulator/emulator"
+          "$emulator" -accel-check
+          "$emulator" -avd RelaxDeskSmoke -port 5554 -no-window -no-audio -no-boot-anim \
+            -no-snapshot -accel on -gpu swiftshader -no-metrics > "$RUNNER_TEMP/relaxdesk-emulator.log" 2>&1 &
+          vm=$!
+          trap 'kill "$vm" 2>/dev/null || true' EXIT
+          if ! python3 scripts/test-android-emulator.py "$PROBE_APK" --adb "$adb" --aapt "$ANDROID_HOME/build-tools/37.0.0/aapt"; then
+            tail -40 "$RUNNER_TEMP/relaxdesk-emulator.log"
+            exit 1
+          fi
