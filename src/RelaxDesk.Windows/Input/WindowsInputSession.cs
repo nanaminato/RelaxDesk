@@ -64,7 +64,7 @@ internal static class WindowsInputPlan
 // and accepted-prefix accounting with a non-injecting sender, never SendInput.
 public sealed class WindowsInputSession : IDisposable
 {
-    [DllImport("user32.dll")]static extern uint SendInput(uint count,NativeInput[] input,int size);
+    [DllImport("user32.dll", SetLastError = true)]static extern uint SendInput(uint count,NativeInput[] input,int size);
     [DllImport("user32.dll")]static extern int GetSystemMetrics(int index);
     static readonly object deferredSync=new();
     static readonly Dictionary<long,NativeInput> deferred=[];
@@ -77,6 +77,7 @@ public sealed class WindowsInputSession : IDisposable
     bool releaseBeforeNextInput;
     sealed class InputRejectedException(string message) : IOException(message);
     public int HeldCount=>held.Count;
+    public int LastRejectedWin32Error { get; private set; }
     static uint SendNativeInput(NativeInput[] batch)
     {
         WindowsDesktopSwitch.SyncThreadToInputDesktop();
@@ -96,7 +97,8 @@ public sealed class WindowsInputSession : IDisposable
         if(batch.Length==0)return;
         uint accepted=send(batch);if(accepted>batch.Length)throw new IOException("Invalid native input result");
         for(int i=0;i<accepted;i++)Record(batch[i]);
-        if(accepted!=batch.Length)throw new InputRejectedException("Input unavailable or partial (UIPI/desktop restriction)");
+        if(accepted!=batch.Length){LastRejectedWin32Error=production?Marshal.GetLastWin32Error():0;throw new InputRejectedException("Input unavailable or partial (UIPI/desktop restriction)");}
+        LastRejectedWin32Error=0;
     }
     void FlushDeferred()
     {

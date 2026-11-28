@@ -71,7 +71,7 @@ public static class ServiceDesktopWorker
                 var current = WindowsSessionAccess.Read(); EnsureCaptureAllowed(current);
                 if (current.InputDesktop == "Winlogon" && !WindowsUacDesktop.ConsentIsForeground()) throw new InputDesktopChangedException();
             };
-            try { InputGate(input!.TryInject(command)?"accepted":"temporarily-blocked"); }
+            try { InputGate(input!.TryInject(command)?"accepted":$"temporarily-blocked win32={input.LastRejectedWin32Error}"); }
             catch (InputDesktopChangedException) { } // A racing switch is observed on the next capture/input.
             finally { WindowsDesktopSwitch.ExpectedInputDesktop = null; WindowsDesktopSwitch.ExpectedInputAuthorization = null; }
         });

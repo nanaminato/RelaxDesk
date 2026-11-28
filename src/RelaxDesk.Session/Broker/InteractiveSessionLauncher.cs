@@ -55,6 +55,7 @@ public static class InteractiveSessionLauncher
     const int SecurityIdentification = 1;
     const int TokenPrimary = 1;
     const int TokenSessionId = 12;
+    const int TokenUIAccess = 26;
     const uint CreateUnicodeEnvironment = 0x00000400;
     const uint CreateNoWindow = 0x08000000;
 
@@ -134,6 +135,9 @@ public static class InteractiveSessionLauncher
                 using (sessionToken)
                 {
                     if (!SetTokenInformation(sessionToken, TokenSessionId, ref sessionId, sizeof(uint)))
+                        throw new Win32Exception(Marshal.GetLastWin32Error());
+                    uint uiAccess = 1;
+                    if (!SetTokenInformation(sessionToken, TokenUIAccess, ref uiAccess, sizeof(uint)))
                         throw new Win32Exception(Marshal.GetLastWin32Error());
 
                     var startup = new StartupInfo

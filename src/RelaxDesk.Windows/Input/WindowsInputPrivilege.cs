@@ -59,8 +59,8 @@ public static class WindowsInputPrivilege
     public static void EnsureSystemInputProcess()
     {
         var token = ReadProcessToken();
-        if (!WindowsDesktopSwitch.IsLocalSystemProcess || token.IntegrityRid != 0x4000 || token.UiAccess)
-            throw new IOException("Service input requires a LocalSystem interactive worker without UIAccess.");
+        if (!WindowsDesktopSwitch.IsLocalSystemProcess || token.IntegrityRid != 0x4000 || !token.UiAccess)
+            throw new IOException("Service input requires a LocalSystem interactive worker with UIAccess.");
     }
 
     public static void EnsureElevatedProcess()
