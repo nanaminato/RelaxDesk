@@ -23,7 +23,7 @@ Windows Viewer 支持 GPU 解码与 D3D11 显示；Android 用 MediaCodec 向 Su
 
 ## 传输与认证
 
-控制使用 TCP/TLS；Windows 视频可选择 TCP/TLS 或 QUIC DATAGRAM，Android 当前使用 TCP/TLS。文件、富剪贴板和音频使用独立绑定的 TLS 通道。它们通过会话票据与已认证连接关联，不接受独立的未授权操作。Windows 文件剪贴板的测试入口和双机步骤见[验收清单](CLIPBOARD-WINDOWS-ACCEPTANCE.md)。
+控制使用 TCP/TLS；Windows 视频可选择 TCP/TLS 或 QUIC DATAGRAM，Android 当前使用 TCP/TLS。文件、富剪贴板和音频使用独立绑定的 TLS 通道。它们通过会话票据与已认证连接关联，不接受独立的未授权操作。Windows 文件剪贴板用本机快照标记区分远程写入与真实本地复制，写后序号在关闭剪贴板后确定；文本、HTML 和图片没有产品级大小上限，只有缓冲区和 PNG 字段的工程边界。当前文件内容仍是复制后分块传输到暂存区再发布 `CF_HDROP`，不是 OLE 延迟呈现。测试入口、根因和双机步骤见[验收清单](CLIPBOARD-WINDOWS-ACCEPTANCE.md)。
 
 当前连接使用密码与设备私钥证明、证书固定和首次设备本机批准。受信任设备仍需有效密码；设备可撤销。Host 同时只允许一个控制会话。详见[连接安全](SESSION-ADMISSION.md)。
 

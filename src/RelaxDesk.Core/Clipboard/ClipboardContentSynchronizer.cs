@@ -8,14 +8,19 @@ public readonly record struct ClipboardFormats(bool Text,bool Image,bool Html,bo
     public string Permission(ClipboardContent content)=>content.Text is not null?SessionCapabilities.ClipboardText:content.Png is not null?SessionCapabilities.ClipboardImage:content.Html is not null?SessionCapabilities.ClipboardHtml:content.Files is not null?SessionCapabilities.ClipboardFiles:Text?SessionCapabilities.ClipboardText:Image?SessionCapabilities.ClipboardImage:Html?SessionCapabilities.ClipboardHtml:SessionCapabilities.ClipboardFiles;
     public static ClipboardFormats Granted(AccessGate gate)=>new(gate.Allows(SessionCapabilities.ClipboardText),gate.Allows(SessionCapabilities.ClipboardImage),gate.Allows(SessionCapabilities.ClipboardHtml),gate.Allows(SessionCapabilities.ClipboardFiles)&&gate.Allows(SessionCapabilities.FileTransfer));
 }
-public sealed record ClipboardContentSnapshot(long Version,ClipboardContent? Content, bool LocalFileSelection = false)
+public sealed record ClipboardContentSnapshot(long Version,ClipboardContent? Content, bool LocalFileSelection = false, bool Echo = false)
 {
-    public override string ToString()=>$"ClipboardContentSnapshot version={Version} (all content redacted)";
+    public override string ToString()=>$"ClipboardContentSnapshot version={Version} echo={Echo} (all content redacted)";
 }
 public interface IContentClipboard:IDisposable
 {
     bool TryRead(ClipboardFormats formats,out ClipboardContentSnapshot snapshot);
     bool TryWrite(ClipboardContent content,long expectedVersion,out long writtenVersion);
+    // Snapshot markers let an adapter recognize its own clipboard write after
+    // Windows finalizes the sequence number, so a remote update is never
+    // mistaken for a fresh local user copy.
+    bool TryWrite(ClipboardContent content,long expectedVersion,out long writtenVersion,string? snapshot)
+        => TryWrite(content,expectedVersion,out writtenVersion);
 }
 
 public sealed class ClipboardContentSynchronizer:IAsyncDisposable
@@ -79,13 +84,24 @@ public sealed class ClipboardContentSynchronizer:IAsyncDisposable
                     else if(version!=snapshot.Version)
                     {
                         version=snapshot.Version;
-                        if(snapshot.LocalFileSelection)state.ObserveLocalFileSelection();
-                        if(retry is not null&&(snapshot.LocalFileSelection||ClipboardContentRules.Valid(content)))
-                            diagnostic($"clipboard_rich_collision local_version={version} queued_remote_revision={retry.Revision}");
-                        if(content is not null&&state.ObserveLocal(content, newCopy:true) is{} update&&!stop.IsCancellationRequested&&ClipboardFormats.Granted(gate)==formats)
+                        if(snapshot.Echo)
                         {
-                            string permission=formats.Permission(update.Content);
-                            gate.TryExecuteFeature(permission,()=>{if(!stop.IsCancellationRequested&&ClipboardFormats.Granted(gate)==formats)send(update);});
+                            // This is a write this session just performed. Windows
+                            // may finalize derived formats or a clipboard manager
+                            // may re-publish it; never send it back as a local copy.
+                            diagnostic($"clipboard_rich_echo version={version}");
+                            if(content is not null)state.ObserveEcho(content);
+                        }
+                        else
+                        {
+                            if(snapshot.LocalFileSelection)state.ObserveLocalFileSelection();
+                            if(retry is not null&&(snapshot.LocalFileSelection||ClipboardContentRules.Valid(content)))
+                                diagnostic($"clipboard_rich_collision local_version={version} queued_remote_revision={retry.Revision}");
+                            if(content is not null&&state.ObserveLocal(content, newCopy:true) is{} update&&!stop.IsCancellationRequested&&ClipboardFormats.Granted(gate)==formats)
+                            {
+                                string permission=formats.Permission(update.Content);
+                                gate.TryExecuteFeature(permission,()=>{if(!stop.IsCancellationRequested&&ClipboardFormats.Granted(gate)==formats)send(update);});
+                            }
                         }
                     }
 
@@ -95,8 +111,11 @@ public sealed class ClipboardContentSynchronizer:IAsyncDisposable
                         else
                         {
                             bool written=false;long writtenVersion=version;
+                            // One marker per remote update; stored alongside the
+                            // data so the next poll can identify our own write.
+                            string marker=$"{retry.Origin}:{retry.Revision}:{Guid.NewGuid():N}";
                             if(!stop.IsCancellationRequested&&ClipboardFormats.Granted(gate)==formats)
-                                written=content is not null&&ClipboardContentRules.Valid(content)&&ClipboardContentRules.Digest(content)==ClipboardContentRules.Digest(retry.Content)||clipboard.TryWrite(retry.Content,version,out writtenVersion);
+                                written=content is not null&&ClipboardContentRules.Valid(content)&&ClipboardContentRules.Digest(content)==ClipboardContentRules.Digest(retry.Content)||clipboard.TryWrite(retry.Content,version,out writtenVersion,marker);
                             if(written){state.Applied(retry);version=writtenVersion;retry=null;}
                             else if(++attempts>=8){retry=null;diagnostic("clipboard_rich_write_unavailable attempts=8 update_discarded=True");}
                         }

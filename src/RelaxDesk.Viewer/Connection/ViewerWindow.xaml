@@ -92,8 +92,8 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <Grid x:Name="videoPanel" ClipToBounds="True">
-                    <Canvas x:Name="bitmapPanel">
-                        <Image x:Name="image" Stretch="Fill" Focusable="True" HorizontalAlignment="Left" VerticalAlignment="Top" />
+                    <Canvas x:Name="bitmapPanel" UseLayoutRounding="True" SnapsToDevicePixels="True">
+                        <Image x:Name="image" Stretch="Fill" Focusable="True" HorizontalAlignment="Left" VerticalAlignment="Top" UseLayoutRounding="True" SnapsToDevicePixels="True" />
                     </Canvas>
                     <Border x:Name="displayUnavailable" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"
                             MaxWidth="480" Padding="24" Background="White" CornerRadius="10">

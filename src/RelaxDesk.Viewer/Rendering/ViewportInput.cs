@@ -67,8 +67,10 @@ public sealed partial class ViewerWindow
             verticalPan.Visibility=vertical?Visibility.Visible:Visibility.Collapsed;
             void Bar(ScrollBar bar,int source,int count,int total){bar.Maximum=total-count;bar.ViewportSize=count;bar.SmallChange=1;bar.LargeChange=Math.Max(1,count*.9);bar.Value=source;}
             Bar(horizontalPan,view.SourceX,view.SourceWidth,viewportVideoWidth);Bar(verticalPan,view.SourceY,view.SourceHeight,viewportVideoHeight);
+            double originX=options.Zoom==100?Math.Round(view.OriginX):view.OriginX;
+            double originY=options.Zoom==100?Math.Round(view.OriginY):view.OriginY;
             image.Width=viewportVideoWidth*view.ScaleX/dpi.DpiScaleX;image.Height=viewportVideoHeight*view.ScaleY/dpi.DpiScaleY;
-            image.RenderTransform=new TranslateTransform(view.OriginX/dpi.DpiScaleX,view.OriginY/dpi.DpiScaleY);
+            image.RenderTransform=new TranslateTransform(originX/dpi.DpiScaleX,originY/dpi.DpiScaleY);
             image.Clip=new RectangleGeometry(new Rect(view.SourceX*view.ScaleX/dpi.DpiScaleX,view.SourceY*view.ScaleY/dpi.DpiScaleY,view.DestinationWidth/dpi.DpiScaleX,view.DestinationHeight/dpi.DpiScaleY));
             RenderOptions.SetBitmapScalingMode(image,options.Zoom==100?BitmapScalingMode.NearestNeighbor:BitmapScalingMode.HighQuality);
             nativeView?.SetViewport(options);

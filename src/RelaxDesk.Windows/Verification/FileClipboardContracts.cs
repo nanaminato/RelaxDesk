@@ -40,7 +40,10 @@ public static class FileClipboardContracts
         await using(var selected=sources.OpenRead(offered.Paths[0]))Check(selected.Stream.Length>0);
         Reject(()=>sources.OpenRead(offerId+"/empty"));
         Reject(()=>sources.List(offerId+"/../source",0));
-        sources.Clear();Reject(()=>sources.OpenRead(offered.Paths[0]));
+        var newer=sources.Describe(paths);
+        await using(var retained=sources.OpenRead(offered.Paths[0]))Check(retained.Stream.Length>0);
+        Check(sources.List(offerId,0).Length>0);
+        sources.Clear();Reject(()=>sources.OpenRead(offered.Paths[0]));Reject(()=>sources.OpenRead(newer.Paths[0]));
         var listener=new TcpListener(IPAddress.Loopback,0);listener.Start();using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(15));using var viewer=new TcpClient();var accepting=listener.AcceptTcpClientAsync(timeout.Token);await viewer.ConnectAsync((IPEndPoint)listener.LocalEndpoint,timeout.Token);using var server=await accepting;listener.Stop();
         var gate=new AccessGate();gate.Approve([SessionCapabilities.FileTransfer,SessionCapabilities.ClipboardFiles]);var publisher=new Publisher(root);
         var worker=new FileTransferServer(root,gate,clipboardPublisher:_=>Task.FromResult<IFileClipboardPublisher?>(publisher)).Run(server.GetStream(),timeout.Token);

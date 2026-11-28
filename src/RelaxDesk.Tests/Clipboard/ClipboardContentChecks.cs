@@ -15,6 +15,15 @@ static class ClipboardContentChecks
         using var compressed=new MemoryStream();using(var zlib=new ZLibStream(compressed,CompressionLevel.Fastest,true))zlib.Write(new byte[]{0,red,20,30,255});
         return new byte[]{137,80,78,71,13,10,26,10}.Concat(Chunk("IHDR",header)).Concat(Chunk("IDAT",compressed.ToArray())).Concat(Chunk("IEND",[])).ToArray();
     }
+    // Structurally valid PNG larger than the former 8 MiB image cap.
+    static byte[] BigPng()
+    {
+        const int width=1600,height=1600,stride=width*4+1;
+        byte[] header=new byte[13];BinaryPrimitives.WriteInt32BigEndian(header,width);BinaryPrimitives.WriteInt32BigEndian(header.AsSpan(4),height);header[8]=8;header[9]=6;
+        byte[] raw=new byte[stride*height];new Random(7).NextBytes(raw);for(int y=0;y<height;y++)raw[y*stride]=0;
+        using var compressed=new MemoryStream();using(var zlib=new ZLibStream(compressed,CompressionLevel.Fastest,true))zlib.Write(raw);
+        return new byte[]{137,80,78,71,13,10,26,10}.Concat(Chunk("IHDR",header)).Concat(Chunk("IDAT",compressed.ToArray())).Concat(Chunk("IEND",[])).ToArray();
+    }
     sealed class MemoryClipboard(ClipboardContent initial):IContentClipboard
     {
         readonly object sync=new();ClipboardContent content=initial.Own();long version=1;
@@ -41,11 +50,13 @@ static class ClipboardContentChecks
     {
         int count=0;void Check(bool value){if(!value)throw new IOException($"Rich clipboard contract {count+1} failed");count++;}
         void Reject(Action operation){try{operation();throw new Exception("Malformed rich clipboard accepted");}catch(InvalidDataException){count++;}}
-        var png=Png();Check(ClipboardPng.Valid(png));Check(ClipboardPng.ValidPixelStream(png));Check(!ClipboardPng.ValidPixelStream(Png(width:2)));Check(!ClipboardPng.Valid(Png(width:8193)));Check(!ClipboardPng.Valid(Png(width:8192,height:8192)));
+        var png=Png();Check(ClipboardPng.Valid(png));Check(ClipboardPng.ValidPixelStream(png));Check(!ClipboardPng.ValidPixelStream(Png(width:2)));Check(!ClipboardPng.Valid(Png(width:65536)));Check(!ClipboardPng.Valid(Png(width:65535,height:65535)));
         var crc=png.ToArray();crc[^1]^=1;Check(!ClipboardPng.Valid(crc));Check(!ClipboardPng.Valid(png[..^1]));Check(!ClipboardPng.Valid(png.Concat(new byte[1]).ToArray()));
         var metadata=png[..33].Concat(Chunk("tEXt",Encoding.UTF8.GetBytes("private metadata"))).Concat(png[33..]).ToArray();Check(ClipboardPng.Valid(metadata));Check(ClipboardPng.WithoutMetadata(metadata).SequenceEqual(png));
         foreach(string type in new[]{"acTL","fcTL","fdAT","ABCD"})Check(!ClipboardPng.Valid(png[..33].Concat(Chunk(type,new byte[8])).Concat(png[33..]).ToArray()));
-        Check(!ClipboardContentRules.Valid(new ClipboardContent()));Check(!ClipboardContentRules.Valid(new ClipboardContent(Text:"\0")));Check(!ClipboardContentRules.Valid(new ClipboardContent(Html:"\uD800")));Check(!ClipboardContentRules.Valid(new ClipboardContent(Html:new string('中',ClipboardContentRules.MaximumHtmlBytes/3+1))));
+        Check(!ClipboardContentRules.Valid(new ClipboardContent()));Check(!ClipboardContentRules.Valid(new ClipboardContent(Text:"\0")));Check(!ClipboardContentRules.Valid(new ClipboardContent(Html:"\uD800")));
+        Check(ClipboardContentRules.Valid(new ClipboardContent(Html:new string('中',200_000))));
+        Check(ClipboardTextProtocol.ValidText(new string('x',200_000)));
         Check(ClipboardContentRules.Valid(new ClipboardContent(Clear:true)));Check(!ClipboardContentRules.Valid(new ClipboardContent(Text:"",Clear:true)));
         foreach(string html in new[]{"","<b>中文 😀</b>","<p>日本語</p>\r\n<a href=\"https://example.invalid/\">link</a>","<!--StartFragment-->literal<!--EndFragment-->"})
         {
@@ -63,6 +74,17 @@ static class ClipboardContentChecks
             Check((await ClipboardContentWire.Read(stream)).Sequence==8&&stream.Position==stream.Length);
         }
         using(var stream=new MemoryStream()){await ClipboardContentWire.Write(stream,new(origin,3,new(Clear:true)),9);stream.Position=0;Check((await ClipboardContentWire.Read(stream)).Update.Content is{Clear:true,Text:null,Png:null,Html:null});}
+        // No 64 KiB text / 8 MiB image cap on the session wire either.
+        string bigText=new string('文',100_000);byte[] bigPng=BigPng();Check(ClipboardContentRules.Valid(new ClipboardContent(Text:bigText,Png:bigPng)));
+        Check(bigPng.Length>8*1024*1024);
+        using(var stream=new MemoryStream())
+        {
+            await ClipboardContentWire.Write(stream,new(origin,4,new(Text:bigText)),10);
+            await ClipboardContentWire.Write(stream,new(origin,5,new(Png:bigPng)),11);
+            stream.Position=0;
+            var bigTextFrame=await ClipboardContentWire.Read(stream);Check(bigTextFrame.Update.Content.Text==bigText);
+            var bigPngFrame=await ClipboardContentWire.Read(stream);Check(bigPngFrame.Update.Content.Png!.SequenceEqual(bigPng)&&stream.Position==stream.Length);
+        }
         async Task RejectWire(byte[] bytes)
         {try{await ClipboardContentWire.Read(new MemoryStream(bytes));throw new Exception("Malformed wire accepted");}catch(Exception error)when(error is InvalidDataException or EndOfStreamException or JsonException){count++;}}
         await RejectWire([255,255,255,127]);await RejectWire([0,0,0,0]);
@@ -146,6 +168,6 @@ static class ClipboardContentChecks
         {await Until(()=>stoppedMemory.Reads>=2);link.Stop();await link.Completion.WaitAsync(TimeSpan.FromSeconds(2));Check(!stoppedGate.Allows(SessionCapabilities.ClipboardImage)&&stoppedGate.Approved&&stoppedMemory.Disposed);}
         using var partialFrame=new IdleStream(true);var elapsed=System.Diagnostics.Stopwatch.StartNew();
         try{await ClipboardContentWire.Read(partialFrame,transferTimeout:TimeSpan.FromMilliseconds(100));throw new InvalidOperationException("Partial frame did not time out");}catch(IOException){Check(elapsed.Elapsed<TimeSpan.FromSeconds(2));}
-        Console.WriteLine($"PASS {count} rich clipboard content/PNG CRC+limits/CF_HTML byte offsets/framing/state/permission/busy/revoke contracts; memory providers only, no Windows clipboard or negotiated session integration");return count;
+        Console.WriteLine($"PASS {count} rich clipboard content/PNG CRC/no product text-image caps/CF_HTML byte offsets/framing/state/permission/busy/revoke contracts; memory providers only, no Windows clipboard or negotiated session integration");return count;
     }
 }

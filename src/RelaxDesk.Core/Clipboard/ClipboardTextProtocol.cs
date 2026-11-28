@@ -10,13 +10,16 @@ public sealed record ClipboardTextUpdate(string Origin, long Revision, string Te
 
 public static class ClipboardTextProtocol
 {
-    public const int MaximumBytes = 64 * 1024;
+    // Clipboard text has no user-facing byte cap. The bound only keeps the
+    // UTF-8 payload addressable as a single int-sized transport field.
+    public const int MaximumBytes = int.MaxValue - 32 * 1024 * 1024;
     static readonly UTF8Encoding StrictUtf8 = new(false, true);
     public static bool ValidText(string? text)
     {
-        if (text is null || text.Length > MaximumBytes / 2 || text.Contains('\0')) return false;
+        if (text is null || text.Contains('\0')) return false;
         try { return StrictUtf8.GetByteCount(text) <= MaximumBytes; }
         catch (EncoderFallbackException) { return false; }
+        catch (OverflowException) { return false; }
     }
     public static bool IsValid(Packet packet) => packet.Kind == "clipboard-text-v2" && packet.Sequence > 0 && packet.Revision > 0 &&
         packet.Origin is { Length: 32 } && Guid.TryParseExact(packet.Origin, "N", out var origin) && packet.Origin == origin.ToString("N") &&

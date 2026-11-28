@@ -32,8 +32,11 @@ internal static class ClipboardChecks
         try { await SessionControl.Read(new MemoryStream(oversizedControl), default); throw new Exception("Oversized control allocation allowed"); }
         catch (InvalidDataException) { count++; }
         Check(!valid.ToString().Contains("private marker"));
-        foreach (var invalid in new[] { valid with { Text = null }, valid with { Text = "a\0b" }, valid with { Text = "\ud800" }, valid with { Text = new string('A', 32769) }, valid with { Text = new string('中', 23000) }, valid with { Origin = "not-a-guid" }, valid with { Revision = 0 }, valid with { Revision = -1 }, valid with { Data = [1] }, valid with { Features = [] }, valid with { Kind = "input" } })
+        foreach (var invalid in new[] { valid with { Text = null }, valid with { Text = "a\0b" }, valid with { Text = "\ud800" }, valid with { Origin = "not-a-guid" }, valid with { Revision = 0 }, valid with { Revision = -1 }, valid with { Data = [1] }, valid with { Features = [] }, valid with { Kind = "input" } })
             Check(!ClipboardTextProtocol.IsValid(invalid));
+        // Text has no product-level size cap; the old 64 KiB rejection is gone.
+        Check(ClipboardTextProtocol.IsValid(valid with { Text = new string('A', 32769) }));
+        Check(ClipboardTextProtocol.IsValid(valid with { Text = new string('中', 23000) }));
         var access = new AccessGate();
         Check(!access.AcceptControl(valid)); access.Approve(); Check(!access.AcceptControl(valid));
         access.Approve([SessionCapabilities.ClipboardText]); Check(!access.AcceptControl(valid)); Check(!access.AcceptControl(valid));

@@ -14,7 +14,11 @@ public static class ClipboardImageCodec
     public static byte[] Encode(byte[] bgra,int width,int height)
     {
         Dimensions(width,height);if(bgra.Length!=(long)width*height*4)throw new InvalidDataException("Invalid clipboard pixel buffer");
-        byte[] output=new byte[ClipboardContentRules.MaximumPngBytes];Check(rd_clipboard_image_encode(bgra,(uint)bgra.Length,(uint)width,(uint)height,output,(uint)output.Length,out uint written));
+        // Size the native output from the raw frame instead of a fixed 8 MiB
+        // buffer, so large screenshots are not silently rejected.
+        long raw=(long)width*height*4;
+        int capacity=(int)Math.Min(ClipboardContentRules.MaximumPngBytes,Math.Max(64*1024,raw+1024*1024));
+        byte[] output=new byte[capacity];Check(rd_clipboard_image_encode(bgra,(uint)bgra.Length,(uint)width,(uint)height,output,(uint)output.Length,out uint written));
         if(written==0||written>output.Length)throw new InvalidDataException("Invalid clipboard encoder result");Array.Resize(ref output,(int)written);
         return ClipboardPng.WithoutMetadata(output);
     }

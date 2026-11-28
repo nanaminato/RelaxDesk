@@ -47,9 +47,12 @@ internal static class NativeMethods
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_renderer_set_view(nint renderer,int zoom,double panX,double panY);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_renderer_present(nint renderer, out RenderTiming timing);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_renderer_diagnostics(nint renderer, out nint json);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_renderer_read_frame(nint renderer, [Out] byte[] bgra, uint capacity);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern void rd_renderer_destroy(nint renderer);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern void rd_get_live_resources(out NativeResources resources);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_capture_diagnostics(out nint json);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_codec_capabilities(out nint json);
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] internal static extern int rd_color_convert_nv12_roundtrip(byte[] srcBgra, uint width, uint height, int hardware, int optimized, [Out] byte[] nv12Out, uint nv12Capacity, [Out] byte[] reconBgraOut, uint bgraCapacity);
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] static extern nint rd_last_error();
     internal static void Check(int result)
     {

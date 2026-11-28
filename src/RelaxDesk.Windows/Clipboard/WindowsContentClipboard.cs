@@ -9,9 +9,16 @@ namespace RelaxDesk.Windows;
 public sealed partial class WindowsTextClipboard:IContentClipboard
 {
     [DllImport("user32.dll",CharSet=CharSet.Unicode)]static extern uint RegisterClipboardFormat(string name);
-    uint pngFormat,htmlFormat;
+    uint pngFormat,htmlFormat,markerFormat;
     ClipboardContentSnapshot? richCached;
     ClipboardFormats cachedFormats;
+    string? publishedMarker;
+    string? publishedFileMarker;
+    bool publishedText,publishedHtml,publishedPng;
+    string publishedTextDigest="",publishedHtmlDigest="";
+    string[] publishedFilePaths=[];
+    static readonly UTF8Encoding StrictUtf8=new(false,true);
+    static string TextDigest(string value)=>Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(StrictUtf8.GetBytes(value)));
     uint Format(ref uint value,string name){if(value==0)value=RegisterClipboardFormat(name);if(value==0)throw new IOException("Clipboard format registration unavailable");return value;}
     static bool ReadMemory(uint format,int maximum,out byte[]? bytes)
     {
@@ -19,6 +26,14 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
         nint memory=GetClipboardData(format);if(memory==0)return false;nuint length=GlobalSize(memory);if(length==0||length>(nuint)maximum)return true;
         nint pointer=GlobalLock(memory);if(pointer==0)return false;
         try{bytes=new byte[(int)length];Marshal.Copy(pointer,bytes,0,bytes.Length);return true;}finally{GlobalUnlock(memory);}
+    }
+    // Marker format is local only and never travels over the session. It lets a
+    // reader prove that the current clipboard state came from this adapter.
+    string? ReadMarker()
+    {
+        if(!ReadMemory(Format(ref markerFormat,"RelaxDesk.ClipboardSnapshot"),256,out var raw)||raw is null)return null;
+        int end=Array.IndexOf(raw,(byte)0);if(end>=0)raw=raw[..end];
+        try{return StrictUtf8.GetString(raw);}catch(System.Text.DecoderFallbackException){return null;}
     }
     static byte[] NormalizePng(byte[] allocated)
     {
@@ -36,23 +51,38 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
         Verify();snapshot=new(0,null);RunFileCommand(formats);if(!formats.Any)return true;
         PumpMessages();Desktop.EnsureInteractiveDesktop();uint sequence=GetClipboardSequenceNumber();if(sequence==0)return false;
         if(richCached?.Version==sequence&&cachedFormats==formats){snapshot=richCached;return true;}
-        if(!OpenClipboard(window))return false;
+        if(!TryOpenClipboard())return false;
         try
         {
             string? text=null,html=null;byte[]? png=null;
-            if(!formats.Files||!IsClipboardFormatAvailable(15))fileSources?.Clear();
-            if(CountClipboardFormats()==0){observedClipboardVersion=sequence;snapshot=richCached=new(GetClipboardSequenceNumber(),new(Clear:true));cachedFormats=formats;return true;}
+            if(CountClipboardFormats()==0)
+            {
+                observedClipboardVersion=sequence;
+                snapshot=richCached=new(GetClipboardSequenceNumber(),new(Clear:true));cachedFormats=formats;return true;
+            }
+            string? marker=ReadMarker();bool ownMarker=marker is not null&&marker==publishedMarker;
             if(formats.Files&&IsClipboardFormatAvailable(15))
             {
                 if(!ReadMemory(15,ClipboardFileFormat.MaximumBytes,out var drop))return false;
-                ClipboardContent? offered=null;bool localFileSelection=false;
                 sequence=GetClipboardSequenceNumber();
+                string[]? paths=null;
+                if(drop is not null)try{paths=ClipboardFileFormat.Decode(drop);}catch(Exception error)when(error is InvalidDataException or IOException or ArgumentException){}
+                if(paths is not null)
+                {
+                    bool echo=ownMarker&&publishedFilePaths.Length==paths.Length&&paths.SequenceEqual(publishedFilePaths,StringComparer.OrdinalIgnoreCase);
+                    if(echo)
+                    {
+                        // Our own CF_HDROP publication. Windows may report a later
+                        // sequence than the one captured at write time; never feed
+                        // this back as a local selection or a remote offer.
+                        observedClipboardVersion=sequence;snapshot=richCached=new(sequence,null,false,true);cachedFormats=formats;return true;
+                    }
+                }
+                ClipboardContent? offered=null;bool localFileSelection=false;
                 if(sequence!=publishedFileVersion)
                 {
-                    fileSources?.Clear();
-                    if(drop is not null)try
+                    if(paths is not null)try
                     {
-                        string[] paths=ClipboardFileFormat.Decode(drop);
                         if(localFilesChanged is not null && observedClipboardVersion!=0 && observedClipboardVersion!=sequence)
                         { localFileSelection=true;localFilesChanged(new(sequence,paths)); }
                         if(fileSources is not null)offered=new(Files:fileSources.Describe(paths));
@@ -80,18 +110,25 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
             if(formats.Image)
             {
                 if(!ReadMemory(Format(ref pngFormat,"PNG"),ClipboardContentRules.MaximumPngBytes+64,out var raw))return false;
-                if(raw is not null)try{png=NormalizePng(raw);}catch(Exception error)when(error is InvalidDataException or IOException){}
+                if(raw is not null)try{png=NormalizePng(raw);}catch(Exception error)when(error is InvalidDataException or IOException or OverflowException){}
                 if(png is null)
                 {
                     foreach(uint dibFormat in new uint[]{17,8})
                     {
                         if(!ReadMemory(dibFormat,ClipboardContentRules.MaximumPixels*4+8192,out raw))return false;
-                        if(raw is not null)try{png=ClipboardImageCodec.DibToPng(raw);}catch(Exception error)when(error is InvalidDataException or IOException){}
+                        if(raw is not null)try{png=ClipboardImageCodec.DibToPng(raw);}catch(Exception error)when(error is InvalidDataException or IOException or OverflowException){}
                         if(png is not null)break;
                     }
                 }
             }
-            var content=new ClipboardContent(text,png,html);observedClipboardVersion=GetClipboardSequenceNumber();snapshot=richCached=new(observedClipboardVersion,ClipboardContentRules.Valid(content)?content:null);cachedFormats=formats;return true;
+            var content=new ClipboardContent(text,png,html);bool valid=ClipboardContentRules.Valid(content);
+            // Re-encoding PNG can change its bytes, so an image echo is proven by
+            // the marker/part shape while text and HTML also compare a digest.
+            bool partsMatch=(text is not null)==publishedText&&(html is not null)==publishedHtml&&(png is not null)==publishedPng;
+            bool textEcho=valid&&ownMarker&&partsMatch&&
+                (text is null||TextDigest(text)==publishedTextDigest)&&(html is null||TextDigest(html)==publishedHtmlDigest);
+            observedClipboardVersion=GetClipboardSequenceNumber();
+            snapshot=richCached=new(observedClipboardVersion,valid?content:null,false,textEcho);cachedFormats=formats;return true;
         }
         finally{CloseClipboard();}
     }
@@ -102,6 +139,8 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
         bool copied=false;try{Marshal.Copy(bytes,0,pointer,bytes.Length);copied=true;return memory;}finally{GlobalUnlock(memory);if(!copied)GlobalFree(memory);}
     }
     public bool TryWrite(ClipboardContent content,long expectedVersion,out long writtenVersion)
+        => TryWrite(content,expectedVersion,out writtenVersion,null);
+    public bool TryWrite(ClipboardContent content,long expectedVersion,out long writtenVersion,string? snapshot)
     {
         Verify();Desktop.EnsureInteractiveDesktop();writtenVersion=expectedVersion;
         if(!ClipboardContentRules.Valid(content))throw new InvalidDataException("Invalid clipboard content");
@@ -112,19 +151,22 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
             remoteFilesReceived?.Invoke(content.Files.Own(),expectedVersion);
             fileOffer?.Invoke(content.Files.Own());return true;
         }
+        string marker=snapshot??("local:"+Guid.NewGuid().ToString("N"));
+        string[]? publishedAbsolute=null;
         var prepared=new List<(uint Format,byte[] Bytes)>();
-        if(content.Files is not null)prepared.Add((15,ClipboardFileFormat.Encode(clipboardFileRoot!.ResolveClipboard(content.Files))));
+        if(content.Files is not null){publishedAbsolute=clipboardFileRoot!.ResolveClipboard(content.Files);prepared.Add((15,ClipboardFileFormat.Encode(publishedAbsolute)));}
         if(content.Text is not null)prepared.Add((UnicodeText,Encoding.Unicode.GetBytes(content.Text+"\0")));
         if(content.Html is not null)prepared.Add((Format(ref htmlFormat,"HTML Format"),HtmlClipboardFormat.Create(content.Html)));
         if(content.Png is not null)
         {
             byte[] normalized=NormalizePng(content.Png);prepared.Add((Format(ref pngFormat,"PNG"),normalized));prepared.Add((17,ClipboardImageCodec.PngToDib(normalized)));
         }
+        if(prepared.Count>0)prepared.Add((Format(ref markerFormat,"RelaxDesk.ClipboardSnapshot"),StrictUtf8.GetBytes(marker+"\0")));
         var allocations=new List<(uint Format,nint Memory)>();
         try
         {
             foreach(var entry in prepared)allocations.Add((entry.Format,Allocate(entry.Bytes)));
-            Desktop.EnsureInteractiveDesktop();if(!OpenClipboard(window))return false;
+            Desktop.EnsureInteractiveDesktop();if(!TryOpenClipboard())return false;
             try
             {
                 if(GetClipboardSequenceNumber()!=expectedVersion)return false;
@@ -140,11 +182,21 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
                     }
                     allocations[index]=(allocation.Format,0);
                 }
-                writtenVersion=GetClipboardSequenceNumber();
-                if(content.Files is not null){publishedFileVersion=writtenVersion;fileSources?.Clear();}
-                cached=null;richCached=null;fileOffer?.Invoke(null);return true;
             }
             finally{CloseClipboard();}
+            // Windows synthesizes derived formats and finalizes the owner during
+            // CloseClipboard. Reading the sequence while the clipboard is still
+            // open returns a version that is about to change, which made the next
+            // poll treat this write as a fresh local copy and re-sent it.
+            writtenVersion=GetClipboardSequenceNumber();
+            publishedMarker=prepared.Count==0?null:marker;
+            publishedText=content.Text is not null;publishedTextDigest=content.Text is null?"":TextDigest(content.Text);
+            publishedHtml=content.Html is not null;publishedHtmlDigest=content.Html is null?"":TextDigest(content.Html);
+            publishedPng=content.Png is not null;
+            publishedFilePaths=publishedAbsolute??[];
+            if(content.Files is not null){publishedFileVersion=writtenVersion;publishedFileMarker=marker;}
+            else publishedFileMarker=null;
+            cached=null;richCached=null;fileOffer?.Invoke(null);return true;
         }
         finally{foreach(var allocation in allocations)if(allocation.Memory!=0)GlobalFree(allocation.Memory);}
     }

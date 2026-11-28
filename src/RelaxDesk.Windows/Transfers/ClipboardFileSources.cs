@@ -6,15 +6,16 @@ namespace RelaxDesk.Windows;
 public sealed class ClipboardFileSources
 {
     const string Prefix = "RelaxDesk-Offer-";
+    const int RetainedOffers = 8;
     sealed record Source(WindowsFileRoot Root, TransferEntry Entry);
     sealed record Offer(string Id, Dictionary<string, Source> Sources);
-    Offer? current;
+    readonly object sync = new();
+    readonly List<Offer> offers = [];
 
     public static bool IsOfferPath(string path) => path.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase);
 
     public ClipboardFiles Describe(string[] absolutePaths)
     {
-        Volatile.Write(ref current, null);
         string id = Prefix + Guid.NewGuid().ToString("N");
         var sources = new Dictionary<string, Source>(StringComparer.OrdinalIgnoreCase);
         foreach (string path in absolutePaths)
@@ -30,19 +31,30 @@ public sealed class ClipboardFileSources
         }
         var files = new ClipboardFiles(sources.Values.Select(source => source.Entry.Path).ToArray());
         if (!ClipboardFiles.Valid(files)) throw new InvalidDataException("Invalid clipboard file list");
-        Volatile.Write(ref current, new(id, sources));
+        lock (sync)
+        {
+            // Keep recent snapshots resolvable while an already-started paste is
+            // still listing or opening them. The list is bounded and cleared at
+            // session teardown, so no path survives a disconnect.
+            offers.Add(new Offer(id, sources));
+            if (offers.Count > RetainedOffers) offers.RemoveAt(0);
+        }
         return files;
     }
 
-    public void Clear() => Volatile.Write(ref current, null);
+    // Session teardown: drop every snapshot so no path survives a disconnect.
+    public void Clear() { lock (sync) offers.Clear(); }
 
     Offer Find(string path)
     {
-        var offer = Volatile.Read(ref current);
-        if (offer is null || !(path.Equals(offer.Id, StringComparison.OrdinalIgnoreCase) ||
-            path.StartsWith(offer.Id + "/", StringComparison.OrdinalIgnoreCase)))
-            throw new IOException("Clipboard selection is no longer available");
-        return offer;
+        lock (sync)
+        {
+            var offer = offers.LastOrDefault(candidate =>
+                path.Equals(candidate.Id, StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith(candidate.Id + "/", StringComparison.OrdinalIgnoreCase));
+            if (offer is null) throw new IOException("Clipboard selection is no longer available");
+            return offer;
+        }
     }
 
     static Source FindSource(Offer offer, string relative)

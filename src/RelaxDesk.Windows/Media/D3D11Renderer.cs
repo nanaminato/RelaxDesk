@@ -60,6 +60,16 @@ public sealed class D3D11Renderer : IDisposable
         hr = NativeMethods.rd_renderer_present(context.Value, out var timing);
         Timing = timing; NativeMethods.Check(hr); OutputBlocked=hr!=0;return !OutputBlocked;
     }
+    public byte[] DrawAndReadBackbufferForTest(GpuVideoFrame frame, int clientWidth, int clientHeight, ViewportOptions? viewport = null)
+    {
+        if (viewport is not null) NativeMethods.Check(NativeMethods.rd_renderer_set_view(context.Value, viewport.Zoom, viewport.PanX, viewport.PanY));
+        int hr = NativeMethods.rd_renderer_draw(context.Value, frame.NativeFrame, hiddenPointerMetadata, (uint)hiddenPointerMetadata.Length);
+        NativeMethods.Check(hr);
+        if (hr != 0) throw new InvalidOperationException("Renderer window hidden/occluded before backbuffer test read");
+        byte[] output = new byte[checked(clientWidth * clientHeight * 4)];
+        NativeMethods.Check(NativeMethods.rd_renderer_read_frame(context.Value, output, (uint)output.Length));
+        return output;
+    }
     public void Dispose() => context.Dispose();
 }
 
@@ -67,8 +77,27 @@ public static class GraphicsDiagnostics
 {
     public static string CaptureJson()
     {
+        if (Thread.CurrentThread.GetApartmentState() == ApartmentState.STA)
+            return Task.Run(CaptureJson).GetAwaiter().GetResult();
         NativeMethods.CheckVersion(); NativeMethods.Check(NativeMethods.rd_capture_diagnostics(out var json));
         return Marshal.PtrToStringUTF8(json) ?? throw new InvalidDataException("No capture diagnostics");
+    }
+    public static string CodecCapabilitiesJson()
+    {
+        if (Thread.CurrentThread.GetApartmentState() == ApartmentState.STA)
+            return Task.Run(CodecCapabilitiesJson).GetAwaiter().GetResult();
+        NativeMethods.CheckVersion(); NativeMethods.Check(NativeMethods.rd_codec_capabilities(out var json));
+        return Marshal.PtrToStringUTF8(json) ?? throw new InvalidDataException("No codec capabilities diagnostics");
+    }
+    public static (byte[] Nv12, byte[] ReconstructedBgra) ColorConvertRoundtripForTest(byte[] sourceBgra, int width, int height, bool hardware, bool optimized)
+    {
+        if (Thread.CurrentThread.GetApartmentState() == ApartmentState.STA)
+            return Task.Run(() => ColorConvertRoundtripForTest(sourceBgra, width, height, hardware, optimized)).GetAwaiter().GetResult();
+        NativeMethods.CheckVersion();
+        byte[] nv12 = new byte[checked(width * height * 3 / 2)];
+        byte[] bgra = new byte[checked(width * height * 4)];
+        NativeMethods.Check(NativeMethods.rd_color_convert_nv12_roundtrip(sourceBgra, (uint)width, (uint)height, hardware ? 1 : 0, optimized ? 1 : 0, nv12, (uint)nv12.Length, bgra, (uint)bgra.Length));
+        return (nv12, bgra);
     }
     public static NativeResources Resources() { NativeMethods.rd_get_live_resources(out var resources); return resources; }
     public static nint CreateChildWindow(nint parent)

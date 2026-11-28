@@ -47,7 +47,9 @@ internal static class VideoHostSession
         var features = SessionCapabilities.RequireAll(grantedFeatures);
         var video=hello.VideoVersion==VideoSettingsProtocol.Version?new HostVideoSettings():null;
         var fileRoot = features.Contains(SessionCapabilities.FileTransfer) && selectedFileRoot is not null ? new WindowsFileRoot(selectedFileRoot) : null;
-        var clipboardSources = !synthetic && shellSessionId is not null && features.Contains(SessionCapabilities.ClipboardFiles) ? new ClipboardFileSources() : null;
+        // A directly launched Host is already in the interactive user session;
+        // clipboard file exposure must not depend on the optional shell bridge.
+        var clipboardSources = !synthetic && features.Contains(SessionCapabilities.ClipboardFiles) ? new ClipboardFileSources() : null;
         if(fileRoot is null)throw new InvalidDataException("Current session requires file staging");
         bool resumeFiles=hello.FileResume&&fileRoot is not null&&fileResumes is not null&&clipboardSources is null;
         string? fileScope=resumeFiles?await fileResumes!.Scope():null;
@@ -772,6 +774,7 @@ internal static class VideoHostSession
         Exception? producerFailure = null;
         bool forceSoftware = false, forceNextKeyFrame = false, inServiceSecure = false;
         var activeVideo=VideoSettingsProtocol.Default;var pacer=new VideoFramePacer();int videoKeyAttempts=0;
+        int pendingStaticSettleFrames = 0;
         CapturedFrame? staticFrame=null;
         string? lastColor = null; long colorPoll = 0;
         try
@@ -884,8 +887,15 @@ internal static class VideoHostSession
                     if(displays is not null&&synthetic){var bounds=displays.Bounds;testWidth=bounds.Width;testHeight=bounds.Height;}
                     if (oversizedTest) { testWidth = 2560; testHeight = 1440; }
                     bool forceRequested=requestedKeyFrame();bool refresh=forceRequested||forceNextKeyFrame||video?.Pending is not null||queue.Dropped!=previousDrops;
+                    bool isStaticSettle = false;
                     var frame = serviceSecure ? new CapturedFrame(serviceFrame!.Width,serviceFrame.Height,serviceFrame.Pixels,
                         new(Stopwatch.GetTimestamp(),1,[],[],serviceFrame.PointerX-displaySelection!.Bounds.X,serviceFrame.PointerY-displaySelection.Bounds.Y,false,0,0,0,0,0,0,[])) : synthetic ? backend is ("test-video-settings-static" or "test-desktop-pause")&&sequence>0?(refresh?staticFrame:null):new CapturedFrame(testWidth, testHeight, CodecVerification.Pattern(testWidth, testHeight, (int)(sequence % 200)), new(Stopwatch.GetTimestamp(), 1, [], [], 0, 0, false, 0, 0, 0, 0, 0, 0, [])) : CaptureFrameRefresh.Read(capture!,refresh);
+                    if (frame is null && !synthetic && !serviceSecure && !refresh && pendingStaticSettleFrames > 0 && codec == MediaCodec.H264 && encoder is not null && capture?.CachedFrame() is { } settleFrame)
+                    {
+                        frame = settleFrame;
+                        pendingStaticSettleFrames--;
+                        isStaticSettle = true;
+                    }
                     if (oversizedTest && frame?.Bgra is { } pixels) new Random(1).NextBytes(pixels);
                     if(backend is ("test-video-settings-static" or "test-desktop-pause")&&frame is not null)staticFrame=frame;
                     double captureMs = serviceSecure ? serviceCaptureMs : Stopwatch.GetElapsedTime(captureStarted).TotalMilliseconds;
@@ -896,11 +906,14 @@ internal static class VideoHostSession
                         if (synthetic || capture is GdiCaptureBackend) ct.WaitHandle.WaitOne(10);
                         continue;
                     }
-                    if (capture is DxgiCaptureBackend)
+                    bool hasDesktopChange = !synthetic && !serviceSecure && !isStaticSettle && capture is not null;
+                    if (capture is DxgiCaptureBackend && !isStaticSettle)
                     {
                         var metadata = frame.Metadata;
                         dxgiFrames++;
-                        switch (metadata.Classify(lastDxgiTimestamp == long.MinValue ? 0 : lastDxgiTimestamp))
+                        var changeKind = metadata.Classify(lastDxgiTimestamp == long.MinValue ? 0 : lastDxgiTimestamp);
+                        hasDesktopChange = changeKind == CaptureChangeKind.DesktopChanged;
+                        switch (changeKind)
                         {
                             case CaptureChangeKind.DesktopChanged: dxgiDesktopChanges++; break;
                             case CaptureChangeKind.PointerOnly: dxgiPointerOnly++; break;
@@ -984,6 +997,11 @@ internal static class VideoHostSession
                         video.Commit(activeVideo);videoChanged!(activeVideo);HostSessionLog.Write($"video_settings generation={activeVideo.Generation} fps_limit={activeVideo.FramesPerSecond} target_bitrate={activeVideo.Bitrate} codec={codec} accepted_setting_mask={encoder?.Timing.AcceptedSettings??0}");
                     }
                     forceNextKeyFrame = false;
+                    if (!isStaticSettle)
+                    {
+                        if (encoded.KeyFrame) pendingStaticSettleFrames = 0;
+                        else if (hasDesktopChange && codec == MediaCodec.H264) pendingStaticSettleFrames = 3;
+                    }
                     encodeMetrics.Add(synthetic ? "generate" : "acquire", captureMs);
                     if (encoder is not null)
                     {

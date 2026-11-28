@@ -65,7 +65,7 @@ public sealed partial class WindowsTextClipboard : ITextClipboard
         Verify(); PumpMessages(); Desktop.EnsureInteractiveDesktop(); uint sequence = GetClipboardSequenceNumber(); snapshot = new(sequence, null);
         if (sequence == 0) return false;
         if (cached?.Version == sequence) { snapshot = cached; return true; }
-        if (!OpenClipboard(window)) return false;
+        if (!TryOpenClipboard()) return false;
         try
         {
             string? text = null;
@@ -100,15 +100,16 @@ public sealed partial class WindowsTextClipboard : ITextClipboard
             nint pointer = GlobalLock(memory); if (pointer == 0) return false;
             try { Marshal.Copy(text.ToCharArray(), 0, pointer, text.Length); }
             finally { GlobalUnlock(memory); }
-            if (!OpenClipboard(window)) return false;
+            if (!TryOpenClipboard()) return false;
             try
             {
                 // Do not overwrite a copy made by another app since our read.
                 if (GetClipboardSequenceNumber() != expectedVersion || !EmptyClipboard() || SetClipboardData(UnicodeText, memory) == 0) return false;
                 memory = 0; // Ownership transferred to Windows.
-                writtenVersion = GetClipboardSequenceNumber(); cached = new(writtenVersion, text); return true;
             }
             finally { CloseClipboard(); }
+            // The stable sequence number exists only after CloseClipboard.
+            writtenVersion = GetClipboardSequenceNumber(); cached = new(writtenVersion, text); return true;
         }
         finally { if (memory != 0) GlobalFree(memory); }
     }

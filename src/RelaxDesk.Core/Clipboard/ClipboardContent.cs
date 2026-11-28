@@ -15,17 +15,20 @@ public sealed record ClipboardContentUpdate(string Origin,long Revision,Clipboar
 }
 public static class ClipboardContentRules
 {
-    public const int MaximumPngBytes=8*1024*1024,MaximumHtmlBytes=512*1024,MaximumDimension=8192,MaximumPixels=16*1024*1024;
+    // Text, HTML and images have no product-level byte cap. The constants below
+    // only bound values that must fit an int-sized buffer or a PNG field; they
+    // are far above any practical clipboard payload.
+    public const int MaximumPngBytes=int.MaxValue-32*1024*1024,MaximumHtmlBytes=int.MaxValue-32*1024*1024,MaximumDimension=65535,MaximumPixels=(int.MaxValue-32*1024*1024)/4;
     internal static readonly UTF8Encoding Utf8=new(false,true);
     public static bool HtmlValid(string? html)
     {
         if(html is null||html.Length>MaximumHtmlBytes||html.Contains('\0'))return false;
-        try{return Utf8.GetByteCount(html)<=MaximumHtmlBytes;}catch(EncoderFallbackException){return false;}
+        try{return Utf8.GetByteCount(html)<=MaximumHtmlBytes;}catch(EncoderFallbackException){return false;}catch(OverflowException){return false;}
     }
     public static bool Valid(ClipboardContent? content)=>content is not null&&(content.Clear?content.Text is null&&content.Png is null&&content.Html is null&&content.Files is null:content.Files is not null?ClipboardFiles.Valid(content.Files)&&content.Text is null&&content.Png is null&&content.Html is null:content.Text is not null||content.Png is not null||content.Html is not null)&&
         (content.Text is null||ClipboardTextProtocol.ValidText(content.Text))&&(content.Html is null||HtmlValid(content.Html))&&(content.Png is null||ClipboardPng.Valid(content.Png));
     public static bool Valid(ClipboardContentUpdate? update)=>update is not null&&update.Revision>0&&Guid.TryParseExact(update.Origin,"N",out var id)&&update.Origin==id.ToString("N")&&Valid(update.Content);
-    internal static string Digest(ClipboardContent content)
+    public static string Digest(ClipboardContent content)
     {
         using var hash=IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         Span<byte> size=stackalloc byte[4];
@@ -51,6 +54,13 @@ public sealed class ClipboardContentState
         revision = clock = checked(clock + 1);
         lastOrigin = Origin;
         digest = "";
+    }
+    // A write this session just made may be observed again if Windows or a
+    // clipboard manager bumps the sequence without changing the content. Keep
+    // the digest baseline but never turn that observation into a new local copy.
+    internal void ObserveEcho(ClipboardContent content)
+    {
+        if(ClipboardContentRules.Valid(content)) digest=ClipboardContentRules.Digest(content);
     }
     public bool ShouldApply(ClipboardContentUpdate update)
     {
