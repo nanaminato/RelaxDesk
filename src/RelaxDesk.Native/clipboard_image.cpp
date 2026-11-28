@@ -2,13 +2,15 @@
 #include <wincodec.h>
 
 namespace {
-constexpr uint32_t maximum_pixels=16*1024*1024,maximum_png=8*1024*1024;
+// No product-level clipboard image cap. These bounds only keep pixel buffers
+// and the WIC memory stream representable by the 32-bit ABI.
+constexpr uint32_t maximum_pixels=(0x7fffffff-32*1024*1024)/4,maximum_png=maximum_pixels*4+1024*1024;
 struct clipboard_com {
     bool initialized=false;
     clipboard_com(){HRESULT hr=CoInitializeEx(nullptr,COINIT_MULTITHREADED);if(hr!=RPC_E_CHANGED_MODE){check(hr,"clipboard COM initialization");initialized=true;}}
     ~clipboard_com(){if(initialized)CoUninitialize();}
 };
-void bounds(uint32_t width,uint32_t height){check(width&&height&&width<=8192&&height<=8192&&uint64_t(width)*height<=maximum_pixels?S_OK:E_INVALIDARG,"clipboard image dimensions");}
+void bounds(uint32_t width,uint32_t height){check(width&&height&&width<=65535&&height<=65535&&uint64_t(width)*height<=maximum_pixels?S_OK:E_INVALIDARG,"clipboard image dimensions");}
 ComPtr<IWICImagingFactory> factory(){ComPtr<IWICImagingFactory> result;check(CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&result)),"clipboard WIC factory");return result;}
 }
 

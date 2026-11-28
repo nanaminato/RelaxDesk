@@ -67,3 +67,6 @@ RD void rd_get_live_resources(rd_live_resources* resources);
 RD const char* rd_last_error();
 RD int32_t rd_clipboard_image_decode(const uint8_t* data,uint32_t bytes,uint32_t format,uint32_t width,uint32_t height,uint8_t* bgra,uint32_t capacity);
 RD int32_t rd_clipboard_image_encode(const uint8_t* bgra,uint32_t bytes,uint32_t width,uint32_t height,uint8_t* png,uint32_t capacity,uint32_t* written);
+RD int32_t rd_codec_capabilities(const char** json);
+RD int32_t rd_renderer_read_frame(void* renderer, uint8_t* bgra, uint32_t capacity);
+RD int32_t rd_color_convert_nv12_roundtrip(const uint8_t* src_bgra, uint32_t width, uint32_t height, int hardware, int optimized, uint8_t* nv12_out, uint32_t nv12_capacity, uint8_t* recon_bgra_out, uint32_t bgra_capacity);

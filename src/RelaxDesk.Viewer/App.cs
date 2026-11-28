@@ -59,6 +59,7 @@ public sealed class App : Application
             }
             else if(args is ["--error-details-contracts",var errorFixtures])ViewerWindow.VerifyErrorDetails(app,errorFixtures);
             else if(args is ["--office-text-quality", "software" or "hardware"])OfficeTextQuality.Run(args[1] == "hardware");
+            else if(args is ["--text-quality-suite", var textQualityDir])OfficeTextQuality.RunSuite(textQualityDir);
             else if(args is ["--pipeline-failure-contracts",var pipelineHost,var pipelineStage])ViewerWindow.VerifyPipelineFailure(app,pipelineHost,pipelineStage);
             else if(args is ["--diagnostic-log-contracts",var diagnosticFixtures])DiagnosticLogVerification.Run(app,diagnosticFixtures);
             else if(args is ["--viewport-contracts"])ViewerWindow.VerifyViewport(app);

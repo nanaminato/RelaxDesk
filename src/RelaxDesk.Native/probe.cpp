@@ -87,6 +87,7 @@ int main(int argc,char** argv){
     if(argc==2&&!strcmp(argv[1],"--present-diagnose"))return present_diagnose();
     if(argc==2&&!strcmp(argv[1],"--render-test"))return render_test();
     if(argc==2&&!strcmp(argv[1],"--diagnose")){const char* json=nullptr;HRESULT hr=rd_capture_diagnostics(&json);if(FAILED(hr)){printf("diagnostics HRESULT=0x%08lx operation=%s\n",hr,rd_last_error());return 1;}printf("%s\n",json);return 0;}
+    if(argc==2&&!strcmp(argv[1],"--codec-capabilities")){const char* json=nullptr;HRESULT hr=rd_codec_capabilities(&json);if(FAILED(hr)){printf("codec capabilities HRESULT=0x%08lx operation=%s\n",hr,rd_last_error());return 1;}printf("%s\n",json);return 0;}
     if(argc==2&&!strcmp(argv[1],"--gdi"))return gdi_test();
     void* capture=nullptr;HRESULT hr=rd_capture_create(&capture);printf("DXGI create HRESULT=0x%08lx operation=%s\n",hr,rd_last_error());if(FAILED(hr))return 2;
     rd_frame frame{};for(int i=0;i<20;++i){hr=rd_capture_next(capture,100,&frame);if(hr!=S_FALSE)break;}
