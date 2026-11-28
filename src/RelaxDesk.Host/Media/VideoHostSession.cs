@@ -770,7 +770,7 @@ internal static class VideoHostSession
         long lastDxgiTimestamp = long.MinValue;
         string stage = "capture-init";
         Exception? producerFailure = null;
-        bool forceSoftware = false, forceNextKeyFrame = false;
+        bool forceSoftware = false, forceNextKeyFrame = false, inServiceSecure = false;
         var activeVideo=VideoSettingsProtocol.Default;var pacer=new VideoFramePacer();int videoKeyAttempts=0;
         CapturedFrame? staticFrame=null;
         string? lastColor = null; long colorPoll = 0;
@@ -788,6 +788,7 @@ internal static class VideoHostSession
                     continue;
                 }
                 ServiceDesktopFrame? serviceFrame = null;
+                bool pacedServiceSecure = false;
                 try
                 {
                     double serviceCaptureMs = 0;
@@ -803,11 +804,20 @@ internal static class VideoHostSession
                             }
                             if (displaySelection is null) { ct.WaitHandle.WaitOne(250); continue; }
                         }
+                        if (inServiceSecure && displays?.Switch.Unavailable != true && (displays is null || displays.Switch.Configured))
+                        {
+                            int preBitrate = bitrateTarget?.Invoke(activeVideo.Bitrate) ?? activeVideo.Bitrate;
+                            int preFps = Math.Min(QuicBitrateController.FramesPerSecond(activeVideo.FramesPerSecond, preBitrate), 30);
+                            if (ct.WaitHandle.WaitOne(pacer.Delay(preFps))) break;
+                            pacer.Started();
+                            pacedServiceSecure = true;
+                        }
                         long requestStart = Stopwatch.GetTimestamp();
                         serviceFrame = serviceDesktop.Capture(displaySelection!.Device, ct).GetAwaiter().GetResult();
                         serviceCaptureMs = Stopwatch.GetElapsedTime(requestStart).TotalMilliseconds;
                         if (serviceFrame.Epoch != desktopEpoch)
                         {
+                            inServiceSecure = false;
                             // Reuse the negotiated display-generation barrier: old input is
                             // rejected until the Viewer actually presents the new desktop.
                             encoder?.Dispose(); encoder = null; capture?.Dispose(); capture = null;
@@ -822,9 +832,10 @@ internal static class VideoHostSession
                             continue;
                         }
                         if (displays!.Switch.Ready) serviceDesktop.TryConfirmDisplayed(desktopEpoch);
-                        if (serviceFrame.Kind == ServiceDesktopKind.Transition) { ct.WaitHandle.WaitOne(25); continue; }
+                        if (serviceFrame.Kind == ServiceDesktopKind.Transition) { inServiceSecure = false; ct.WaitHandle.WaitOne(25); continue; }
                     }
                     bool serviceSecure = serviceFrame?.Kind == ServiceDesktopKind.Secure;
+                    inServiceSecure = serviceSecure;
                     if (backend == "test-idle" && sequence >= 1) { ct.WaitHandle.WaitOne(); break; }
                     if(displays?.TopologyEnabled==true && !serviceSecure)
                     {
@@ -855,8 +866,8 @@ internal static class VideoHostSession
                     {stage="video-settings-apply";encoder?.Dispose();encoder=null;activeVideo=desired;forceNextKeyFrame=true;videoKeyAttempts=0;}
                     int desiredBitrate = bitrateTarget?.Invoke(activeVideo.Bitrate) ?? activeVideo.Bitrate;
                     int effectiveFps = QuicBitrateController.FramesPerSecond(activeVideo.FramesPerSecond, desiredBitrate);
-                    if (serviceSecure) effectiveFps = Math.Min(effectiveFps, 10);
-                    if(ct.WaitHandle.WaitOne(pacer.Delay(effectiveFps)))break;pacer.Started();
+                    if (serviceSecure) effectiveFps = Math.Min(effectiveFps, 30);
+                    if (!pacedServiceSecure) { if(ct.WaitHandle.WaitOne(pacer.Delay(effectiveFps)))break;pacer.Started(); }
                     stage="capture-init";
                     if(backend=="test-topology-init-race"&&sequence>=4&&!injectedTopologyRace&&displays?.Switch.Ready==true){injectedTopologyRace=true;throw new ExternalException("Injected output disappeared during initialization",unchecked((int)0x887A0002));}
                     stage = "capture-init"; capture ??= synthetic || serviceSecure ? null : CreateCapture(backend,displaySelection);
@@ -874,7 +885,7 @@ internal static class VideoHostSession
                     if (oversizedTest) { testWidth = 2560; testHeight = 1440; }
                     bool forceRequested=requestedKeyFrame();bool refresh=forceRequested||forceNextKeyFrame||video?.Pending is not null||queue.Dropped!=previousDrops;
                     var frame = serviceSecure ? new CapturedFrame(serviceFrame!.Width,serviceFrame.Height,serviceFrame.Pixels,
-                        new(Stopwatch.GetTimestamp(),1,[],[],serviceFrame.PointerX-displaySelection!.Bounds.X,serviceFrame.PointerY-displaySelection.Bounds.Y,false,CaptureMetadata.HostManagedPointer,0,0,0,0,0,[])) : synthetic ? backend is ("test-video-settings-static" or "test-desktop-pause")&&sequence>0?(refresh?staticFrame:null):new CapturedFrame(testWidth, testHeight, CodecVerification.Pattern(testWidth, testHeight, (int)(sequence % 200)), new(Stopwatch.GetTimestamp(), 1, [], [], 0, 0, false, 0, 0, 0, 0, 0, 0, [])) : CaptureFrameRefresh.Read(capture!,refresh);
+                        new(Stopwatch.GetTimestamp(),1,[],[],serviceFrame.PointerX-displaySelection!.Bounds.X,serviceFrame.PointerY-displaySelection.Bounds.Y,false,0,0,0,0,0,0,[])) : synthetic ? backend is ("test-video-settings-static" or "test-desktop-pause")&&sequence>0?(refresh?staticFrame:null):new CapturedFrame(testWidth, testHeight, CodecVerification.Pattern(testWidth, testHeight, (int)(sequence % 200)), new(Stopwatch.GetTimestamp(), 1, [], [], 0, 0, false, 0, 0, 0, 0, 0, 0, [])) : CaptureFrameRefresh.Read(capture!,refresh);
                     if (oversizedTest && frame?.Bgra is { } pixels) new Random(1).NextBytes(pixels);
                     if(backend is ("test-video-settings-static" or "test-desktop-pause")&&frame is not null)staticFrame=frame;
                     double captureMs = serviceSecure ? serviceCaptureMs : Stopwatch.GetElapsedTime(captureStarted).TotalMilliseconds;
