@@ -36,6 +36,12 @@ internal static class PhysicalInputSwitchVerification
         }
     }
 
+    static JsonDocument ReadTargetState(string path)
+    {
+        using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        return JsonDocument.Parse(file);
+    }
+
     public static void RunElevatedTarget(Application app, string state)
     {
         state = Path.GetFullPath(state);
@@ -49,8 +55,11 @@ internal static class PhysicalInputSwitchVerification
             string json = JsonSerializer.Serialize(new { handle = (long)new WindowInteropHelper(target).Handle,
                 processId = Environment.ProcessId, token, x = center.X, y = center.Y,
                 target.Downs, target.Ups, target.KeyDowns, target.KeyUps });
-            File.WriteAllText(state + ".tmp", json);
-            File.Move(state + ".tmp", state, true);
+            // This is an opt-in test status file, not a security receipt. Update
+            // in place: replacing an open file can be denied on the target volume.
+            using var status = new FileStream(state, FileMode.Create, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+            using var writer = new StreamWriter(status);
+            writer.Write(json);
         }
         target.Loaded += (_, _) => Save();
         target.Updated = Save;
@@ -75,7 +84,7 @@ internal static class PhysicalInputSwitchVerification
             try
             {
                 WindowsInputPrivilege.EnsureOrdinaryProcess();
-                using var highState = JsonDocument.Parse(File.ReadAllText(state));
+                using var highState = ReadTargetState(state);
                 var high = highState.RootElement;
                 if (!high.GetProperty("token").GetProperty("Elevated").GetBoolean() ||
                     high.GetProperty("token").GetProperty("IntegrityRid").GetInt32() < 0x3000)
@@ -106,14 +115,36 @@ internal static class PhysicalInputSwitchVerification
                     }
                     await worker.Send(new("key", VirtualKey: 0x77), CancellationToken.None);
                     await worker.Send(new("key", VirtualKey: 0x77, Up: true), CancellationToken.None);
-                    await Task.Delay(70);
+                    int expectedCount = index / 2 + 1;
+                    using var delivery = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                    while (true)
+                    {
+                        bool delivered;
+                        if (index % 2 == 0)
+                        {
+                            try
+                            {
+                                using var snapshot = ReadTargetState(state);
+                                delivered = new[] { "Downs", "Ups", "KeyDowns", "KeyUps" }.All(name => snapshot.RootElement.GetProperty(name).GetInt32() == expectedCount);
+                            }
+                            catch (JsonException) { delivered = false; } // A status write is in progress.
+                        }
+                        else delivered = ordinaryTarget.Downs == expectedCount && ordinaryTarget.Ups == expectedCount &&
+                            ordinaryTarget.KeyDowns == expectedCount && ordinaryTarget.KeyUps == expectedCount;
+                        if (delivered) break;
+                        try { await Task.Delay(20, delivery.Token); }
+                        catch (OperationCanceledException)
+                        {
+                            throw new IOException($"Input delivery did not complete at switch {index + 1}; ordinary counts={ordinaryTarget.Downs}/{ordinaryTarget.Ups}/{ordinaryTarget.KeyDowns}/{ordinaryTarget.KeyUps}");
+                        }
+                    }
                     switches++;
                 }
-                using var received = JsonDocument.Parse(File.ReadAllText(state));
+                using var received = ReadTargetState(state);
                 foreach (string property in new[] { "Downs", "Ups", "KeyDowns", "KeyUps" })
                     if (received.RootElement.GetProperty(property).GetInt32() != 6) throw new IOException("Elevated target input missing: " + property);
                 if (ordinaryTarget.Downs != 6 || ordinaryTarget.Ups != 6 || ordinaryTarget.KeyDowns != 6 || ordinaryTarget.KeyUps != 6)
-                    throw new IOException("Ordinary target input missing after elevated window switching");
+                    throw new IOException($"Ordinary target input missing after elevated window switching: {ordinaryTarget.Downs}/{ordinaryTarget.Ups}/{ordinaryTarget.KeyDowns}/{ordinaryTarget.KeyUps}");
                 // Close only the opt-in elevated target, using its explicit F9 handler.
                 await Click(high.GetProperty("x").GetDouble(), high.GetProperty("y").GetDouble(), highWindow);
                 await worker.Send(new("key", VirtualKey: 0x78), CancellationToken.None);
