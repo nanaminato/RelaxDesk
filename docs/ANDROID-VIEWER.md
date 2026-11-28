@@ -145,3 +145,9 @@ dotnet run --project src/RelaxDesk.Android.Tests -c Release -- \
 在 [KVM 加速的 GitHub Actions 运行](https://github.com/nanaminato/RelaxDesk/actions/runs/46086840167) 中，x86-64 Debug APK 构建零警告、零错误；Android 17 (API 37) 完成启动、安装、打开应用，并在强制停止后再次打开。两次应用启动都通过本地 Keystore 签名自检，包括重开密钥和拒绝不匹配的证书指纹。原实现使用通用 `GetKey`，运行时未得到所需的 `IPrivateKey` 句柄；改用标准 `PrivateKeyEntry` 读取同一别名的非导出句柄，未更改签名或协议格式。
 
 该用例没有比较两次进程启动的公开身份，也没有运行局域网授权和 Host 联调。接下来将在同一隔离模拟器中验证拒绝授权、允许后不自动拨号、指纹错误及正常 TLS，然后用 ARM64 真机和 Windows 验收硬件解码与首帧。此测试没有发布安装包。
+
+### Android 17 授权、TLS 与设备身份联调
+
+[模拟器运行记录](https://github.com/nanaminato/RelaxDesk/actions/runs/46088581452) 使用 Android UI 和仅监听开发机回环的合成 Host。拒绝局域网授权不连接，允许授权后也不会自动连接，两者都不保留输入的密码。填错证书指纹时，Host 接到 TCP，但没有收到登录请求。正确指纹下的两次连接都验证了真实 Android Keystore 签名、四条通道绑定和关闭；测试在两次连接之间强制停止并重启 App，Host 比较经挑战验证的设备公钥指纹，只输出是否相同。此次确认相同，未测试真实 Windows 的记住批准行为。
+
+**模拟器画面未通过**：更早的 `Stop()` 清理异常掩盖了原始错误，改用 `Release()` 后，两次连接均暴露 `MediaCodec.dequeueInputBuffer` 的 `error_14`。因此 CI 整体保留失败状态，没有放宽首帧提交要求。下一轮单独比较同素材的本地播放与远端首帧，记录解码器名称和失败阶段，再用 ARM64 手机及 Windows Host 独立验证。没有真机解码、持续画面或输入结果。
