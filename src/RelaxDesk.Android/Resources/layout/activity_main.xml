@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/main_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#FF121418">
+
+  <!-- Top AppBar (NoActionBar theme avoids duplicate system title bar) -->
+  <LinearLayout
+      android:id="@+id/main_app_bar"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="horizontal"
+      android:gravity="center_vertical"
+      android:background="#FF181B22"
+      android:paddingLeft="20dp"
+      android:paddingTop="14dp"
+      android:paddingRight="12dp"
+      android:paddingBottom="14dp">
+
+    <TextView
+        android:id="@+id/main_title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:text="RelaxDesk"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:textColor="#FFF2F4F8" />
+
+    <Button
+        android:id="@+id/btn_add_pc"
+        android:layout_width="wrap_content"
+        android:layout_height="38dp"
+        android:text="+ 添加电脑"
+        android:textSize="13sp"
+        android:textAllCaps="false"
+        android:textColor="#FFFFFFFF"
+        android:background="@drawable/bg_pill_blue"
+        android:paddingLeft="14dp"
+        android:paddingRight="14dp" />
+
+    <Button
+        android:id="@+id/btn_language"
+        android:layout_width="wrap_content"
+        android:layout_height="38dp"
+        android:layout_marginLeft="8dp"
+        android:text="语言"
+        android:textSize="13sp"
+        android:textAllCaps="false"
+        android:textColor="#FFFFFFFF"
+        android:background="@drawable/bg_pill_dark"
+        android:paddingLeft="12dp"
+        android:paddingRight="12dp" />
+
+    <Button
+        android:id="@+id/btn_diagnostics"
+        android:layout_width="wrap_content"
+        android:layout_height="38dp"
+        android:layout_marginLeft="8dp"
+        android:text="诊断"
+        android:textSize="13sp"
+        android:textAllCaps="false"
+        android:textColor="#FFFFFFFF"
+        android:background="@drawable/bg_pill_dark"
+        android:paddingLeft="12dp"
+        android:paddingRight="12dp" />
+  </LinearLayout>
+
+  <TextView
+      android:id="@+id/txt_section_title"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:text="已保存的 Windows 电脑"
+      android:textSize="13sp"
+      android:textColor="#FFA0AAB9"
+      android:paddingLeft="20dp"
+      android:paddingTop="16dp"
+      android:paddingRight="20dp"
+      android:paddingBottom="8dp" />
+
+  <ScrollView
+      android:layout_width="match_parent"
+      android:layout_height="0dp"
+      android:layout_weight="1">
+
+    <LinearLayout
+        android:id="@+id/pc_list_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingLeft="16dp"
+        android:paddingTop="4dp"
+        android:paddingRight="16dp"
+        android:paddingBottom="24dp" />
+  </ScrollView>
+</LinearLayout>

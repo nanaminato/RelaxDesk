@@ -3,23 +3,23 @@ using Android.Content.PM;
 using Android.Graphics;
 using Android.Graphics.Drawables;
 using Android.OS;
-using Android.Text;
 using Android.Views;
 using Android.Widget;
 using RelaxDesk.Core;
 using RelaxDesk.Mobile.Media;
 using System.Security.Authentication;
 using CoreRemoteInput = RelaxDesk.Core.RemoteInput;
+using Resource = RelaxDesk.Android.Resource;
 
 namespace RelaxDesk.Mobile;
 
 /// <summary>
-/// Microsoft Remote Desktop (Windows App) inspired immersive full-screen session activity
-/// with a collapsible top-center session pill bar and sticky-modifier extra keys bar.
+/// Immersive full-screen remote desktop session backed by Resources/layout/activity_remote_session.xml.
 /// </summary>
 [Activity(
-    Label = "RelaxDesk 远程桌面",
+    Label = "RelaxDesk",
     Exported = false,
+    Theme = "@android:style/Theme.DeviceDefault.NoActionBar",
     ScreenOrientation = ScreenOrientation.SensorLandscape,
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.Keyboard | ConfigChanges.KeyboardHidden)]
 public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
@@ -33,8 +33,6 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     const string LanPermission = "android.permission.ACCESS_LOCAL_NETWORK";
     const int LanRequest = 32;
 
-    static readonly Color AccentBlue = Color.Rgb(0, 120, 212);
-    static readonly Color PillBg = Color.Argb(205, 24, 28, 36);
     static readonly Color KeyBg = Color.Rgb(46, 52, 64);
     static readonly Color KeyActiveBg = Color.Rgb(0, 120, 212);
 
@@ -53,7 +51,8 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     LinearLayout pillButtonsContainer = null!;
     HorizontalScrollView extraKeysBar = null!;
     EditText hostInput = null!, portInput = null!, pinInput = null!, userInput = null!, passInput = null!;
-    Button connectBtn = null!, modeBtn = null!, collapseBtn = null!;
+    Button connectBtn = null!, backListBtn = null!, modeBtn = null!, collapseBtn = null!;
+    Button keysToggleBtn = null!, hudToggleBtn = null!, disconnectBtn = null!;
     Button ctrlBtn = null!, altBtn = null!, shiftBtn = null!, winBtn = null!;
 
     Surface? activeSurface;
@@ -75,18 +74,16 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+        AndroidStrings.Init(this);
         Window?.SetFlags(WindowManagerFlags.Secure | WindowManagerFlags.KeepScreenOn,
                         WindowManagerFlags.Secure | WindowManagerFlags.KeepScreenOn);
 
+        SetContentView(Resource.Layout.activity_remote_session);
         uiHandler = new Handler(Looper.MainLooper!);
 
-        var root = new FrameLayout(this) { Background = new ColorDrawable(Color.Black) };
-
-        // 1. Video stage + independent cursor overlay
-        stage = new FrameLayout(this);
-        videoSurface = new SurfaceView(this);
+        stage = FindViewById<FrameLayout>(Resource.Id.session_stage)!;
+        videoSurface = FindViewById<SurfaceView>(Resource.Id.session_video_surface)!;
         videoSurface.Holder!.AddCallback(this);
-        stage.AddView(videoSurface, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
 
         cursorView = new RemoteCursorView(this);
         stage.AddView(cursorView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
@@ -97,166 +94,105 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         };
         stage.Touch += OnStageTouch;
         stage.GenericMotion += OnStageGenericMotion;
-        root.AddView(stage, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
 
-        // 2. Telemetry HUD (top-left)
-        hudText = new TextView(this) { TextSize = 11f, Visibility = ViewStates.Gone };
-        hudText.SetTextColor(Color.Argb(235, 130, 255, 170));
-        hudText.Background = MakeRounded(Color.Argb(165, 12, 16, 22), Dp(8));
-        hudText.SetPadding(Dp(10), Dp(6), Dp(10), Dp(6));
-        var hudLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent, GravityFlags.Top | GravityFlags.Start);
-        hudLp.SetMargins(Dp(12), Dp(12), 0, 0);
-        root.AddView(hudText, hudLp);
+        hudText = FindViewById<TextView>(Resource.Id.session_hud)!;
+        sessionPill = FindViewById<LinearLayout>(Resource.Id.session_pill_bar)!;
+        pillButtonsContainer = FindViewById<LinearLayout>(Resource.Id.session_pill_buttons)!;
+        collapseBtn = FindViewById<Button>(Resource.Id.btn_pill_collapse)!;
+        modeBtn = FindViewById<Button>(Resource.Id.btn_mode)!;
+        keysToggleBtn = FindViewById<Button>(Resource.Id.btn_keys_toggle)!;
+        hudToggleBtn = FindViewById<Button>(Resource.Id.btn_hud_toggle)!;
+        disconnectBtn = FindViewById<Button>(Resource.Id.btn_disconnect)!;
+        extraKeysBar = FindViewById<HorizontalScrollView>(Resource.Id.extra_keys_bar)!;
+        connectOverlay = FindViewById<View>(Resource.Id.connect_overlay)!;
+        statusText = FindViewById<TextView>(Resource.Id.connect_status)!;
+        hostInput = FindViewById<EditText>(Resource.Id.input_host)!;
+        portInput = FindViewById<EditText>(Resource.Id.input_port)!;
+        pinInput = FindViewById<EditText>(Resource.Id.input_pin)!;
+        userInput = FindViewById<EditText>(Resource.Id.input_user)!;
+        passInput = FindViewById<EditText>(Resource.Id.input_password)!;
+        backListBtn = FindViewById<Button>(Resource.Id.btn_back_list)!;
+        connectBtn = FindViewById<Button>(Resource.Id.btn_connect)!;
 
-        // 3. Microsoft RD Client style top-center collapsible pill bar
-        sessionPill = BuildSessionPillBar();
-        var pillLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent, GravityFlags.Top | GravityFlags.CenterHorizontal);
-        pillLp.TopMargin = Dp(8);
-        root.AddView(sessionPill, pillLp);
-
-        // 4. Bottom collapsible extra keys bar (Esc, Tab, Ctrl, Alt, Win, Arrows, Del, Text)
-        extraKeysBar = BuildExtraKeysBar();
-        var keysLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent, GravityFlags.Bottom);
-        root.AddView(extraKeysBar, keysLp);
-
-        // 5. Connection / password prompt overlay
-        connectOverlay = BuildConnectionOverlay();
-        root.AddView(connectOverlay, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
-
-        SetContentView(root);
-        PopulateFromIntentOrStore();
-        EnterImmersiveMode();
-    }
-
-    LinearLayout BuildSessionPillBar()
-    {
-        var pill = new LinearLayout(this)
-        {
-            Orientation = Orientation.Horizontal,
-            Visibility = ViewStates.Gone
-        };
-        pill.SetGravity(GravityFlags.CenterVertical);
-        pill.Background = MakeRounded(PillBg, Dp(22));
-        pill.SetPadding(Dp(6), Dp(4), Dp(6), Dp(4));
-
-        collapseBtn = MakeBarButton("‹", Color.Transparent, () =>
+        collapseBtn.Click += (_, _) =>
         {
             pillExpanded = !pillExpanded;
             pillButtonsContainer.Visibility = pillExpanded ? ViewStates.Visible : ViewStates.Gone;
             collapseBtn.Text = pillExpanded ? "‹" : "≡";
-        });
-        pill.AddView(collapseBtn);
-
-        pillButtonsContainer = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-        pillButtonsContainer.SetGravity(GravityFlags.CenterVertical);
-
-        modeBtn = MakeBarButton("触控板", KeyBg, () =>
+        };
+        modeBtn.Click += (_, _) =>
         {
             touchpadMode = !touchpadMode;
-            modeBtn.Text = touchpadMode ? "触控板" : "直触";
-        });
-        pillButtonsContainer.AddView(modeBtn);
-
-        pillButtonsContainer.AddView(MakeBarButton("键盘条", KeyBg, () =>
+            modeBtn.Text = AndroidStrings.Get(touchpadMode ? "mode_touchpad" : "mode_direct");
+        };
+        keysToggleBtn.Click += (_, _) =>
         {
             extraKeysBar.Visibility = extraKeysBar.Visibility == ViewStates.Visible ? ViewStates.Gone : ViewStates.Visible;
-        }));
-        pillButtonsContainer.AddView(MakeBarButton("1:1", KeyBg, () =>
+        };
+        FindViewById<Button>(Resource.Id.btn_reset_zoom)!.Click += (_, _) =>
         {
             viewport.ResetTransform();
             UpdateVideoSurfaceLayout();
-        }));
-        pillButtonsContainer.AddView(MakeBarButton("指标", KeyBg, () =>
+        };
+        hudToggleBtn.Click += (_, _) =>
         {
             showHud = !showHud;
             hudText.Visibility = showHud && session is not null ? ViewStates.Visible : ViewStates.Gone;
-        }));
-        pillButtonsContainer.AddView(MakeBarButton("断开", Color.Rgb(180, 45, 45), Disconnect));
+        };
+        disconnectBtn.Click += (_, _) => Disconnect();
+        backListBtn.Click += (_, _) => Finish();
+        connectBtn.Click += (_, _) => StartConnect();
 
-        pill.AddView(pillButtonsContainer);
-        return pill;
+        PopulateExtraKeysBar();
+        ApplyLocalization();
+        PopulateFromIntentOrStore();
+        EnterImmersiveMode();
     }
 
-    HorizontalScrollView BuildExtraKeysBar()
+    void ApplyLocalization()
     {
-        var scroll = new HorizontalScrollView(this)
-        {
-            Visibility = ViewStates.Gone,
-            HorizontalScrollBarEnabled = false
-        };
-        scroll.SetBackgroundColor(Color.Argb(220, 20, 24, 32));
+        hostInput.Hint = AndroidStrings.Get("hint_host");
+        portInput.Hint = AndroidStrings.Get("hint_port");
+        pinInput.Hint = AndroidStrings.Get("hint_pin");
+        userInput.Hint = AndroidStrings.Get("hint_user");
+        passInput.Hint = AndroidStrings.Get("hint_password");
+        backListBtn.Text = AndroidStrings.Get("back_list");
+        connectBtn.Text = AndroidStrings.Get("connect_btn");
+        modeBtn.Text = AndroidStrings.Get(touchpadMode ? "mode_touchpad" : "mode_direct");
+        keysToggleBtn.Text = AndroidStrings.Get("keys_bar");
+        hudToggleBtn.Text = AndroidStrings.Get("metrics");
+        disconnectBtn.Text = AndroidStrings.Get("disconnect");
+        statusText.Text = AndroidStrings.Get("connect_prompt");
+    }
 
-        var row = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-        row.SetPadding(Dp(8), Dp(6), Dp(8), Dp(6));
+    void PopulateExtraKeysBar()
+    {
+        var row = FindViewById<LinearLayout>(Resource.Id.extra_keys_row)!;
+        row.AddView(MakeKeyButton("Esc", KeyBg, () => SendTapKey(0x1B, 0x01, false)));
+        row.AddView(MakeKeyButton("Tab", KeyBg, () => SendTapKey(0x09, 0x0F, false)));
 
-        row.AddView(MakeBarButton("Esc", KeyBg, () => SendTapKey(0x1B, 0x01, false)));
-        row.AddView(MakeBarButton("Tab", KeyBg, () => SendTapKey(0x09, 0x0F, false)));
-
-        ctrlBtn = MakeBarButton("Ctrl", KeyBg, () => ToggleModifier(ref stickyCtrl, ctrlBtn, 0xA2, 0x1D, false));
-        altBtn = MakeBarButton("Alt", KeyBg, () => ToggleModifier(ref stickyAlt, altBtn, 0xA4, 0x38, false));
-        shiftBtn = MakeBarButton("Shift", KeyBg, () => ToggleModifier(ref stickyShift, shiftBtn, 0xA0, 0x2A, false));
-        winBtn = MakeBarButton("Win", KeyBg, () => ToggleModifier(ref stickyWin, winBtn, 0x5B, 0x5B, true));
+        ctrlBtn = MakeKeyButton("Ctrl", KeyBg, () => ToggleModifier(ref stickyCtrl, ctrlBtn, 0xA2, 0x1D, false));
+        altBtn = MakeKeyButton("Alt", KeyBg, () => ToggleModifier(ref stickyAlt, altBtn, 0xA4, 0x38, false));
+        shiftBtn = MakeKeyButton("Shift", KeyBg, () => ToggleModifier(ref stickyShift, shiftBtn, 0xA0, 0x2A, false));
+        winBtn = MakeKeyButton("Win", KeyBg, () => ToggleModifier(ref stickyWin, winBtn, 0x5B, 0x5B, true));
         row.AddView(ctrlBtn);
         row.AddView(altBtn);
         row.AddView(shiftBtn);
         row.AddView(winBtn);
 
-        row.AddView(MakeBarButton("←", KeyBg, () => SendTapKey(0x25, 0x4B, true)));
-        row.AddView(MakeBarButton("↑", KeyBg, () => SendTapKey(0x26, 0x48, true)));
-        row.AddView(MakeBarButton("↓", KeyBg, () => SendTapKey(0x28, 0x50, true)));
-        row.AddView(MakeBarButton("→", KeyBg, () => SendTapKey(0x27, 0x4D, true)));
-        row.AddView(MakeBarButton("Del", KeyBg, () => SendTapKey(0x2E, 0x53, true)));
-        row.AddView(MakeBarButton("Win+D", KeyBg, () =>
+        row.AddView(MakeKeyButton("←", KeyBg, () => SendTapKey(0x25, 0x4B, true)));
+        row.AddView(MakeKeyButton("↑", KeyBg, () => SendTapKey(0x26, 0x48, true)));
+        row.AddView(MakeKeyButton("↓", KeyBg, () => SendTapKey(0x28, 0x50, true)));
+        row.AddView(MakeKeyButton("→", KeyBg, () => SendTapKey(0x27, 0x4D, true)));
+        row.AddView(MakeKeyButton("Del", KeyBg, () => SendTapKey(0x2E, 0x53, true)));
+        row.AddView(MakeKeyButton("Win+D", KeyBg, () =>
         {
             session?.SendInput(new CoreRemoteInput("key", VirtualKey: 0x5B, ScanCode: 0x5B, Extended: true, Up: false));
             session?.SendInput(new CoreRemoteInput("key", VirtualKey: 0x44, ScanCode: 0x20, Extended: false, Up: false));
             session?.SendInput(new CoreRemoteInput("key", VirtualKey: 0x44, ScanCode: 0x20, Extended: false, Up: true));
             session?.SendInput(new CoreRemoteInput("key", VirtualKey: 0x5B, ScanCode: 0x5B, Extended: true, Up: true));
         }));
-        row.AddView(MakeBarButton("输入文字", AccentBlue, ShowTextInputDialog));
-
-        scroll.AddView(row);
-        return scroll;
-    }
-
-    View BuildConnectionOverlay()
-    {
-        var backdrop = new FrameLayout(this);
-        backdrop.SetBackgroundColor(Color.Argb(245, 16, 19, 24));
-
-        var scroll = new ScrollView(this);
-        var card = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        card.Background = MakeRounded(Color.Rgb(28, 32, 40), Dp(14));
-        card.SetPadding(Dp(24), Dp(20), Dp(24), Dp(20));
-
-        statusText = new TextView(this) { Text = "输入 Windows 密码以连接（不保存密码）", TextSize = 15f };
-        statusText.SetTextColor(Color.White);
-        statusText.SetPadding(0, 0, 0, Dp(8));
-        card.AddView(statusText);
-
-        hostInput = MakeField(card, "局域网 IP");
-        portInput = MakeField(card, "端口（默认 48200）", InputTypes.ClassNumber);
-        pinInput = MakeField(card, "64 位 SHA-256 证书指纹");
-        userInput = MakeField(card, "Windows 登录用户名");
-        passInput = MakeField(card, "Windows 登录密码", InputTypes.ClassText | InputTypes.TextVariationPassword);
-
-        var actions = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-        actions.SetPadding(0, Dp(12), 0, 0);
-
-        var backBtn = MakeBarButton("返回列表", KeyBg, Finish);
-        actions.AddView(backBtn, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
-
-        connectBtn = MakeBarButton("连接桌面", AccentBlue, StartConnect);
-        var connLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 2f);
-        connLp.LeftMargin = Dp(10);
-        actions.AddView(connectBtn, connLp);
-
-        card.AddView(actions);
-        scroll.AddView(card);
-
-        var scrollLp = new FrameLayout.LayoutParams(Dp(460), ViewGroup.LayoutParams.WrapContent, GravityFlags.Center);
-        backdrop.AddView(scroll, scrollLp);
-        return backdrop;
+        row.AddView(MakeKeyButton(AndroidStrings.Get("send_text"), KeyActiveBg, ShowTextInputDialog));
     }
 
     void PopulateFromIntentOrStore()
@@ -269,7 +205,6 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             portInput.Text = (Intent?.GetIntExtra(ExtraPort, 48200) ?? 48200).ToString();
             pinInput.Text = Intent?.GetStringExtra(ExtraPin) ?? "";
             userInput.Text = Intent?.GetStringExtra(ExtraUser) ?? "";
-            statusText.Text = $"连接到 {pcName}（请输入密码）";
             passInput.RequestFocus();
             return;
         }
@@ -337,7 +272,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         if (!FirstFrameSession.TryEndpoint(hostInput.Text ?? "", portInput.Text ?? "", pinInput.Text ?? "",
                 out var ip, out var port, out var pin))
         {
-            statusText.Text = "请输入有效的局域网 IP、端口和 64 位 SHA-256 证书指纹。";
+            statusText.Text = AndroidStrings.Get("err_invalid_endpoint");
             return;
         }
         if (!HasLanPermission())
@@ -353,7 +288,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         passInput.Text = "";
         if (!PasswordVerifier.ValidUserName(username) || password.Length == 0)
         {
-            statusText.Text = "请输入被控端用户名和密码。";
+            statusText.Text = AndroidStrings.Get("err_invalid_user");
             return;
         }
 
@@ -389,17 +324,17 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
 
         sessionWorker = Task.Run(async () =>
         {
-            string endMessage = "已断开连接。";
+            string endMessage = AndroidStrings.Get("disconnected");
             try
             {
                 await activeSession.RunAsync(ip, port, pin, username, password,
                     AndroidDeviceKey.OpenProbeKey, activeSurface, cts.Token);
             }
-            catch (System.OperationCanceledException) when (cts.IsCancellationRequested) { endMessage = "已断开连接。"; }
-            catch (HostConsentRejectedException) { endMessage = "被控端拒绝了连接请求。"; }
-            catch (PasswordLoginRejectedException) { endMessage = "用户名或密码未通过验证。"; }
-            catch (AuthenticationException) { endMessage = "TLS 认证失败，请核对证书指纹。"; }
-            catch (Exception ex) { endMessage = $"会话结束：{ex.GetType().Name} - {ex.Message}"; }
+            catch (System.OperationCanceledException) when (cts.IsCancellationRequested) { endMessage = AndroidStrings.Get("disconnected"); }
+            catch (HostConsentRejectedException) { endMessage = "Host rejected connection."; }
+            catch (PasswordLoginRejectedException) { endMessage = "Invalid username or password."; }
+            catch (AuthenticationException) { endMessage = "TLS authentication failed."; }
+            catch (Exception ex) { endMessage = $"{ex.GetType().Name}: {ex.Message}"; }
             finally { password = ""; }
 
             RunOnUiThread(() =>
@@ -605,37 +540,21 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     void ShowTextInputDialog()
     {
         if (session is null) return;
-        var input = new EditText(this) { Hint = "输入要发送到 Windows 的文字" };
+        var input = new EditText(this) { Hint = AndroidStrings.Get("text_hint") };
         new AlertDialog.Builder(this)
-            .SetTitle("发送文字")!
+            .SetTitle(AndroidStrings.Get("send_text"))!
             .SetView(input)!
-            .SetPositiveButton("发送", (_, _) =>
+            .SetPositiveButton(AndroidStrings.Get("send"), (_, _) =>
             {
                 string text = input.Text ?? "";
                 if (InputProtocol.TextValid(text))
                     session?.SendInput(new CoreRemoteInput("text", Text: text));
             })!
-            .SetNegativeButton("取消", (_, _) => { })!
+            .SetNegativeButton(AndroidStrings.Get("cancel"), (_, _) => { })!
             .Show();
     }
 
-    EditText MakeField(LinearLayout parent, string hint, InputTypes type = InputTypes.ClassText)
-    {
-        var edit = new EditText(this)
-        {
-            Hint = hint,
-            InputType = type,
-            SaveEnabled = false,
-            ImportantForAutofill = ImportantForAutofill.No
-        };
-        edit.SetSingleLine(true);
-        edit.SetTextColor(Color.White);
-        edit.SetHintTextColor(Color.Argb(160, 190, 200, 215));
-        parent.AddView(edit);
-        return edit;
-    }
-
-    Button MakeBarButton(string title, Color bg, Action onClick)
+    Button MakeKeyButton(string title, Color bg, Action onClick)
     {
         var btn = new Button(this) { Text = title, TextSize = 12f };
         btn.SetTextColor(Color.White);
@@ -682,7 +601,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         base.OnRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode != LanRequest || !requestingPermission) return;
         requestingPermission = false;
-        statusText.Text = HasLanPermission() ? "局域网权限已授予，请重新输入密码并点击连接。" : "未获得局域网权限，无法连接。";
+        statusText.Text = HasLanPermission() ? AndroidStrings.Get("connect_prompt") : "LAN permission denied.";
     }
 
     public void SurfaceCreated(ISurfaceHolder holder) { activeSurface = holder.Surface; session?.AttachSurface(activeSurface); }

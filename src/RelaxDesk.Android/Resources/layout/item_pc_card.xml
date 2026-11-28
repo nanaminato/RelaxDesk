@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@drawable/bg_card_dark"
+    android:paddingLeft="16dp"
+    android:paddingTop="14dp"
+    android:paddingRight="12dp"
+    android:paddingBottom="14dp"
+    android:layout_marginBottom="10dp">
+
+  <TextView
+      android:layout_width="46dp"
+      android:layout_height="46dp"
+      android:layout_marginRight="14dp"
+      android:gravity="center"
+      android:text="PC"
+      android:textSize="14sp"
+      android:textStyle="bold"
+      android:textColor="#FFFFFFFF"
+      android:background="@drawable/bg_pill_blue" />
+
+  <LinearLayout
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:orientation="vertical">
+
+    <TextView
+        android:id="@+id/card_pc_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:textColor="#FFF2F4F8" />
+
+    <TextView
+        android:id="@+id/card_pc_detail"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="13sp"
+        android:textColor="#FFA0AAB9" />
+  </LinearLayout>
+
+  <Button
+      android:id="@+id/card_btn_edit"
+      android:layout_width="wrap_content"
+      android:layout_height="36dp"
+      android:text="编辑"
+      android:textSize="13sp"
+      android:textAllCaps="false"
+      android:textColor="#FFFFFFFF"
+      android:background="@drawable/bg_pill_dark"
+      android:paddingLeft="14dp"
+      android:paddingRight="14dp" />
+</LinearLayout>

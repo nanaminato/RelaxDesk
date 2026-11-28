@@ -1,0 +1,254 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/session_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FF000000">
+
+  <!-- Video stage & independent cursor overlay container -->
+  <FrameLayout
+      android:id="@+id/session_stage"
+      android:layout_width="match_parent"
+      android:layout_height="match_parent">
+
+    <SurfaceView
+        android:id="@+id/session_video_surface"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+  </FrameLayout>
+
+  <!-- Telemetry HUD -->
+  <TextView
+      android:id="@+id/session_hud"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_gravity="top|start"
+      android:layout_margin="12dp"
+      android:paddingLeft="10dp"
+      android:paddingTop="6dp"
+      android:paddingRight="10dp"
+      android:paddingBottom="6dp"
+      android:textSize="11sp"
+      android:textColor="#EB82FFAA"
+      android:background="@drawable/bg_card_dark"
+      android:visibility="gone" />
+
+  <!-- Top-center collapsible Microsoft RD Client style session pill bar -->
+  <LinearLayout
+      android:id="@+id/session_pill_bar"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_gravity="top|center_horizontal"
+      android:layout_marginTop="8dp"
+      android:orientation="horizontal"
+      android:gravity="center_vertical"
+      android:background="@drawable/bg_session_pill"
+      android:paddingLeft="6dp"
+      android:paddingTop="4dp"
+      android:paddingRight="6dp"
+      android:paddingBottom="4dp"
+      android:visibility="gone">
+
+    <Button
+        android:id="@+id/btn_pill_collapse"
+        android:layout_width="36dp"
+        android:layout_height="34dp"
+        android:text="‹"
+        android:textSize="14sp"
+        android:textColor="#FFFFFFFF"
+        android:background="@android:color/transparent" />
+
+    <LinearLayout
+        android:id="@+id/session_pill_buttons"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+      <Button
+          android:id="@+id/btn_mode"
+          android:layout_width="wrap_content"
+          android:layout_height="34dp"
+          android:layout_marginLeft="4dp"
+          android:text="触控板"
+          android:textSize="12sp"
+          android:textAllCaps="false"
+          android:textColor="#FFFFFFFF"
+          android:background="@drawable/bg_pill_dark"
+          android:paddingLeft="10dp"
+          android:paddingRight="10dp" />
+
+      <Button
+          android:id="@+id/btn_keys_toggle"
+          android:layout_width="wrap_content"
+          android:layout_height="34dp"
+          android:layout_marginLeft="4dp"
+          android:text="键盘条"
+          android:textSize="12sp"
+          android:textAllCaps="false"
+          android:textColor="#FFFFFFFF"
+          android:background="@drawable/bg_pill_dark"
+          android:paddingLeft="10dp"
+          android:paddingRight="10dp" />
+
+      <Button
+          android:id="@+id/btn_reset_zoom"
+          android:layout_width="wrap_content"
+          android:layout_height="34dp"
+          android:layout_marginLeft="4dp"
+          android:text="1:1"
+          android:textSize="12sp"
+          android:textAllCaps="false"
+          android:textColor="#FFFFFFFF"
+          android:background="@drawable/bg_pill_dark"
+          android:paddingLeft="10dp"
+          android:paddingRight="10dp" />
+
+      <Button
+          android:id="@+id/btn_hud_toggle"
+          android:layout_width="wrap_content"
+          android:layout_height="34dp"
+          android:layout_marginLeft="4dp"
+          android:text="指标"
+          android:textSize="12sp"
+          android:textAllCaps="false"
+          android:textColor="#FFFFFFFF"
+          android:background="@drawable/bg_pill_dark"
+          android:paddingLeft="10dp"
+          android:paddingRight="10dp" />
+
+      <Button
+          android:id="@+id/btn_disconnect"
+          android:layout_width="wrap_content"
+          android:layout_height="34dp"
+          android:layout_marginLeft="4dp"
+          android:text="断开"
+          android:textSize="12sp"
+          android:textAllCaps="false"
+          android:textColor="#FFFFFFFF"
+          android:background="@drawable/bg_pill_red"
+          android:paddingLeft="10dp"
+          android:paddingRight="10dp" />
+    </LinearLayout>
+  </LinearLayout>
+
+  <!-- Bottom extra keys bar -->
+  <HorizontalScrollView
+      android:id="@+id/extra_keys_bar"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_gravity="bottom"
+      android:background="#DC141820"
+      android:scrollbars="none"
+      android:visibility="gone">
+
+    <LinearLayout
+        android:id="@+id/extra_keys_row"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="6dp" />
+  </HorizontalScrollView>
+
+  <!-- Connection / password prompt overlay -->
+  <FrameLayout
+      android:id="@+id/connect_overlay"
+      android:layout_width="match_parent"
+      android:layout_height="match_parent"
+      android:background="#F5101318">
+
+    <ScrollView
+        android:layout_width="460dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center">
+
+      <LinearLayout
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:orientation="vertical"
+          android:background="@drawable/bg_card_dark"
+          android:padding="22dp">
+
+        <TextView
+            android:id="@+id/connect_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="15sp"
+            android:textColor="#FFFFFFFF"
+            android:paddingBottom="8dp" />
+
+        <EditText
+            android:id="@+id/input_host"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:singleLine="true"
+            android:textColor="#FFFFFFFF"
+            android:textColorHint="#A0BEC8D7" />
+
+        <EditText
+            android:id="@+id/input_port"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:singleLine="true"
+            android:inputType="number"
+            android:textColor="#FFFFFFFF"
+            android:textColorHint="#A0BEC8D7" />
+
+        <EditText
+            android:id="@+id/input_pin"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:singleLine="true"
+            android:textColor="#FFFFFFFF"
+            android:textColorHint="#A0BEC8D7" />
+
+        <EditText
+            android:id="@+id/input_user"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:singleLine="true"
+            android:textColor="#FFFFFFFF"
+            android:textColorHint="#A0BEC8D7" />
+
+        <EditText
+            android:id="@+id/input_password"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:singleLine="true"
+            android:inputType="textPassword"
+            android:textColor="#FFFFFFFF"
+            android:textColorHint="#A0BEC8D7" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingTop="12dp">
+
+          <Button
+              android:id="@+id/btn_back_list"
+              android:layout_width="0dp"
+              android:layout_height="40dp"
+              android:layout_weight="1"
+              android:text="返回列表"
+              android:textSize="13sp"
+              android:textAllCaps="false"
+              android:textColor="#FFFFFFFF"
+              android:background="@drawable/bg_pill_dark" />
+
+          <Button
+              android:id="@+id/btn_connect"
+              android:layout_width="0dp"
+              android:layout_height="40dp"
+              android:layout_weight="2"
+              android:layout_marginLeft="10dp"
+              android:text="连接桌面"
+              android:textSize="13sp"
+              android:textAllCaps="false"
+              android:textColor="#FFFFFFFF"
+              android:background="@drawable/bg_pill_blue" />
+        </LinearLayout>
+      </LinearLayout>
+    </ScrollView>
+  </FrameLayout>
+</FrameLayout>
