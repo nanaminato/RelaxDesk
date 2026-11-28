@@ -40,6 +40,8 @@
       android:layout_height="wrap_content"
       android:layout_gravity="top|center_horizontal"
       android:layout_marginTop="8dp"
+      android:layout_marginLeft="8dp"
+      android:layout_marginRight="8dp"
       android:orientation="horizontal"
       android:gravity="center_vertical"
       android:background="@drawable/bg_session_pill"
@@ -53,96 +55,126 @@
         android:id="@+id/btn_pill_collapse"
         android:layout_width="36dp"
         android:layout_height="34dp"
+        android:minWidth="0dp"
         android:text="‹"
         android:textSize="14sp"
         android:textColor="#FFFFFFFF"
-        android:background="@android:color/transparent" />
+        android:background="@android:color/transparent"
+        android:padding="0dp" />
 
-    <LinearLayout
-        android:id="@+id/session_pill_buttons"
+    <HorizontalScrollView
+        android:id="@+id/session_pill_scroll"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:scrollbars="none"
+        android:overScrollMode="never">
 
-      <Button
-          android:id="@+id/btn_mode"
+      <LinearLayout
+          android:id="@+id/session_pill_buttons"
           android:layout_width="wrap_content"
-          android:layout_height="34dp"
-          android:layout_marginLeft="4dp"
-          android:text="触控板"
-          android:textSize="12sp"
-          android:textAllCaps="false"
-          android:textColor="#FFFFFFFF"
-          android:background="@drawable/bg_pill_dark"
-          android:paddingLeft="10dp"
-          android:paddingRight="10dp" />
+          android:layout_height="wrap_content"
+          android:orientation="horizontal"
+          android:gravity="center_vertical">
 
-      <Button
-          android:id="@+id/btn_keys_toggle"
-          android:layout_width="wrap_content"
-          android:layout_height="34dp"
-          android:layout_marginLeft="4dp"
-          android:text="键盘条"
-          android:textSize="12sp"
-          android:textAllCaps="false"
-          android:textColor="#FFFFFFFF"
-          android:background="@drawable/bg_pill_dark"
-          android:paddingLeft="10dp"
-          android:paddingRight="10dp" />
+        <Button
+            android:id="@+id/btn_video"
+            android:layout_width="wrap_content"
+            android:layout_height="34dp"
+            android:minWidth="0dp"
+            android:layout_marginLeft="4dp"
+            android:text="Video"
+            android:textSize="12sp"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFFFF"
+            android:background="@drawable/bg_pill_dark"
+            android:paddingLeft="10dp"
+            android:paddingRight="10dp" />
 
-      <Button
-          android:id="@+id/btn_reset_zoom"
-          android:layout_width="wrap_content"
-          android:layout_height="34dp"
-          android:layout_marginLeft="4dp"
-          android:text="1:1"
-          android:textSize="12sp"
-          android:textAllCaps="false"
-          android:textColor="#FFFFFFFF"
-          android:background="@drawable/bg_pill_dark"
-          android:paddingLeft="10dp"
-          android:paddingRight="10dp" />
+        <Button
+            android:id="@+id/btn_mode"
+            android:layout_width="wrap_content"
+            android:layout_height="34dp"
+            android:minWidth="0dp"
+            android:layout_marginLeft="4dp"
+            android:text="Touchpad"
+            android:textSize="12sp"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFFFF"
+            android:background="@drawable/bg_pill_dark"
+            android:paddingLeft="10dp"
+            android:paddingRight="10dp" />
 
-      <Button
-          android:id="@+id/btn_audio_toggle"
-          android:layout_width="wrap_content"
-          android:layout_height="34dp"
-          android:layout_marginLeft="4dp"
-          android:text="🔊"
-          android:textSize="13sp"
-          android:textAllCaps="false"
-          android:textColor="#FFFFFFFF"
-          android:background="@drawable/bg_pill_dark"
-          android:paddingLeft="10dp"
-          android:paddingRight="10dp" />
+        <Button
+            android:id="@+id/btn_keys_toggle"
+            android:layout_width="wrap_content"
+            android:layout_height="34dp"
+            android:minWidth="0dp"
+            android:layout_marginLeft="4dp"
+            android:text="Keys"
+            android:textSize="12sp"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFFFF"
+            android:background="@drawable/bg_pill_dark"
+            android:paddingLeft="10dp"
+            android:paddingRight="10dp" />
 
-      <Button
-          android:id="@+id/btn_hud_toggle"
-          android:layout_width="wrap_content"
-          android:layout_height="34dp"
-          android:layout_marginLeft="4dp"
-          android:text="指标"
-          android:textSize="12sp"
-          android:textAllCaps="false"
-          android:textColor="#FFFFFFFF"
-          android:background="@drawable/bg_pill_dark"
-          android:paddingLeft="10dp"
-          android:paddingRight="10dp" />
+        <Button
+            android:id="@+id/btn_reset_zoom"
+            android:layout_width="wrap_content"
+            android:layout_height="34dp"
+            android:minWidth="0dp"
+            android:layout_marginLeft="4dp"
+            android:text="1:1"
+            android:textSize="12sp"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFFFF"
+            android:background="@drawable/bg_pill_dark"
+            android:paddingLeft="10dp"
+            android:paddingRight="10dp" />
 
-      <Button
-          android:id="@+id/btn_disconnect"
-          android:layout_width="wrap_content"
-          android:layout_height="34dp"
-          android:layout_marginLeft="4dp"
-          android:text="断开"
-          android:textSize="12sp"
-          android:textAllCaps="false"
-          android:textColor="#FFFFFFFF"
-          android:background="@drawable/bg_pill_red"
-          android:paddingLeft="10dp"
-          android:paddingRight="10dp" />
-    </LinearLayout>
+        <Button
+            android:id="@+id/btn_audio_toggle"
+            android:layout_width="wrap_content"
+            android:layout_height="34dp"
+            android:minWidth="0dp"
+            android:layout_marginLeft="4dp"
+            android:text="🔊"
+            android:textSize="13sp"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFFFF"
+            android:background="@drawable/bg_pill_dark"
+            android:paddingLeft="10dp"
+            android:paddingRight="10dp" />
+
+        <Button
+            android:id="@+id/btn_hud_toggle"
+            android:layout_width="wrap_content"
+            android:layout_height="34dp"
+            android:minWidth="0dp"
+            android:layout_marginLeft="4dp"
+            android:text="Stats"
+            android:textSize="12sp"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFFFF"
+            android:background="@drawable/bg_pill_dark"
+            android:paddingLeft="10dp"
+            android:paddingRight="10dp" />
+
+        <Button
+            android:id="@+id/btn_disconnect"
+            android:layout_width="wrap_content"
+            android:layout_height="34dp"
+            android:minWidth="0dp"
+            android:layout_marginLeft="4dp"
+            android:text="Disconnect"
+            android:textSize="12sp"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFFFF"
+            android:background="@drawable/bg_pill_red"
+            android:paddingLeft="10dp"
+            android:paddingRight="10dp" />
+      </LinearLayout>
+    </HorizontalScrollView>
   </LinearLayout>
 
   <!-- Bottom extra keys bar -->
@@ -179,89 +211,97 @@
       <LinearLayout
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
-          android:orientation="vertical"
-          android:background="@drawable/bg_card_dark"
-          android:padding="20dp">
-
-        <TextView
-            android:id="@+id/connect_status"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textSize="15sp"
-            android:textColor="#FFFFFFFF"
-            android:paddingBottom="8dp" />
-
-        <EditText
-            android:id="@+id/input_host"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:singleLine="true"
-            android:textColor="#FFFFFFFF"
-            android:textColorHint="#A0BEC8D7" />
-
-        <EditText
-            android:id="@+id/input_port"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:singleLine="true"
-            android:inputType="number"
-            android:textColor="#FFFFFFFF"
-            android:textColorHint="#A0BEC8D7" />
-
-        <EditText
-            android:id="@+id/input_user"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:singleLine="true"
-            android:textColor="#FFFFFFFF"
-            android:textColorHint="#A0BEC8D7" />
-
-        <EditText
-            android:id="@+id/input_password"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:singleLine="true"
-            android:inputType="textPassword"
-            android:textColor="#FFFFFFFF"
-            android:textColorHint="#A0BEC8D7" />
-
-        <CheckBox
-            android:id="@+id/chk_remember_password"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="记住密码（优先使用 Android Keystore 加密）"
-            android:textSize="13sp"
-            android:textColor="#FFD0D7E2" />
+          android:gravity="center_horizontal"
+          android:orientation="vertical">
 
         <LinearLayout
+            android:id="@+id/connect_card"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:paddingTop="12dp">
+            android:orientation="vertical"
+            android:background="@drawable/bg_card_dark"
+            android:padding="20dp">
 
-          <Button
-              android:id="@+id/btn_back_list"
-              android:layout_width="0dp"
-              android:layout_height="40dp"
-              android:layout_weight="1"
-              android:text="返回列表"
-              android:textSize="13sp"
-              android:textAllCaps="false"
+          <TextView
+              android:id="@+id/connect_status"
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"
+              android:textSize="15sp"
               android:textColor="#FFFFFFFF"
-              android:background="@drawable/bg_pill_dark" />
+              android:paddingBottom="8dp" />
 
-          <Button
-              android:id="@+id/btn_connect"
-              android:layout_width="0dp"
-              android:layout_height="40dp"
-              android:layout_weight="2"
-              android:layout_marginLeft="10dp"
-              android:text="连接桌面"
-              android:textSize="13sp"
-              android:textAllCaps="false"
+          <EditText
+              android:id="@+id/input_host"
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"
+              android:singleLine="true"
               android:textColor="#FFFFFFFF"
-              android:background="@drawable/bg_pill_blue" />
+              android:textColorHint="#A0BEC8D7" />
+
+          <EditText
+              android:id="@+id/input_port"
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"
+              android:singleLine="true"
+              android:inputType="number"
+              android:textColor="#FFFFFFFF"
+              android:textColorHint="#A0BEC8D7" />
+
+          <EditText
+              android:id="@+id/input_user"
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"
+              android:singleLine="true"
+              android:textColor="#FFFFFFFF"
+              android:textColorHint="#A0BEC8D7" />
+
+          <EditText
+              android:id="@+id/input_password"
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"
+              android:singleLine="true"
+              android:inputType="textPassword"
+              android:textColor="#FFFFFFFF"
+              android:textColorHint="#A0BEC8D7" />
+
+          <CheckBox
+              android:id="@+id/chk_remember_password"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:layout_marginTop="4dp"
+              android:text="Remember password"
+              android:textSize="13sp"
+              android:textColor="#FFD0D7E2" />
+
+          <LinearLayout
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"
+              android:orientation="horizontal"
+              android:paddingTop="12dp">
+
+            <Button
+                android:id="@+id/btn_back_list"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="1"
+                android:text="Back"
+                android:textSize="13sp"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFFFF"
+                android:background="@drawable/bg_pill_dark" />
+
+            <Button
+                android:id="@+id/btn_connect"
+                android:layout_width="0dp"
+                android:layout_height="40dp"
+                android:layout_weight="2"
+                android:layout_marginLeft="10dp"
+                android:text="Connect"
+                android:textSize="13sp"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFFFF"
+                android:background="@drawable/bg_pill_blue" />
+          </LinearLayout>
         </LinearLayout>
       </LinearLayout>
     </ScrollView>

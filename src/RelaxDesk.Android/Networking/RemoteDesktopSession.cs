@@ -137,7 +137,7 @@ internal sealed class RemoteDesktopSession : IDisposable
             throw new AuthenticationException("Invalid host or port.");
 
         ct.ThrowIfCancellationRequested();
-        StatusChanged?.Invoke("正在建立 TLS 连接并等待被控端批准…");
+        StatusChanged?.Invoke(AndroidStrings.Get("status_connecting_tls"));
 
         using var client = new SessionClient
         {
@@ -153,13 +153,13 @@ internal sealed class RemoteDesktopSession : IDisposable
             global::Android.Util.Log.Info("RelaxDesk", "connect_step=" + step);
             StatusChanged?.Invoke(step switch
             {
-                "control-tcp" => "正在连接被控端…",
-                "control-tls" => "正在建立加密连接…",
-                "certificate-confirmation" => "请核对被控端证书指纹…",
-                "device-key" or "device-challenge" or "device-proof" => "正在验证设备身份…",
-                "password-request" => "正在验证登录信息…",
-                "host-approval" => "等待被控端本机批准；首次连接请在 Windows 被控端允许此设备。",
-                _ => "正在建立画面与附属通道…"
+                "control-tcp" => AndroidStrings.Get("status_step_tcp"),
+                "control-tls" => AndroidStrings.Get("status_step_tls"),
+                "certificate-confirmation" => AndroidStrings.Get("status_step_cert"),
+                "device-key" or "device-challenge" or "device-proof" => AndroidStrings.Get("status_step_device"),
+                "password-request" => AndroidStrings.Get("status_step_password"),
+                "host-approval" => AndroidStrings.Get("status_step_approval"),
+                _ => AndroidStrings.Get("status_step_channels")
             });
         };
 
@@ -176,8 +176,8 @@ internal sealed class RemoteDesktopSession : IDisposable
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             { throw new TimeoutException(connectStep == "host-approval"
-                ? "等待被控端批准超时。请检查 Windows 被控端的连接请求后重试。"
-                : "连接超时，阶段：" + connectStep); }
+                ? AndroidStrings.Get("err_timeout_approval")
+                : AndroidStrings.Format("err_timeout_step", connectStep)); }
         }
 
         if (!string.IsNullOrEmpty(client.VerifiedFingerprint))
@@ -221,7 +221,7 @@ internal sealed class RemoteDesktopSession : IDisposable
             decoder.SetSurface(currentSurface);
         }
 
-        StatusChanged?.Invoke("已连接，正在接收画面…");
+        StatusChanged?.Invoke(AndroidStrings.Get("status_connected_receiving"));
 
         var controlWriteTask = RunControlWriterAsync(client.Control, activeCts.Token);
         var heartbeatTask = ControlHeartbeat.Run(token =>

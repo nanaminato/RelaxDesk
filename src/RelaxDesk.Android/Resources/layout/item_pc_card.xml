@@ -1,23 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/card_root"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:gravity="center_vertical"
     android:background="@drawable/bg_card_dark"
-    android:paddingLeft="16dp"
+    android:paddingLeft="14dp"
     android:paddingTop="14dp"
     android:paddingRight="12dp"
     android:paddingBottom="14dp"
     android:layout_marginBottom="10dp">
 
   <TextView
-      android:layout_width="46dp"
-      android:layout_height="46dp"
-      android:layout_marginRight="14dp"
+      android:id="@+id/card_pc_badge"
+      android:layout_width="44dp"
+      android:layout_height="44dp"
+      android:layout_marginRight="12dp"
       android:gravity="center"
       android:text="PC"
-      android:textSize="14sp"
+      android:textSize="13sp"
       android:textStyle="bold"
       android:textColor="#FFFFFFFF"
       android:background="@drawable/bg_pill_blue" />
@@ -26,12 +28,15 @@
       android:layout_width="0dp"
       android:layout_height="wrap_content"
       android:layout_weight="1"
+      android:layout_marginRight="8dp"
       android:orientation="vertical">
 
     <TextView
         android:id="@+id/card_pc_name"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:maxLines="1"
+        android:ellipsize="end"
         android:textSize="16sp"
         android:textStyle="bold"
         android:textColor="#FFF2F4F8" />
@@ -40,6 +45,8 @@
         android:id="@+id/card_pc_detail"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:maxLines="1"
+        android:ellipsize="end"
         android:textSize="13sp"
         android:textColor="#FFA0AAB9" />
   </LinearLayout>
@@ -48,11 +55,14 @@
       android:id="@+id/card_btn_edit"
       android:layout_width="wrap_content"
       android:layout_height="36dp"
-      android:text="编辑"
+      android:minWidth="0dp"
+      android:maxLines="1"
+      android:ellipsize="end"
+      android:text="Edit"
       android:textSize="13sp"
       android:textAllCaps="false"
       android:textColor="#FFFFFFFF"
       android:background="@drawable/bg_pill_dark"
-      android:paddingLeft="14dp"
-      android:paddingRight="14dp" />
+      android:paddingLeft="12dp"
+      android:paddingRight="12dp" />
 </LinearLayout>

@@ -1,5 +1,6 @@
 using Android.App;
 using Android.Content.PM;
+using Android.Content.Res;
 using Android.Graphics;
 using Android.Graphics.Drawables;
 using Android.OS;
@@ -9,6 +10,7 @@ using RelaxDesk.Core;
 using RelaxDesk.Mobile.Media;
 using System.Security.Authentication;
 using CoreRemoteInput = RelaxDesk.Core.RemoteInput;
+using Orientation = Android.Widget.Orientation;
 using Resource = RelaxDesk.Android.Resource;
 
 namespace RelaxDesk.Mobile;
@@ -21,7 +23,7 @@ namespace RelaxDesk.Mobile;
     Exported = false,
     Theme = "@android:style/Theme.DeviceDefault.NoActionBar",
     ScreenOrientation = ScreenOrientation.SensorLandscape,
-    ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.Keyboard | ConfigChanges.KeyboardHidden)]
+    ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.SmallestScreenSize | ConfigChanges.ScreenLayout | ConfigChanges.UiMode | ConfigChanges.Keyboard | ConfigChanges.KeyboardHidden)]
 public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
 {
     public const string ExtraName = "rd_name";
@@ -33,29 +35,31 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     const string LanPermission = "android.permission.ACCESS_LOCAL_NETWORK";
     const int LanRequest = 32;
 
-    static readonly Color KeyBg = Color.Rgb(46, 52, 64);
-    static readonly Color KeyActiveBg = Color.Rgb(0, 120, 212);
-
     readonly ViewportMapper viewport = new();
     RemoteDesktopSession? session;
     CancellationTokenSource? sessionCts;
     Task? sessionWorker;
 
+    View sessionRoot = null!;
     View connectOverlay = null!;
+    LinearLayout connectCard = null!;
     FrameLayout stage = null!;
     SurfaceView videoSurface = null!;
     RemoteCursorView cursorView = null!;
     TextView statusText = null!;
     TextView hudText = null!;
     LinearLayout sessionPill = null!;
+    HorizontalScrollView pillScroll = null!;
     LinearLayout pillButtonsContainer = null!;
     HorizontalScrollView extraKeysBar = null!;
     EditText hostInput = null!, portInput = null!, userInput = null!, passInput = null!;
     CheckBox rememberPassCheck = null!;
     string savedFingerprint = "";
-    Button connectBtn = null!, backListBtn = null!, modeBtn = null!, collapseBtn = null!;
-    Button keysToggleBtn = null!, audioToggleBtn = null!, hudToggleBtn = null!, disconnectBtn = null!;
-    Button ctrlBtn = null!, altBtn = null!, shiftBtn = null!, winBtn = null!;
+    Button connectBtn = null!, backListBtn = null!, videoBtn = null!, modeBtn = null!, collapseBtn = null!;
+    Button keysToggleBtn = null!, resetZoomBtn = null!, audioToggleBtn = null!, hudToggleBtn = null!, disconnectBtn = null!;
+    Button ctrlBtn = null!, altBtn = null!, shiftBtn = null!, winBtn = null!, sendTextBtn = null!;
+    readonly List<Button> extraKeyButtons = [];
+    int insetTop, insetBottom, insetLeft, insetRight;
 
     AndroidVideoPreferences videoPreferences = new();
     Surface? activeSurface;
@@ -82,6 +86,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     {
         base.OnCreate(savedInstanceState);
         AndroidStrings.Init(this);
+        AndroidTheme.Init(this);
         using (var prefs = GetSharedPreferences("relaxdesk_video_v1", global::Android.Content.FileCreationMode.Private))
         {
             try { videoPreferences = new AndroidVideoPreferences(prefs!.GetInt("fps", 30), prefs.GetInt("bitrate", 8_000_000), prefs.GetBoolean("automatic", false)).Validate(); }
@@ -93,6 +98,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         SetContentView(Resource.Layout.activity_remote_session);
         uiHandler = new Handler(Looper.MainLooper!);
 
+        sessionRoot = FindViewById<View>(Resource.Id.session_root)!;
         stage = FindViewById<FrameLayout>(Resource.Id.session_stage)!;
         videoSurface = FindViewById<SurfaceView>(Resource.Id.session_video_surface)!;
         videoSurface.Holder!.AddCallback(this);
@@ -109,15 +115,19 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
 
         hudText = FindViewById<TextView>(Resource.Id.session_hud)!;
         sessionPill = FindViewById<LinearLayout>(Resource.Id.session_pill_bar)!;
+        pillScroll = FindViewById<HorizontalScrollView>(Resource.Id.session_pill_scroll)!;
         pillButtonsContainer = FindViewById<LinearLayout>(Resource.Id.session_pill_buttons)!;
         collapseBtn = FindViewById<Button>(Resource.Id.btn_pill_collapse)!;
+        videoBtn = FindViewById<Button>(Resource.Id.btn_video)!;
         modeBtn = FindViewById<Button>(Resource.Id.btn_mode)!;
         keysToggleBtn = FindViewById<Button>(Resource.Id.btn_keys_toggle)!;
+        resetZoomBtn = FindViewById<Button>(Resource.Id.btn_reset_zoom)!;
         audioToggleBtn = FindViewById<Button>(Resource.Id.btn_audio_toggle)!;
         hudToggleBtn = FindViewById<Button>(Resource.Id.btn_hud_toggle)!;
         disconnectBtn = FindViewById<Button>(Resource.Id.btn_disconnect)!;
         extraKeysBar = FindViewById<HorizontalScrollView>(Resource.Id.extra_keys_bar)!;
         connectOverlay = FindViewById<View>(Resource.Id.connect_overlay)!;
+        connectCard = FindViewById<LinearLayout>(Resource.Id.connect_card)!;
         statusText = FindViewById<TextView>(Resource.Id.connect_status)!;
         hostInput = FindViewById<EditText>(Resource.Id.input_host)!;
         portInput = FindViewById<EditText>(Resource.Id.input_port)!;
@@ -126,6 +136,15 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         rememberPassCheck = FindViewById<CheckBox>(Resource.Id.chk_remember_password)!;
         backListBtn = FindViewById<Button>(Resource.Id.btn_back_list)!;
         connectBtn = FindViewById<Button>(Resource.Id.btn_connect)!;
+
+        sessionRoot.SetOnApplyWindowInsetsListener(new InsetsListener((top, bottom, left, right) =>
+        {
+            insetTop = top;
+            insetBottom = bottom;
+            insetLeft = left;
+            insetRight = right;
+            ApplyResponsiveLayout();
+        }));
 
         // Tap to toggle collapse/expand; when collapsed, drag horizontally to reposition.
         collapseBtn.Touch += (_, e) =>
@@ -157,7 +176,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
                     if (!pillDragging)
                     {
                         pillExpanded = !pillExpanded;
-                        pillButtonsContainer.Visibility = pillExpanded ? ViewStates.Visible : ViewStates.Gone;
+                        pillScroll.Visibility = pillExpanded ? ViewStates.Visible : ViewStates.Gone;
                         collapseBtn.Text = pillExpanded ? "‹" : "≡";
                         if (pillExpanded) sessionPill.TranslationX = 0f;
                     }
@@ -166,10 +185,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
                     break;
             }
         };
-        var videoButton = new Button(this) { Text = AndroidStrings.Get("video_settings"), TextSize = 12 };
-        videoButton.SetTextColor(Color.White);
-        pillButtonsContainer.AddView(videoButton, 0, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, Dp(34)));
-        videoButton.Click += (_, _) => ShowVideoSettings();
+        videoBtn.Click += (_, _) => ShowVideoSettings();
         audioToggleBtn.Click += (_, _) =>
         {
             audioMuted = !audioMuted;
@@ -185,7 +201,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         {
             extraKeysBar.Visibility = extraKeysBar.Visibility == ViewStates.Visible ? ViewStates.Gone : ViewStates.Visible;
         };
-        FindViewById<Button>(Resource.Id.btn_reset_zoom)!.Click += (_, _) =>
+        resetZoomBtn.Click += (_, _) =>
         {
             viewport.ResetTransform();
             UpdateVideoSurfaceLayout();
@@ -201,8 +217,17 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
 
         PopulateExtraKeysBar();
         ApplyLocalization();
+        ApplyTheme();
+        ApplyResponsiveLayout();
         PopulateFromIntentOrStore();
         EnterImmersiveMode();
+    }
+
+    public override void OnConfigurationChanged(Configuration newConfig)
+    {
+        base.OnConfigurationChanged(newConfig);
+        ApplyTheme();
+        ApplyResponsiveLayout();
     }
 
     void ApplyLocalization()
@@ -214,41 +239,132 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         rememberPassCheck.Text = AndroidStrings.Get("remember_password");
         backListBtn.Text = AndroidStrings.Get("back_list");
         connectBtn.Text = AndroidStrings.Get("connect_btn");
+        videoBtn.Text = AndroidStrings.Get("video_settings");
         modeBtn.Text = AndroidStrings.Get(touchpadMode ? "mode_touchpad" : "mode_direct");
         keysToggleBtn.Text = AndroidStrings.Get("keys_bar");
         hudToggleBtn.Text = AndroidStrings.Get("metrics");
         disconnectBtn.Text = AndroidStrings.Get("disconnect");
+        sendTextBtn.Text = AndroidStrings.Get("send_text");
         statusText.Text = AndroidStrings.Get("connect_prompt");
+    }
+
+    void ApplyTheme()
+    {
+        var p = AndroidTheme.GetPalette(this);
+        AndroidTheme.ApplyWindowChrome(this, immersiveDark: connectOverlay.Visibility != ViewStates.Visible);
+
+        connectOverlay.SetBackgroundColor(p.OverlayScrim);
+        connectCard.Background = AndroidTheme.MakeRounded(p.CardBackground, Dp(14), p.CardStroke, Dp(1));
+        statusText.SetTextColor(p.PrimaryText);
+
+        foreach (var edit in new[] { hostInput, portInput, userInput, passInput })
+        {
+            edit.SetTextColor(p.PrimaryText);
+            edit.SetHintTextColor(p.HintText);
+        }
+        rememberPassCheck.SetTextColor(p.SecondaryText);
+
+        backListBtn.SetTextColor(p.ButtonNeutralText);
+        backListBtn.Background = AndroidTheme.MakeRounded(p.ButtonNeutralBg, Dp(18));
+        connectBtn.SetTextColor(p.AccentText);
+        connectBtn.Background = AndroidTheme.MakeRounded(p.AccentBg, Dp(18));
+
+        sessionPill.Background = AndroidTheme.MakeRounded(p.SessionPillBg, Dp(22), p.SessionPillStroke, Dp(1));
+        collapseBtn.SetTextColor(p.PrimaryText);
+        foreach (var btn in new[] { videoBtn, modeBtn, keysToggleBtn, resetZoomBtn, audioToggleBtn, hudToggleBtn })
+        {
+            btn.SetTextColor(p.ButtonNeutralText);
+            btn.Background = AndroidTheme.MakeRounded(p.ButtonNeutralBg, Dp(18));
+        }
+        disconnectBtn.SetTextColor(p.DangerText);
+        disconnectBtn.Background = AndroidTheme.MakeRounded(p.DangerBg, Dp(18));
+
+        hudText.SetTextColor(p.HudText);
+        hudText.Background = AndroidTheme.MakeRounded(p.HudBg, Dp(10), p.CardStroke, Dp(1));
+
+        extraKeysBar.SetBackgroundColor(p.ExtraKeysBarBg);
+        foreach (var btn in extraKeyButtons)
+        {
+            bool active = (ReferenceEquals(btn, ctrlBtn) && stickyCtrl)
+                || (ReferenceEquals(btn, altBtn) && stickyAlt)
+                || (ReferenceEquals(btn, shiftBtn) && stickyShift)
+                || (ReferenceEquals(btn, winBtn) && stickyWin)
+                || ReferenceEquals(btn, sendTextBtn);
+            btn.SetTextColor(active ? p.AccentText : p.KeyText);
+            btn.Background = AndroidTheme.MakeRounded(active ? p.AccentBg : p.KeyBg, Dp(14));
+        }
+    }
+
+    void ApplyResponsiveLayout()
+    {
+        var dm = Resources!.DisplayMetrics!;
+        float density = Math.Max(1f, dm.Density);
+        int safeWidth = Math.Max(1, dm.WidthPixels - insetLeft - insetRight);
+        int safeHeight = Math.Max(1, dm.HeightPixels - insetTop - insetBottom);
+        float heightDp = safeHeight / density;
+
+        int overlayPad = Dp(heightDp < 420f ? 10 : 16);
+        connectOverlay.SetPadding(overlayPad + insetLeft, overlayPad + insetTop, overlayPad + insetRight, overlayPad + insetBottom);
+
+        int cardPad = Dp(heightDp < 420f ? 14 : 20);
+        connectCard.SetPadding(cardPad, cardPad, cardPad, cardPad);
+        int maxCardWidth = Dp(480);
+        int targetCardWidth = safeWidth - overlayPad * 2 > maxCardWidth ? maxCardWidth : ViewGroup.LayoutParams.MatchParent;
+        var cardLp = connectCard.LayoutParameters ?? new LinearLayout.LayoutParams(targetCardWidth, ViewGroup.LayoutParams.WrapContent);
+        if (cardLp.Width != targetCardWidth)
+        {
+            cardLp.Width = targetCardWidth;
+            connectCard.LayoutParameters = cardLp;
+        }
+
+        if (sessionPill.LayoutParameters is FrameLayout.LayoutParams pillLp)
+        {
+            pillLp.TopMargin = Dp(8) + insetTop;
+            pillLp.LeftMargin = Dp(8) + insetLeft;
+            pillLp.RightMargin = Dp(8) + insetRight;
+            sessionPill.LayoutParameters = pillLp;
+        }
+
+        if (hudText.LayoutParameters is FrameLayout.LayoutParams hudLp)
+        {
+            hudLp.TopMargin = Dp(12) + insetTop;
+            hudLp.LeftMargin = Dp(12) + insetLeft;
+            hudText.LayoutParameters = hudLp;
+        }
+
+        extraKeysBar.SetPadding(insetLeft, 0, insetRight, insetBottom);
     }
 
     void PopulateExtraKeysBar()
     {
+        var p = AndroidTheme.GetPalette(this);
         var row = FindViewById<LinearLayout>(Resource.Id.extra_keys_row)!;
-        row.AddView(MakeKeyButton("Esc", KeyBg, () => SendTapKey(0x1B, 0x01, false)));
-        row.AddView(MakeKeyButton("Tab", KeyBg, () => SendTapKey(0x09, 0x0F, false)));
+        row.AddView(MakeKeyButton("Esc", p.KeyBg, p.KeyText, () => SendTapKey(0x1B, 0x01, false)));
+        row.AddView(MakeKeyButton("Tab", p.KeyBg, p.KeyText, () => SendTapKey(0x09, 0x0F, false)));
 
-        ctrlBtn = MakeKeyButton("Ctrl", KeyBg, () => ToggleModifier(ref stickyCtrl, ctrlBtn, 0xA2, 0x1D, false));
-        altBtn = MakeKeyButton("Alt", KeyBg, () => ToggleModifier(ref stickyAlt, altBtn, 0xA4, 0x38, false));
-        shiftBtn = MakeKeyButton("Shift", KeyBg, () => ToggleModifier(ref stickyShift, shiftBtn, 0xA0, 0x2A, false));
-        winBtn = MakeKeyButton("Win", KeyBg, () => ToggleModifier(ref stickyWin, winBtn, 0x5B, 0x5B, true));
+        ctrlBtn = MakeKeyButton("Ctrl", p.KeyBg, p.KeyText, () => ToggleModifier(ref stickyCtrl, ctrlBtn, 0xA2, 0x1D, false));
+        altBtn = MakeKeyButton("Alt", p.KeyBg, p.KeyText, () => ToggleModifier(ref stickyAlt, altBtn, 0xA4, 0x38, false));
+        shiftBtn = MakeKeyButton("Shift", p.KeyBg, p.KeyText, () => ToggleModifier(ref stickyShift, shiftBtn, 0xA0, 0x2A, false));
+        winBtn = MakeKeyButton("Win", p.KeyBg, p.KeyText, () => ToggleModifier(ref stickyWin, winBtn, 0x5B, 0x5B, true));
         row.AddView(ctrlBtn);
         row.AddView(altBtn);
         row.AddView(shiftBtn);
         row.AddView(winBtn);
 
-        row.AddView(MakeKeyButton("←", KeyBg, () => SendTapKey(0x25, 0x4B, true)));
-        row.AddView(MakeKeyButton("↑", KeyBg, () => SendTapKey(0x26, 0x48, true)));
-        row.AddView(MakeKeyButton("↓", KeyBg, () => SendTapKey(0x28, 0x50, true)));
-        row.AddView(MakeKeyButton("→", KeyBg, () => SendTapKey(0x27, 0x4D, true)));
-        row.AddView(MakeKeyButton("Del", KeyBg, () => SendTapKey(0x2E, 0x53, true)));
-        row.AddView(MakeKeyButton("Win+D", KeyBg, () =>
+        row.AddView(MakeKeyButton("←", p.KeyBg, p.KeyText, () => SendTapKey(0x25, 0x4B, true)));
+        row.AddView(MakeKeyButton("↑", p.KeyBg, p.KeyText, () => SendTapKey(0x26, 0x48, true)));
+        row.AddView(MakeKeyButton("↓", p.KeyBg, p.KeyText, () => SendTapKey(0x28, 0x50, true)));
+        row.AddView(MakeKeyButton("→", p.KeyBg, p.KeyText, () => SendTapKey(0x27, 0x4D, true)));
+        row.AddView(MakeKeyButton("Del", p.KeyBg, p.KeyText, () => SendTapKey(0x2E, 0x53, true)));
+        row.AddView(MakeKeyButton("Win+D", p.KeyBg, p.KeyText, () =>
         {
             session?.SendInput(new CoreRemoteInput("key", VirtualKey: 0x5B, ScanCode: 0x5B, Extended: true, Up: false));
             session?.SendInput(new CoreRemoteInput("key", VirtualKey: 0x44, ScanCode: 0x20, Extended: false, Up: false));
             session?.SendInput(new CoreRemoteInput("key", VirtualKey: 0x44, ScanCode: 0x20, Extended: false, Up: true));
             session?.SendInput(new CoreRemoteInput("key", VirtualKey: 0x5B, ScanCode: 0x5B, Extended: true, Up: true));
         }));
-        row.AddView(MakeKeyButton(AndroidStrings.Get("send_text"), KeyActiveBg, ShowTextInputDialog));
+        sendTextBtn = MakeKeyButton(AndroidStrings.Get("send_text"), p.AccentBg, p.AccentText, ShowTextInputDialog);
+        row.AddView(sendTextBtn);
     }
 
     void PopulateFromIntentOrStore()
@@ -301,7 +417,9 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     {
         if (session is null) return;
         state = !state;
-        btn.Background = MakeRounded(state ? KeyActiveBg : KeyBg, Dp(14));
+        var p = AndroidTheme.GetPalette(this);
+        btn.SetTextColor(state ? p.AccentText : p.KeyText);
+        btn.Background = AndroidTheme.MakeRounded(state ? p.AccentBg : p.KeyBg, Dp(14));
         session.SendInput(new CoreRemoteInput("key", VirtualKey: vk, ScanCode: scan, Extended: ext, Up: !state));
     }
 
@@ -356,7 +474,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             if (!PasswordStore.TrySaveEncrypted(this, ip, port, username, password))
             {
                 // Keystore encryption unavailable: ask user whether to save in plaintext or not save.
-                new AlertDialog.Builder(this)
+                AndroidTheme.CreateDialogBuilder(this)
                     .SetTitle(AndroidStrings.Get("enc_unavail_title"))!
                     .SetMessage(AndroidStrings.Get("enc_unavail_msg"))!
                     .SetCancelable(false)!
@@ -460,19 +578,19 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
                     cts.Token, ConfirmSessionTakeoverAsync);
             }
             catch (System.OperationCanceledException) when (cts.IsCancellationRequested) { endMessage = AndroidStrings.Get("disconnected"); }
-            catch (HostConsentRejectedException) { endMessage = "Host rejected connection."; }
-            catch (PasswordLoginRejectedException) { endMessage = "Invalid username or password."; }
+            catch (HostConsentRejectedException) { endMessage = AndroidStrings.Get("err_host_rejected"); }
+            catch (PasswordLoginRejectedException) { endMessage = AndroidStrings.Get("err_invalid_credentials"); }
             catch (HostAdmissionException ex) { endMessage = ex.Reason switch
             {
-                "admission-pending-v5" => "被控端正在建立或清理另一个会话，请稍后重试。",
-                "admission-busy-v5" => "被控端正在使用中；此设备须先在空闲时连接并获批准。",
-                "admission-rate-limited-v5" => "连接尝试过于频繁，请稍后重试。",
-                "takeover-cancel-v5" => "已取消接管。",
-                _ => "会话状态已变化，请重新连接。"
+                "admission-pending-v5" => AndroidStrings.Get("err_admission_pending"),
+                "admission-busy-v5" => AndroidStrings.Get("err_admission_busy"),
+                "admission-rate-limited-v5" => AndroidStrings.Get("err_admission_rate_limited"),
+                "takeover-cancel-v5" => AndroidStrings.Get("err_takeover_cancelled"),
+                _ => AndroidStrings.Get("err_session_state_changed")
             }; }
             catch (RemoteSessionEndedException ex) { endMessage = ex.Reason == SessionEndReason.ReplacedByViewer
-                ? "会话已被另一台设备接管。" : "远程会话已结束。"; }
-            catch (AuthenticationException) { endMessage = "TLS authentication failed."; }
+                ? AndroidStrings.Get("err_session_replaced") : AndroidStrings.Get("err_session_ended"); }
+            catch (AuthenticationException) { endMessage = AndroidStrings.Get("err_tls_auth_failed"); }
             catch (Exception ex) { endMessage = $"{ex.GetType().Name}: {ex.Message}"; }
             finally
             {
@@ -501,13 +619,17 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     }
 
     Task<bool> ConfirmSessionTakeoverAsync(CancellationToken ct) => ConfirmConnectionAsync(
-        "接管连接", "继续将断开当前控制端。是否接管这台电脑？", "接管连接", ct);
+        AndroidStrings.Get("takeover_title"),
+        AndroidStrings.Get("takeover_msg"),
+        AndroidStrings.Get("takeover_accept"), ct);
 
     Task<bool> ConfirmServerCertificateAsync(string fingerprint, CancellationToken ct)
     {
         string formatted = string.Join(":", Enumerable.Range(0, fingerprint.Length / 2).Select(i => fingerprint.Substring(i * 2, 2)));
-        return ConfirmConnectionAsync("核对主机 TLS 证书指纹",
-            $"首次连接或主机证书已变更，请核对 Windows 被控端显示的 SHA-256 指纹：\n\n{formatted}", "信任并连接", ct);
+        return ConfirmConnectionAsync(
+            AndroidStrings.Get("cert_title"),
+            $"{AndroidStrings.Get("cert_msg")}\n\n{formatted}",
+            AndroidStrings.Get("cert_trust"), ct);
     }
 
     async Task<bool> ConfirmConnectionAsync(string title, string message, string accept, CancellationToken ct)
@@ -526,7 +648,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
                 tcs.TrySetResult(false);
                 return;
             }
-            dialog = new AlertDialog.Builder(this)
+            dialog = AndroidTheme.CreateDialogBuilder(this)
                 .SetTitle(title)!
                 .SetMessage(message)!
                 .SetCancelable(false)!
@@ -568,7 +690,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         layout.AddView(new TextView(this) { Text = AndroidStrings.Get("video_tip") });
         var scroll = new ScrollView(this);
         scroll.AddView(layout);
-        new AlertDialog.Builder(this)!.SetTitle(AndroidStrings.Get("video_settings"))!
+        AndroidTheme.CreateDialogBuilder(this)!.SetTitle(AndroidStrings.Get("video_settings"))!
             .SetView(scroll)!
             .SetNegativeButton(AndroidStrings.Get("cancel"), (_, _) => { })!
             .SetPositiveButton(AndroidStrings.Get("video_apply"), (_, _) =>
@@ -765,7 +887,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     {
         if (session is null) return;
         var input = new EditText(this) { Hint = AndroidStrings.Get("text_hint") };
-        new AlertDialog.Builder(this)
+        AndroidTheme.CreateDialogBuilder(this)
             .SetTitle(AndroidStrings.Get("send_text"))!
             .SetView(input)!
             .SetPositiveButton(AndroidStrings.Get("send"), (_, _) =>
@@ -778,32 +900,38 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             .Show();
     }
 
-    Button MakeKeyButton(string title, Color bg, Action onClick)
+    Button MakeKeyButton(string title, Color bg, Color fg, Action onClick)
     {
         var btn = new Button(this) { Text = title, TextSize = 12f };
-        btn.SetTextColor(Color.White);
+        btn.SetTextColor(fg);
         btn.SetAllCaps(false);
         btn.SetPadding(Dp(12), Dp(6), Dp(12), Dp(6));
         btn.SetMinWidth(Dp(40));
         btn.SetMinHeight(Dp(34));
-        btn.Background = MakeRounded(bg, Dp(14));
+        btn.Background = AndroidTheme.MakeRounded(bg, Dp(14));
         var lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent);
         lp.LeftMargin = Dp(4);
         lp.RightMargin = Dp(4);
         btn.LayoutParameters = lp;
         btn.Click += (_, _) => onClick();
+        extraKeyButtons.Add(btn);
         return btn;
     }
 
-    static GradientDrawable MakeRounded(Color color, float radius)
-    {
-        var d = new GradientDrawable();
-        d.SetColor(color);
-        d.SetCornerRadius(radius);
-        return d;
-    }
-
     int Dp(int dp) => (int)Math.Round(dp * Resources!.DisplayMetrics!.Density);
+
+    sealed class InsetsListener(Action<int, int, int, int> onInsets) : Java.Lang.Object, View.IOnApplyWindowInsetsListener
+    {
+        public WindowInsets OnApplyWindowInsets(View v, WindowInsets insets)
+        {
+            if (OperatingSystem.IsAndroidVersionAtLeast(30))
+            {
+                var bars = insets.GetInsets(WindowInsets.Type.SystemBars() | WindowInsets.Type.DisplayCutout());
+                onInsets(bars.Top, bars.Bottom, bars.Left, bars.Right);
+            }
+            return insets;
+        }
+    }
 
     protected override void OnStart() { base.OnStart(); foreground = true; EnterImmersiveMode(); }
 
@@ -825,7 +953,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         base.OnRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode != LanRequest || !requestingPermission) return;
         requestingPermission = false;
-        statusText.Text = HasLanPermission() ? AndroidStrings.Get("connect_prompt") : "LAN permission denied.";
+        statusText.Text = HasLanPermission() ? AndroidStrings.Get("connect_prompt") : AndroidStrings.Get("err_lan_permission_denied");
     }
 
     public void SurfaceCreated(ISurfaceHolder holder) { activeSurface = holder.Surface; session?.AttachSurface(activeSurface); }

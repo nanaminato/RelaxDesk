@@ -75,6 +75,19 @@ internal static class AndroidStrings
         return key;
     }
 
+    public static string Format(string key, params object[] args)
+    {
+        string template = Get(key);
+        try
+        {
+            return string.Format(template, args);
+        }
+        catch (FormatException)
+        {
+            return template;
+        }
+    }
+
     static bool IsSupported(string code) =>
         SupportedLanguages.Any(l => string.Equals(l.Code, code, StringComparison.OrdinalIgnoreCase));
 
