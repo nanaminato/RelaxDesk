@@ -1,6 +1,6 @@
 # 服务输入修复与验证（2026-11-28）
 
-本次将已安装 broker 接入真实连接的输入通道。界面只在明确选择系统服务时向 Host 传递服务输入设置；密码、设备身份与本机批准仍先于辅助进程启动。broker 只允许已授权用户、活动会话及受保护安装路径，辅助进程不监听网络。Host 验证服务身份，再验证辅助进程 PID、路径与 SYSTEM 管道身份；普通进程不能冒充辅助进程。服务丢失、输入进程退出或 Windows 会话失效时结束连接，不静默改用普通输入。
+本次将已安装 broker 接入真实连接的输入通道。界面只在明确选择系统服务时向 Host 传递服务输入设置；密码、设备身份与本机批准仍先于辅助进程启动。broker 只允许已授权用户、活动会话及受保护安装路径，辅助进程不监听网络。Host 验证 SCM 服务身份，再验证服务返回的辅助进程 PID、内核报告的管道会话与 SYSTEM 管道身份；受保护的程序路径由 broker 校验。普通用户不能查询 SYSTEM 进程的令牌/进程会话，客户端不能用此类访问检查代替管道身份校验；普通进程不能冒充辅助进程。服务丢失、输入进程退出或 Windows 会话失效时结束连接，不静默改用普通输入。
 
 Server 排查中确认了一个可复现的状态缺陷：释放已按下的键失败后，清理屏障会直接丢弃随后的鼠标移动。这会妨碍用户移开指针退出受限制窗口。现允许该状态下只尝试位置移动；新的按键/鼠标按下仍需先完成释放。回归测试验证失败释放、指针移动、恢复释放与后续点击的顺序，不重放原有部分输入。
 
@@ -16,10 +16,25 @@ Server 排查中确认了一个可复现的状态缺陷：释放已按下的键�
 - WPF 服务协调：28 项通过，包含服务停止/崩溃、重新连接需新批准与无原生资源泄漏。该测试使用控制台 broker 与合成视频。
 - Windows Server 2022（10.0.20348）实际输入：普通权限进程向两个专用普通窗口往返切换 12 次，每个窗口均收到 6 次鼠标按下/释放和 6 次 F8 按下/释放。使用 `--physical-input-switch-probe ordinary`。
 
+- 同一 Server 上实际更新 SCM 服务为修复版本（LocalSystem、手动启动、原授权用户不变），运行 `--physical-input-switch-probe service`：12 次普通窗口切换通过，真实 SYSTEM 进程完成鼠标/F8 注入，正常结束收到释放确认，辅助进程退出。
+- 实际提升独立目标窗口至高完整性（0x3000），协调进程保持普通完整性（0x2000），经真实 SCM/SYSTEM 输入通道在普通/管理员窗口之间切换 12 次：每个窗口均收到 6 次鼠标按下/释放和 6 次 F8 按下/释放。管理员目标通过测试专用 F9 关闭，输入辅助进程退出。
+- 实测发现并修复旧客户端只接受 LocalService 而拒绝已安装 LocalSystem 服务的账户检查。仍校验 SCM 的 PID、Session 0、服务类型及运行状态，仍拒绝 NetworkService/任意服务进程。
+
 ## 仍需目标机验证
 
-真实 SCM 更新后需再执行 `--physical-input-switch-probe service`，验证 SYSTEM 辅助进程的启动、相同会话、双向 IPC 身份、真实注入及清理。须使用新的主机包在服务设置中“更新/修复”，仅更新应用不会替换旧服务。
+须使用新的主机包在服务设置中“更新/修复”，仅更新应用不会替换旧服务。上述本机 Server 验收通过不等于真实 Windows Home 双机、所有 Server 配置与远程 Viewer 全链路已验收。
 
 在 Windows Home 与受影响 Server 上，通过真实 Viewer 执行：普通窗口 A → 管理员窗口 B → 任务栏 → 普通窗口 A；键盘、鼠标、拖动和断开后释放分别核对。可用 Viewer 的 `--elevated-key-probe`、`--elevated-mouse-probe` 创建显式提升的验收目标。
 
 UAC 安全桌面视频仍未实现；普通 Host 暂停画面与输入，返回 Default 后恢复。此修复不代表远程 UAC 确认、锁屏登录或重启后自动共享已支持。无新的 FPS、input-to-photon 或 MSTSC 对照测量。
+
+## 重复高权限窗口验收
+
+先在目标机以管理员运行验收目标（60 秒自动退出），随后以普通用户启动驱动。将下面输出文件替换为尚不存在的绝对路径：
+
+```powershell
+HostUi/RelaxDesk.HostShell.exe --physical-input-elevated-target C:/Temp/relaxdesk-high-target.json
+HostUi/RelaxDesk.HostShell.exe --physical-input-elevated-probe C:/Temp/relaxdesk-high-target.json C:/Temp/relaxdesk-high-result.json
+```
+
+驱动要求真实服务已更新，比较普通窗口及高权限窗口的事件计数。它只向专用目标发送点击、F8 与关闭专用目标的 F9，不是完整的 Viewer/LAN 验收。

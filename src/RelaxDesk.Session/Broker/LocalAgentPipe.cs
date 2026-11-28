@@ -102,6 +102,25 @@ public static class LocalAgentPipe
     {
         Check(GetNamedPipeClientProcessId(pipe.SafePipeHandle, out uint pid));
         Check(GetNamedPipeClientSessionId(pipe.SafePipeHandle, out uint session));
+        if (systemWorker)
+        {
+            // Windows denies an ordinary process OpenProcess/ProcessIdToSessionId
+            // on a SYSTEM process. Use kernel-reported pipe PID/session, the PID
+            // supplied by the authenticated SCM broker, and the pipe token instead.
+            // The broker, not the ordinary coordinator, verifies the protected image.
+            if (expectedPid is null or <= 0 || expectedImage is null || pid != (uint)expectedPid || session == 0 ||
+                !ProcessIdToSessionId((uint)Environment.ProcessId, out uint ownSession) ||
+                session != ownSession || !SessionActive(session))
+                throw new SecurityException("Service input pipe PID/session does not match the authenticated broker launch");
+            pipe.RunAsClient(() =>
+            {
+                using var identity = WindowsIdentity.GetCurrent(true);
+                if (identity?.User?.IsWellKnown(WellKnownSidType.LocalSystemSid) != true ||
+                    CoordinatorIntegrity(identity.AccessToken) != 0x4000)
+                    throw new SecurityException("Service input worker identity mismatch");
+            });
+            return;
+        }
         if (expectedPid is null && (expectedImage is null || elevatedOwner is null)) throw new SecurityException("Scheduled worker identity must be pinned");
         RequirePeer(pid, session, expectedPid ?? checked((int)pid));
         if (expectedImage is null) return;
@@ -112,28 +131,13 @@ public static class LocalAgentPipe
         Check(QueryFullProcessImageName(process, 0, image, ref length));
         if (!image.AsSpan(0, checked((int)length)).Equals(expectedImage.AsSpan(), StringComparison.OrdinalIgnoreCase))
             throw new SecurityException("Administrator input worker image mismatch");
-        if (systemWorker)
-        {
-            // Authenticate the pipe security context rather than opening a SYSTEM
-            // process token, which an ordinary coordinator is not entitled to query.
-            pipe.RunAsClient(() =>
-            {
-                using var identity = WindowsIdentity.GetCurrent(true);
-                if (identity?.User?.IsWellKnown(WellKnownSidType.LocalSystemSid) != true ||
-                    CoordinatorIntegrity(identity.AccessToken) != 0x4000)
-                    throw new SecurityException("Service input worker identity mismatch");
-            });
-            return;
-        }
         if (elevatedOwner is null) return;
         Check(OpenProcessToken(process, 8, out var token));
         using (token)
         using (var identity = new WindowsIdentity(token.DangerousGetHandle()))
         {
             Check(GetTokenInformation(token, 20, out uint elevated, sizeof(uint), out uint size));
-            bool ownerMatches = systemWorker
-                ? identity.User?.IsWellKnown(WellKnownSidType.LocalSystemSid) == true && CoordinatorIntegrity(token) == 0x4000
-                : identity.User?.Value == CanonicalUser(elevatedOwner!);
+            bool ownerMatches = identity.User?.Value == CanonicalUser(elevatedOwner!);
             if (!ownerMatches || size != sizeof(uint) || elevated != 1 || CoordinatorIntegrity(token) < 0x3000)
                 throw new SecurityException("Scheduled worker owner or integrity mismatch");
         }
@@ -141,11 +145,14 @@ public static class LocalAgentPipe
 
     static void RequirePeer(uint pid, uint session, int expectedPid)
     {
-        if (expectedPid <= 0 || pid != (uint)expectedPid ||
-            !ProcessIdToSessionId((uint)Environment.ProcessId, out uint ownSession) ||
-            !ProcessIdToSessionId(pid, out uint peerSession) ||
-            session != ownSession || session != peerSession || !SessionActive(session))
-            throw new SecurityException("Administrator input pipe process or Windows session mismatch");
+        bool ownKnown = ProcessIdToSessionId((uint)Environment.ProcessId, out uint ownSession);
+        int ownError = ownKnown ? 0 : Marshal.GetLastWin32Error();
+        bool peerKnown = ProcessIdToSessionId(pid, out uint peerSession);
+        int peerError = peerKnown ? 0 : Marshal.GetLastWin32Error();
+        bool active = SessionActive(session);
+        if (expectedPid <= 0 || pid != (uint)expectedPid || !ownKnown || !peerKnown ||
+            session != ownSession || session != peerSession || !active)
+            throw new SecurityException($"Input pipe identity/session mismatch: pid={pid} expected_pid={expectedPid} pipe_session={session} own_session={ownSession} peer_session={peerSession} own_error={ownError} peer_error={peerError} active={active}");
     }
 
     public static string SecurityDescriptor(string user,string server)

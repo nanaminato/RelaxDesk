@@ -8,7 +8,9 @@ public sealed class App:Application
     {
         if(args is ["--version"]){Console.WriteLine(BuildIdentity.Version);return;}
         var app=new App();
-        if(args is ["--physical-input-switch-probe",var inputMode,var inputOutput])PhysicalInputSwitchVerification.Run(app,inputMode,inputOutput);
+        if(args is ["--physical-input-elevated-target",var elevatedState])PhysicalInputSwitchVerification.RunElevatedTarget(app,elevatedState);
+        else if(args is ["--physical-input-elevated-probe",var targetState,var elevatedOutput])PhysicalInputSwitchVerification.RunElevated(app,targetState,elevatedOutput);
+        else if(args is ["--physical-input-switch-probe",var inputMode,var inputOutput])PhysicalInputSwitchVerification.Run(app,inputMode,inputOutput);
         else if(args is ["--password-login-contracts",var loginHost,var loginOutput])HostWindow.VerifyPasswordLogin(app,loginHost,loginOutput);
         else if(args is ["--localization-contracts",var languageOutput])HostWindow.VerifyLocalization(app,languageOutput);
         else if(args is ["--layout-contracts",var layoutOutput])HostWindow.VerifyLayout(app,layoutOutput);

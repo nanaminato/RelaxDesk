@@ -30,7 +30,8 @@ public static class ServiceIdentity
                 {
                     if(!QueryServiceConfig(service,memory,bytes,out _))throw new Win32Exception(Marshal.GetLastWin32Error());
                     var config=Marshal.PtrToStructure<Config>(memory);
-                    if(config.Type!=16||!string.Equals(Marshal.PtrToStringUni(config.Account),@"NT AUTHORITY\LocalService",StringComparison.OrdinalIgnoreCase))throw new SecurityException("Broker must use a dedicated LocalService process");
+                    if(config.Type!=16||!MachineServiceSetup.IsAllowedServiceAccount(Marshal.PtrToStringUni(config.Account) ?? ""))
+                        throw new SecurityException("Broker must use the dedicated LocalSystem or legacy LocalService process");
                 }
                 finally{Marshal.FreeHGlobal(memory);}
             }
