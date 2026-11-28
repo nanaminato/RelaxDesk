@@ -15,9 +15,9 @@
 
 ## 本轮复核结论
 
-统计缺项与亚 Mbps 文件 payload 预算已修复，区域补偿仅为内存原型，尚未接入实际会话。阶段退出条件均不能由契约测试替代；首轮专项与历史失败见[2026-11-27 复核证据](../../benchmarks/2026-11-27-accounting-pacing-validation.md)。以下历史落地说明不代表物理验收完成。
+统计缺项与亚 Mbps 文件 payload 预算已修复，区域补偿仅为内存原型，尚未接入实际会话。阶段退出条件均不能由契约测试替代；首轮专项与历史失败见2026-11-27 复核证据。以下历史落地说明不代表物理验收完成。
 
-`SessionAccessSmoke` 及后续完整自动回归已修复；所列自动回归配置最终退出 0。详见[会话回归记录](../../benchmarks/2026-11-27-session-access-regression.md)，其中保留旧夹具失败、复测及明确的跳过项；实机退出条件仍开放。
+`SessionAccessSmoke` 及后续完整自动回归已修复；所列自动回归配置最终退出 0。详见会话回归记录，其中保留旧夹具失败、复测及明确的跳过项；实机退出条件仍开放。
 
 ## 2026-11-27 代码审计与增量落地状态
 
@@ -37,3 +37,5 @@
 - **P1/P2 媒体、会话与办公体验（`04-media.md`、`05-session.md`、`06-product.md`）**：
   - 已在 `AudioProtocol.IsSilent` 与 `AudioStreamSession` 中实现系统音频静音流量抑制：连续静音超过 2 帧后停止无意义发送（记入 `suppressed_silent_frames`），并在声音恢复时自动标记 `Discontinuity = true` 保证播放时钟对齐。
   - 已核实现有同设备 NV12→D3D11 SwapChain、HDR WGC FP16→SDR、Brotli 指针形状缓存压缩、v5 单控制者会话准入/抢占/防爆破以及多屏/剪贴板/音频/文件恢复契约测试全部通过；物理多厂商 GPU 与跨网实机验收保持明确标记。
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../../benchmarks/README.md).

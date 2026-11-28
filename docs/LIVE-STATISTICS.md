@@ -49,10 +49,10 @@ Detailed sampling runs approximately once per second while the window is open. P
 
 `PipelineMetrics` now supplies typed snapshots to both the existing end-of-session report and the live UI. It bounds stage names/count to 32 and samples to 4,096 per stage. Invalid/nonfinite/negative samples or new stages above the limit are ignored and counted, rather than failing the remote session. FIFO sample insertion does not shift the retained history; copying is under the measurement lock and sorting is outside it. Session totals remain separate from the bounded timing sample window.
 
-The text report preserves its existing keys for script compatibility and adds working set/ignored-sample counts. Historical `wire_mbps` is the application media rate described above, not measured NIC bandwidth. No physical end-to-end, Present visibility, GPU-utilization or MSTSC responsiveness result is inferred from this panel. [Validation](../benchmarks/2026-11-24-live-statistics-validation.md) records synthetic/TLS/WPF and rendered evidence; physical Home/driver/input-to-photon work remains pending. No package was produced.
+The text report preserves its existing keys for script compatibility and adds working set/ignored-sample counts. Historical `wire_mbps` is the application media rate described above, not measured NIC bandwidth. No physical end-to-end, Present visibility, GPU-utilization or MSTSC responsiveness result is inferred from this panel. Validation records synthetic/TLS/WPF and rendered evidence; physical Home/driver/input-to-photon work remains pending. No package was produced.
 
 Connection-bar drag, pin, dwell and full-monitor coverage were subsequently
-validated in [the full-screen follow-up](../benchmarks/2026-11-26-fullscreen-bar-validation.md).
+validated in the full-screen follow-up.
 
 ## End-of-attempt channel accounting
 
@@ -72,3 +72,5 @@ fragments, recovery probes, datagram heartbeats and QUIC retransmission. These
 are not NIC counters. Historical `file_tx_bytes`, `file_rx_bytes` and
 `audio_rx_bytes` remain payload-only fields; do not sum them with channel totals.
 The live media-rate display retains its existing video-only meaning.
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).

@@ -1,1 +1,0 @@
-PASS real HWND toolbar: full-client desktop, timed hide, top-edge reveal, above HwndHost hit-test, 15 shortcut menu actions, disabled secure attention, offline shortcut denial, fullscreen/window actions, minimize/restore, disconnect and disposal; simulated pointer positions, synthetic preview, no remote input; physical hover/DPI pending

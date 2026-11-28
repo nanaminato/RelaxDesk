@@ -1,2 +1,0 @@
-FAIL HWND lifecycle: System.InvalidOperationException: HwndHost WM_WINDOWPOSCHANGING layout contract bypassed
-   at RelaxDesk.Viewer.HwndLifecycleVerification.<>c__DisplayClass6_0.<<Run>b__0>d.MoveNext() in E:\RelaxDesk\src\RelaxDesk.Viewer\HwndLifecycleVerification.cs:line 30

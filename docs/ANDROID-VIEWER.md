@@ -2,7 +2,7 @@
 
 ## 接管退出、触控板和性能后续修复
 
-已修复媒体 EOF 掩盖接管原因、触控板抬手后被无效/延迟元数据拉回原点，补充确定性状态及真实 TLS 回归。相同格式的恢复关键帧可复用解码器、输出查询不再固定阻塞；显示/视频代次变化仍清理旧输出。已修正 HUD 的 FPS、队列深度和丢帧统计，并按 PTS 关联提交到解码输出时间。参见 [修复与真机性能记录](../benchmarks/2026-11-28-android-pointer-termination-performance.md)。约 21.5 FPS 的所取短窗口中客户端输出跟上收流，但不代表性能目标完成，也没有证据把低响应直接归因为 .NET for Android；Host/网络及发布配置仍需测量。
+已修复媒体 EOF 掩盖接管原因、触控板抬手后被无效/延迟元数据拉回原点，补充确定性状态及真实 TLS 回归。相同格式的恢复关键帧可复用解码器、输出查询不再固定阻塞；显示/视频代次变化仍清理旧输出。已修正 HUD 的 FPS、队列深度和丢帧统计，并按 PTS 关联提交到解码输出时间。参见 修复与真机性能记录。约 21.5 FPS 的所取短窗口中客户端输出跟上收流，但不代表性能目标完成，也没有证据把低响应直接归因为 .NET for Android；Host/网络及发布配置仍需测量。
 
 ## 2026-11-28 连续会话修复
 
@@ -14,7 +14,7 @@ Android 连续会话现已接入显式接管确认。已受信任设备主动连
 
 连续会话发送显示配置确认，并仅在 MediaCodec 向 Surface 提交输出后发送一次对应代次的 `display-ready-v2`、启用输入。拓扑变化使用 `display-topology-v2`，屏幕不可用或尚未提交时不启用新代次输入。控制写线程统一分配线上递增序号，避免心跳、解码回调和触摸线程排队顺序不同导致防重放拒绝。Surface 在握手期间的创建/销毁会保留至解码器初始化；解码输出独立于新网络帧轮询，避免静止桌面的最后一帧留在 MediaCodec。
 
-验证记录见 [Android 会话修复验证](../benchmarks/2026-11-28-android-session-fixes.md)。后续用户在实际 Host 上确认“能登录了，也能看到画面”；此后代理又完成 [双向实际 LAN 接管验证](../benchmarks/2026-11-28-android-windows-takeover.md)，覆盖新端实际画面和基本鼠标/键盘输入。最初 `admission-pending-v5` 的独立根因未从实际 Host 日志确认；接管时按住键鼠释放、竞争/撤销竞态及性能仍未验收，Android 接管退出原因偶发呈现为 EOF 的问题仍待修复。
+验证记录见 Android 会话修复验证。后续用户在实际 Host 上确认“能登录了，也能看到画面”；此后代理又完成 双向实际 LAN 接管验证，覆盖新端实际画面和基本鼠标/键盘输入。最初 `admission-pending-v5` 的独立根因未从实际 Host 日志确认；接管时按住键鼠释放、竞争/撤销竞态及性能仍未验收，Android 接管退出原因偶发呈现为 EOF 的问题仍待修复。
 
 范围仅是 Android 访问 Windows Home / Pro / Server 的交互桌面。先验证手机处理临时办公任务（看状态、点选、输入短文字）；不做 Android 被控、云账号、中继、Windows 安全桌面或跨平台 UI。开发基线：`8f7e10e279999d496752c63a50d5bbcb30b28ed7`。Windows 与协议源保持原样。
 
@@ -196,10 +196,12 @@ dotnet build src/RelaxDesk.Android/RelaxDesk.Android.csproj -c Release -p:SkipPr
 
 新增契约覆盖手动参数、等待首帧、快速修改合并、确认/呈现两种顺序、冷却、拒绝意外代际/确认及越界值、自动降档/恢复、手动不自适应、静止画面不升档。真机待验证：连接 Windows Host 后从 30 FPS / 8 Mbps 切至 60 FPS / 12 Mbps，连续修改、切换自动开关、旋转/Surface 重建、断线重连后恢复偏好；用受控带宽/延迟验证降档和恢复，并记录两端日志、实际帧率与画质。此次不新增物理延迟或性能结论。
 
-后续已完成 SM-X510 Release 安装、真实 Windows Host 手动帧率/码率切换、受控延迟下自动降档与恢复、关闭自动及跨进程保存恢复验证，详见[真机验证记录](../benchmarks/2026-11-28-android-video-settings-device.md)。高档实测 57.53 FPS 接收、56.67 FPS 输出提交，存在丢帧，不宣称稳定 60 FPS。
+后续已完成 SM-X510 Release 安装、真实 Windows Host 手动帧率/码率切换、受控延迟下自动降档与恢复、关闭自动及跨进程保存恢复验证，详见真机验证记录。高档实测 57.53 FPS 接收、56.67 FPS 输出提交，存在丢帧，不宣称稳定 60 FPS。
 
 ### SM-S9380：60 FPS 到帧突发优化（2026-11-28）
 
 Android 接收队列现容纳六帧压缩视频，并在接收/出队时强制最多 50 ms 的队列驻留；过期丢弃整条依赖链并请求 IDR。诊断每五秒输出 `RelaxDeskPipeline`，包含有界阶段 P50/P95、Host 帧头时长、源/到达间隔、收到/提交/输出计数、突发与解码输入等待；`DroppedExpired` 单独统计期限丢弃。诊断不包含画面、密码或输入内容。
 
 SM-S9380 两轮相同 2560×1440、60 FPS / 12 Mbps 真实 Host 动画测试，已知丢帧比例 24.18%→1.51%、1.89%→0.80%，输出 31.48→39.09、41.43→43.21 FPS。网络明显波动，不能保证固定收益。Qualcomm 解码未观察到输入缓冲等待；Host 编码约 20 ms，当前仍不能稳定 60 FPS。详见[实测、原始数据路径与复现命令](../benchmarks/2026-11-28-s9380-60fps-drops.md)。
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).

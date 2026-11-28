@@ -1,2 +1,0 @@
-PASS WPF Host shell: real Host child/listen, explicit approval, H264 media, graceful stop, denial without capture, stop while waiting, no credential logs; synthetic loopback source only
-PASS WPF clipboard permission: default off, request checkbox, screen-only grant denies clipboard, separate opt-in negotiates feature, Host IPC revocation preserves control; isolated test clipboard only

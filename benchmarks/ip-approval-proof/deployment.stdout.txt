@@ -1,1 +1,0 @@
-{"process":"E:\\RelaxDesk\\build\\IP Approval Fresh Extraction\\RelaxDesk-0.3.0-IP-Port-win-x64\\Host\\RelaxDesk.Host.exe","runtime":"E:\\RelaxDesk\\build\\IP Approval Fresh Extraction\\RelaxDesk-0.3.0-IP-Port-win-x64\\Host\\","framework":".NET 11.0.0","version":"0.3.0-ipapproval.20261122-233720.gad43369","x64":true}

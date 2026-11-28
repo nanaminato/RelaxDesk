@@ -1,1 +1,0 @@
-FAIL render test: render/pause/resize/readback assertions

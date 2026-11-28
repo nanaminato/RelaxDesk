@@ -1,9 +1,0 @@
-PASS production Host/Viewer/TLS directory upload recovery: fresh consent/same scope, explicit continue, retained pause, byte-saving resume/hash, empty directories, cancelled job excluded, panel hide/reopen
-PASS production TLS directory download recovery: retained immutable source/local partial, prefix proof, explicit confirmation, remaining-byte transfer and full SHA-256
-PASS cancel after TLS reattachment removes retained partial and preserves screen/control
-PASS discard before confirmation forgets the remote ticket/partial, releases local source, and leaves new file access usable
-PASS revoke before resume confirmation discards pending local tasks, clears Host resume cache immediately, releases source handles, video remains connected
-PASS fresh screen-only consent drops interrupted file tasks/handles; no file channel, no automatic write, Host stop clears retained cache
-PASS scoped resume session cleanup; generated fixture=E:\RelaxDesk\build\file-resume-verification\session-e81dd4fe000342dbae03851cf95fbc51; no real desktop/input/physical LAN claim
-
-

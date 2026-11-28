@@ -1,9 +1,0 @@
-# Audio foundation validation
-
-Stable .NET 11.0.100; branch `codex/dxgi-media-pipeline`. `dotnet build RelaxDesk.sln -c Release --artifacts-path build/audio-foundation-final-artifacts -p:RelaxDeskNativePath=E:/RelaxDesk/build/native-viewport-release/Release/RelaxDesk.Native.dll` exits 0 with zero warnings/errors.
-
-71 new Core checks cover audio framing/roundtrip, malformed and truncated headers/payloads, bounds before allocation, PCM alignment, volume/mute, bounded overflow, sequence replay, timestamp regression/discontinuity and flush preserving replay state. Complete Core/TLS suite passes **1,870** checks (`build/audio-core-tests.txt`), using the prior `build/audio-core-artifacts` build; the final build changes only the device API contract runner.
-
-`dotnet build/audio-foundation-final-artifacts/bin/RelaxDesk.Smoke/release/RelaxDesk.Smoke.dll --audio-device-contracts` exits 0 outside the restricted sandbox (`build/audio-device-final.txt`). It creates an STA, opens empty WASAPI shared PCM16 render and loopback streams, verifies default endpoint identity, wrong-apartment IO/disposal refusal, mode/alignment/disposal guards and deterministic cleanup. It reads **no captured samples**, writes **no playback samples** and changes no endpoint settings. In the restricted sandbox the ordinary-session guard denies initialization and records an explicit skip (`WindowsSessionUnavailableException`); it was not bypassed. The runner skips only known unavailable/access/device/service failures; unexpected COM/programming errors fail.
-
-No Host/Viewer audio capability is enabled yet, and this checkpoint does not verify audio authentication, independent consent, transport binding, worker recovery, listening quality or A-V sync. Those are the next implementation work. Physical Home two-PC audio and final packaging remain pending. No performance comparison is claimed.

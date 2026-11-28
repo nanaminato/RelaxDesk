@@ -1,1 +1,0 @@
-DXGI create HRESULT=0x80070005 operation=DuplicateOutput primary display

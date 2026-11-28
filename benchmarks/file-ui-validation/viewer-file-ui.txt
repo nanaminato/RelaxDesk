@@ -1,2 +1,0 @@
-PASS 22 WPF file UI/queue checks: actual Host+third TLS, owned-HWND file drop and explicit upload confirmation, recursive Unicode/empty folders, both directions, all collision choices, pause/cancel/retry, hide/reopen, progress snapshots, revoke, concurrent synthetic media_frames=107; fixtures=E:\RelaxDesk\build\file-ui-verification\ui-758df9eee1dd44e8ae47a8e992a5b605; physical Explorer drag/LAN pending
-PASS active file-session cancellation: partial cleanup and local parent-handle release; owned HWND released

@@ -96,5 +96,7 @@ and [mstsc display modes](https://learn.microsoft.com/en-us/windows-server/admin
 
 ## Validation
 
-See [2026-11-26 UI validation](../benchmarks/2026-11-26-viewer-ui-validation.md).
-The follow-up full-screen fix and delivery evidence are in [full-screen validation](../benchmarks/2026-11-26-fullscreen-bar-validation.md).
+See 2026-11-26 UI validation.
+The follow-up full-screen fix and delivery evidence are in full-screen validation.
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).

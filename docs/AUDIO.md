@@ -12,7 +12,7 @@ Loopback represents the endpoint's system mix and can include other applications
 
 API references: [WASAPI loopback](https://learn.microsoft.com/en-us/windows/win32/coreaudio/loopback-recording), [shared stream initialization](https://learn.microsoft.com/en-us/windows/win32/api/audioclient/nf-audioclient-iaudioclient-initialize), [capture buffer handling](https://learn.microsoft.com/en-us/windows/win32/coreaudio/capturing-a-stream), [render buffer handling](https://learn.microsoft.com/en-us/windows/win32/coreaudio/rendering-a-stream). These establish API contracts, not hardware acceptance.
 
-See [foundation evidence](../benchmarks/2026-11-24-audio-foundation-validation.md) and [session evidence](../benchmarks/2026-11-24-audio-session-validation.md). Real sound capture/playback, physical default-device transitions, jitter/A-V sync, LAN behavior and listening quality remain unverified. No package was generated.
+See foundation evidence and session evidence. Real sound capture/playback, physical default-device transitions, jitter/A-V sync, LAN behavior and listening quality remain unverified. No package was generated.
 
 ## Use and consent
 
@@ -47,7 +47,7 @@ pin, requests audio only, and plays real remote audio for ten seconds through
 the WPF CPU/video-synchronized/real WASAPI path. It prints aggregate received
 and rendered frame counts, not credentials or samples, and disconnects. It is
 never part of unattended suites. See the
-[actual LAN playback validation](../benchmarks/2026-11-26-lan-audio-playback-validation.md).
+actual LAN playback validation.
 
 Default endpoint identity is checked every 250ms. Default changes or invalidation dispose the old endpoint and allow at most three replacements, using 100/200/300ms delays across the audio session; known temporary unavailable/service errors consume the same budget. Successful packets do not replenish it. Partial/queued samples flush after replacement. Exhaustion disables audio and requires reconnect/consent. Playback padding is capped at 40ms or the device's smaller capacity.
 
@@ -56,3 +56,5 @@ Default endpoint identity is checked every 250ms. Default changes or invalidatio
 When audio is granted, video encode timestamps use the same Host QPC origin as WASAPI's [100ns capture timestamps](https://learn.microsoft.com/en-us/windows/win32/api/audioclient/nf-audioclient-iaudiocaptureclient-getbuffer). Viewer anchors this source timeline to local video submission. It waits for the first video submission, drops samples over 150ms late and waits for samples over 50ms ahead; duplicate/older video timestamps do not reset the anchor, so static desktops keep progressing. Audio over five seconds ahead fails the optional stream. This bounds software skew/queues; submission is **not** physical Present or speaker time. Real A/V alignment, hardware latency/drift and listening quality remain unaccepted.
 
 Diagnostics contain role, packet/application-PCM-byte counts, device retries, late drops and remaining queued frames. Errors log stage/type/HRESULT, never samples, tickets or raw device IDs. Application bytes are not NIC bandwidth. The fixed PCM payload rate is calculated, not a measured LAN result.
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).

@@ -1,8 +1,0 @@
-﻿PASS 236 protocol/access/TLS integration checks
-PASS 15 native ABI/metadata/pointer contracts; no capture or input
-PASS 12 present-state contracts (no GPU/environment requirement)
-PASS production host rejects wrong token before approval/capture
-PASS production TLS wrong-pin rejection
-PASS v2 host denial exposes no media
-PASS wrong media binding ticket rejected before capture/encoding
-

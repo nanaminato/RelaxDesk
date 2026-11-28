@@ -1,2 +1,0 @@
-PASS 24 capture classification/release/WARP texture contracts; pointer-only preserves exact pixels; no Desktop Duplication or HDR physical validation
-PASS capture test resources released

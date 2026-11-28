@@ -1,7 +1,0 @@
-render_environment={"device_luid_high":0,"device_luid_low":38746,"window_output_found":1,"device_window_adapter_match":1,"window_rect":[52,52,1152,802],"child_rect":[60,297,1144,794],"monitor_rect":[0,0,2560,1440],"visible":1,"iconic":0,"cloaked":0,"dpi":96,"dwm_enabled":1,"last_present_hr":142213121}
-
-Unhandled exception. System.IO.IOException: FAIL WPF renderer=cpu-or-fallback gpu_frames=0 cpu_frames=0 full_frame_readback_bytes=0 received_frames=120 resizes=1 renderer_generations=1 keyframe_requests=0 simulated_device_losses=0 idle_repaints=0 hidden=0 occluded=120 gpu_busy=0 frames=0 elapsed_s=4.73 fps=0.00 wire_mbps=5.750 process_cpu_pct=0.46 gpu_pct=unavailable dropped=120 queue_depth=0 decode_p50_ms=0.30 decode_p95_ms=4.42 gpu_draw_submit_p50_ms=0.00 gpu_draw_submit_p95_ms=0.00 present_call_p50_ms=0.00 present_call_p95_ms=0.00 readback_p50_ms=0.00 readback_p95_ms=0.00 resources_empty=True
-
-   at WpfSmoke.Run(String hostPath, String viewerPath, String mode, Int32 frames, Boolean fixedBudget) in E:\RelaxDesk\src\RelaxDesk.Smoke\WpfSmoke.cs:line 35
-   at Program.<Main>$(String[] args) in E:\RelaxDesk\src\RelaxDesk.Smoke\Program.cs:line 9
-   at Program.<Main>(String[] args)

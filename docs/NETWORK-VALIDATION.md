@@ -18,7 +18,7 @@ The fixture has a 40-second deadline, exactly two forwarding connections and one
 
 These TCP cases verify stream delay, backpressure and interruption. Existing tests also cover open silent sockets, unread media deadlines, pinned reconnect success/denial/identity change/exhaustion, file-data failure isolation and optional audio/clipboard failures.
 
-Recorded results: [2026-11-24 validation](../benchmarks/2026-11-24-network-impairment-validation.md).
+Recorded results: 2026-11-24 validation.
 
 ## QUIC DATAGRAM impairment
 
@@ -41,3 +41,5 @@ For a multi-round loopback run outside the default suite, use
 The optional soak command accepts two to eight rounds. Each round downloads
 about 5 MiB on the same session, checks SHA-256 and requires UDP decode, TLS
 audio and TLS control to advance before the round completes.
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).

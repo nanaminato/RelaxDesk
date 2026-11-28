@@ -8,7 +8,7 @@ After existing bounded GPU recovery/fallback is exhausted, decode/render/UI fail
 
 The first-failure signal wakes the coordinator before worker cleanup completes. A media reader closes its own stream instead of canceling the control reader. For transient media-read failure only, the coordinator allows up to 300ms for the independent control task to deliver a terminal notice, then cancels/disposes the whole attempt and joins workers. Other fatal stages do not wait. A missing/lost notice still permits only the existing bounded pinned retry with fresh Host approval, never inherited authority. The reconnect fixture delays Host control bytes by 150ms while media closes, to exercise this ordering explicitly.
 
-Viewer displays distinct decode/display/UI failure notices. GPU occlusion remains a visibility condition, logged once per renderer generation without a device-rebuild loop. Recoverable GPU events include their current stage/type/code, with existing retry limits unchanged. Actual GPU Present, driver-loss and visible-image acceptance remain physical tests; synthetic CPU/UI failure injection does not verify those paths. [Viewer stage evidence](../benchmarks/2026-11-24-viewer-failure-validation.md).
+Viewer displays distinct decode/display/UI failure notices. GPU occlusion remains a visibility condition, logged once per renderer generation without a device-rebuild loop. Recoverable GPU events include their current stage/type/code, with existing retry limits unchanged. Actual GPU Present, driver-loss and visible-image acceptance remain physical tests; synthetic CPU/UI failure injection does not verify those paths. Viewer stage evidence.
 
 ## File storage and privacy
 
@@ -32,4 +32,6 @@ dotnet <Viewer.dll> --diagnostic-log-contracts build/diagnostic-fixtures
 dotnet <Smoke.dll> <Host.dll> --persistent-host build/persistent-fixtures
 ```
 
-The Viewer executable needs an ordinary WPF-capable Windows session. All test log files use isolated fixture directories, including an exception whose message contains a generated credential sentinel; that sentinel must not persist. `scripts/verify.ps1` includes filesystem contracts and the optional `-Wpf` privacy/dispatcher test. [Evidence](../benchmarks/2026-11-24-diagnostic-log-validation.md) distinguishes actual file/TLS/WPF execution from pending Home/physical and long-soak acceptance.
+The Viewer executable needs an ordinary WPF-capable Windows session. All test log files use isolated fixture directories, including an exception whose message contains a generated credential sentinel; that sentinel must not persist. `scripts/verify.ps1` includes filesystem contracts and the optional `-Wpf` privacy/dispatcher test. Evidence distinguishes actual file/TLS/WPF execution from pending Home/physical and long-soak acceptance.
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).

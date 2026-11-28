@@ -41,7 +41,7 @@ dotnet build/broker-final-artifacts/bin/RelaxDesk.Smoke/release/RelaxDesk.Smoke.
 
 Only explicit `RelaxDesk.Test.<32 hex>` console endpoints accept a test PID/SID/session verifier; production always uses SCM identity. Test servers run as the current user and therefore grant that same server SID full pipe rights. Tests inspect the production LocalService DACL separately; they do not prove cross-account ACL behavior. No fallback from production to this test verifier exists in HostShell UI. The test entry accepts STOP and invalidation on its own parent stdio, not on a public socket or the production pipe.
 
-[Evidence](../benchmarks/2026-11-24-session-broker-validation.md) separates neutral protocol/state, actual Windows identity/pipe calls, WPF/synthetic Host/TLS and pending SCM/physical work. Required later acceptance: protected install/upgrade/uninstall; actual SCM LocalService start/stop/boot; approved and unrelated Windows accounts; different logon sessions; remote pipe access denial; session 0; real lock/logoff/fast-switch/UAC; stale/missing service identity; UI/process/OS-query hang; orphan-worker cleanup; explicit recovery/fresh consent; file/clipboard/input teardown and long resource soak on Home/Pro where available. No secure desktop, reboot-persistent connection or unattended access is claimed.
+Evidence separates neutral protocol/state, actual Windows identity/pipe calls, WPF/synthetic Host/TLS and pending SCM/physical work. Required later acceptance: protected install/upgrade/uninstall; actual SCM LocalService start/stop/boot; approved and unrelated Windows accounts; different logon sessions; remote pipe access denial; session 0; real lock/logoff/fast-switch/UAC; stale/missing service identity; UI/process/OS-query hang; orphan-worker cleanup; explicit recovery/fresh consent; file/clipboard/input teardown and long resource soak on Home/Pro where available. No secure desktop, reboot-persistent connection or unattended access is claimed.
 
 ## API references
 
@@ -50,3 +50,5 @@ Only explicit `RelaxDesk.Test.<32 hex>` console endpoints accept a test PID/SID/
 - [Kernel pipe peer process/session functions](https://learn.microsoft.com/en-us/windows/win32/ipc/pipe-functions).
 - [SCM handler callback requirements](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nc-winsvc-lphandler_function_ex).
 - [Service status/accepted controls](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/ns-winsvc-service_status).
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).

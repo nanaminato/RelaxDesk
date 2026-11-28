@@ -1,1 +1,0 @@
-PASS wrong media binding ticket rejected before capture/encoding

@@ -26,6 +26,8 @@ The content viewport is separate from the scrollbar cells so native HWND airspac
 
 ## Verification and remaining acceptance
 
-[Validation record](../benchmarks/2026-11-24-viewport-validation.md) distinguishes Core geometry, native parity, actual GPU draw pixel probes, WPF bitmap pixel checks and actual Host/TLS integration. GPU draw checks deliberately do not call Present; they do not close the physical visibility gate. True mixed-DPI monitor movement, foreground pointer landing, Home dual-PC capture, physical GPU display/quality and long soak remain pending. [Identity-scoped live topology recovery](DISPLAY-TOPOLOGY.md) is now implemented; physical hotplug acceptance remains open. No package is generated for this slice.
+Validation record distinguishes Core geometry, native parity, actual GPU draw pixel probes, WPF bitmap pixel checks and actual Host/TLS integration. GPU draw checks deliberately do not call Present; they do not close the physical visibility gate. True mixed-DPI monitor movement, foreground pointer landing, Home dual-PC capture, physical GPU display/quality and long soak remain pending. [Identity-scoped live topology recovery](DISPLAY-TOPOLOGY.md) is now implemented; physical hotplug acceptance remains open. No package is generated for this slice.
 
 References: [D3D11 source rectangles](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11videocontext-videoprocessorsetstreamsourcerect), [WPF Canvas clipping](https://learn.microsoft.com/en-us/dotnet/framework/wpf/controls/panels-overview), [DPI and physical pixels](https://learn.microsoft.com/en-us/windows/win32/learnwin32/dpi-and-device-independent-pixels).
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).

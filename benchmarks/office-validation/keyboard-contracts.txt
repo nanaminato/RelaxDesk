@@ -1,3 +1,0 @@
-FAIL keyboard focus: System.InvalidOperationException: Owned test window must be foreground; otherwise keyboard routing must reject input
-   at RelaxDesk.Viewer.KeyboardFocusVerification.<>c__DisplayClass6_0.<Run>g__Check|2(Boolean value, String name) in E:\RelaxDesk\src\RelaxDesk.Viewer\KeyboardFocusVerification.cs:line 29
-   at RelaxDesk.Viewer.KeyboardFocusVerification.<>c__DisplayClass6_0.<<Run>b__3>d.MoveNext() in E:\RelaxDesk\src\RelaxDesk.Viewer\KeyboardFocusVerification.cs:line 37

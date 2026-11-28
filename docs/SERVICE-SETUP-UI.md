@@ -54,4 +54,6 @@ HostShell 通过固定同包 `Service/RelaxDesk.Service.exe`、结构化参数�
 
 CLI 的 `--show-issues` 用于一键流程，仅失败／保留文件／等待删除等特殊情况显示对话框；高级维护的 `--show-result` 可显示完整结果。两者仅用于显式安装／卸载路径；正常 SCM 服务入口不显示 UI、不引入 WPF。未添加网络协议、文件传输权限、自动共享、UAC 绕过、服务注册／防火墙后台变更或凭据保存。
 
-[一键流程验证](../benchmarks/2026-11-24-service-one-click-validation.md) 和 [初版维护界面验证](../benchmarks/2026-11-24-service-setup-ui-validation.md) 区分实际 WPF、假提权启动器、隔离 ACL／模拟 SCM 与真实操作。**真实 UAC 提示、管理员／跨账户授权、原生结果窗口、SCM 安装启动卸载、Home 登录／重启与实际桌面仍待操作者验收。** 本次没有在开发机器安装或启动系统服务。
+一键流程验证 和 初版维护界面验证 区分实际 WPF、假提权启动器、隔离 ACL／模拟 SCM 与真实操作。**真实 UAC 提示、管理员／跨账户授权、原生结果窗口、SCM 安装启动卸载、Home 登录／重启与实际桌面仍待操作者验收。** 本次没有在开发机器安装或启动系统服务。
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).

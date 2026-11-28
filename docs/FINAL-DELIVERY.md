@@ -6,7 +6,7 @@ Latest distribution is now [the separately packaged Host and Viewer](ROLE-PACKAG
 
 Later source-only enhancement: [service installation inside HostShell](SERVICE-SETUP-UI.md). This historical archive is unchanged and does not contain those new buttons; its administrator CLI still works. No repackaging is performed for the UI enhancement.
 
-This is a post-build report, not a claim of physical acceptance. The owner's request to avoid per-slice packaging was honored. One final unified delivery is prepared after the source audit; its first candidate failed a deep-path deployment test and was rejected, repaired and replaced. This is final-delivery failure correction, not per-feature packaging. [Unmodified failure and regression evidence](../benchmarks/2026-11-24-service-long-path-validation.md).
+This is a post-build report, not a claim of physical acceptance. The owner's request to avoid per-slice packaging was honored. One final unified delivery is prepared after the source audit; its first candidate failed a deep-path deployment test and was rejected, repaired and replaced. This is final-delivery failure correction, not per-feature packaging. Unmodified failure and regression evidence.
 
 ## Exact artifact
 
@@ -27,15 +27,15 @@ The session negotiates capabilities, role-bound tickets, rich input, scoped file
 
 ## Automated checks
 
-Final corrected archive office suite: **76/76 PASS**, observed process exit **0**, `PASS_PACKAGED_SYNTHETIC_OFFICE_ONLY`; summed child time **373.68s**. [Unmodified terminal result](../benchmarks/2026-11-24-final-packaged-office-result.json). Raw files: `build/final-corrected-archive-verification/RelaxDesk-office-final-win-x64-20261124/logs/office-20261124-090817-7ca4eb`; full launcher output: `build/final-corrected-packaged-suite.txt`. Includes **2,070** Core/TLS assertions, **81** enforced-deep-path service transaction assertions, actual WPF toolbar/error/failure/display/clipboard/file/audio/settings/reconnect and Host UI/broker/recovery cases. No failing cases were waived. Physical tests are explicitly NOT_TESTED, not inferred from this status.
+Final corrected archive office suite: **76/76 PASS**, observed process exit **0**, `PASS_PACKAGED_SYNTHETIC_OFFICE_ONLY`; summed child time **373.68s**. Unmodified terminal result. Raw files: `build/final-corrected-archive-verification/RelaxDesk-office-final-win-x64-20261124/logs/office-20261124-090817-7ca4eb`; full launcher output: `build/final-corrected-packaged-suite.txt`. Includes **2,070** Core/TLS assertions, **81** enforced-deep-path service transaction assertions, actual WPF toolbar/error/failure/display/clipboard/file/audio/settings/reconnect and Host UI/broker/recovery cases. No failing cases were waived. Physical tests are explicitly NOT_TESTED, not inferred from this status.
 
 - Extracted archive manifest: **PASS, 1,988 files**. Package manifest records clean source and exact version. Documentation inventory: 316 tracked files; credential-marker scan found no private-key or actual startup invitation/token markers. This scan is limited to defined patterns, not a general privacy certification.
 - Actual packaged Host reports its runtime under the extracted `Host/` directory, .NET 11.0.0 and x64. Host, Viewer and HostShell versions match corrected package metadata; all four shipped native DLL copies match the hash above. The first ad hoc GUI version check did not await exit and was invalid; corrected `Start-Process -Wait` checks with captured output/exit codes pass.
 - Enforced deep-path service regression: **81 isolated transaction assertions PASS** in source and freshly published self-contained EXEs, before the replacement archive suite. Original 75/76 failure is retained and does not count as a pass. No real SCM changes.
 - Fresh native build: **PASS**. Initial sandbox FileTracker access denial and reused-directory ACL failure are retained in `build/final-office-package-build.txt` and `build/final-office-native-build.txt`; an independent authorized build directory succeeds (`build/final-office-native-clean-build.txt`). No runtime privilege change was used.
 - New native binary: **42** capture/color/release WARP, **16** Present-state, **20** viewport contracts pass, including cleanup. WARP/GPU texture operations are not physical desktop/display proof.
-- Source Viewer: warning/error-free build and awaited actual HWND toolbar checks pass. New labels/transition/reset assertions use fixture frame metadata; physical fallback observation is pending. [Focused evidence](../benchmarks/2026-11-24-media-path-validation.md).
-- Previous full source evidence remains separately dated: **76/76**, **2,070** Core/TLS assertions; see [safe-error validation](../benchmarks/2026-11-24-error-details-validation.md). It is not substituted for the new packaged run.
+- Source Viewer: warning/error-free build and awaited actual HWND toolbar checks pass. New labels/transition/reset assertions use fixture frame metadata; physical fallback observation is pending. Focused evidence.
+- Previous full source evidence remains separately dated: **76/76**, **2,070** Core/TLS assertions; see safe-error validation. It is not substituted for the new packaged run.
 
 ## Run and return evidence
 
@@ -54,3 +54,5 @@ No measured physical input-to-photon, matched IDE/browser/Excel/drag resource di
 Source and reproducible automation can be delivered without those machines. The full physical-office phase cannot be honestly marked accepted until the operator supplies that evidence. No other mandatory source feature is currently identified as missing by the original requirement audit.
 
 Final remote recheck still returned `e1b03140733c5e67b07983088ef98404c9be07bc`; verified as an ancestor of packaged source. Sandbox Schannel lacked credentials for the first read-only retry, so the authorized read-only query was used. No newer remote branch work was omitted.
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).

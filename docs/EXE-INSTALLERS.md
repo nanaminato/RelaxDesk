@@ -26,7 +26,7 @@
 
 以下记录对应 `7e51e95` 的安装器。当前 `codex/dxgi-media-pipeline` 阶段的候选包、源码回归和最终交付状态见[需求验收记录](REQUIREMENTS-AUDIT.md)。
 
-最终 EXE 位于 `build/RelaxDesk-exe-installers-win-x64-20261124-final`，附 SHA256 侧车及 `installers.json`。应用载荷沿用已验证的 `0.4.2-roles.20261124-202127.g7e51e95`，只新增安装包装，不修改协议、桌面捕获或权限。精确版本、大小、哈希及实测范围见 [EXE 安装器验收记录](../benchmarks/2026-11-24-exe-installers-validation.md)。
+最终 EXE 位于 `build/RelaxDesk-exe-installers-win-x64-20261124-final`，附 SHA256 侧车及 `installers.json`。应用载荷沿用已验证的 `0.4.2-roles.20261124-202127.g7e51e95`，只新增安装包装，不修改协议、桌面捕获或权限。精确版本、大小、哈希及实测范围见 EXE 安装器验收记录。
 
 在当前 Windows 开发环境中，两个**实际交付 EXE**以临时目录运行，已通过 46 项真实当前用户安装生命周期检查：两个角色启动、桌面／开始菜单、应用列表、已安装目录服务只读预检查、重复安装、运行中拒绝升级／卸载、修改文件保护、两端独立卸载和未知文件保留。测试创建的用户快捷方式与注册项已清理。正常向导的鼠标点击、完成页自动打开、默认 LocalAppData 路径、不同版本升级、全新 Home 机器及真实 UAC/SCM 仍需最终操作者验收；未把静默测试当作这些通过。
 
@@ -50,3 +50,5 @@ Viewer 候选 EXE 完成了当前用户静默安装、版本命令启动和静�
 如果测试账户无法读取机器 Broker 部署，可显式加 `-SkipMachineServicePreview` 继续验证当前用户安装、启动、更新和卸载。报告会标记该预检为 `NOT_TESTED`，成功状态也会注明跳过预检。完整安装验收仍需使用默认参数验证已安装 Host 的只读服务预检。
 
 当前交付仍未代码签名，不能声称 Windows SmartScreen／组织策略或所有 Home 硬件已验收。当前用户权限范围依据 [Inno Setup `PrivilegesRequired=lowest`](https://jrsoftware.org/inno-setup/documentation/topic_setup_privilegesrequired.htm)，文件收据利用其[SHA-256 支持](https://jrsoftware.org/inno-setup/documentation/topic_isxfunc_getsha256offile.htm)；应用核心与系统服务权限仍由各自原有合同约束。
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).

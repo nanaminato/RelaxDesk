@@ -1,8 +1,0 @@
-PASS authenticated production Host -> shared Viewer decoder; mode=--video-software hardware_encode=False hardware_decode=True frames=60 elapsed_s=1.99 fps=30.14 wire_mbps=0.236 process_cpu_pct=1.30 gpu_pct=unavailable dropped=0 queue_depth=0 capture_or_test_generation_p50_ms=2.57 capture_or_test_generation_p95_ms=3.13 encode_p50_ms=2.81 encode_p95_ms=3.43 decode_with_readback_p50_ms=4.97 decode_with_readback_p95_ms=5.54 frame_interval_p50_ms=33.12 frame_interval_p95_ms=34.92
-PASS concurrent TLS control; samples=192 rtt_p50_ms=0.23 rtt_p95_ms=0.45 rtt_max_ms=1.69; physical Present/input injection not tested
-backend=synthetic-test codec=H264 hardware_encode=False encoder=Microsoft software H264 MFT
-media frames=60 elapsed_s=2.02 fps=29.75 wire_mbps=0.233 process_cpu_pct=2.29 gpu_pct=unavailable dropped=0 queue_depth=0 send_p50_ms=0.06 send_p95_ms=0.10 capture_p50_ms=2.57 capture_p95_ms=3.13 encode_p50_ms=2.81 encode_p95_ms=3.43 frame_interval_p50_ms=33.38 frame_interval_p95_ms=34.59
-encode_stages upload_bytes=0 accepted_setting_mask=15 gpu_timestamp_samples=0 frames=61 elapsed_s=2.02 fps=30.18 wire_mbps=0.217 process_cpu_pct=2.28 gpu_pct=unavailable dropped=0 queue_depth=1 generate_p50_ms=2.57 generate_p95_ms=3.21 upload_submit_p50_ms=0.00 upload_submit_p95_ms=0.00 surface_setup_p50_ms=0.00 surface_setup_p95_ms=0.00 color_submit_p50_ms=1.66 color_submit_p95_ms=1.82 input_wait_p50_ms=0.00 input_wait_p95_ms=0.00 mft_submit_p50_ms=0.11 mft_submit_p95_ms=0.23 output_wait_p50_ms=0.93 output_wait_p95_ms=1.52 packet_pack_p50_ms=0.00 packet_pack_p95_ms=0.00 native_encode_total_p50_ms=2.78 native_encode_total_p95_ms=3.37
-Session ended: Unable to read beyond the end of the stream.
-
-PASS v2 peer disconnect / host clean exit

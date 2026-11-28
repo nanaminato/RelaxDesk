@@ -42,4 +42,6 @@ Package manifest input is streamed, capped at 4MiB/8,192 entries/depth 8. It val
 
 The optional PowerShell `Collect-Logs.ps1` delegates hash verification to the same included EXE, avoiding a second weaker manifest parser. It still runs only when script execution is allowed; the default CMD/EXE path does not require PowerShell scripts or bypass policy.
 
-See [collector validation](../benchmarks/2026-11-24-office-collector-validation.md) and the updated [physical result template](PHYSICAL-ACCEPTANCE.md). Passing source/synthetic cases never changes the pending Home/physical/privileged deployment status.
+See collector validation and the updated [physical result template](PHYSICAL-ACCEPTANCE.md). Passing source/synthetic cases never changes the pending Home/physical/privileged deployment status.
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).

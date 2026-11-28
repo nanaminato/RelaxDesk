@@ -102,7 +102,7 @@ Current implementation adds C++20 Desktop Duplication/D3D11 and Media Foundation
 
 ## GPU display update (2026-11-22)
 
-Same-device GPU decoder→HwndHost SwapChain and stage instrumentation are implemented. Final visibility/performance acceptance is blocked by RDP DXGI_STATUS_OCCLUDED; physical Home validation is pending. See [current evidence and timing definitions](../benchmarks/2026-11-22-gpu-display-report.md).
+Same-device GPU decoder→HwndHost SwapChain and stage instrumentation are implemented. Final visibility/performance acceptance is blocked by RDP DXGI_STATUS_OCCLUDED; physical Home validation is pending. See current evidence and timing definitions.
 
 
 ## Explicit LAN approval bootstrap (v0.3)
@@ -166,3 +166,5 @@ Interactive [logon launch and worker recovery](WORKER-RECOVERY.md) belong to ord
 Optional [system audio](AUDIO.md) uses a separate explicit capability, one-use pinned TLS stream, capture/playback STA owners and bounded audio-only queues/workers. Host authorizes output-mix capture independently of screen/clipboard/files; Viewer has mute/volume/revoke. Device replacement has its own three-attempt budget. Audio-granted video and PCM share Host QPC timestamps; Viewer correlates them with video submission, without claiming physical A-V sync. Service/core remain free of audio-device/UI dependencies; microphone is not opened.
 
 Optional [video settings](VIDEO-SETTINGS.md) have a separate negotiated version and media generation, independent of display authorization/generation. FPS/bitrate commands are approved-session/sequence/range/state/rate checked; the capture worker applies them on its owning thread and acknowledges only a new keyframe. Same-size changes reset decode state; no UI or native IO occurs in the access lock. Explicit refresh may reuse an owned last DXGI image on a no-update timeout, with ordinary session/scope checks preserved and errors invalidating cache. This is bounded user control, not an adaptive performance claim.
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).

@@ -1,3 +1,0 @@
-PASS real non-sparse upload bytes=1073741841 resumed_offset=10289152 remaining_payload_bytes=1063452689 sha256_verified=True
-PASS real non-sparse download bytes=1073741841 resumed_offset=19136512 remaining_payload_bytes=1054605329 sha256_verified=True
-PASS >1GiB production Host/third TLS with fresh authorization and fixed identity across four sessions; control_pongs=18 synthetic_frames=4 elapsed_s=17.09; file-data test ceiling=256MiB/s (product default unchanged); no physical desktop/input/latency claim; generated ~3GiB fixture=E:\RelaxDesk\build\file-resume-verification\large-c9aa3cb5996741eea81082d40ab4428d

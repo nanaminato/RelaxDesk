@@ -34,8 +34,10 @@ DXGI output-not-found/unsupported during initialization may trigger re-enumerati
 
 ## Validation and physical acceptance
 
-[Recorded validation](../benchmarks/2026-11-24-topology-validation.md) includes real Windows identity queries, pure authorization/budget tests, actual Host/TLS/H264 and actual WPF lifecycle with synthetic topology changes. The test backend is loopback-only and does not change real monitor configuration.
+Recorded validation includes real Windows identity queries, pure authorization/budget tests, actual Host/TLS/H264 and actual WPF lifecycle with synthetic topology changes. The test backend is loopback-only and does not change real monitor configuration.
 
 Final two-PC Home acceptance must unplug/reconnect the selected monitor, change resolution/rotation/DPI, disconnect all monitors where possible, attach an unapproved monitor, and verify both visible image and actual pointer/key release. Confirm that all-screen capture never includes the new device, files/heartbeats survive a readable unavailable state, explicit reselection removes the pause overlay, and known-device return retains the intended target. Record edition, driver, device-instance digests, mode changes, media generations and failure logs. Secure desktop, physical GPU visibility, driver races and long soak remain unverified here. No package is produced for this slice.
 
 Sources: [QueryDisplayConfig](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-querydisplayconfig), [buffer-size races](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getdisplayconfigbuffersizes), [monitor device-instance path](https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-displayconfig_target_device_name).
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).

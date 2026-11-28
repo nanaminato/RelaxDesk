@@ -42,6 +42,8 @@ Synthetic static tests intentionally produce only one desktop image until refres
 
 ## Evidence and remaining acceptance
 
-[Evidence](../benchmarks/2026-11-24-video-settings-validation.md) includes Core/range/replay/state/pacing/header tests, TLS negotiation, production Host with actual H.264/Deflate decode, real WPF menu/confirmation/cooldown, synthetic audio continuity, static-source refresh and zero native resources. The menu was rendered and inspected. Host logs record generation, target FPS/bitrate, codec and native accepted-setting mask, never content/credentials. Accepted settings/targets are not measured quality or data rate.
+Evidence includes Core/range/replay/state/pacing/header tests, TLS negotiation, production Host with actual H.264/Deflate decode, real WPF menu/confirmation/cooldown, synthetic audio continuity, static-source refresh and zero native resources. The menu was rendered and inspected. Host logs record generation, target FPS/bitrate, codec and native accepted-setting mask, never content/credentials. Accepted settings/targets are not measured quality or data rate.
 
 Final physical checks: change limits/bitrate on moving text/video and a completely static Home desktop without moving the mouse; confirm no black/old-reference frame, scope change, stuck input or audio interruption. Check Intel/NVIDIA and available AMD, HDR/SDR, rotated/all-screen compatibility, CPU fallback, network congestion, lock/UAC and cancellation during an in-flight change. Record actual measured FPS/rate/stages and visible quality; no MSTSC/physical performance result is claimed. No package was generated.
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).

@@ -33,4 +33,6 @@ Tool verification (Windows PowerShell 5.1 and PowerShell 7 supported):
 python scripts/test-summarize-renderers.py
 ```
 
-The first uses its own real process for identity/CPU/memory contracts without desktop/input operations. Python uses explicitly invented fixtures to verify summary integrity; those values are not benchmark samples. [Recorded validation](../benchmarks/2026-11-24-benchmark-collector-validation.md) includes archived actual raw traces and limitations. Final package, Home dual-PC office workloads and physical acceptance remain pending.
+The first uses its own real process for identity/CPU/memory contracts without desktop/input operations. Python uses explicitly invented fixtures to verify summary integrity; those values are not benchmark samples. Recorded validation includes archived actual raw traces and limitations. Final package, Home dual-PC office workloads and physical acceptance remain pending.
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).

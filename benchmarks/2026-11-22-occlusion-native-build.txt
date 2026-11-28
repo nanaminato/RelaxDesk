@@ -1,9 +1,0 @@
--- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.20348.
--- Configuring done (0.0s)
--- Generating done (0.1s)
--- Build files have been written to: E:/RelaxDesk/build/native-desktop
-适用于 .NET Framework MSBuild 版本 18.9.1+a81b43525
-
-  RelaxDesk.Native.vcxproj -> E:\RelaxDesk\build\native-desktop\Release\RelaxDesk.Native.dll
-  probe_present.cpp
-  RelaxDesk.NativeProbe.vcxproj -> E:\RelaxDesk\build\native-desktop\Release\RelaxDesk.NativeProbe.exe

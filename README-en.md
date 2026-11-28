@@ -35,17 +35,17 @@ Viewer source also includes [IP/port-only recent connections](docs/CONNECTION-HI
 
 Negotiated [FPS/target bitrate controls](docs/VIDEO-SETTINGS.md) now use keyframe-confirmed settings generations. [Controlled TCP delay/bandwidth/interruption tests](docs/NETWORK-VALIDATION.md) exercise real encrypted Host/decoder paths with synthetic pixels; they do not establish physical Home or office performance. For matched two-PC tests under measured bandwidth, latency and loss, see the [weak-network and MSTSC testing guide (中文)](docs/WEAK-NETWORK-TESTING.md). Final unified packaging remains deferred.
 
-Scoped [file task and byte resume](docs/FILE-RESUME.md) is now implemented: fresh Host authorization, fixed identity/directory scope, explicit continue/discard, five-minute tickets, SHA-256 and bounded partial retention. Actual WPF/TLS directory recovery and real non-sparse files above 1GiB pass [recorded checks](benchmarks/2026-11-23-file-resume-validation.md). Physical Home/network/input acceptance remains pending; no per-slice package.
+Scoped [file task and byte resume](docs/FILE-RESUME.md) is now implemented: fresh Host authorization, fixed identity/directory scope, explicit continue/discard, five-minute tickets, SHA-256 and bounded partial retention. Actual WPF/TLS directory recovery and real non-sparse files above 1GiB pass recorded checks. Physical Home/network/input acceptance remains pending; no per-slice package.
 
 Host now returns to Listening after each separately authorized session. HostShell distinguishes session disconnect from global stop; [lifecycle and security contract](docs/SESSION-LIFECYCLE.md). Viewer now reconnects with bounded backoff, the original certificate pin and fresh Host consent; revoked optional features and old input are not replayed. File tasks can now resume under a new grant and explicit confirmation. No package is generated for this slice.
 
-File-transfer UI checkpoint: [scoped directory + third pinned TLS stream](docs/FILE-TRANSFER.md), Host folder consent, Viewer directory browser, recursive queue, confirmed drag-drop and live revoke are implemented. [Automated evidence](benchmarks/2026-11-23-file-ui-validation.md). Cross-session resume is implemented in memory; physical Home acceptance remains pending; no new package until the final milestone.
+File-transfer UI checkpoint: [scoped directory + third pinned TLS stream](docs/FILE-TRANSFER.md), Host folder consent, Viewer directory browser, recursive queue, confirmed drag-drop and live revoke are implemented. Automated evidence. Cross-session resume is implemented in memory; physical Home acceptance remains pending; no new package until the final milestone.
 
 Viewer now offers [fit, physical 1:1, custom zoom and local panning](docs/VIEWPORT.md), with shared CPU/GPU/input geometry and redraw readiness. Physical mixed-DPI and pointer landing acceptance remain pending.
 
 Current development source adds [independently authorized text/image/HTML clipboard](docs/CLIPBOARD-CONTENT.md) and [rich keyboard/pointer input with explicit local-IME text submission](docs/INPUT-PROTOCOL.md). Production Host/Viewer clipboard integration is tested with isolated providers; real Windows clipboard/Home application and IME acceptance remain pending. Packaging is deferred until the final milestone at the owner's request; the existing 0.4.2 ZIP predates these features.
 
-2026-11-23 continuation: bounded capture recovery/control liveness, remote shortcut menu and pointer-motion coalescing are delivered as a self-contained 0.4.2 acceptance slice. See [product readiness](docs/PRODUCT-READINESS.md) and [exact build/test evidence](benchmarks/2026-11-23-office-readiness.md). This historical package predates clipboard, file and reconnect development; physical Home acceptance remains open.
+2026-11-23 continuation: bounded capture recovery/control liveness, remote shortcut menu and pointer-motion coalescing are delivered as a self-contained 0.4.2 acceptance slice. See [product readiness](docs/PRODUCT-READINESS.md) and exact build/test evidence. This historical package predates clipboard, file and reconnect development; physical Home acceptance remains open.
 
 **A high-performance, open-source remote desktop project for Windows Home.**
 
@@ -128,9 +128,9 @@ Build with stable SDK 11.0.100 (run `./scripts/build-native.ps1` first): `dotnet
 
 Independent project, with potential future integration into RelaxKonOS via an adapter; RelaxDesk must not depend on RelaxKonOS.
 
-Current GPU display implementation, final RDP occlusion failures and Home validation commands: [GPU display acceptance report](benchmarks/2026-11-22-gpu-display-report.md).
+Current GPU display implementation, final RDP occlusion failures and Home validation commands: GPU display acceptance report.
 
-Windows Home local-console one-command validation: `powershell.exe -NoProfile -File scripts/accept-home.ps1`. See [occlusion diagnosis and log collection](benchmarks/2026-11-22-occlusion-report.md).
+Windows Home local-console one-command validation: `powershell.exe -NoProfile -File scripts/accept-home.ps1`. See occlusion diagnosis and log collection.
 
 
 免 SDK 的 Windows Home 验收包：在开发机运行 `powershell.exe -NoProfile -File scripts/package-acceptance.ps1`，目标机完整解压 ZIP 后双击 `Collect-Logs.cmd`。包内包含自包含 Host/Viewer、原生模块及测试工具。见 [运行说明与日志回传清单](packaging/RUN-ME.zh-CN.md)。Windows Home 物理真机仍待验证。
@@ -150,3 +150,5 @@ Current-user [install/upgrade/uninstall](docs/USER-INSTALL.md) is implemented wi
 Optional [LocalService broker and interactive-agent coordination](docs/SESSION-BROKER.md) are implemented in source: authenticated local-only pipe, per-session leases/health and HostShell opt-in/stop-on-loss, with no remote approval or graphics in Session 0. Actual SCM/LocalService deployment, machine service installer, opt-in logon/restart coordination and audio remain open. Console/WPF synthetic tests do not accept those exits. No package.
 
 Protected [machine broker install/upgrade/removal](docs/MACHINE-SERVICE-INSTALL.md) is now implemented in source, with explicit administrator/owner selection, manual default, opt-in automatic startup and no desktop grant. 80 real-file/ACL and simulated-SCM contracts pass; real elevated SCM/LocalService deployment and final self-contained package acceptance remain unverified. Next: opt-in interactive logon/restart coordination and audio. No package.
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](benchmarks/README.md).

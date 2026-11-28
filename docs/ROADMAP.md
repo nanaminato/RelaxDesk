@@ -28,7 +28,7 @@
 - BLOCKED: current Server 2022 remote session has valid GDI handles but first BitBlt returns access denied, and DuplicateOutput returns E_ACCESSDENIED. Independent native reproducer records session/console mismatch. No security bypass or repeated speculative GDI repairs.
 - NOT ACCEPTED: real desktop DXGI capture -> H.264 -> Viewer on two Home PCs, actual input, physical Present, 60-second office workload measurements and fair GDI comparison. Synthetic GPU tests do not satisfy these exits.
 
-**Next exit:** run on an authorized Home local console, prove real DXGI frames and the complete desktop pipeline, then address measured WPF readback/CPU costs and perform matched workloads. See [implementation and commands](IMPLEMENTATION.md) and [measured results](../benchmarks/2026-11-22-report.md).
+**Next exit:** run on an authorized Home local console, prove real DXGI frames and the complete desktop pipeline, then address measured WPF readback/CPU costs and perform matched workloads. See [implementation and commands](IMPLEMENTATION.md) and measured results.
 
 ## Phase 2 — Performance and fidelity
 - Compare full-frame baseline vs dirty/move rect approaches.
@@ -72,14 +72,14 @@ Phase 0 Windows build/test exit is met here. Phase 1/1.5 and Phase 2 exits remai
 - **Not accepted:** final matched GPU display benchmark fails with DXGI_STATUS_OCCLUDED despite visible matching-adapter window. Earlier successful tests do not establish current-environment stability. Hardware H.264 total latency improvement is unproven.
 - Next exit: reproduce on unlocked Home local console; rerun the strict four-profile benchmark and full verification, real driver loss/DPI/long soak, then dual-PC office/input measurements. Phase 1/1.5/2 and main merge acceptance remain open.
 
-See [detailed evidence and limitations](../benchmarks/2026-11-22-gpu-display-report.md).
+See detailed evidence and limitations.
 
 
 ## Occlusion follow-up — 2026-11-22
 
 Fixed a confirmed HwndHost WndProc base-call omission (layout/destruction contract), tightened real Present vs TEST/mode-change status handling, and added independent bounded top-level/child SwapChain lifecycle diagnostics. Both targets remain occluded in the current RDP environment, including after recreation; this excludes a HwndHost-only explanation but does not identify the exact compositor/driver cause. Real WPF lifecycle tests pass; an old-behavior negative control fails as expected. Home/physical GPU acceptance remains pending.
 
-One-command Home local-console validation and evidence collection: `powershell.exe -NoProfile -File scripts/accept-home.ps1`. The runner checks edition/session, matches DLL hashes, preserves logs/results, applies per-step timeouts and stops after a blocked independent comparison. An RDP/Server run cannot report Home acceptance. See [diagnosis, tests, commands and limitations](../benchmarks/2026-11-22-occlusion-report.md).
+One-command Home local-console validation and evidence collection: `powershell.exe -NoProfile -File scripts/accept-home.ps1`. The runner checks edition/session, matches DLL hashes, preserves logs/results, applies per-step timeouts and stops after a blocked independent comparison. An RDP/Server run cannot report Home acceptance. See diagnosis, tests, commands and limitations.
 
 
 ## Self-contained Home acceptance bundle — 2026-11-22
@@ -119,9 +119,9 @@ Connected sessions collapse fixed header/footer and use the entire client area w
 
 ## Office continuation — 2026-11-23
 
-Implemented source now includes independently authorized text clipboard, scoped third-channel file transfer with Host folder consent and Viewer recursive queues/confirmed drops, persistent single-controller Host and bounded pinned Viewer reconnect with fresh consent. See [current product ledger](PRODUCT-READINESS.md) and [lifecycle evidence](../benchmarks/2026-11-23-reconnect-validation.md). Core/TLS 656 and executable WPF/Host/relay tests pass; these do not close physical Home phase exits.
+Implemented source now includes independently authorized text clipboard, scoped third-channel file transfer with Host folder consent and Viewer recursive queues/confirmed drops, persistent single-controller Host and bounded pinned Viewer reconnect with fresh consent. See [current product ledger](PRODUCT-READINESS.md) and lifecycle evidence. Core/TLS 656 and executable WPF/Host/relay tests pass; these do not close physical Home phase exits.
 
-Scoped file-task/byte resume is implemented with new consent/confirmation and actual >1GiB TLS evidence; [contract](FILE-RESUME.md). Rich input/TextCommit is implemented; [contract](INPUT-PROTOCOL.md). Image/HTML clipboard now binds an independently pinned channel with exact consent and optional failure isolation; [contract](CLIPBOARD-CONTENT.md), [session evidence](../benchmarks/2026-11-24-clipboard-session-validation.md). Confirmed scoped file clipboard is implemented; [contract](FILE-CLIPBOARD.md). Monitor selection, viewport scaling and identity-scoped topology recovery are implemented. Next: Windows session/service integration and audio. Owner defers packaging and physical operator tests to the final milestone; environment-blocked tests remain explicit skips while other development continues.
+Scoped file-task/byte resume is implemented with new consent/confirmation and actual >1GiB TLS evidence; [contract](FILE-RESUME.md). Rich input/TextCommit is implemented; [contract](INPUT-PROTOCOL.md). Image/HTML clipboard now binds an independently pinned channel with exact consent and optional failure isolation; [contract](CLIPBOARD-CONTENT.md), session evidence. Confirmed scoped file clipboard is implemented; [contract](FILE-CLIPBOARD.md). Monitor selection, viewport scaling and identity-scoped topology recovery are implemented. Next: Windows session/service integration and audio. Owner defers packaging and physical operator tests to the final milestone; environment-blocked tests remain explicit skips while other development continues.
 
 Host-selected screens and all-screen capture/input now support physical negative origins. Unrotated single screens retain DXGI/GPU encode; rotated/all-screen scope uses explicit GDI compatibility. See [display contract and remaining P4 work](DISPLAYS.md). Identity-scoped [live topology recovery](DISPLAY-TOPOLOGY.md) is implemented; physical multi-monitor/DPI acceptance remains open.
 
@@ -153,8 +153,10 @@ The remaining network-test audit added [bounded opaque TCP impairment fixtures](
 
 The diagnostic audit replaces unbounded daily synchronous file appends with [bounded asynchronous rolling logs and local connection IDs](DIAGNOSTICS.md). File pressure/lock/junction/rotation, Viewer secret exclusion/dispatcher and production failure/reconnect paths have executable evidence. Continue Viewer failure-stage and remaining release-readiness audit; physical Home/office and long soak remain explicitly unaccepted. No intermediate package.
 
-Viewer failure-stage audit now fixes the cancellation-order loss of decoder errors and unhandled render/UI callbacks. [Evidence](../benchmarks/2026-11-24-viewer-failure-validation.md) preserves original exceptions, stops display-side IO retry, distinguishes UI notices and retains explicit Host termination over transport EOF. Three actual WPF/TLS injected stages and normal/fallback/reconnect regressions pass within their stated scopes. Continue original-requirement/release-readiness audit; no intermediate package or physical success claim.
+Viewer failure-stage audit now fixes the cancellation-order loss of decoder errors and unhandled render/UI callbacks. Evidence preserves original exceptions, stops display-side IO retry, distinguishes UI notices and retains explicit Host termination over transport EOF. Three actual WPF/TLS injected stages and normal/fallback/reconnect regressions pass within their stated scopes. Continue original-requirement/release-readiness audit; no intermediate package or physical success claim.
 
 The [office collector](OFFICE-ACCEPTANCE.md) now shares 75 executable cases with developer source verification and validates bounded manifests/output without accepting failed evidence writes. Full-suite execution exposed another explicit-stop ordering race; receiver cleanup now preserves control long enough for a bounded terminal-notice drain, with a 150ms delayed-control regression. The physical checklist reflects implemented features and pending real-device acceptance. Next concrete original UI gap: dedicated Viewer error details, then remaining original-scope audit/final unified delivery readiness. No intermediate package.
 
-The [Viewer error detail requirement](ERROR-DETAILS.md) is now implemented: bounded credential-free metadata, readonly selection, async button/command copying and stale/clear/success handling. Full shared suite is now 76 passing source cases with 2,070 Core/TLS checks; [evidence](../benchmarks/2026-11-24-error-details-validation.md) separates memory-copy/UI tests from actual clipboard/Home acceptance. Next: original requirement-by-requirement source completion audit and one final unified delivery when required source gaps are closed. No intermediate package.
+The [Viewer error detail requirement](ERROR-DETAILS.md) is now implemented: bounded credential-free metadata, readonly selection, async button/command copying and stale/clear/success handling. Full shared suite is now 76 passing source cases with 2,070 Core/TLS checks; evidence separates memory-copy/UI tests from actual clipboard/Home acceptance. Next: original requirement-by-requirement source completion audit and one final unified delivery when required source gaps are closed. No intermediate package.
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).

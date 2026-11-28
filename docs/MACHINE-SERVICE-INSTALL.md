@@ -56,7 +56,7 @@ The operations affect service-coordinated agents: stop/update makes the optional
 
 ## Validation
 
-[Evidence](../benchmarks/2026-11-24-machine-service-setup-validation.md) distinguishes real filesystem/ACL checks, simulated SCM transactions, actual read-only Windows service metadata/ABI queries, public CLI preview/denial and unexecuted privileged mutations. Reproduce the nonprivileged contract suite:
+Evidence distinguishes real filesystem/ACL checks, simulated SCM transactions, actual read-only Windows service metadata/ABI queries, public CLI preview/denial and unexecuted privileged mutations. Reproduce the nonprivileged contract suite:
 
 ```powershell
 dotnet build RelaxDesk.sln -c Release --artifacts-path E:\RelaxDesk\build\service-setup-final-artifacts -p:RelaxDeskNativePath=E:\RelaxDesk\build\native-viewport-release\Release\RelaxDesk.Native.dll
@@ -72,3 +72,5 @@ API references: [CreateService and LocalService/startup policy](https://learn.mi
 在普通权限 Windows 交互会话中，从仓库根目录运行 `dotnet <Viewer.dll> --admin-real-worker-contracts <Host.dll>`。需要已部署的受保护机器 Broker 及可用的 DXGI 捕获。测试连接本机 Host，发出独立的管理员申请，等待本机用户确认 Windows UAC，再从 Viewer 降级回 Work。成功要求普通输入授权恢复，且同一条 TLS 连接继续收到视频帧。
 
 本机实测通过。机器 Broker 修复退出码为 0，普通权限 Host 预检确认受保护代理已就绪，实机测试退出码为 0。该测试覆盖普通桌面的代理启动和降级。管理员窗口键鼠、UAC 安全桌面输入、锁屏及登录界面仍需各自验收。
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).

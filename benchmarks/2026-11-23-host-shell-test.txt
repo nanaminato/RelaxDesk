@@ -1,1 +1,0 @@
-PASS WPF Host shell: real Host child/listen, explicit approval, H264 media, graceful stop, denial without capture, stop while waiting, no credential logs; synthetic loopback source only

@@ -2,7 +2,7 @@
 
 For double-click installation instead of portable extraction, use the [new independent EXE installers](EXE-INSTALLERS.md). This page preserves the portable ZIP layout and its exact unchanged payload evidence.
 
-Delivered version **`0.4.2-roles.20261124-202127.g7e51e95`**. [Exact ZIPs, hashes and observed verification](../benchmarks/2026-11-24-separated-packages-validation.md): 23 split-package assertions, actual packaged 54-check one-click UI and two 60-frame synthetic cross-role sessions PASS. Physical acceptance remains pending. Archives live under `build/RelaxDesk-separated-win-x64-20261124`.
+Delivered version **`0.4.2-roles.20261124-202127.g7e51e95`**. Exact ZIPs, hashes and observed verification: 23 split-package assertions, actual packaged 54-check one-click UI and two 60-frame synthetic cross-role sessions PASS. Physical acceptance remains pending. Archives live under `build/RelaxDesk-separated-win-x64-20261124`.
 
 The owner requests independent controlled-side and connecting-side ZIPs. `scripts/package-roles.ps1` publishes the same committed version into two self-contained win-x64 closures:
 
@@ -30,3 +30,5 @@ Reproduce the actual split-archive verification with developer tools outside the
 ```
 
 Final delivery validation must extract both actual ZIPs into a separate directory, verify each manifest and role isolation, check actual EXE versions/Host bundled runtime and native hashes, perform Host service-payload readonly preflight, run the Host's one-click UI contracts with a fake privileged launcher and a synthetic authenticated Host-to-Viewer session across the two extracted packages. Do not count that as a real service install or Home dual-PC acceptance. Exact results and archive hashes are recorded after the observed run; physical UAC/SCM/input/audio/GPU/long-duration validation remains pending.
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).

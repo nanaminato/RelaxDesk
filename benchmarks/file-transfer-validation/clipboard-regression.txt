@@ -1,1 +1,0 @@
-PASS --clipboard-text: explicit capability/consent, clipboard_granted=True, bidirectional_unicode_verified=True, unauthorized/revoked operation denied, concurrent_media_frames=26, worker/resource cleanup; test clipboard provider only, no Windows clipboard modified

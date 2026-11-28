@@ -8,9 +8,11 @@ Normal current-user storage is `%LOCALAPPDATA%\RelaxDesk\preferences\connections
 
 File operations run off the Dispatcher and network workers, serialized within the Viewer store instance. Replacement uses a random temporary file in the same directory and an atomic rename; cancellation is checked before commit and temporary files are cleaned. Preflight refuses reparse ancestors/files and directory collisions. This is ordinary current-user preferences, not a race-proof privileged data store: concurrent separate Viewer processes may overwrite each other's recent-list update. It holds no secrets or identity trust. Filesystem redirection/races, arbitrary kernel IO hangs and power failure are not claimed transactional. History IO failure updates the history notice and leaves an authorized screen session running.
 
-Automation commands disable real-user persistence. The dedicated WPF history test injects a repository fixture store and uses a real Host/TLS with synthetic video; other verification/smoke launches never load or save the actual preference file. [Evidence](../benchmarks/2026-11-24-connection-history-validation.md) covers schema/privacy, real file/junction handling, actual WPF selection/save/clear and locked-file isolation. Final unified bundle/Home acceptance remains deferred; no package was generated.
+Automation commands disable real-user persistence. The dedicated WPF history test injects a repository fixture store and uses a real Host/TLS with synthetic video; other verification/smoke launches never load or save the actual preference file. Evidence covers schema/privacy, real file/junction handling, actual WPF selection/save/clear and locked-file isolation. Final unified bundle/Home acceptance remains deferred; no package was generated.
 
 
 Saved login credentials are a separate opt-in Windows Credential Manager entry,
 not part of the history JSON. Selecting an endpoint may autofill that separate
 entry after temporary secrets have been cleared. See [Viewer UI](VIEWER-UI.md).
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).

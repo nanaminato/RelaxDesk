@@ -20,7 +20,7 @@ The binary media header's formerly zero 64-bit field at byte offset 64 carries t
 
 Viewer disables input during the switch, ignores old-generation queued/retained frames, validates new dimensions against the selected physical rectangle, and resets the decoder even if two screens have identical dimensions. Separate control/media sockets may deliver the new keyframe before its state message; Viewer discards it and requests another keyframe after the state update. It sends `display-ready-v2` only after submitting/presenting a matching decoded frame. This ready command precedes new input in the same ordered control queue. Host drops old-generation and unready input while preserving its replay sequence, and never reinterprets it under new coordinates. First-frame readiness uses the same barrier. Viewer ends an attempt after 15 seconds without matching displayed output; existing reconnect still requires fresh consent and new display negotiation.
 
-WPF integration and real Host/TLS/H264 tests use loopback synthetic multi-screen surfaces and non-injecting input callbacks. This establishes control/codec/lifecycle behavior, not physical monitor capture, actual Windows input or visible GPU correctness. See [live-switch evidence](../benchmarks/2026-11-24-display-switch-validation.md).
+WPF integration and real Host/TLS/H264 tests use loopback synthetic multi-screen surfaces and non-injecting input callbacks. This establishes control/codec/lifecycle behavior, not physical monitor capture, actual Windows input or visible GPU correctness. See live-switch evidence.
 
 ## Capture and input
 
@@ -43,3 +43,5 @@ A session retains a validated capture/input snapshot. Before capture/input it co
 References: [display enumeration](https://learn.microsoft.com/en-us/windows/win32/gdi/enumeration-and-display-control), [DPI APIs](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/dpi-related-apis-and-registry-settings), [duplication rotation and pointer semantics](https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/desktop-dup-api).
 
 Scale API: [GetScaleFactorForMonitor](https://learn.microsoft.com/en-us/windows/win32/api/shellscalingapi/nf-shellscalingapi-getscalefactorformonitor).
+
+> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).

@@ -1,5 +1,0 @@
-PASS package SHA256 verification: 1039 files
-
-Exit code: 0. See logs folder and RUN-ME.zh-CN.md.
-Press any key to continue . . . 
-
