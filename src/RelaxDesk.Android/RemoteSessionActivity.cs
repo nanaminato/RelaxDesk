@@ -3,6 +3,7 @@ using Android.Content.PM;
 using Android.Content.Res;
 using Android.Graphics;
 using Android.Graphics.Drawables;
+using Android.Net;
 using Android.OS;
 using Android.Views;
 using Android.Widget;
@@ -36,6 +37,9 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
 
     readonly ViewportMapper viewport = new();
     readonly TouchGestureState gesture = new();
+    readonly NetworkTrafficRate trafficRate = new();
+    bool showTrafficInBytes;
+    string trafficHudLine = "";
     float touchpadSensitivity = 1.35f;
     Button displayBtn = null!;
     TextView zoomText = null!;
@@ -103,6 +107,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         {
             float saved = prefs!.GetFloat("sensitivity", 1.35f);
             touchpadSensitivity = float.IsFinite(saved) ? Math.Clamp(saved, 0.5f, 3f) : 1.35f;
+            showTrafficInBytes = prefs.GetBoolean("traffic_rate_bytes", false);
         }
         Window?.SetFlags(WindowManagerFlags.Secure | WindowManagerFlags.KeepScreenOn,
                         WindowManagerFlags.Secure | WindowManagerFlags.KeepScreenOn);
@@ -233,6 +238,8 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         hudToggleBtn.Click += (_, _) =>
         {
             showHud = !showHud;
+            ResetTrafficHud();
+            hudText.Text = "";
             hudText.Visibility = showHud && session is not null ? ViewStates.Visible : ViewStates.Gone;
         };
         disconnectBtn.Click += (_, _) => ReturnToList();
@@ -617,7 +624,9 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         ShowConnectionProgress(true);
         sessionPill.Visibility = ViewStates.Gone;
         hudText.Visibility = showHud ? ViewStates.Visible : ViewStates.Gone;
-        ScheduleHudTick(activeSession);
+        ResetTrafficHud();
+        hudText.Text = "";
+        ScheduleHudTick(activeSession, sampleTraffic: true);
 
         _ = Task.Run(async () =>
         {
@@ -789,17 +798,29 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         UpdateLabel();
         layout.AddView(label);
         layout.AddView(sensitivity);
+        var trafficLabel = new TextView(this) { Text = AndroidStrings.Get("traffic_rate_unit") };
+        trafficLabel.SetPadding(0, Dp(8), 0, 0);
+        layout.AddView(trafficLabel);
+        var trafficUnits = new Spinner(this);
+        trafficUnits.Adapter = new ArrayAdapter<string>(this, global::Android.Resource.Layout.SimpleSpinnerDropDownItem,
+            new[] { "kb/s · Mb/s", "KB/s · MB/s" });
+        trafficUnits.SetSelection(showTrafficInBytes ? 1 : 0);
+        layout.AddView(trafficUnits);
+        var scroll = new ScrollView(this);
+        scroll.AddView(layout);
         AndroidTheme.CreateDialogBuilder(this).SetTitle(AndroidStrings.Get("display_settings"))!
-            .SetView(layout)!
+            .SetView(scroll)!
             .SetNegativeButton(AndroidStrings.Get("cancel"), (_, _) => { })!
             .SetPositiveButton(AndroidStrings.Get("video_apply"), (_, _) =>
             {
                 if ((int)viewport.DisplayMode != modes.SelectedItemPosition)
                     viewport.SetDisplayMode((ViewportDisplayMode)modes.SelectedItemPosition);
                 touchpadSensitivity = (sensitivity.Progress + 50) / 100f;
+                showTrafficInBytes = trafficUnits.SelectedItemPosition == 1;
                 using var prefs = GetSharedPreferences("relaxdesk_input_v1", global::Android.Content.FileCreationMode.Private);
                 using var editor = prefs!.Edit();
                 editor!.PutFloat("sensitivity", touchpadSensitivity);
+                editor.PutBoolean("traffic_rate_bytes", showTrafficInBytes);
                 editor.Apply();
                 UpdateVideoSurfaceLayout();
             })!.Show();
@@ -873,15 +894,33 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             })!.Show();
     }
 
-    void ScheduleHudTick(RemoteDesktopSession activeSession)
+    void ScheduleHudTick(RemoteDesktopSession activeSession, bool sampleTraffic)
     {
         uiHandler?.PostDelayed(() =>
         {
             if (!ReferenceEquals(session, activeSession) || IsFinishing || IsDestroyed) return;
-            if (showHud) hudText.Text = activeSession.VideoSettingsStatus + "\n" + activeSession.Telemetry.FormatHud() +
-                $"\nPointer {viewport.CursorNormalizedX},{viewport.CursorNormalizedY}";
-            ScheduleHudTick(activeSession);
+            if (showHud && foreground)
+            {
+                if (sampleTraffic)
+                {
+                    int uid = global::Android.OS.Process.MyUid();
+                    var rates = trafficRate.Sample(TrafficStats.GetUidRxBytes(uid), TrafficStats.GetUidTxBytes(uid),
+                        SystemClock.ElapsedRealtime());
+                    trafficHudLine = rates is { } rate
+                        ? $"\n↑ {NetworkTrafficRate.Format(rate.UploadKbps, showTrafficInBytes)}  ↓ {NetworkTrafficRate.Format(rate.DownloadKbps, showTrafficInBytes)}"
+                        : "";
+                }
+                hudText.Text = activeSession.VideoSettingsStatus + "\n" + activeSession.Telemetry.FormatHud() +
+                    $"\nPointer {viewport.CursorNormalizedX},{viewport.CursorNormalizedY}" + trafficHudLine;
+            }
+            ScheduleHudTick(activeSession, !sampleTraffic);
         }, 500);
+    }
+
+    void ResetTrafficHud()
+    {
+        trafficRate.Reset();
+        trafficHudLine = "";
     }
 
     void UpdateVideoSurfaceLayout()
@@ -1157,6 +1196,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     protected override void OnStop()
     {
         foreground = false;
+        ResetTrafficHud();
         passInput.Text = "";
         ResetTouchInput();
         session?.AttachSurface(null);

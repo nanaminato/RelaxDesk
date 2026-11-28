@@ -170,6 +170,21 @@ internal static class PipelineAndViewportTests
         counted.RequestRecovery();
         Check(polled.Sample().TotalDropped == 4, "Explicit recovery counts the queued frame it discards");
 
+        var traffic = new NetworkTrafficRate();
+        Check(traffic.Sample(20_000, 2_000, 100) is null, "First traffic sample establishes a baseline");
+        Check(traffic.Sample(23_000, 2_750, 600) == (48.0, 12.0),
+            "Traffic rates use actual elapsed time and keep download and upload distinct");
+        Check(traffic.Sample(23_000, 2_750, 1600) == (0.0, 0.0), "Idle counters report zero");
+        Check(traffic.Sample(100, 100, 2600) is null, "Counter rollback restarts the baseline");
+        Check(traffic.Sample(-1, 100, 3600) is null, "Unsupported counters cannot produce a rate");
+        Check(traffic.Sample(10_000, 1_000, 4600) is null, "Supported counters after a gap start a fresh window");
+        traffic.Reset();
+        Check(traffic.Sample(20_000, 2_000, 5600) is null, "Resuming measurement skips hidden or background traffic");
+        Check(NetworkTrafficRate.Format(96, false) == "96 kb/s" &&
+              NetworkTrafficRate.Format(96, true) == "12 KB/s", "Display conversion uses eight bits per byte");
+        Check(NetworkTrafficRate.Format(8_000, false) == "8 Mb/s" &&
+              NetworkTrafficRate.Format(8_000, true) == "1 MB/s", "Display scales to megabits or megabytes");
+
         return checks;
     }
 

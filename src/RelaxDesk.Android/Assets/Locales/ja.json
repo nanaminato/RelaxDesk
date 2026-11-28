@@ -1,4 +1,5 @@
 {
+  "traffic_rate_unit": "通信速度の単位",
   "add_pc": "+ PC追加",
   "language": "言語",
   "diagnostics": "診断",
