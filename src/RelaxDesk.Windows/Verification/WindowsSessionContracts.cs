@@ -23,9 +23,16 @@ public static class WindowsSessionContracts
         Check(systemSecure.Denial is null);
         systemSecure.EnsureAllowed();
         ServiceDesktopWorker.EnsureCaptureAllowed(systemSecure with { Locked = false }); Check(true);
+        var consent = systemSecure with { Locked = false };
+        Check(!ServiceDesktopWorker.ConsentCaptureEnded(consent, () => true));
+        Check(ServiceDesktopWorker.ConsentCaptureEnded(consent, () => false));
+        Check(ServiceDesktopWorker.ConsentCaptureEnded(consent with { InputDesktop = "Default" }, () => throw new InvalidOperationException()));
+        Check(ServiceDesktopWorker.ConsentCaptureEnded(consent with { InputDesktop = null }, () => throw new InvalidOperationException()));
         foreach (bool? locked in new bool?[] { true, null })
         {
             try { ServiceDesktopWorker.EnsureCaptureAllowed(systemSecure with { Locked = locked }); throw new Exception("Unverified lock state allowed secure capture"); }
+            catch (WindowsSessionUnavailableException) { Check(true); }
+            try { ServiceDesktopWorker.ConsentCaptureEnded(consent with { Locked = locked }, () => false); throw new Exception("Locked or unverified secure desktop treated as a transition"); }
             catch (WindowsSessionUnavailableException) { Check(true); }
         }
         var autoPause = new DesktopElevationPause(new PauseClock());

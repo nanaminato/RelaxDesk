@@ -35,6 +35,8 @@ Core 增加安全桌面帧头/长度/截断、单调 epoch、旧点击拒绝、�
 
 ## 尚需硬件覆盖
 
+Windows Home 回归用例：更新完整被控端及其系统服务，在局域网连接后请求运行一个无害的管理员程序。请从连接端点击 UAC「是」，确认同一连接恢复普通桌面、可以继续移动鼠标和键入，被控端仍显示正在共享。随后重新触发并点击「否」，再次确认恢复。保存 Host 和服务诊断。切换期间若采集被打断，可查看 `secure_capture_interrupted`，以及恢复时的 `service_desktop_transition`。锁屏或切换 Windows 会话仍应结束原连接。
+
 Windows Home 双机、全部 Windows 10/11 和不同 Server 管理策略、Windows 11 Administrator Protection、远程 UAC 鼠标确认按钮、不同 GPU/多显示器/HDR，以及物理 input-to-photon/MSTSC 对比需分别记录。不会修改策略以让测试通过。
 
 ## 本机初轮观察
