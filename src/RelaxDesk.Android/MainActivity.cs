@@ -63,6 +63,9 @@ public sealed class MainActivity : Activity, ISurfaceHolderCallback
         };
         root.AddView(keyProbe);
         root.AddView(keyStatus);
+        var liveSession = new Button(this) { Text = "连接 Windows 远程桌面（持续会话）" };
+        liveSession.Click += (_, _) => StartActivity(typeof(RemoteSessionActivity));
+        root.AddView(liveSession);
         var remote = new Button(this) { Text = "局域网首帧连接探针" };
         remote.Click += (_, _) => StartActivity(typeof(RemoteProbeActivity));
         root.AddView(remote);

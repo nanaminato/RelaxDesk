@@ -78,5 +78,6 @@ if (args is [var file, ..])
 }
 Console.WriteLine($"Android media contracts: {checks}");
 Console.WriteLine($"Android device proof contracts: {DeviceProofTests.Run()}");
+Console.WriteLine($"Android pipeline & viewport contracts: {RelaxDesk.Android.Tests.PipelineAndViewportTests.Run()}");
 if (args is [var fixturePath, ..])
     Console.WriteLine($"Android pinned TLS loopback contracts: {await SessionLoopbackTests.Run(fixturePath, includeIdle: args.Length == 2)}");

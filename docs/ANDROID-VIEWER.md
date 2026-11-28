@@ -26,7 +26,7 @@
 | --- | --- | --- |
 | A0 本地媒体 | 可重建 APK，Android 设备安装后播放生成的 48 帧；记录 codec、API、首帧提交及 Surface 生命周期 | 已构建 ARM64 探针；实机未测 |
 | A1 安全局域网 | 合成 Host → Android 证书/密码/首次批准/重连/拒绝 → 首个 H.264 画面，再在真实 Home 复核 | 前台首帧探针对接完成，Linux 回环通过；Android 上的运行和真实 Windows 互通待测 |
-| A2 单桌面办公 | 直触/触控板、横屏全屏、缩放平移、外设键鼠和文字输入；独立光标、生命周期和断线清理 | 待做 |
+| A2 单桌面办公 | 直触/触控板、横屏全屏、缩放平移、外设键鼠和文字输入；独立光标、生命周期和断线清理 | 核心源码与平台无关单测已完成（`BoundedAvcQueue`、`PointerMetadataParser`、`ViewportMapper`、`AndroidPipelineTelemetry`、`LiveAvcDecoder`、`RemoteDesktopSession`、`RemoteCursorView`、`AndroidKeyMapper`、`ConnectionStore`、`RemoteSessionActivity`）；APK 构建与 ARM64 真机（Galaxy Tab S9 FE）实测待工具链补齐 `net11.0-android37.0` workload 后执行 |
 | A3 资源与弱网 | 同工作负载的两款 ARM64 真机，报告连接到首帧、解码/提交、P50/P95 输入到可见响应或明确替代指标、CPU、能耗、流量与恢复时间 | 待做 |
 | A4 体验验证 | Home 验收后复核 Pro/Server；稳定工具链、回滚、已知限制；由用户批准后才合并/正式发布 | 待做 |
 
