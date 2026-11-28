@@ -7,6 +7,7 @@ using Android.Views;
 using Android.Widget;
 using RelaxDesk.Core;
 using RelaxDesk.Mobile.Media;
+using CoreRemoteInput = RelaxDesk.Core.RemoteInput;
 using System.Security.Authentication;
 
 namespace RelaxDesk.Mobile;
@@ -348,32 +349,33 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
                 if (!touchpadMode && viewport.TryViewToNormalized(x, y, true, out int nx, out int ny))
                 {
                     cursorView.UpdateLocalPosition(x, y);
-                    session.SendInput(new RemoteInput("move", X: nx, Y: ny));
-                    session.SendInput(new RemoteInput("button", Button: 1, Up: false));
+                    session.SendInput(new CoreRemoteInput("move", X: nx, Y: ny));
+                    session.SendInput(new CoreRemoteInput("button", Button: 1, Up: false));
                 }
                 break;
 
             case MotionEventActions.Move:
                 float mdx = x - lastTouchX;
                 float mdy = y - lastTouchY;
-                if (!movedSinceDown && MathF.Hypot(x - touchDownX, y - touchDownY) > 10f)
+                float moveDx = x - touchDownX, moveDy = y - touchDownY;
+                if (!movedSinceDown && MathF.Sqrt(moveDx * moveDx + moveDy * moveDy) > 10f)
                     movedSinceDown = true;
                 lastTouchX = x;
                 lastTouchY = y;
 
                 if (touchpadMode)
                 {
-                    if (viewport.TryApplyRelativeDelta(mdx, mdy, 1.35f, out int nx, out int ny))
+                    if (viewport.TryApplyRelativeDelta(mdx, mdy, 1.35f, out int rx, out int ry))
                     {
-                        if (viewport.TryNormalizedToView(nx, ny, out float vx, out float vy))
+                        if (viewport.TryNormalizedToView(rx, ry, out float vx, out float vy))
                             cursorView.UpdateLocalPosition(vx, vy);
-                        session.SendInput(new RemoteInput("move", X: nx, Y: ny));
+                        session.SendInput(new CoreRemoteInput("move", X: rx, Y: ry));
                     }
                 }
-                else if (viewport.TryViewToNormalized(x, y, true, out int nx, out int ny))
+                else if (viewport.TryViewToNormalized(x, y, true, out int tx, out int ty))
                 {
                     cursorView.UpdateLocalPosition(x, y);
-                    session.SendInput(new RemoteInput("move", X: nx, Y: ny));
+                    session.SendInput(new CoreRemoteInput("move", X: tx, Y: ty));
                 }
                 break;
 
@@ -384,13 +386,13 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
                     if (!movedSinceDown)
                     {
                         int button = heldMs >= 450 ? 2 : 1; // Long-press = right click, tap = left click
-                        session.SendInput(new RemoteInput("button", Button: button, Up: false));
-                        session.SendInput(new RemoteInput("button", Button: button, Up: true));
+                        session.SendInput(new CoreRemoteInput("button", Button: button, Up: false));
+                        session.SendInput(new CoreRemoteInput("button", Button: button, Up: true));
                     }
                 }
                 else
                 {
-                    session.SendInput(new RemoteInput("button", Button: 1, Up: true));
+                    session.SendInput(new CoreRemoteInput("button", Button: 1, Up: true));
                 }
                 movedSinceDown = false;
                 break;
@@ -412,7 +414,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             if (viewport.TryViewToNormalized(ev.GetX(), ev.GetY(), false, out int nx, out int ny))
             {
                 cursorView.UpdateLocalPosition(ev.GetX(), ev.GetY());
-                session.SendInput(new RemoteInput("move", X: nx, Y: ny));
+                session.SendInput(new CoreRemoteInput("move", X: nx, Y: ny));
                 e.Handled = true;
             }
         }
@@ -422,7 +424,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             int wheelX = (int)Math.Round(ev.GetAxisValue(Axis.Hscroll) * 120f);
             if (wheelX != 0 || wheelY != 0)
             {
-                session.SendInput(new RemoteInput("wheel", WheelX: wheelX, WheelY: wheelY));
+                session.SendInput(new CoreRemoteInput("wheel", WheelX: wheelX, WheelY: wheelY));
                 e.Handled = true;
             }
         }
@@ -432,7 +434,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     {
         if (session is not null && AndroidKeyMapper.TryMap(keyCode, out int vk, out int scan, out bool ext))
         {
-            session.SendInput(new RemoteInput("key", VirtualKey: vk, ScanCode: scan, Extended: ext, Up: false, Repeat: (e?.RepeatCount ?? 0) > 0));
+            session.SendInput(new CoreRemoteInput("key", VirtualKey: vk, ScanCode: scan, Extended: ext, Up: false, Repeat: (e?.RepeatCount ?? 0) > 0));
             return true;
         }
         return base.OnKeyDown(keyCode, e);
@@ -442,7 +444,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     {
         if (session is not null && AndroidKeyMapper.TryMap(keyCode, out int vk, out int scan, out bool ext))
         {
-            session.SendInput(new RemoteInput("key", VirtualKey: vk, ScanCode: scan, Extended: ext, Up: true));
+            session.SendInput(new CoreRemoteInput("key", VirtualKey: vk, ScanCode: scan, Extended: ext, Up: true));
             return true;
         }
         return base.OnKeyUp(keyCode, e);
@@ -459,7 +461,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             {
                 string text = input.Text ?? "";
                 if (InputProtocol.TextValid(text))
-                    session?.SendInput(new RemoteInput("text", Text: text));
+                    session?.SendInput(new CoreRemoteInput("text", Text: text));
             })!
             .SetNegativeButton("取消", (_, _) => { })!
             .Show();

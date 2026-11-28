@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using Android.Views;
 using RelaxDesk.Core;
 using RelaxDesk.Mobile.Media;
+using CoreRemoteInput = RelaxDesk.Core.RemoteInput;
 
 namespace RelaxDesk.Mobile;
 
@@ -40,7 +41,7 @@ internal sealed class RemoteDesktopSession : IDisposable
         decoder?.SetSurface(surface);
     }
 
-    public bool SendInput(RemoteInput input)
+    public bool SendInput(CoreRemoteInput input)
     {
         long gen = Volatile.Read(ref activeDisplayGeneration);
         if (gen <= 0 || sessionCts is null || sessionCts.IsCancellationRequested)
@@ -58,7 +59,7 @@ internal sealed class RemoteDesktopSession : IDisposable
 
     public void ReleaseAllInputs()
     {
-        RemoteInput[] toRelease;
+        CoreRemoteInput[] toRelease;
         lock (inputLock)
         {
             if (pressedInputs.Count == 0) return;
@@ -203,7 +204,7 @@ internal sealed class RemoteDesktopSession : IDisposable
 
             if (packet.Kind == "display-state-v2" && packet.DisplayState is { } nextState)
             {
-                displaySession.ApplyState(nextState);
+                displaySession.ReceiveTopology(nextState);
                 Volatile.Write(ref activeDisplayGeneration, nextState.Generation);
                 long seq = Interlocked.Increment(ref sequence);
                 controlQueue.TryWrite(new Packet("display-configured-v2", Sequence: seq, DisplayGeneration: nextState.Generation));

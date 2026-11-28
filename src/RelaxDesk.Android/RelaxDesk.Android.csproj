@@ -14,7 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="../RelaxDesk.Android.Media/RelaxDesk.Android.Media.csproj" />
   </ItemGroup>
-  <Target Name="RequireProbeAsset" BeforeTargets="PrepareForBuild" Condition="!Exists('Assets/probe.rdm2')">
-    <Error Text="Generate the synthetic probe asset with scripts/generate-android-probe.sh before building." />
+  <Target Name="RequireProbeAsset" BeforeTargets="PrepareForBuild" Condition="!Exists('Assets/probe.rdm2') and '$(SkipProbeAssetCheck)' != 'true'">
+    <Error Text="Generate the synthetic probe asset with scripts/generate-android-probe.sh before building, or pass -p:SkipProbeAssetCheck=true for live-only builds." />
   </Target>
 </Project>

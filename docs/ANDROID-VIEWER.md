@@ -151,3 +151,14 @@ dotnet run --project src/RelaxDesk.Android.Tests -c Release -- \
 [模拟器运行记录](https://github.com/nanaminato/RelaxDesk/actions/runs/46088581452) 使用 Android UI 和仅监听开发机回环的合成 Host。拒绝局域网授权不连接，允许授权后也不会自动连接，两者都不保留输入的密码。填错证书指纹时，Host 接到 TCP，但没有收到登录请求。正确指纹下的两次连接都验证了真实 Android Keystore 签名、四条通道绑定和关闭；测试在两次连接之间强制停止并重启 App，Host 比较经挑战验证的设备公钥指纹，只输出是否相同。此次确认相同，未测试真实 Windows 的记住批准行为。
 
 **模拟器画面未通过**：更早的 `Stop()` 清理异常掩盖了原始错误，改用 `Release()` 后，两次连接均暴露 `MediaCodec.dequeueInputBuffer` 的 `error_14`。因此 CI 整体保留失败状态，没有放宽首帧提交要求。下一轮单独比较同素材的本地播放与远端首帧，记录解码器名称和失败阶段，再用 ARM64 手机及 Windows Host 独立验证。没有真机解码、持续画面或输入结果。
+
+### ARM64 真机（Galaxy Tab S9 FE）首轮构建、冷启动与内存基线（2026-11-28）
+
+在 Windows 开发机上使用 `.NET SDK 11.0.100` + `android` workload 完成 `android-arm64` Debug 与 Release APK 构建（均 **0 警告、0 错误**），并通过 `adb install -r` 安装至真机 **Samsung Galaxy Tab S9 FE (`SM_X510`, Android 16 / API 36, `arm64-v8a`, `1440x2304`, 4 KiB 页)** 实测：
+
+| 构建配置 | APK 体积 | 冷启动 `TotalTime` (`am start -W`) | 空闲 `TOTAL PSS` (`dumpsys meminfo`) | Native Heap / Dalvik Heap / Graphics |
+| --- | --- | --- | --- | --- |
+| Debug (`android-arm64`) | 41.82 MB | 1317 ms | 226.1 MB (231,569 KB) | 79.2 MB / 1.7 MB / 13.4 MB |
+| Release (`android-arm64`, ILLink) | **9.61 MB** | **542 ms** | **81.4 MB** (83,370 KB) | 14.8 MB / 1.6 MB / 13.1 MB |
+
+本次实测确认应用在 ARM64 真机上无崩溃、无异常日志；下一步将在真机上连接 Windows Host 实测 1080P 60FPS 持续硬件解码、独立光标响应、触控/外设键鼠输入及长时运行稳定性。

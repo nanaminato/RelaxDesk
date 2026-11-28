@@ -115,10 +115,10 @@ internal sealed class LiveAvcDecoder : IDisposable
         format.SetInteger(MediaFormat.KeyMaxInputSize, Math.Max(2 * 1024 * 1024, width * height));
         format.SetInteger(MediaFormat.KeyPriority, 0); // Realtime priority
 
-        if (Build.VERSION.SdkInt >= BuildVersionCodes.R)
+        if (OperatingSystem.IsAndroidVersionAtLeast(30))
         {
             var caps = candidate.GetCapabilitiesForType(Mime);
-            if (caps?.IsFeatureSupported(MediaCodecInfo.CodecCapabilities.FeatureLowLatency) == true)
+            if (caps?.IsFeatureSupported("low-latency") == true)
                 format.SetInteger(MediaFormat.KeyLowLatency, 1);
         }
 

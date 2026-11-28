@@ -14,7 +14,7 @@ internal sealed class RemoteCursorView : View
     readonly Paint fallbackFill = new(PaintFlags.AntiAlias) { Color = Color.White };
     readonly Paint fallbackStroke = new(PaintFlags.AntiAlias) { Color = Color.Black, StrokeWidth = 2.5f };
     readonly Paint bitmapPaint = new(PaintFlags.FilterBitmap);
-    readonly Path arrowPath = new();
+    readonly global::Android.Graphics.Path arrowPath = new();
 
     Bitmap? remoteBitmap;
     long currentShapeVersion = -1;
