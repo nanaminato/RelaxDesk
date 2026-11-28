@@ -40,15 +40,22 @@ public sealed class ClipboardContentState
     public string Origin{get;}=Guid.NewGuid().ToString("N");
     long clock,revision;string lastOrigin="",digest="";
     public void Baseline(ClipboardContent content){if(!ClipboardContentRules.Valid(content))throw new InvalidDataException("Invalid clipboard baseline");digest=ClipboardContentRules.Digest(content);}
-    public ClipboardContentUpdate? ObserveLocal(ClipboardContent content)
+    public ClipboardContentUpdate? ObserveLocal(ClipboardContent content, bool newCopy = false)
     {
-        if(!ClipboardContentRules.Valid(content))return null;string next=ClipboardContentRules.Digest(content);if(next==digest)return null;
+        if(!ClipboardContentRules.Valid(content))return null;string next=ClipboardContentRules.Digest(content);if(!newCopy&&next==digest)return null;
         digest=next;revision=clock=checked(clock+1);lastOrigin=Origin;return new(Origin,revision,content.Own());
+    }
+    internal void ObserveRevision(long incomingRevision) => clock = Math.Max(clock, incomingRevision);
+    internal void ObserveLocalFileSelection()
+    {
+        revision = clock = checked(clock + 1);
+        lastOrigin = Origin;
+        digest = "";
     }
     public bool ShouldApply(ClipboardContentUpdate update)
     {
         if(!ClipboardContentRules.Valid(update))throw new InvalidDataException("Invalid clipboard update");
-        clock=Math.Max(clock,update.Revision);return update.Origin!=Origin&&(update.Revision>revision||update.Revision==revision&&string.CompareOrdinal(update.Origin,lastOrigin)>0);
+        ObserveRevision(update.Revision);return update.Origin!=Origin&&(update.Revision>revision||update.Revision==revision&&string.CompareOrdinal(update.Origin,lastOrigin)>0);
     }
     public void Applied(ClipboardContentUpdate update){if(!ShouldApply(update))return;revision=update.Revision;lastOrigin=update.Origin;digest=ClipboardContentRules.Digest(update.Content);}
 }

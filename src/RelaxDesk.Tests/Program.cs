@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Globalization;
 using RelaxDesk.Core;
 using RelaxDesk.Core.Localization;
+if (args is ["--clipboard-content"]) { await ClipboardContentChecks.Run(); return; }
 int count = await SessionAdmissionChecks.Run();
 Console.WriteLine($"PASS {count} session admission checks");
 void Check(bool result) { if (!result) throw new Exception($"Test {count + 1} failed"); count++; }

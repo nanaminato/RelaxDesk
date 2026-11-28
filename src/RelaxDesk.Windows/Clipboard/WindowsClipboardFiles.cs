@@ -56,6 +56,15 @@ public sealed partial class WindowsTextClipboard:ILocalFileClipboard,IFileClipbo
         Action<ClipboardFormats>? command;lock(fileCommandSync){command=fileCommand;fileCommand=null;cancelFileCommand=null;}command?.Invoke(formats);
     }
     void CancelFileCommand(){lock(fileCommandSync){fileCommand=null;cancelFileCommand?.Invoke();cancelFileCommand=null;}}
+    void ClearPublishedFiles()
+    {
+        if(publishedFileVersion==0||GetClipboardSequenceNumber()!=publishedFileVersion||!OpenClipboard(window))return;
+        try
+        {
+            if(GetClipboardSequenceNumber()==publishedFileVersion)EmptyClipboard();
+        }
+        finally{CloseClipboard();}
+    }
     public Task<long> ClipboardVersion(CancellationToken ct)=>ScheduleFileCommand<long>(_=>{Verify();Desktop.EnsureInteractiveDesktop();return GetClipboardSequenceNumber();},ct);
     public Task<bool> PrepareFiles(ClipboardFiles files,long expectedVersion,CancellationToken ct)
     {

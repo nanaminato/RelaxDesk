@@ -45,7 +45,7 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
             if(formats.Files&&IsClipboardFormatAvailable(15))
             {
                 if(!ReadMemory(15,ClipboardFileFormat.MaximumBytes,out var drop))return false;
-                ClipboardContent? offered=null;
+                ClipboardContent? offered=null;bool localFileSelection=false;
                 sequence=GetClipboardSequenceNumber();
                 if(sequence!=publishedFileVersion)
                 {
@@ -54,14 +54,14 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
                     {
                         string[] paths=ClipboardFileFormat.Decode(drop);
                         if(localFilesChanged is not null && observedClipboardVersion!=0 && observedClipboardVersion!=sequence)
-                            localFilesChanged(new(sequence,paths));
+                        { localFileSelection=true;localFilesChanged(new(sequence,paths)); }
                         if(fileSources is not null)offered=new(Files:fileSources.Describe(paths));
                         else if(clipboardFileRoot is not null)offered=new(Files:clipboardFileRoot.DescribeClipboard(paths));
                     }
                     catch(Exception error)when(error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or NotSupportedException){}
                 }
                 observedClipboardVersion=sequence;
-                snapshot=richCached=new(sequence,offered);cachedFormats=formats;return true;
+                snapshot=richCached=new(sequence,offered,localFileSelection);cachedFormats=formats;return true;
             }
             if(formats.Text)
             {
