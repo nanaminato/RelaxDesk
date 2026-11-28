@@ -17,9 +17,9 @@ internal sealed class LiveAvcDecoder : IDisposable
     const string Mime = "video/avc";
     readonly object surfaceLock = new();
     readonly AndroidPipelineTelemetry telemetry;
+    readonly AndroidPipelineDiagnostics diagnostics;
     readonly Action onRecoveryNeeded;
-    readonly Action<long> onPresented;
-    long outputDisplayGeneration;
+    readonly Action<MediaFrame> onPresented;
     readonly PlatformCodec.BufferInfo bufferInfo = new();
 
     Surface? activeSurface;
@@ -30,12 +30,13 @@ internal sealed class LiveAvcDecoder : IDisposable
     int configuredVideoGeneration;
     long configuredDisplayGeneration;
     byte[] configuredSps = [], configuredPps = [];
-    readonly Dictionary<long, long> submittedAt = new();
+    readonly Dictionary<long, (long Timestamp, MediaFrame Frame)> submittedAt = new();
     bool disposed;
 
-    public LiveAvcDecoder(AndroidPipelineTelemetry telemetry, Action onRecoveryNeeded, Action<long> onPresented)
+    public LiveAvcDecoder(AndroidPipelineTelemetry telemetry, AndroidPipelineDiagnostics diagnostics, Action onRecoveryNeeded, Action<MediaFrame> onPresented)
     {
         this.telemetry = telemetry;
+        this.diagnostics = diagnostics;
         this.onRecoveryNeeded = onRecoveryNeeded;
         this.onPresented = onPresented;
     }
@@ -82,14 +83,16 @@ internal sealed class LiveAvcDecoder : IDisposable
 
                 if (needsConfigure)
                 {
+                    long configureStarted = Stopwatch.GetTimestamp();
                     ConfigureDecoderLocked(surface, frame.Width, frame.Height, sps, pps);
+                    diagnostics.Add("configure", Stopwatch.GetElapsedTime(configureStarted).TotalMilliseconds);
+                    diagnostics.Configured();
                     configuredVideoGeneration = frame.VideoGeneration;
                     configuredDisplayGeneration = frame.DisplayGeneration;
                     configuredSps = sps; configuredPps = pps;
                 }
 
                 if (decoder is null) return;
-                outputDisplayGeneration = frame.DisplayGeneration;
 
                 long submitStart = Stopwatch.GetTimestamp();
                 if (!SubmitInputLocked(decoder, frame, ct))
@@ -100,6 +103,8 @@ internal sealed class LiveAvcDecoder : IDisposable
                     return;
                 }
                 telemetry.RecordSubmitted(queued.EnqueuedTimestamp);
+                diagnostics.Add("receive_to_submit", Stopwatch.GetElapsedTime(queued.EnqueuedTimestamp).TotalMilliseconds);
+                diagnostics.Submitted();
                 DrainOutputLocked(decoder, submitStart);
             }
             catch (PlatformCodec.CodecException ex)
@@ -109,6 +114,7 @@ internal sealed class LiveAvcDecoder : IDisposable
 #else
                 _ = ex;
 #endif
+                diagnostics.Recovery();
                 ReleaseDecoderLocked();
                 onRecoveryNeeded();
             }
@@ -174,10 +180,12 @@ internal sealed class LiveAvcDecoder : IDisposable
             int index = codec.DequeueInputBuffer(4000);
             if (index < 0)
             {
+                diagnostics.InputWait();
                 DrainOutputLocked(codec, Stopwatch.GetTimestamp());
                 continue;
             }
 
+            diagnostics.Add("input_wait", deadline.Elapsed.TotalMilliseconds);
             using var input = codec.GetInputBuffer(index);
             if (input is null) return false;
             input.Clear();
@@ -186,7 +194,7 @@ internal sealed class LiveAvcDecoder : IDisposable
             input.Put(frame.Data);
             codec.QueueInputBuffer(index, 0, frame.Data.Length, frame.Timestamp100ns / 10, MediaCodecBufferFlags.None);
             if (submittedAt.Count >= 64) submittedAt.Remove(submittedAt.Keys.First());
-            submittedAt[frame.Timestamp100ns / 10] = Stopwatch.GetTimestamp();
+            submittedAt[frame.Timestamp100ns / 10] = (Stopwatch.GetTimestamp(), frame with { Data = [], Metadata = [] });
             return true;
         }
         return false;
@@ -205,10 +213,12 @@ internal sealed class LiveAvcDecoder : IDisposable
             codec.ReleaseOutputBuffer(index, render);
             if (render)
             {
-                double ms = submittedAt.Remove(bufferInfo.PresentationTimeUs, out long submitted)
-                    ? Stopwatch.GetElapsedTime(submitted).TotalMilliseconds : 0;
+                bool known = submittedAt.Remove(bufferInfo.PresentationTimeUs, out var submitted);
+                double ms = known ? Stopwatch.GetElapsedTime(submitted.Timestamp).TotalMilliseconds : 0;
                 telemetry.RecordDecodedAndPresented(ms, activeCodecName);
-                onPresented(outputDisplayGeneration);
+                diagnostics.Output();
+                if (known) diagnostics.Add("submit_to_output", ms);
+                if (known) onPresented(submitted.Frame);
             }
         }
     }
@@ -221,6 +231,7 @@ internal sealed class LiveAvcDecoder : IDisposable
             try { DrainOutputLocked(decoder, Stopwatch.GetTimestamp()); }
             catch (PlatformCodec.CodecException)
             {
+                diagnostics.Recovery();
                 ReleaseDecoderLocked();
                 onRecoveryNeeded();
             }

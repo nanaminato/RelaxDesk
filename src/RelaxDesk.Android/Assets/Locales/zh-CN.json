@@ -40,5 +40,12 @@
   "enc_unavail_title": "加密存储不可用",
   "enc_unavail_msg": "当前设备的 Android Keystore 加密不可用。是否以明文方式保存密码，或选择不保存密码继续连接？",
   "save_plain": "明文保存",
-  "dont_save": "不保存"
+  "dont_save": "不保存",
+  "video_settings": "画质",
+  "video_current": "当前目标：",
+  "video_fps": "帧率上限",
+  "video_bitrate": "视频目标码率",
+  "video_auto": "自动调节画质",
+  "video_tip": "自动模式在上述上限内根据延迟和丢帧调整；目标值不保证实际帧率或带宽。",
+  "video_apply": "应用"
 }

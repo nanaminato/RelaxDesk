@@ -9,7 +9,7 @@ using RelaxDesk.Core;
 // transfer, clipboard or audio provider. Never expose this listener to a LAN.
 internal static class AndroidProbeFixtureHost
 {
-    internal static async Task Run(string fixturePath)
+    internal static async Task Run(string fixturePath, bool continuous = false)
     {
         using var source = File.OpenRead(fixturePath);
         var frame = await MediaProtocol.Read(source, displayGeneration: true, videoGeneration: true);
@@ -43,7 +43,7 @@ internal static class AndroidProbeFixtureHost
                 }
                 FullControlProtocol.RequireCurrent(hello);
                 if (hello.Capabilities is not ["h264"] || hello.FileResume || hello.Network is not null ||
-                    hello.DeviceCredential is not null) throw new InvalidDataException("Unexpected probe features");
+                    (continuous ? hello.DeviceCredential is not "" : hello.DeviceCredential is not null)) throw new InvalidDataException("Unexpected probe features");
                 byte[] challenge = RandomNumberGenerator.GetBytes(32);
                 await Wire.Write(control, new(FullControlProtocol.DeviceChallenge, Data: challenge), timeout.Token);
                 var proof = await Wire.Read(control, timeout.Token, 2048);
@@ -82,14 +82,24 @@ internal static class AndroidProbeFixtureHost
                         if (await tls.ReadAsync(new byte[1], timeout.Token) != 0) throw new IOException("Unexpected optional payload");
                     Console.WriteLine("VALID no-optional-payload");
                     var gate = new AccessGate();
-                    gate.Approve(SessionCapabilities.All, allowInput: false);
+                    gate.Approve(SessionCapabilities.All, continuous ? InputProtocol.Version : 0,
+                        continuous ? DisplayProtocol.TopologyVersion : 0, allowInput: false);
+                    long mediaSequence = frame.Sequence;
                     try
                     {
                         while (true)
                         {
                             var ping = await SessionControl.Read(control, timeout.Token);
+                            if (continuous && ping.Kind is "display-configured-v2" or "display-ready-v2" or "keyframe-v2")
+                            {
+                                if (!gate.AcceptControl(ping)) throw new InvalidDataException("Invalid continuous probe control");
+                                Console.WriteLine("VALID " + ping.Kind);
+                                if (ping.Kind == "keyframe-v2")
+                                    await MediaProtocol.Write(channels[0], frame with { Sequence = ++mediaSequence }, timeout.Token);
+                                continue;
+                            }
                             if (ping != new Packet("ping-v2", Sequence: ping.Sequence) || !gate.AcceptControl(ping))
-                                throw new InvalidDataException("Only probe heartbeats are accepted");
+                                throw new InvalidDataException("Only probe heartbeats/display acknowledgements are accepted");
                             await Wire.Write(control, new("pong-v2", Sequence: ping.Sequence), timeout.Token);
                         }
                     }

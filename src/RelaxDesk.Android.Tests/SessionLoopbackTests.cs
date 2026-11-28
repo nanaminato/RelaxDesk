@@ -33,7 +33,7 @@ internal static class SessionLoopbackTests
         }
 
         List<string> modes = ["ok", "confirm-first-pin", "wrong-pin", "decline-first-pin", "deny-approval", "unoffered-codec",
-            "wrong-clipboard-cert", "unexpected-frame-codec", "no-auto-takeover", "screen-only", "app-first", "app-wrong-display", "app-cancel"];
+            "wrong-clipboard-cert", "unexpected-frame-codec", "no-auto-takeover", "confirm-takeover", "cancel-takeover", "end-after-media", "end-before-media", "screen-only", "app-first", "app-wrong-display", "app-cancel"];
         if (includeIdle) modes.Add("idle-control");
         foreach (string mode in modes)
         {
@@ -109,14 +109,15 @@ internal static class SessionLoopbackTests
                         Check(presented == pin, "Expected fingerprint offered for first contact");
                         prompts++;
                         return Task.FromResult(mode == "confirm-first-pin");
-                    }, ct);
+                    }, ct, confirmTakeover: mode is "confirm-takeover" or "cancel-takeover"
+                        ? _ => Task.FromResult(mode == "confirm-takeover") : null);
                 }
                 catch (Exception e) when (e is AuthenticationException or InvalidDataException or HostConsentRejectedException)
                 {
                     rejected = e;
                 }
 
-                if (screenOnly || mode is "ok" or "confirm-first-pin" or "unexpected-frame-codec")
+                if (screenOnly || mode is "ok" or "confirm-first-pin" or "confirm-takeover" or "unexpected-frame-codec" or "end-after-media" or "end-before-media")
                 {
                     Check(rejected is null, $"Valid password/device handshake: {rejected}");
                     Check(client.VerifiedFingerprint == pin && client.Capabilities is ["h264"] &&
@@ -125,13 +126,25 @@ internal static class SessionLoopbackTests
                         client.ClipboardData is not null && client.AudioData is not null, "All required v5 attachments");
                     var frame = await client.Video.Read(ct);
                     var gate = new AvcFrameGate();
-                    if (screenOnly || mode is "ok" or "confirm-first-pin")
+                    if (screenOnly || mode is "ok" or "confirm-first-pin" or "confirm-takeover" or "end-after-media" or "end-before-media")
                         Check(frame.Data.SequenceEqual(firstFrame.Data) && gate.Accept(frame) == FrameAction.Reconfigure,
                             "Exact synthetic H.264 bootstrap through the Android gate");
                     else
                     {
                         try { _ = gate.Accept(frame); throw new InvalidOperationException("Unexpected codec reached decoder"); }
                         catch (InvalidDataException) { Check(true, "Android rejects an unexpected frame codec"); }
+                    }
+                    if (mode is "end-after-media" or "end-before-media")
+                    {
+                        async Task ReadEnd()
+                        {
+                            var end = await SessionControl.Read(client.Control, ct);
+                            if (!ConnectionRecovery.IsExplicitEnd(end)) throw new InvalidDataException("Missing authenticated end notice");
+                            throw new RemoteSessionEndedException(end.EndReason);
+                        }
+                        async Task ReadMediaEnd() { _ = await client.Video.Read(ct); throw new InvalidDataException("Unexpected second media frame"); }
+                        try { await SessionTermination.Wait(ReadEnd(), [ReadMediaEnd()], ct); throw new Exception("Takeover cause lost"); }
+                        catch (RemoteSessionEndedException e) { Check(e.Reason == SessionEndReason.ReplacedByViewer, "Actual TLS end reason wins regardless of media EOF ordering"); }
                     }
                     if (screenOnly)
                     {
@@ -193,6 +206,7 @@ internal static class SessionLoopbackTests
                         "wrong-pin" or "decline-first-pin" or "wrong-clipboard-cert" => rejected is AuthenticationException,
                         "deny-approval" => rejected is HostConsentRejectedException,
                         "unoffered-codec" or "no-auto-takeover" => rejected is InvalidDataException,
+                        "cancel-takeover" => rejected is HostAdmissionException { Reason: "takeover-cancel-v5" },
                         _ => false
                     }, $"Expected rejection in {mode}, received {rejected}");
                 }
@@ -251,7 +265,8 @@ internal static class SessionLoopbackTests
                 }
                 FullControlProtocol.RequireCurrent(request);
                 Check(request.Capabilities is ["h264"] && request.Network is null &&
-                    request.QuicTicket is null && request.DeviceCredential is null, "H.264-only TCP offer");
+                    request.QuicTicket is null && (mode is "confirm-takeover" or "cancel-takeover"
+                        ? request.DeviceCredential == "" : request.DeviceCredential is null), "H.264-only TCP offer");
                 if (screenOnly) Check(!request.FileResume, "Unused transfer state not requested");
 
                 byte[] challenge = RandomNumberGenerator.GetBytes(32);
@@ -261,6 +276,19 @@ internal static class SessionLoopbackTests
                 Check(proof.Data is { Length: 64 } && proof == new Packet(FullControlProtocol.DeviceProof, Data: proof.Data) &&
                     DeviceIdentity.Verify(peer, challenge, pin, proof.Data), "Host verifier accepts Android adapter proof");
 
+                if (mode is "confirm-takeover" or "cancel-takeover")
+                {
+                    Check(request.DeviceCredential is not null && !request.ReconnectOnly, "Manual Android client negotiates explicit takeover");
+                    string offer = NewTicket();
+                    await Wire.Write(control, new("takeover-offer-v5", Text: offer), ct);
+                    var reply = await Wire.Read(control, ct, 2048);
+                    if (mode == "cancel-takeover")
+                    {
+                        Check(reply == new Packet("takeover-cancel-v5"), "Cancel does not continue to attachment binding");
+                        return;
+                    }
+                    Check(reply == new Packet("takeover-confirm-v5", Text: offer), "Confirmation binds the offered one-use ticket");
+                }
                 if (mode is "deny-approval" or "no-auto-takeover")
                 {
                     var response = mode == "deny-approval" ? new Packet("denied-v2") :
@@ -325,6 +353,19 @@ internal static class SessionLoopbackTests
                     var frame = mode == "unexpected-frame-codec"
                         ? firstFrame with { Codec = MediaCodec.DeflateBgra, Data = [1] } : firstFrame;
                     await MediaProtocol.Write(channels[0], frame, ct);
+                    if (mode is "end-after-media" or "end-before-media")
+                    {
+                        var end = new Packet("session-ended-v2", Text: "host-ended", EndReason: SessionEndReason.ReplacedByViewer);
+                        if (mode == "end-before-media") await Wire.Write(control, end, ct);
+                        channels[0].Dispose();
+                        if (mode == "end-after-media")
+                        {
+                            await Task.Delay(40, ct);
+                            await Wire.Write(control, end, ct);
+                        }
+                        Check(await control.ReadAsync(new byte[1], ct) == 0, "Takeover closes old client without reconnect/input");
+                        return;
+                    }
                     if (screenOnly)
                     {
                         foreach (int i in new[] { 1, 3 })

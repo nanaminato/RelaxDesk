@@ -9,7 +9,8 @@ public enum VideoDropReason
     QueueOverflow = 1,
     AwaitingKeyFrame = 2,
     StaleGeneration = 3,
-    InvalidBootstrap = 4
+    InvalidBootstrap = 4,
+    QueueExpired = 5
 }
 
 public readonly record struct QueuedVideoFrame(
@@ -29,12 +30,15 @@ public sealed class BoundedAvcQueue
     readonly SemaphoreSlim signal = new(0);
     readonly AvcFrameGate frameGate = new();
     readonly int capacity;
+    readonly TimeProvider clock;
+    readonly TimeSpan maximumResidence;
     readonly Action? onKeyFrameNeeded;
     readonly Action<VideoDropReason>? onFrameDropped;
 
     bool completed;
     bool awaitingKeyFrame = true;
     long droppedOverflow;
+    long droppedExpired;
     long droppedAwaitingKey;
     long droppedStale;
     long enqueuedCount;
@@ -42,11 +46,16 @@ public sealed class BoundedAvcQueue
     public BoundedAvcQueue(
         int capacity = 2,
         Action? onKeyFrameNeeded = null,
-        Action<VideoDropReason>? onFrameDropped = null)
+        Action<VideoDropReason>? onFrameDropped = null,
+        TimeSpan? maximumResidence = null, TimeProvider? clock = null)
     {
         if (capacity < 1 || capacity > 8)
             throw new ArgumentOutOfRangeException(nameof(capacity), "Low-latency video queue capacity must be between 1 and 8.");
         this.capacity = capacity;
+        this.clock = clock ?? TimeProvider.System;
+        this.maximumResidence = maximumResidence ?? TimeSpan.FromMilliseconds(50);
+        if (this.maximumResidence <= TimeSpan.Zero || this.maximumResidence > TimeSpan.FromMilliseconds(100))
+            throw new ArgumentOutOfRangeException(nameof(maximumResidence));
         this.onKeyFrameNeeded = onKeyFrameNeeded;
         this.onFrameDropped = onFrameDropped;
         queue = new Queue<QueuedVideoFrame>(capacity);
@@ -54,10 +63,11 @@ public sealed class BoundedAvcQueue
 
     public int Capacity => capacity;
     public int Depth { get { lock (gateLock) return queue.Count; } }
+    public long DroppedExpired => Interlocked.Read(ref droppedExpired);
     public long DroppedOverflow => Interlocked.Read(ref droppedOverflow);
     public long DroppedAwaitingKeyFrame => Interlocked.Read(ref droppedAwaitingKey);
     public long DroppedStale => Interlocked.Read(ref droppedStale);
-    public long TotalDropped => DroppedOverflow + DroppedAwaitingKeyFrame + DroppedStale;
+    public long TotalDropped => DroppedOverflow + DroppedAwaitingKeyFrame + DroppedStale + DroppedExpired;
     public long EnqueuedCount => Interlocked.Read(ref enqueuedCount);
 
     /// <summary>
@@ -72,6 +82,7 @@ public sealed class BoundedAvcQueue
             if (queue.Count > 0)
             {
                 Interlocked.Add(ref droppedOverflow, queue.Count);
+                for (int i = 0; i < queue.Count; i++) onFrameDropped?.Invoke(VideoDropReason.QueueOverflow);
                 queue.Clear();
             }
             if (!awaitingKeyFrame)
@@ -100,6 +111,8 @@ public sealed class BoundedAvcQueue
                 return false;
             }
 
+            // A small burst allowance must never become a persistent latency backlog.
+            needKeyNotify = ExpireBacklog();
             FrameAction action;
             try
             {
@@ -110,7 +123,7 @@ public sealed class BoundedAvcQueue
                 Interlocked.Increment(ref droppedStale);
                 dropReason = VideoDropReason.StaleGeneration;
                 onFrameDropped?.Invoke(dropReason);
-                return false;
+                goto Done;
             }
 
             if (action == FrameAction.Drop)
@@ -139,6 +152,7 @@ public sealed class BoundedAvcQueue
                 }
                 action = FrameAction.Reconfigure;
                 awaitingKeyFrame = false;
+                needKeyNotify = false;
             }
 
             // If a new keyframe arrives while older frames are still queued,
@@ -160,11 +174,11 @@ public sealed class BoundedAvcQueue
                 awaitingKeyFrame = true;
                 needKeyNotify = true;
                 dropReason = VideoDropReason.QueueOverflow;
-                onFrameDropped?.Invoke(dropReason);
+                for (int i = 0; i < evicted; i++) onFrameDropped?.Invoke(dropReason);
                 goto Done;
             }
 
-            queue.Enqueue(new QueuedVideoFrame(frame, action, Stopwatch.GetTimestamp()));
+            queue.Enqueue(new QueuedVideoFrame(frame, action, clock.GetTimestamp()));
             Interlocked.Increment(ref enqueuedCount);
             signal.Release();
             return true;
@@ -182,6 +196,7 @@ public sealed class BoundedAvcQueue
             await signal.WaitAsync(ct).ConfigureAwait(false);
             lock (gateLock)
             {
+                if (ExpireBacklog()) onKeyFrameNeeded?.Invoke();
                 if (queue.Count > 0)
                     return queue.Dequeue();
                 if (completed)
@@ -194,6 +209,7 @@ public sealed class BoundedAvcQueue
     {
         lock (gateLock)
         {
+            if (ExpireBacklog()) onKeyFrameNeeded?.Invoke();
             if (queue.Count > 0)
             {
                 item = queue.Dequeue();
@@ -202,6 +218,20 @@ public sealed class BoundedAvcQueue
         }
         item = default;
         return false;
+    }
+
+    // Called under gateLock. Evict the entire dependency chain; never decode a
+    // dependent frame after expiry. The next valid SPS/PPS/IDR can start afresh.
+    bool ExpireBacklog()
+    {
+        if (queue.Count == 0 || clock.GetElapsedTime(queue.Peek().EnqueuedTimestamp) < maximumResidence)
+            return false;
+        int expired = queue.Count;
+        queue.Clear();
+        Interlocked.Add(ref droppedExpired, expired);
+        for (int i = 0; i < expired; i++) onFrameDropped?.Invoke(VideoDropReason.QueueExpired);
+        awaitingKeyFrame = true;
+        return true;
     }
 
     public void Complete()

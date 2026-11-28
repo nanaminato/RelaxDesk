@@ -40,5 +40,12 @@
   "enc_unavail_title": "暗号化保存が利用不可",
   "enc_unavail_msg": "この端末では Android Keystore 暗号化を利用できません。平文で保存しますか、それとも保存せずに接続しますか？",
   "save_plain": "平文で保存",
-  "dont_save": "保存しない"
+  "dont_save": "保存しない",
+  "video_settings": "画質",
+  "video_current": "現在の目標：",
+  "video_fps": "フレームレート上限",
+  "video_bitrate": "映像目標ビットレート",
+  "video_auto": "画質を自動調整",
+  "video_tip": "自動モードは遅延とフレーム破棄に応じて上限内で調整します。実際のFPSや帯域を保証しません。",
+  "video_apply": "適用"
 }

@@ -9,6 +9,8 @@ namespace RelaxDesk.Core;
 // Transport only: no Windows, capture, codec or UI dependencies.
 public sealed class SessionClient : IDisposable
 {
+    // Fixed diagnostic stage names only; never credentials, endpoints or tickets.
+    public event Action<string>? ConnectionStepChanged;
     readonly TcpClient control = new() { NoDelay = true };
     readonly TcpClient media = new() { NoDelay = true };
     readonly TcpClient clipboard = new() { NoDelay = true };
@@ -184,7 +186,11 @@ public sealed class SessionClient : IDisposable
         async Task<SslStream> Open(TcpClient socket, bool firstContact = false,CancellationToken? deadline=null)
         {
             var token=deadline??ct;
+            string channel = ReferenceEquals(socket, control) ? "control" : ReferenceEquals(socket, media) ? "media" :
+                ReferenceEquals(socket, data) ? "file" : ReferenceEquals(socket, clipboard) ? "clipboard" : "audio";
+            ConnectionStepChanged?.Invoke(channel + "-tcp");
             await socket.ConnectAsync(host, port, token);
+            ConnectionStepChanged?.Invoke(channel + "-tls");
             if (ReferenceEquals(socket, control)) PhaseChanged?.Invoke(ConnectionPhase.Authenticating);
             var stream = new SslStream(socket.GetStream(), false, (_, cert, _, _) =>
             {
@@ -198,14 +204,17 @@ public sealed class SessionClient : IDisposable
         }
         PhaseChanged?.Invoke(ConnectionPhase.Connecting);
         Control = await Open(control, approvalOnly);
+        ConnectionStepChanged?.Invoke("certificate-confirmation");
         if (confirmFirstContact && !await confirmServer!(expected, ct))
             throw new AuthenticationException("Server certificate was not confirmed");
         VerifiedFingerprint = expected;
+        ConnectionStepChanged?.Invoke("device-key");
         using var deviceKey = OpenDeviceKey?.Invoke();
         bool requestResume=RequestFileResume&&requestedFeatures.Contains(SessionCapabilities.FileTransfer);
         byte[]? secret = userName is null ? null : PasswordVerifier.EncodePassword(password!);
         try
         {
+            ConnectionStepChanged?.Invoke("password-request");
             await Wire.Write(Control, new Packet(userName is not null ? FullControlProtocol.PasswordRequest : approvalOnly ? FullControlProtocol.Request : FullControlProtocol.PinnedRequest,
                 Data: secret, Text: userName ?? (approvalOnly ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : token), ReconnectOnly: reconnectOnly,
                 Capabilities: H264Only ? ["h264"] : ["h264", "deflate"], PointerBrotli: RequestPointerCompression ? true : null,
@@ -216,6 +225,7 @@ public sealed class SessionClient : IDisposable
         }
         finally { if (secret is not null) CryptographicOperations.ZeroMemory(secret); }
         PhaseChanged?.Invoke(ConnectionPhase.AwaitingApproval);
+        ConnectionStepChanged?.Invoke("device-challenge");
         var approval = await Wire.Read(Control, ct);
         if (approval == new Packet(FullControlProtocol.PasswordRejected)) throw new PasswordLoginRejectedException();
         bool deviceChallenged = approval.Kind == FullControlProtocol.DeviceChallenge;
@@ -228,7 +238,9 @@ public sealed class SessionClient : IDisposable
             using var proofDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
             proofDeadline.CancelAfter(TimeSpan.FromSeconds(5));
             var signature = DeviceIdentity.Sign(deviceKey, challenge, VerifiedFingerprint);
+            ConnectionStepChanged?.Invoke("device-proof");
             await Wire.Write(Control, new(FullControlProtocol.DeviceProof, Data: signature), proofDeadline.Token);
+            ConnectionStepChanged?.Invoke("host-approval");
             approval = await Wire.Read(Control, ct);
         }
         if (approval.Kind == "takeover-offer-v5")

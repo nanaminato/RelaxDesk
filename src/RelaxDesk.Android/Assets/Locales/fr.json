@@ -40,5 +40,12 @@
   "enc_unavail_title": "Chiffrement indisponible",
   "enc_unavail_msg": "Le chiffrement Android Keystore est indisponible. Enregistrer en clair ou ne pas enregistrer ?",
   "save_plain": "En clair",
-  "dont_save": "Ne pas enregistrer"
+  "dont_save": "Ne pas enregistrer",
+  "video_settings": "Vidéo",
+  "video_current": "Cible actuelle :",
+  "video_fps": "Limite de fréquence",
+  "video_bitrate": "Débit vidéo cible",
+  "video_auto": "Qualité automatique",
+  "video_tip": "Le mode automatique ajuste selon le RTT et les images perdues dans ces limites. Les valeurs cibles ne garantissent pas le débit réel.",
+  "video_apply": "Appliquer"
 }

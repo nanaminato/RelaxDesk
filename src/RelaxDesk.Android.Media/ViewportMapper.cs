@@ -17,6 +17,7 @@ public sealed class ViewportMapper
     float zoom = 1.0f;
     float panX;
     float panY;
+    bool locallyOwned;
 
     // Local predicted normalized pointer position (0..65535) for touchpad & cursor overlay.
     double cursorNormX = 32767.5;
@@ -41,6 +42,7 @@ public sealed class ViewportMapper
     public void SetVideoSize(int width, int height)
     {
         if (width <= 0 || height <= 0) return;
+        if (videoWidth != width || videoHeight != height) ResetPointer();
         videoWidth = width;
         videoHeight = height;
         ClampPan();
@@ -106,6 +108,7 @@ public sealed class ViewportMapper
         cursorNormY = Math.Clamp(ny, 0.0, 1.0) * 65535.0;
         normalizedX = CursorNormalizedX;
         normalizedY = CursorNormalizedY;
+        locallyOwned = true;
         return true;
     }
 
@@ -126,6 +129,7 @@ public sealed class ViewportMapper
         cursorNormY = Math.Clamp(cursorNormY + (dy * sensitivity / height) * 65535.0, 0.0, 65535.0);
         normalizedX = CursorNormalizedX;
         normalizedY = CursorNormalizedY;
+        locallyOwned = true;
         return true;
     }
 
@@ -138,6 +142,23 @@ public sealed class ViewportMapper
         if (videoWidth <= 1 || videoHeight <= 1) return;
         cursorNormX = Math.Clamp((double)videoX / (videoWidth - 1), 0.0, 1.0) * 65535.0;
         cursorNormY = Math.Clamp((double)videoY / (videoHeight - 1), 0.0, 1.0) * 65535.0;
+    }
+
+    public void ResetPointer()
+    {
+        locallyOwned = false;
+        cursorNormX = cursorNormY = 32767.5;
+    }
+
+    public bool TrySyncRemotePointer(RemotePointerState pointer)
+    {
+        // A frame can arrive after the finger lifts but describe an older
+        // position. Local prediction owns position until a new display/session.
+        if (locallyOwned || !pointer.Visible || pointer.Type is RemotePointerType.None or RemotePointerType.HostManaged ||
+            pointer.X < 0 || pointer.Y < 0 || pointer.X >= videoWidth || pointer.Y >= videoHeight)
+            return false;
+        SyncRemotePointer(pointer.X, pointer.Y);
+        return true;
     }
 
     /// <summary>

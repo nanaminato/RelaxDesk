@@ -57,6 +57,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     Button keysToggleBtn = null!, audioToggleBtn = null!, hudToggleBtn = null!, disconnectBtn = null!;
     Button ctrlBtn = null!, altBtn = null!, shiftBtn = null!, winBtn = null!;
 
+    AndroidVideoPreferences videoPreferences = new();
     Surface? activeSurface;
     bool foreground;
     bool requestingPermission;
@@ -81,6 +82,11 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     {
         base.OnCreate(savedInstanceState);
         AndroidStrings.Init(this);
+        using (var prefs = GetSharedPreferences("relaxdesk_video_v1", global::Android.Content.FileCreationMode.Private))
+        {
+            try { videoPreferences = new AndroidVideoPreferences(prefs!.GetInt("fps", 30), prefs.GetInt("bitrate", 8_000_000), prefs.GetBoolean("automatic", false)).Validate(); }
+            catch (InvalidDataException) { videoPreferences = new(); }
+        }
         Window?.SetFlags(WindowManagerFlags.Secure | WindowManagerFlags.KeepScreenOn,
                         WindowManagerFlags.Secure | WindowManagerFlags.KeepScreenOn);
 
@@ -160,6 +166,10 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
                     break;
             }
         };
+        var videoButton = new Button(this) { Text = AndroidStrings.Get("video_settings"), TextSize = 12 };
+        videoButton.SetTextColor(Color.White);
+        pillButtonsContainer.AddView(videoButton, 0, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, Dp(34)));
+        videoButton.Click += (_, _) => ShowVideoSettings();
         audioToggleBtn.Click += (_, _) =>
         {
             audioMuted = !audioMuted;
@@ -398,6 +408,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
 
         var cts = new CancellationTokenSource();
         var activeSession = new RemoteDesktopSession();
+        activeSession.ConfigureVideo(videoPreferences);
         sessionCts = cts;
         session = activeSession;
         viewport.ResetPointer();
@@ -533,12 +544,52 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         sessionCts?.Cancel();
     }
 
+    void ShowVideoSettings()
+    {
+        var layout = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        layout.SetPadding(Dp(20), Dp(8), Dp(20), Dp(8));
+        layout.AddView(new TextView(this) { Text = AndroidStrings.Get("video_current") + " " + session?.VideoSettingsStatus });
+        layout.AddView(new TextView(this) { Text = AndroidStrings.Get("video_fps") });
+        int[] rates = [5, 10, 15, 24, 30, 45, 60, 90, 120, 144];
+        var fps = new Spinner(this);
+        fps.Adapter = new ArrayAdapter<string>(this, global::Android.Resource.Layout.SimpleSpinnerDropDownItem,
+            rates.Select(value => $"{value} FPS").ToArray());
+        fps.SetSelection(Math.Max(0, Array.IndexOf(rates, videoPreferences.FramesPerSecond)));
+        layout.AddView(fps);
+        layout.AddView(new TextView(this) { Text = AndroidStrings.Get("video_bitrate") });
+        int[] bitrates = [100_000, 250_000, 500_000, 1_000_000, 2_000_000, 4_000_000, 6_000_000, 8_000_000, 12_000_000, 16_000_000, 20_000_000, 30_000_000, 50_000_000, 100_000_000];
+        var bitrate = new Spinner(this);
+        bitrate.Adapter = new ArrayAdapter<string>(this, global::Android.Resource.Layout.SimpleSpinnerDropDownItem,
+            bitrates.Select(value => $"{value / 1_000_000d:0.##} Mbps").ToArray());
+        bitrate.SetSelection(Math.Max(0, Array.IndexOf(bitrates, videoPreferences.Bitrate)));
+        layout.AddView(bitrate);
+        var automatic = new CheckBox(this) { Text = AndroidStrings.Get("video_auto"), Checked = videoPreferences.Automatic };
+        layout.AddView(automatic);
+        layout.AddView(new TextView(this) { Text = AndroidStrings.Get("video_tip") });
+        var scroll = new ScrollView(this);
+        scroll.AddView(layout);
+        new AlertDialog.Builder(this)!.SetTitle(AndroidStrings.Get("video_settings"))!
+            .SetView(scroll)!
+            .SetNegativeButton(AndroidStrings.Get("cancel"), (_, _) => { })!
+            .SetPositiveButton(AndroidStrings.Get("video_apply"), (_, _) =>
+            {
+                videoPreferences = new(rates[fps.SelectedItemPosition], bitrates[bitrate.SelectedItemPosition], automatic.Checked);
+                using var prefs = GetSharedPreferences("relaxdesk_video_v1", global::Android.Content.FileCreationMode.Private);
+                using var editor = prefs!.Edit();
+                editor!.PutInt("fps", videoPreferences.FramesPerSecond);
+                editor.PutInt("bitrate", videoPreferences.Bitrate);
+                editor.PutBoolean("automatic", videoPreferences.Automatic);
+                editor.Apply();
+                session?.ConfigureVideo(videoPreferences);
+            })!.Show();
+    }
+
     void ScheduleHudTick()
     {
         uiHandler?.PostDelayed(() =>
         {
             if (session is null || IsDestroyed) return;
-            if (showHud) hudText.Text = session.Telemetry.FormatHud() +
+            if (showHud) hudText.Text = session.VideoSettingsStatus + "\n" + session.Telemetry.FormatHud() +
                 $"\nPointer {viewport.CursorNormalizedX},{viewport.CursorNormalizedY}";
             ScheduleHudTick();
         }, 500);

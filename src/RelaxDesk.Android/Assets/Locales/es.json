@@ -40,5 +40,12 @@
   "enc_unavail_title": "Cifrado no disponible",
   "enc_unavail_msg": "El cifrado Android Keystore no está disponible. ¿Guardar en texto plano o conectar sin guardar?",
   "save_plain": "Texto plano",
-  "dont_save": "No guardar"
+  "dont_save": "No guardar",
+  "video_settings": "Vídeo",
+  "video_current": "Objetivo actual:",
+  "video_fps": "Límite de fotogramas",
+  "video_bitrate": "Tasa de vídeo objetivo",
+  "video_auto": "Calidad automática",
+  "video_tip": "El modo automático ajusta según RTT y descartes dentro de estos límites. Los objetivos no garantizan la tasa real.",
+  "video_apply": "Aplicar"
 }

@@ -40,5 +40,12 @@
   "enc_unavail_title": "Encrypted Storage Unavailable",
   "enc_unavail_msg": "Android Keystore encryption is unavailable on this device. Save password in plaintext or connect without saving?",
   "save_plain": "Save Plaintext",
-  "dont_save": "Don't Save"
+  "dont_save": "Don't Save",
+  "video_settings": "Video",
+  "video_current": "Current target:",
+  "video_fps": "Frame rate limit",
+  "video_bitrate": "Target video bitrate",
+  "video_auto": "Automatic quality",
+  "video_tip": "Automatic mode adjusts within these limits using RTT and drops. Targets do not guarantee delivered frame rate or bandwidth.",
+  "video_apply": "Apply"
 }

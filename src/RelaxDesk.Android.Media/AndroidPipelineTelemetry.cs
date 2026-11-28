@@ -21,21 +21,30 @@ public sealed record AndroidTelemetrySnapshot(
     int Gen2Collections,
     string CodecName,
     int VideoWidth,
-    int VideoHeight);
+    int VideoHeight,
+    long DroppedExpired = 0);
 
 /// <summary>
 /// Low-overhead runtime performance telemetry for the Android video and control pipeline.
 /// </summary>
 public sealed class AndroidPipelineTelemetry
 {
+    readonly TimeProvider clock;
+    readonly object sampleSync = new();
+    public AndroidPipelineTelemetry(TimeProvider? clock = null)
+    {
+        this.clock = clock ?? TimeProvider.System;
+        lastWindowTimestamp = this.clock.GetTimestamp();
+    }
     long receivedFrames;
     long decodedFrames;
     long presentedFrames;
     long droppedOverflow;
+    long droppedExpired;
     long droppedAwaitingKey;
     long droppedStale;
 
-    long lastWindowTimestamp = Stopwatch.GetTimestamp();
+    long lastWindowTimestamp;
     long lastReceived;
     long lastDecoded;
     long lastPresented;
@@ -59,6 +68,7 @@ public sealed class AndroidPipelineTelemetry
         Volatile.Write(ref videoHeight, height);
         Volatile.Write(ref queueDepth, currentQueueDepth);
     }
+    public void RecordQueueDepth(int depth) => Volatile.Write(ref queueDepth, depth);
 
     public void RecordSubmitted(long enqueuedTimestamp)
     {
@@ -78,6 +88,9 @@ public sealed class AndroidPipelineTelemetry
     {
         switch (reason)
         {
+            case VideoDropReason.QueueExpired:
+                Interlocked.Increment(ref droppedExpired);
+                break;
             case VideoDropReason.QueueOverflow:
                 Interlocked.Increment(ref droppedOverflow);
                 break;
@@ -99,9 +112,14 @@ public sealed class AndroidPipelineTelemetry
 
     public AndroidTelemetrySnapshot Sample()
     {
-        long now = Stopwatch.GetTimestamp();
-        long prev = Interlocked.Exchange(ref lastWindowTimestamp, now);
-        double elapsedSec = Stopwatch.GetElapsedTime(prev, now).TotalSeconds;
+        lock (sampleSync) return SampleCore();
+    }
+
+    AndroidTelemetrySnapshot SampleCore()
+    {
+        long now = clock.GetTimestamp();
+        long prev = Volatile.Read(ref lastWindowTimestamp);
+        double elapsedSec = clock.GetElapsedTime(prev, now).TotalSeconds;
 
         long rx = Interlocked.Read(ref receivedFrames);
         long dec = Interlocked.Read(ref decodedFrames);
@@ -109,6 +127,7 @@ public sealed class AndroidPipelineTelemetry
 
         if (elapsedSec >= 0.25)
         {
+            Interlocked.Exchange(ref lastWindowTimestamp, now);
             long prevRx = Interlocked.Exchange(ref lastReceived, rx);
             long prevDec = Interlocked.Exchange(ref lastDecoded, dec);
             long prevPres = Interlocked.Exchange(ref lastPresented, pres);
@@ -131,7 +150,7 @@ public sealed class AndroidPipelineTelemetry
             QueueDepth: Volatile.Read(ref queueDepth),
             TotalReceived: rx,
             TotalPresented: pres,
-            TotalDropped: ovf + waitKey + stale,
+            TotalDropped: ovf + waitKey + stale + Interlocked.Read(ref droppedExpired),
             DroppedOverflow: ovf,
             DroppedAwaitingKey: waitKey,
             ManagedHeapBytes: GC.GetTotalMemory(false),
@@ -140,7 +159,8 @@ public sealed class AndroidPipelineTelemetry
             Gen2Collections: GC.CollectionCount(2),
             CodecName: Volatile.Read(ref codecName),
             VideoWidth: Volatile.Read(ref videoWidth),
-            VideoHeight: Volatile.Read(ref videoHeight));
+            VideoHeight: Volatile.Read(ref videoHeight),
+            DroppedExpired: Interlocked.Read(ref droppedExpired));
     }
 
     public string FormatHud()

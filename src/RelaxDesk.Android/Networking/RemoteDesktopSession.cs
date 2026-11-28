@@ -17,6 +17,7 @@ namespace RelaxDesk.Mobile;
 internal sealed class RemoteDesktopSession : IDisposable
 {
     readonly AndroidPipelineTelemetry telemetry = new();
+    readonly AndroidPipelineDiagnostics diagnostics = new();
     readonly OutgoingControlQueue controlQueue = new(256);
     readonly PressedRemoteInputs pressedInputs = new();
     readonly PointerMetadataParser pointerParser = new();
@@ -47,6 +48,22 @@ internal sealed class RemoteDesktopSession : IDisposable
     public event Action<string>? StatusChanged;
     public event Action? FirstFramePresented;
     int presented;
+    readonly object videoSettingsLock = new();
+    AndroidVideoSettings? videoSettings;
+    AndroidVideoPreferences videoPreferences = new();
+    long mediaBytes;
+    readonly Stopwatch qualityClock = Stopwatch.StartNew();
+    public string VideoSettingsStatus => videoSettings is { } settings
+        ? $"{settings.Current.FramesPerSecond} FPS · {settings.Current.Bitrate / 1_000_000d:0.##} Mbps" +
+          (settings.Pending ? " …" : "") : "…";
+    public void ConfigureVideo(AndroidVideoPreferences preferences)
+    {
+        lock (videoSettingsLock)
+        {
+            videoPreferences = preferences.Validate();
+            videoSettings?.Configure(preferences);
+        }
+    }
 
     public void AttachSurface(Surface? surface)
     {
@@ -177,19 +194,27 @@ internal sealed class RemoteDesktopSession : IDisposable
         using var activeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         sessionCts = activeCts;
 
+        lock (videoSettingsLock)
+        videoSettings = client.VideoVersion == VideoSettingsProtocol.Version && client.VideoSettings is { } initialVideo
+            ? new AndroidVideoSettings(initialVideo, videoPreferences,
+                packet => { if (!controlQueue.TryWrite(packet)) activeCts.Cancel(); })
+            : throw new InvalidDataException("Host does not support video settings");
         videoQueue = new BoundedAvcQueue(
-            capacity: 2,
+            // 6 compressed frames absorb measured Wi-Fi/TCP arrival bursts; the
+            // queue's 50 ms residence cap still discards stalled dependency chains.
+            capacity: 6,
             onKeyFrameNeeded: RequestKeyFrame,
             onFrameDropped: telemetry.RecordDrop);
         lock (surfaceLock)
         {
-            decoder = new LiveAvcDecoder(telemetry, () =>
+            decoder = new LiveAvcDecoder(telemetry, diagnostics, () =>
             {
                 videoQueue?.RequestRecovery();
                 RequestKeyFrame();
-            }, generation =>
+            }, frame =>
             {
-                displaySession.Presented(generation);
+                videoSettings.Presented(frame);
+                displaySession.Presented(frame.DisplayGeneration);
                 Volatile.Write(ref activeDisplayGeneration, displaySession.InputGeneration);
                 if (Interlocked.Exchange(ref presented, 1) == 0) FirstFramePresented?.Invoke();
             });
@@ -202,7 +227,7 @@ internal sealed class RemoteDesktopSession : IDisposable
         var heartbeatTask = ControlHeartbeat.Run(token =>
         {
             long seq = Interlocked.Increment(ref sequence);
-            controlQueue.TryWrite(new Packet("ping-v2", Sequence: seq));
+            controlQueue.TryWrite(new Packet("ping-v2", Sequence: seq, QueryVideoQueue: true));
             return Task.CompletedTask;
         }, activeCts.Token);
         var controlReadTask = RunControlReaderAsync(client.Control, displaySession, activeCts.Token);
@@ -216,10 +241,16 @@ internal sealed class RemoteDesktopSession : IDisposable
         }
         var telemetryTask = Task.Run(async () =>
         {
+            int ticks = 0;
             while (true)
             {
-                await Task.Delay(TimeSpan.FromSeconds(5), activeCts.Token).ConfigureAwait(false);
-                global::Android.Util.Log.Info("RelaxDeskPerf", System.Text.Json.JsonSerializer.Serialize(telemetry.Sample()));
+                await Task.Delay(TimeSpan.FromSeconds(1), activeCts.Token).ConfigureAwait(false);
+                videoSettings.Pump();
+                if (++ticks % 5 == 0)
+                {
+                    global::Android.Util.Log.Info("RelaxDeskPerf", System.Text.Json.JsonSerializer.Serialize(telemetry.Sample()));
+                    global::Android.Util.Log.Info("RelaxDeskPipeline", System.Text.Json.JsonSerializer.Serialize(diagnostics.Snapshot()));
+                }
             }
         }, activeCts.Token);
 
@@ -246,6 +277,7 @@ internal sealed class RemoteDesktopSession : IDisposable
             decoder.Dispose();
             decoder = null;
             videoQueue = null;
+            videoSettings = null;
             sessionCts = null;
         }
     }
@@ -272,7 +304,19 @@ internal sealed class RemoteDesktopSession : IDisposable
             if (packet.Kind == "pong-v2" && packet.Sequence > 0)
             {
                 if (pendingPings.TryRemove(packet.Sequence, out long sentTs))
-                    telemetry.RecordRtt(Stopwatch.GetElapsedTime(sentTs).TotalMilliseconds);
+                {
+                    double rtt = Stopwatch.GetElapsedTime(sentTs).TotalMilliseconds;
+                    telemetry.RecordRtt(rtt);
+                    var sample = telemetry.Sample();
+                    videoSettings?.Observe(new ConnectionQualitySample(qualityClock.Elapsed.TotalSeconds, rtt,
+                        sample.TotalReceived, Interlocked.Read(ref mediaBytes), sample.TotalDropped, 0, packet.VideoQueue));
+                }
+                continue;
+            }
+
+            if (packet.Kind == "video-settings-state-v2")
+            {
+                videoSettings!.Receive(packet);
                 continue;
             }
 
@@ -301,7 +345,8 @@ internal sealed class RemoteDesktopSession : IDisposable
             rxCount++;
             if (rxCount <= 3)
                 global::Android.Util.Log.Info("RelaxDesk", $"Rx frame #{rxCount}: seq={frame.Sequence} codec={frame.Codec} {frame.Width}x{frame.Height} key={frame.KeyFrame} bytes={frame.Data.Length} dGen={frame.DisplayGeneration} vGen={frame.VideoGeneration}");
-            if (!displaySession.AcceptFrame(frame))
+            Interlocked.Add(ref mediaBytes, frame.Data.Length);
+            if (!displaySession.AcceptFrame(frame) || !videoSettings!.Accept(frame))
             {
                 if (rxCount <= 5) global::Android.Util.Log.Warn("RelaxDesk", $"DisplaySession rejected frame #{rxCount} dGen={frame.DisplayGeneration}");
                 continue;
@@ -321,6 +366,7 @@ internal sealed class RemoteDesktopSession : IDisposable
             if (!ok && rxCount <= 5)
                 global::Android.Util.Log.Warn("RelaxDesk", $"Queue dropped frame #{rxCount}: reason={dropReason}");
             telemetry.RecordReceived(frame.Width, frame.Height, videoQueue.Depth);
+            diagnostics.Received(frame, videoQueue.Depth);
         }
     }
 
@@ -338,7 +384,9 @@ internal sealed class RemoteDesktopSession : IDisposable
             var item = await pending.ConfigureAwait(false);
             if (item is null) break;
             telemetry.RecordQueueDepth(videoQueue!.Depth);
+            long processStarted = Stopwatch.GetTimestamp();
             decoder?.ProcessFrame(item.Value, ct);
+            diagnostics.Add("decode_call", Stopwatch.GetElapsedTime(processStarted).TotalMilliseconds);
             pending = videoQueue!.DequeueAsync(ct).AsTask();
         }
     }

@@ -58,6 +58,22 @@ internal static class PipelineAndViewportTests
         Check(mapper.TryViewToNormalized(left, top, false, out int nx0, out int ny0) && nx0 == 0 && ny0 == 0, "Top-left maps to (0,0)");
         Check(mapper.TryViewToNormalized(left + width - 1, top + height - 1, false, out int nx1, out int ny1) && nx1 == 65535 && ny1 == 65535, "Bottom-right maps to (65535,65535)");
         Check(mapper.TryApplyRelativeDelta(-100f, -50f, 1.0f, out int rx, out int ry) && rx < 65535 && ry < 65535, "Relative touchpad moves cursor");
+        Check(!mapper.TrySyncRemotePointer(p1!) && mapper.CursorNormalizedX == rx && mapper.CursorNormalizedY == ry,
+            "Delayed visible remote position cannot rewind a locally owned pointer after finger release");
+        var absent = p1! with { X = 0, Y = 0, Visible = false, Type = RemotePointerType.None, Shape = ReadOnlyMemory<byte>.Empty };
+        Check(!mapper.TrySyncRemotePointer(absent) && mapper.CursorNormalizedX == rx && mapper.CursorNormalizedY == ry,
+            "Idle frame without pointer position cannot snap touchpad to origin");
+        Check(mapper.TryApplyRelativeDelta(10, 0, 1, out int resumedX, out int resumedY) && resumedX > rx && resumedY == ry,
+            "Next gesture resumes from the last local pointer position");
+        mapper.ResetPointer();
+        Check(!mapper.TrySyncRemotePointer(absent), "Missing metadata cannot seed pointer on a fresh session");
+        Check(!mapper.TrySyncRemotePointer(absent with { Type = RemotePointerType.HostManaged }), "Host-managed zero position is not authoritative");
+        Check(mapper.TrySyncRemotePointer(p1!) && mapper.CursorNormalizedX > 0, "Valid initial remote cursor seeds fresh session");
+        Check(mapper.TrySyncRemotePointer(p1! with { X = 0, Y = 0 }), "A real visible cursor at origin is valid before local ownership");
+        Check(!mapper.TrySyncRemotePointer(p1! with { X = -1 }), "Out of bounds metadata does not clamp to origin");
+        Check(mapper.TryViewToNormalized(1000, 700, true, out int directX, out int directY) &&
+            !mapper.TrySyncRemotePointer(p1!) && mapper.CursorNormalizedX == directX && mapper.CursorNormalizedY == directY,
+            "Direct touch also retains ownership across delayed metadata");
         mapper.ApplyScaleAndPan(2.0f, 1152f, 720f, 50f, -30f);
         Check(Math.Abs(mapper.Zoom - 2.0f) < 0.01f, "Zoom applied");
         mapper.ResetTransform();
@@ -72,7 +88,35 @@ internal static class PipelineAndViewportTests
         Check(snap.TotalReceived == 1 && snap.TotalPresented == 1 && snap.VideoWidth == 1920 && snap.RttMs > 0, "Telemetry records metrics");
         Check(telemetry.FormatHud().Contains("1920x1080"), "HUD string includes resolution");
 
+        var clock = new SampleClock();
+        var polled = new AndroidPipelineTelemetry(clock);
+        for (int i = 0; i < 3; i++)
+        {
+            polled.RecordReceived(640, 360, 1);
+            clock.Advance();
+            _ = polled.Sample();
+        }
+        Check(Math.Abs(polled.Sample().ReceiveFps - 10) < 0.01, "Frequent HUD/perf sampling does not starve the FPS window");
+        polled.RecordQueueDepth(0);
+        Check(polled.Sample().QueueDepth == 0, "Queue gauge becomes empty after the final frame is dequeued");
+        var counted = new BoundedAvcQueue(2, onFrameDropped: polled.RecordDrop);
+        counted.TryEnqueue(Frame(1, true), out _);
+        counted.TryEnqueue(Frame(2), out _);
+        counted.TryEnqueue(Frame(3), out _);
+        Check(polled.Sample().TotalDropped == 3 && counted.TotalDropped == 3, "Overflow accounts for two queued frames plus incoming dependent frame");
+        counted.TryEnqueue(Frame(4, true), out _);
+        counted.RequestRecovery();
+        Check(polled.Sample().TotalDropped == 4, "Explicit recovery counts the queued frame it discards");
+
         return checks;
+    }
+
+    sealed class SampleClock : TimeProvider
+    {
+        long ticks;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => ticks;
+        public void Advance() => ticks += TimeSpan.TicksPerMillisecond * 100;
     }
 
     static byte[] BuildMetadata(int version, int x, int y, bool visible, uint type, int w, int h, int pitch, int hx, int hy, byte[] pointerPayload)

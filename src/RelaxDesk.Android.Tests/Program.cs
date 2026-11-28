@@ -6,6 +6,11 @@ if (args is ["--serve-probe", var syntheticAsset])
     await AndroidProbeFixtureHost.Run(syntheticAsset);
     return;
 }
+if (args is ["--serve-live-probe", var liveAsset])
+{
+    await AndroidProbeFixtureHost.Run(liveAsset, continuous: true);
+    return;
+}
 
 int checks = 0;
 void Check(bool pass, string message)
@@ -79,5 +84,12 @@ if (args is [var file, ..])
 Console.WriteLine($"Android media contracts: {checks}");
 Console.WriteLine($"Android device proof contracts: {DeviceProofTests.Run()}");
 Console.WriteLine($"Android pipeline & viewport contracts: {RelaxDesk.Android.Tests.PipelineAndViewportTests.Run()}");
+Console.WriteLine($"Android display lifecycle contracts: {AndroidDisplaySessionTests.Run()}");
+Console.WriteLine($"Android certificate trust contracts: {await ServerTrustConfirmationTests.Run()}");
+Console.WriteLine($"Android session termination contracts: {await SessionTerminationTests.Run()}");
 if (args is [var fixturePath, ..])
     Console.WriteLine($"Android pinned TLS loopback contracts: {await SessionLoopbackTests.Run(fixturePath, includeIdle: args.Length == 2)}");
+
+Console.WriteLine($"Android video settings contracts: {AndroidVideoSettingsTests.Run()}");
+
+Console.WriteLine($"Android burst/expiry/diagnostics contracts: {await AndroidQueueBurstTests.Run()}");
