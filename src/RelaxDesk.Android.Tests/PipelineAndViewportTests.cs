@@ -119,6 +119,27 @@ internal static class PipelineAndViewportTests
         gesture.BeginDirect();
         gesture.Reset();
         Check(!gesture.DirectButtonDown, "Lifecycle reset clears button ownership");
+        gesture.EnterMultiplePointers();
+        gesture.BeginPair(true, 450, (0, 0), (100, 0));
+        Check(!gesture.MovePair((2, 0), (99, 0), 8), "Small paired jitter does not zoom");
+        Check(gesture.EndPair(true, 530, (2, 0), (99, 0), 8), "Second finger tap emits a right click");
+        Check(gesture.MultiplePointers && !gesture.EndPair(true, 540, (0, 0), (100, 0), 8),
+            "Pair stays consumed until all fingers lift and never emits a second click");
+        gesture.BeginPair(true, 450, (0, 0), (100, 0));
+        Check(gesture.MovePair((0, 0), (109, 0), 8) && gesture.MovePair((0, 0), (100, 0), 8),
+            "Deliberate movement commits to pinch even when fingers return to their starting positions");
+        Check(!gesture.EndPair(true, 530, (0, 0), (100, 0), 8), "Pinch release never clicks");
+        gesture.BeginPair(true, 450, (0, 0), (100, 0));
+        Check(!gesture.EndPair(false, 530, (0, 0), (100, 0), 8), "Lifting anchor first does not click");
+        gesture.BeginPair(true, 450, (0, 0), (100, 0));
+        Check(!gesture.EndPair(true, 701, (0, 0), (100, 0), 8), "Holding the second finger does not click");
+        gesture.BeginPair(true, 450, (0, 0), (100, 0));
+        Check(!gesture.EndPair(true, 530, (0, 0), (109, 0), 8), "Movement first reported on release does not click");
+        gesture.BeginPair(false, 100, (0, 0), (100, 0));
+        Check(gesture.MovePair((0, 0), (101, 0), 8), "Ordinary two-finger gestures start pinching immediately");
+        gesture.BeginPair(true, 450, (0, 0), (100, 0));
+        gesture.Reset();
+        Check(!gesture.EndPair(true, 530, (0, 0), (100, 0), 8), "Reset cancels the pending right click");
 
         // 4. AndroidPipelineTelemetry
         var telemetry = new AndroidPipelineTelemetry();

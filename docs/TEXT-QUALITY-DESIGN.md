@@ -117,8 +117,8 @@ Windows ClearType 在渲染中性黑/灰文字时，利用 LCD 物理 RGB 子像
 - **机制设计**：
   1. 将 `codec.cpp` 中 H.264 `CODECAPI_AVEncMPVGOPSize` 从 `fps`（1 秒）调整为 `fps * 3`（3 秒），消除每秒一次的 IDR 码率抢占脉冲，丢包恢复仍由控制信令 `keyframe-v2` 毫秒级触发。
   2. 在 `VideoHostSession.Produce` 中引入轻量级**运动后静态精修状态机**：
-     - 仅当会话使用 H.264 实时采集后端（`capture is not null`），且自上一关键帧以来已编码过至少一帧桌面变化增量帧（排除首帧纯静态桌面与仅鼠标移动通知），随后桌面进入静止（`capture.Capture()` 超时返回 `null`）时，利用 `capture.CachedFrame()` 缓存的最新 GPU 桌面纹理（在 `DxgiCaptureBackend` 下完全走 `encoder.EncodeGpu(timestamp, force: false)` **零 CPU Readback**）连续补发最多 **3 帧渐进式 P 帧**。
-     - 精修完成后立即归零进入完全空闲（`0 bps`），既将 1080p 剧烈切屏后的静态文字 PSNR 提升 **`+3.49 dB`**（弱网 2 Mbps 下边缘清晰度从 `0.10` 恢复至 `0.39+`），又不破坏 `test-video-settings-static`、`test-idle`、`test-desktop-pause` 等静态零额外帧契约。
+     - 仅当会话使用 H.264 实时采集后端（`capture is not null`），且自上一关键帧以来已编码过至少一帧桌面变化增量帧（排除首帧纯静态桌面与仅鼠标移动通知），随后桌面进入静止（`capture.Capture()` 超时返回 `null`）时，利用 `capture.CachedFrame()` 缓存的最新 GPU 桌面纹理（在 `DxgiCaptureBackend` 下完全走 `encoder.EncodeGpu(timestamp, force: false)` **零 CPU Readback**）连续补发最多 **6 帧渐进式 P 帧**（约 200 ms）。
+     - 精修完成后立即归零进入完全空闲（`0 bps`），既将 1080p 剧烈切屏后的静态文字 PSNR 提升 **`+6.46 dB`**（`32.72 -> 39.18 dB`，水平笔画边缘误差降低 **56.6%**，`12.11 -> 5.26`），又不破坏 `test-video-settings-static`、`test-idle`、`test-desktop-pause` 等静态零额外帧契约。
 
 ### 3.5 & 3.6 方案五与方案六：BGRA 无损区域更新与基于 `DirtyRects` / `MoveRects` 的混合媒体传输 —— **【完成协议架构设计与定量基线评测，列为阶段 B 可选扩展】**
 
@@ -182,7 +182,7 @@ Windows ClearType 在渲染中性黑/灰文字时，利用 LCD 物理 RGB 子像
    - `04_final_rendered_viewport.png`：经客户端 `D3D11Renderer`（含视口缩放）渲染至 SwapChain 后缓冲区的最终画面。
 3. **多维度测试矩阵与核心指标**：
    - 覆盖 `DeflateBgra`、硬件 H.264（GPU 渲染 / CPU 读回）、软件 H.264、`RDR1` 区域无损补丁，以及优化前后 A/B 对比；
-   - 覆盖多种分辨率与 DPI（`1280x720@96dpi`、`1920x1080@96/120/144dpi`、`2560x1440@144dpi`）、缩放比例（`Zoom=100` 1:1、`Zoom=0` Fit、`Zoom=125/150/200`）、字号（`10px–20px`）与码率（`2 / 4 / 8 / 16 Mbps` 及动态切换后静态精修 0 vs 3 帧）；
+   - 覆盖多种分辨率与 DPI（`1280x720@96dpi`、`1920x1080@96/120/144dpi`、`2560x1440@144dpi`）、缩放比例（`Zoom=100` 1:1、`Zoom=0` Fit、`Zoom=125/150/200`）、字号（`10px–20px`）与码率（`2 / 4 / 8 / 16 Mbps` 及动态切换后静态精修 0 vs 6 帧）；
    - 量化统计：**中性文字异常彩边均值与异常像素数（`NeutralBleedMean` / `NeutralBleedOutliers` / `DarkCoreSat`）**、**亮度误差与 PSNR（`LumaMae` / `LumaPsnrDb`）**、**色度与彩色语法字误差（`ChromaMae` / `ColoredSyntaxErr`）**、**水平笔画边缘清晰度保持率（`EdgeSharpnessRatio` / `MeanHorizontalEdgeError`）**，并输出 **8 倍最近邻像素网格局部放大对比图**。
 
 ### 5.2 物理设备验证红线

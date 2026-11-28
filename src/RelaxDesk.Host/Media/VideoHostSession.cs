@@ -1000,7 +1000,7 @@ internal static class VideoHostSession
                     if (!isStaticSettle)
                     {
                         if (encoded.KeyFrame) pendingStaticSettleFrames = 0;
-                        else if (hasDesktopChange && codec == MediaCodec.H264) pendingStaticSettleFrames = 3;
+                        else if (hasDesktopChange && codec == MediaCodec.H264) pendingStaticSettleFrames = 6;
                     }
                     encodeMetrics.Add(synthetic ? "generate" : "acquire", captureMs);
                     if (encoder is not null)

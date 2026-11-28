@@ -80,16 +80,18 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     bool stickyCtrl, stickyAlt, stickyShift, stickyWin;
     float lastTouchX, lastTouchY;
     float prevPinchDist;
-    bool isPinching;
-    long touchDownTimeMs;
+    int secondPointerId;
+    long? touchDownTimeMs;
     float touchDownX, touchDownY;
     bool movedSinceDown;
+    int touchSlop;
     Handler? uiHandler;
     string pcName = "";
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
+        touchSlop = ViewConfiguration.Get(this)!.ScaledTouchSlop;
         AndroidStrings.Init(this);
         AndroidTheme.Init(this);
         using (var prefs = GetSharedPreferences("relaxdesk_video_v1", global::Android.Content.FileCreationMode.Private))
@@ -696,7 +698,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         ReleaseStickyModifiers();
         session?.ReleaseAllInputs();
         gesture.Reset();
-        isPinching = false;
+        touchDownTimeMs = null;
         movedSinceDown = false;
     }
 
@@ -855,22 +857,44 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
 
         if (pointers >= 2)
         {
+            bool firstPair = !gesture.MultiplePointers && action == MotionEventActions.PointerDown;
             if (gesture.EnterMultiplePointers())
                 session.SendInput(new CoreRemoteInput("button", Button: 1, Up: true));
-            float dx = ev.GetX(0) - ev.GetX(1);
-            float dy = ev.GetY(0) - ev.GetY(1);
-            float dist = MathF.Sqrt(dx * dx + dy * dy);
-            float midX = (ev.GetX(0) + ev.GetX(1)) * 0.5f;
-            float midY = (ev.GetY(0) + ev.GetY(1)) * 0.5f;
-
-            if (!isPinching)
+            if (pointers > 2)
             {
-                isPinching = true;
+                gesture.CancelPair();
+                return;
+            }
+
+            var first = (X: ev.GetX(0), Y: ev.GetY(0));
+            var second = (X: ev.GetX(1), Y: ev.GetY(1));
+            if (action == MotionEventActions.PointerUp)
+            {
+                if (gesture.EndPair(ev.GetPointerId(ev.ActionIndex) == secondPointerId,
+                    ev.EventTime, first, second, touchSlop))
+                    SendTouchClick(2);
+                return;
+            }
+
+            float dx = first.X - second.X;
+            float dy = first.Y - second.Y;
+            float dist = MathF.Sqrt(dx * dx + dy * dy);
+            float midX = (first.X + second.X) * 0.5f;
+            float midY = (first.Y + second.Y) * 0.5f;
+
+            if (firstPair)
+            {
+                secondPointerId = ev.GetPointerId(ev.ActionIndex);
+                var anchor = ev.ActionIndex == 0 ? second : first;
+                bool eligible = touchpadMode && !movedSinceDown && touchDownTimeMs is long start &&
+                    ev.EventTime - start >= TouchGestureState.LongPressMilliseconds &&
+                    !TouchGestureState.Moved((touchDownX, touchDownY), anchor, touchSlop);
+                gesture.BeginPair(eligible, ev.EventTime, first, second);
                 prevPinchDist = Math.Max(1f, dist);
                 lastTouchX = midX;
                 lastTouchY = midY;
             }
-            else if (action == MotionEventActions.Move)
+            else if (action == MotionEventActions.Move && gesture.MovePair(first, second, touchSlop))
             {
                 float scale = dist / Math.Max(1f, prevPinchDist);
                 viewport.ApplyScaleAndPan(scale, midX, midY, midX - lastTouchX, midY - lastTouchY);
@@ -885,7 +909,11 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
 
         if (gesture.MultiplePointers)
         {
-            if (action == MotionEventActions.Up) { gesture.Reset(); isPinching = false; }
+            if (action == MotionEventActions.Up)
+            {
+                gesture.Reset();
+                touchDownTimeMs = null;
+            }
             return;
         }
 
@@ -895,7 +923,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         switch (action)
         {
             case MotionEventActions.Down:
-                touchDownTimeMs = Java.Lang.JavaSystem.CurrentTimeMillis();
+                touchDownTimeMs = ev.EventTime;
                 touchDownX = lastTouchX = x;
                 touchDownY = lastTouchY = y;
                 movedSinceDown = false;
@@ -911,8 +939,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             case MotionEventActions.Move:
                 float mdx = x - lastTouchX;
                 float mdy = y - lastTouchY;
-                float moveDx = x - touchDownX, moveDy = y - touchDownY;
-                if (!movedSinceDown && MathF.Sqrt(moveDx * moveDx + moveDy * moveDy) > 10f)
+                if (!movedSinceDown && TouchGestureState.Moved((touchDownX, touchDownY), (x, y), touchSlop))
                     movedSinceDown = true;
                 lastTouchX = x;
                 lastTouchY = y;
@@ -936,22 +963,24 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             case MotionEventActions.Up:
                 if (touchpadMode)
                 {
-                    long heldMs = Java.Lang.JavaSystem.CurrentTimeMillis() - touchDownTimeMs;
-                    if (!movedSinceDown)
-                    {
-                        int button = heldMs >= 450 ? 2 : 1;
-                        session.SendInput(new CoreRemoteInput("button", Button: button, Up: false));
-                        session.SendInput(new CoreRemoteInput("button", Button: button, Up: true));
-                    }
+                    if (touchDownTimeMs is long downTime && !movedSinceDown)
+                        SendTouchClick(ev.EventTime - downTime >= TouchGestureState.LongPressMilliseconds ? 2 : 1);
                 }
                 else if (gesture.ReleaseDirect())
                 {
                     session.SendInput(new CoreRemoteInput("button", Button: 1, Up: true));
                 }
                 movedSinceDown = false;
+                touchDownTimeMs = null;
                 break;
 
         }
+    }
+
+    void SendTouchClick(int button)
+    {
+        session?.SendInput(new CoreRemoteInput("button", Button: button, Up: false));
+        session?.SendInput(new CoreRemoteInput("button", Button: button, Up: true));
     }
 
     void OnStageGenericMotion(object? sender, View.GenericMotionEventArgs e)

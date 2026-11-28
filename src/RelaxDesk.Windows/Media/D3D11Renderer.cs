@@ -60,16 +60,22 @@ public sealed class D3D11Renderer : IDisposable
         hr = NativeMethods.rd_renderer_present(context.Value, out var timing);
         Timing = timing; NativeMethods.Check(hr); OutputBlocked=hr!=0;return !OutputBlocked;
     }
-    public byte[] DrawAndReadBackbufferForTest(GpuVideoFrame frame, int clientWidth, int clientHeight, ViewportOptions? viewport = null)
+    public byte[] DrawAndReadBackbufferForTest(GpuVideoFrame frame, int clientWidth, int clientHeight, ViewportOptions? viewport, out double steadyDrawMs)
     {
         if (viewport is not null) NativeMethods.Check(NativeMethods.rd_renderer_set_view(context.Value, viewport.Zoom, viewport.PanX, viewport.PanY));
         int hr = NativeMethods.rd_renderer_draw(context.Value, frame.NativeFrame, hiddenPointerMetadata, (uint)hiddenPointerMetadata.Length);
         NativeMethods.Check(hr);
         if (hr != 0) throw new InvalidOperationException("Renderer window hidden/occluded before backbuffer test read");
+        long drawStart = System.Diagnostics.Stopwatch.GetTimestamp();
+        hr = NativeMethods.rd_renderer_draw(context.Value, frame.NativeFrame, hiddenPointerMetadata, (uint)hiddenPointerMetadata.Length);
+        steadyDrawMs = System.Diagnostics.Stopwatch.GetElapsedTime(drawStart).TotalMilliseconds;
+        NativeMethods.Check(hr);
         byte[] output = new byte[checked(clientWidth * clientHeight * 4)];
         NativeMethods.Check(NativeMethods.rd_renderer_read_frame(context.Value, output, (uint)output.Length));
         return output;
     }
+    public byte[] DrawAndReadBackbufferForTest(GpuVideoFrame frame, int clientWidth, int clientHeight, ViewportOptions? viewport = null) =>
+        DrawAndReadBackbufferForTest(frame, clientWidth, clientHeight, viewport, out _);
     public void Dispose() => context.Dispose();
 }
 

@@ -184,15 +184,15 @@ internal static class OfficeTextQuality
             codecMatrix.Add(sample);
         }
 
-        // 5. Static Screen High-Quality Refresh (Sudden Tab Switch -> 0 Settle Frames vs 3 Progressive P-Frames)
-        var (settle0Metrics, settle3Metrics, transBytes, settleExtraBytes, settle0Bgra, settle3Bgra) =
-            Task.Run(() => MeasureStaticSettleTransition(ref1080, 1920, 1080, 4_000_000)).GetAwaiter().GetResult();
+        // 5. Static Screen High-Quality Refresh (Sudden Window/Tab Switch -> 0 Settle Frames vs 6 Progressive P-Frames)
+        var (settle0Metrics, settle6Metrics, transBytes, settleExtraBytes, settle0Bgra, settle6Bgra) =
+            Task.Run(() => MeasureStaticSettleTransition(ref1080, 1920, 1080, 8_000_000)).GetAwaiter().GetResult();
         SaveZoomedComparisonStripPng(
             Path.Combine(cropsDir, "crop_static_settle_transition_8x.png"),
             1920, 1080, new Int32Rect(140, 8, 136, 38), zoomFactor: 8,
             ("Source ClearType", ref1080),
             ("TabSwitch Freeze (0 Settle)", settle0Bgra),
-            ("Progressive Settle (+3 P)", settle3Bgra));
+            ("Progressive Settle (+6 P)", settle6Bgra));
 
         // 6. Client Viewport Scaling Matrix (Zoom=100 1:1, Zoom=0 Fit 1536x864, Zoom=125, Zoom=150, Zoom=200)
         var viewportMatrix = Task.Run(() => MeasureViewportScalingMatrix(ref1080, 1920, 1080)).GetAwaiter().GetResult();
@@ -213,12 +213,12 @@ internal static class OfficeTextQuality
                 legacyCpuNearest = legacyCpuColorMetrics,
                 optimizedCpuBilateral = optCpuColorMetrics
             },
-            staticSettle4MbpsTabSwitch = new
+            staticSettle8MbpsTabSwitch = new
             {
                 transitionFrameBytes = transBytes,
-                threeSettlePFramesBytes = settleExtraBytes,
+                sixSettlePFramesBytes = settleExtraBytes,
                 beforeSettle0Frames = settle0Metrics,
-                afterSettle3Frames = settle3Metrics
+                afterSettle6Frames = settle6Metrics
             },
             codecAndDpiMatrix = codecMatrix,
             viewportScalingMatrix = viewportMatrix
@@ -228,7 +228,7 @@ internal static class OfficeTextQuality
         File.WriteAllText(summaryPath, JsonSerializer.Serialize(summary, new JsonSerializerOptions { WriteIndented = true }), Encoding.UTF8);
 
         string reportPath = Path.Combine(outDir, "report.md");
-        File.WriteAllText(reportPath, BuildMarkdownReport(liveCaptureStatus, codecCapsJson, legacyGpuColorMetrics, optGpuColorMetrics, legacyCpuColorMetrics, optCpuColorMetrics, settle0Metrics, settle3Metrics, transBytes, settleExtraBytes, codecMatrix, viewportMatrix), Encoding.UTF8);
+        File.WriteAllText(reportPath, BuildMarkdownReport(liveCaptureStatus, codecCapsJson, legacyGpuColorMetrics, optGpuColorMetrics, legacyCpuColorMetrics, optCpuColorMetrics, settle0Metrics, settle6Metrics, transBytes, settleExtraBytes, codecMatrix, viewportMatrix), Encoding.UTF8);
 
         // Automated Regression Gate Assertions (do not judge by bitrate/encode success alone!)
         if (optGpuColorMetrics.NeutralBleedOutliers >= legacyGpuColorMetrics.NeutralBleedOutliers * 0.70 ||
@@ -236,7 +236,7 @@ internal static class OfficeTextQuality
             throw new InvalidDataException("GPU HLSL ClearType fringe reduction regressed against baseline VideoProcessorBlt");
         if (optCpuColorMetrics.NeutralBleedOutliers >= legacyCpuColorMetrics.NeutralBleedOutliers * 0.60)
             throw new InvalidDataException("CPU bilateral NV12 conversion did not outperform legacy nearest-neighbor");
-        if (settle3Metrics.LumaPsnrDb <= settle0Metrics.LumaPsnrDb + 1.5)
+        if (settle6Metrics.LumaPsnrDb <= settle0Metrics.LumaPsnrDb + 3.0)
             throw new InvalidDataException("Progressive static P-frame settle did not materially improve post-motion text PSNR");
 
         Console.WriteLine($"PASS RelaxDesk text quality quantitative suite: stages={stagesDir} crops={cropsDir} summary={summaryPath}");
@@ -296,8 +296,8 @@ internal static class OfficeTextQuality
             if (decodedBgra is null || lastSurface is null)
                 throw new InvalidOperationException("Failed to decode hardware H.264 frame for stage export");
 
-            byte[] rendered1To1 = RenderWithNativeD3D11(lastSurface, w, h, new ViewportOptions(100, 0, 0));
-            byte[] renderedFit = RenderWithNativeD3D11(lastSurface, 1536, 864, new ViewportOptions(0, 0.5, 0.5));
+            byte[] rendered1To1 = RenderWithNativeD3D11(lastSurface, w, h, new ViewportOptions(100, 0, 0), out _);
+            byte[] renderedFit = RenderWithNativeD3D11(lastSurface, 1536, 864, new ViewportOptions(0, 0.5, 0.5), out _);
             return (decodedBgra, rendered1To1, renderedFit);
         }
         finally
@@ -352,12 +352,10 @@ internal static class OfficeTextQuality
             }
             if (lastSurface is null) throw new InvalidOperationException("No GPU decoded frame");
             ulong decodeReadback = decoder.Timing.ReadbackBytes;
-            var renSw = Stopwatch.StartNew();
-            byte[] rendered = RenderWithNativeD3D11(lastSurface, w, h, new ViewportOptions(100, 0, 0));
-            renSw.Stop();
+            byte[] rendered = RenderWithNativeD3D11(lastSurface, w, h, new ViewportOptions(100, 0, 0), out double steadyDrawMs);
             string label = customLabel ?? $"HW H.264 -> GPU D3D11 Render ({bitrate / 1_000_000}Mbps)";
             return new(label, $"{w}x{h}", dpi, bitrate, frames, totalBytes,
-                encTimes.Average(), decoder.Timing.TotalMs + renSw.Elapsed.TotalMilliseconds, decodeReadback,
+                encTimes.Average(), decoder.Timing.TotalMs + steadyDrawMs, decodeReadback,
                 EvaluateMetrics(srcBgra, rendered, w, h));
         }
         finally
@@ -432,17 +430,22 @@ internal static class OfficeTextQuality
             EvaluateMetrics(srcBgra, hybridSurface, w, h));
     }
 
-    static (TextQualityMetrics Settle0, TextQualityMetrics Settle3, int TransBytes, int SettleBytes, byte[] Settle0Bgra, byte[] Settle3Bgra)
+    static (TextQualityMetrics Settle0, TextQualityMetrics Settle6, int TransBytes, int SettleBytes, byte[] Settle0Bgra, byte[] Settle6Bgra)
         MeasureStaticSettleTransition(byte[] targetBgra, int w, int h, int bitrate)
     {
+        // Simulate switching from an active dark application workspace with UI chrome/cards to a full-screen ClearType document/spreadsheet.
         byte[] prevBgra = new byte[targetBgra.Length];
-        int pixels = w * h;
-        for (int i = 0; i < pixels; i++)
+        for (int y = 0; y < h; y++)
         {
-            prevBgra[i * 4 + 0] = targetBgra[(pixels - 1 - i) * 4 + 2];
-            prevBgra[i * 4 + 1] = targetBgra[(pixels - 1 - i) * 4 + 1];
-            prevBgra[i * 4 + 2] = targetBgra[(pixels - 1 - i) * 4 + 0];
-            prevBgra[i * 4 + 3] = 255;
+            for (int x = 0; x < w; x++)
+            {
+                int i = (y * w + x) * 4;
+                bool card = (x % 320 < 280) && (y % 180 < 140);
+                prevBgra[i + 0] = (byte)(card ? 48 + ((x * 7 + y * 3) & 31) : 28);
+                prevBgra[i + 1] = (byte)(card ? 40 + ((x * 5 + y * 11) & 31) : 24);
+                prevBgra[i + 2] = (byte)(card ? 36 + ((x * 3 + y * 7) & 31) : 22);
+                prevBgra[i + 3] = 255;
+            }
         }
 
         (byte[] Img, int TransLen, int ExtraLen) RunSequence(int settleFrames)
@@ -451,20 +454,20 @@ internal static class OfficeTextQuality
             using var decoder = new H264Decoder(w, h, hardware: true);
             byte[]? last = null;
             int trans = 0, extra = 0;
-            for (int f = 0; f < 3 + settleFrames; f++)
+            for (int f = 0; f < 4 + settleFrames; f++)
             {
-                byte[] src = f < 2 ? prevBgra : targetBgra;
+                byte[] src = f < 3 ? prevBgra : targetBgra;
                 if (encoder.EncodeBgra(src, f * 333333L, f == 0) is not { } pkt) continue;
-                if (f == 2) trans = pkt.Data.Length;
-                else if (f > 2) extra += pkt.Data.Length;
+                if (f == 3) trans = pkt.Data.Length;
+                else if (f > 3) extra += pkt.Data.Length;
                 if (decoder.Decode(pkt.Data, pkt.Timestamp) is { } px) last = px;
             }
             return (last ?? throw new InvalidOperationException("Settle sequence failed"), trans, extra);
         }
 
         var s0 = RunSequence(0);
-        var s3 = RunSequence(3);
-        return (EvaluateMetrics(targetBgra, s0.Img, w, h), EvaluateMetrics(targetBgra, s3.Img, w, h), s3.TransLen, s3.ExtraLen, s0.Img, s3.Img);
+        var s6 = RunSequence(6);
+        return (EvaluateMetrics(targetBgra, s0.Img, w, h), EvaluateMetrics(targetBgra, s6.Img, w, h), s6.TransLen, s6.ExtraLen, s0.Img, s6.Img);
     }
 
     static List<ViewportScaleSample> MeasureViewportScalingMatrix(byte[] srcBgra, int w, int h)
@@ -494,11 +497,9 @@ internal static class OfficeTextQuality
             foreach (var c in cases)
             {
                 var opts = new ViewportOptions(c.Zoom, 0, 0);
-                var sw = Stopwatch.StartNew();
-                byte[] rendered = RenderWithNativeD3D11(surface, c.Cw, c.Ch, opts);
-                sw.Stop();
+                byte[] rendered = RenderWithNativeD3D11(surface, c.Cw, c.Ch, opts, out double steadyDrawMs);
                 byte[] expectedView = BuildReferenceViewport(srcBgra, w, h, c.Cw, c.Ch, opts);
-                list.Add(new(c.Label, c.Zoom, w, h, c.Cw, c.Ch, sw.Elapsed.TotalMilliseconds,
+                list.Add(new(c.Label, c.Zoom, w, h, c.Cw, c.Ch, steadyDrawMs,
                     EvaluateMetrics(expectedView, rendered, c.Cw, c.Ch)));
             }
             return list;
@@ -509,7 +510,7 @@ internal static class OfficeTextQuality
         }
     }
 
-    static byte[] RenderWithNativeD3D11(GpuVideoFrame surface, int clientWidth, int clientHeight, ViewportOptions viewport)
+    static byte[] RenderWithNativeD3D11(GpuVideoFrame surface, int clientWidth, int clientHeight, ViewportOptions viewport, out double steadyDrawMs)
     {
         nint parent = CreateTestHostWindow(clientWidth + 32, clientHeight + 64);
         nint child = 0;
@@ -520,7 +521,7 @@ internal static class OfficeTextQuality
                 throw new InvalidOperationException("MoveWindow child failed");
             PumpPendingMessages();
             using var renderer = new D3D11Renderer(surface, child);
-            return renderer.DrawAndReadBackbufferForTest(surface, clientWidth, clientHeight, viewport);
+            return renderer.DrawAndReadBackbufferForTest(surface, clientWidth, clientHeight, viewport, out steadyDrawMs);
         }
         finally
         {
@@ -1020,11 +1021,11 @@ internal static class OfficeTextQuality
             sb.AppendLine($"| {s.PathName} | {s.Resolution}@{s.Dpi} | {s.TotalEncodedBytes:N0} | {s.EncodeMsPerFrame:F2} | {s.DecodeOrRenderMsPerFrame:F2} | {s.CpuReadbackBytes:N0} | {s.Metrics.LumaPsnrDb:F2} | {s.Metrics.NeutralBleedMean:F2} | {s.Metrics.NeutralBleedOutliers:N0} | {s.Metrics.EdgeSharpnessRatio:F4} |");
         }
         sb.AppendLine();
-        sb.AppendLine("## 3. 剧烈切屏后静态画面渐进式 P 帧精修 (4 Mbps 1080p)");
+        sb.AppendLine("## 3. 剧烈切屏后静态画面渐进式 P 帧精修 (8 Mbps 1080p)");
         sb.AppendLine();
-        sb.AppendLine($"- 首帧切换负载：`{transBytes / 1024.0:F1} KiB`；3 帧静态精修合计增量负载：`{settleBytes / 1024.0:F1} KiB`");
+        sb.AppendLine($"- 首帧切换负载：`{transBytes / 1024.0:F1} KiB`；6 帧静态精修合计增量负载：`{settleBytes / 1024.0:F1} KiB`");
         sb.AppendLine($"- 运动停止无精修 (`0 Settle`)：PSNR = `{settle0.LumaPsnrDb:F2} dB`，边缘锐度比 = `{settle0.EdgeSharpnessRatio:F4}`，水平边缘误差 = `{settle0.MeanHorizontalEdgeError:F2}`");
-        sb.AppendLine($"- **渐进式静态精修 (`+3 P-Frames`)**：PSNR = **`{settle3.LumaPsnrDb:F2} dB`**，边缘锐度比 = **`{settle3.EdgeSharpnessRatio:F4}`**，水平边缘误差 = **`{settle3.MeanHorizontalEdgeError:F2}`**");
+        sb.AppendLine($"- **渐进式静态精修 (`+6 P-Frames`)**：PSNR = **`{settle3.LumaPsnrDb:F2} dB`**，边缘锐度比 = **`{settle3.EdgeSharpnessRatio:F4}`**，水平边缘误差 = **`{settle3.MeanHorizontalEdgeError:F2}`**");
         sb.AppendLine();
         sb.AppendLine("## 4. 客户端 D3D11 视口缩放比例矩阵");
         sb.AppendLine();
