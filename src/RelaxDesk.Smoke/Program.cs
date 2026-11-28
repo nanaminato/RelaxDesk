@@ -37,6 +37,12 @@ if(args is ["--viewport-contracts"]){try{RelaxDesk.Windows.ViewportContracts.Run
 if(args is [var switchHost,"--display-switch"]){try{await DisplaySwitchSmoke.Run(switchHost);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is [var displayHost,"--display-denied"]){try{await DisplaySmoke.Run(displayHost);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is ["--display-contracts"]){try{RelaxDesk.Windows.DisplayContracts.Run();}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
+if(args is ["--windows-file-clipboard"] or ["--windows-file-clipboard", "--replace-current-clipboard"])
+{
+    try { RelaxDesk.Windows.WindowsFileClipboardVerification.Run(args.Length == 2); }
+    catch(Exception error) { Console.Error.WriteLine(error); Environment.ExitCode=1; }
+    return;
+}
 if(args is["--file-clipboard-contracts",var fileClipboardFixtures]){try{await RelaxDesk.Windows.FileClipboardContracts.Run(fileClipboardFixtures);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is ["--clipboard-image-contracts"]){try{RelaxDesk.Windows.ClipboardImageContracts.Run();}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}return;}
 if(args is ["--input-contracts"]){RelaxDesk.Windows.InputContracts.Run();return;}

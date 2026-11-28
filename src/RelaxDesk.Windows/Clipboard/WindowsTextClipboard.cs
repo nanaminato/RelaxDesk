@@ -115,6 +115,8 @@ public sealed partial class WindowsTextClipboard : ITextClipboard
     public void Dispose()
     {
         if (window == 0) return; Verify();
+        ClearPublishedFiles();
+        fileSources?.Clear();
         if (!DestroyWindow(window)) throw new IOException("Clipboard worker window destruction failed");
         window = 0; cached = null;richCached=null;CancelFileCommand(); Interlocked.Exchange(ref activeWorker, 0);
     }

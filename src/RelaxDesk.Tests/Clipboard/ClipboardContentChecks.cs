@@ -18,12 +18,13 @@ static class ClipboardContentChecks
     sealed class MemoryClipboard(ClipboardContent initial):IContentClipboard
     {
         readonly object sync=new();ClipboardContent content=initial.Own();long version=1;
-        public int Reads,Writes,WriteAttempts;public bool Busy,Fail,Disposed;public ClipboardFormats LastFormats;
-        public void Copy(ClipboardContent value){lock(sync){content=value.Own();version++;}}
+        public Action? BeforeRead; public int Reads,Writes,WriteAttempts;public bool Busy,Fail,Disposed;public ClipboardFormats LastFormats;
+        bool localFileSelection;
+        public void Copy(ClipboardContent value,bool files=false){lock(sync){content=value.Own();localFileSelection=files;version++;}}
         public bool TryRead(ClipboardFormats formats,out ClipboardContentSnapshot snapshot)
-        {lock(sync){if(Fail)throw new IOException("private diagnostic must not escape");Reads++;LastFormats=formats;snapshot=new(version,formats.Select(content)?.Own());return true;}}
+        {Interlocked.Exchange(ref BeforeRead,null)?.Invoke();lock(sync){if(Fail)throw new IOException("private diagnostic must not escape");Reads++;LastFormats=formats;snapshot=new(version,localFileSelection?null:formats.Select(content)?.Own(),localFileSelection);return true;}}
         public bool TryWrite(ClipboardContent value,long expectedVersion,out long writtenVersion)
-        {lock(sync){WriteAttempts++;writtenVersion=version;if(Busy||version!=expectedVersion)return false;Writes++;content=value.Own();writtenVersion=++version;return true;}}
+        {lock(sync){WriteAttempts++;writtenVersion=version;if(Busy||version!=expectedVersion)return false;Writes++;content=value.Own();localFileSelection=false;writtenVersion=++version;return true;}}
         public void Dispose()=>Disposed=true;
     }
     sealed class IdleStream(bool prefix=false):Stream
@@ -97,6 +98,32 @@ static class ClipboardContentChecks
             memory.Copy(new(Png:Png(13),Html:"new HTML only"));await Until(()=>sent.Count==2);Check(sent.Last().Content is{Png:null,Text:null,Html:"new HTML only"});
             gate.RevokeFeature(SessionCapabilities.ClipboardHtml);await worker.Completion.WaitAsync(TimeSpan.FromSeconds(2));Check(memory.Disposed&&gate.Approved);
         }
+        foreach(bool localFile in new[]{false,true})
+        {
+            var collisionGate=new AccessGate();
+            collisionGate.Approve([SessionCapabilities.ClipboardText,SessionCapabilities.ClipboardFiles,SessionCapabilities.FileTransfer]);
+            var collision=new MemoryClipboard(new(Text:"same local text"));
+            var collisionSent=new ConcurrentQueue<ClipboardContentUpdate>();
+            var collisions=new ConcurrentQueue<string>();
+            await using var worker=new ClipboardContentSynchronizer(()=>collision,collisionGate,collisionSent.Enqueue,default,collisions.Enqueue,10);
+            await Until(()=>collision.Reads>=2);
+            using var reading=new ManualResetEventSlim();
+            using var resumeRead=new ManualResetEventSlim();
+            Volatile.Write(ref collision.BeforeRead,()=>{
+                reading.Set();
+                if(!resumeRead.Wait(TimeSpan.FromSeconds(3)))throw new TimeoutException("Test clipboard read stalled");
+            });
+            await Until(()=>reading.IsSet);
+            Check(worker.Receive(new(origin,100,new(Text:"waiting remote update"))));
+            collision.Copy(new(Text:"same local text"),localFile);
+            int reads=collision.Reads;
+            resumeRead.Set();
+            await Until(()=>collision.Reads>=reads+2);
+            Check(collision.Writes==0);
+            Check(localFile?collisionSent.IsEmpty:collisionSent.Single().Revision>100);
+            Check(collisions.Single().Contains("queued_remote_revision=100"));
+        }
+
         var busyGate=new AccessGate();busyGate.Approve([SessionCapabilities.ClipboardHtml]);var busy=new MemoryClipboard(new(Html:"initial")){Busy=true};var messages=new ConcurrentQueue<string>();
         await using(var worker=new ClipboardContentSynchronizer(()=>busy,busyGate,_=>{},default,messages.Enqueue,10))
         {await Until(()=>busy.Reads>=2);Check(worker.Receive(new(origin,1,new(Html:"private retry"))));await Until(()=>busy.WriteAttempts==8);await Task.Delay(40);Check(busy.Writes==0&&messages.Count==1&&!messages.Single().Contains("private retry"));}

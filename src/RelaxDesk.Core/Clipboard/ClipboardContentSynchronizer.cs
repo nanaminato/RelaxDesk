@@ -8,7 +8,7 @@ public readonly record struct ClipboardFormats(bool Text,bool Image,bool Html,bo
     public string Permission(ClipboardContent content)=>content.Text is not null?SessionCapabilities.ClipboardText:content.Png is not null?SessionCapabilities.ClipboardImage:content.Html is not null?SessionCapabilities.ClipboardHtml:content.Files is not null?SessionCapabilities.ClipboardFiles:Text?SessionCapabilities.ClipboardText:Image?SessionCapabilities.ClipboardImage:Html?SessionCapabilities.ClipboardHtml:SessionCapabilities.ClipboardFiles;
     public static ClipboardFormats Granted(AccessGate gate)=>new(gate.Allows(SessionCapabilities.ClipboardText),gate.Allows(SessionCapabilities.ClipboardImage),gate.Allows(SessionCapabilities.ClipboardHtml),gate.Allows(SessionCapabilities.ClipboardFiles)&&gate.Allows(SessionCapabilities.FileTransfer));
 }
-public sealed record ClipboardContentSnapshot(long Version,ClipboardContent? Content)
+public sealed record ClipboardContentSnapshot(long Version,ClipboardContent? Content, bool LocalFileSelection = false)
 {
     public override string ToString()=>$"ClipboardContentSnapshot version={Version} (all content redacted)";
 }
@@ -70,18 +70,25 @@ public sealed class ClipboardContentSynchronizer:IAsyncDisposable
                 if(formats!=previous){previous=formats;version=-1;retry=null;lock(sync)pending=null;}
                 if(clipboard.TryRead(formats,out var snapshot))
                 {
+                    lock(sync)if(pending is not null){retry=pending;pending=null;attempts=0;}
+                    // A copy observed in this poll must advance beyond any remote
+                    // revision already received, even when that write is still pending.
+                    if(retry is not null)state.ObserveRevision(retry.Revision);
                     var content=formats.Select(snapshot.Content);
                     if(version==-1){if(ClipboardContentRules.Valid(content))state.Baseline(content!);version=snapshot.Version;}
                     else if(version!=snapshot.Version)
                     {
                         version=snapshot.Version;
-                        if(content is not null&&state.ObserveLocal(content) is{} update&&!stop.IsCancellationRequested&&ClipboardFormats.Granted(gate)==formats)
+                        if(snapshot.LocalFileSelection)state.ObserveLocalFileSelection();
+                        if(retry is not null&&(snapshot.LocalFileSelection||ClipboardContentRules.Valid(content)))
+                            diagnostic($"clipboard_rich_collision local_version={version} queued_remote_revision={retry.Revision}");
+                        if(content is not null&&state.ObserveLocal(content, newCopy:true) is{} update&&!stop.IsCancellationRequested&&ClipboardFormats.Granted(gate)==formats)
                         {
                             string permission=formats.Permission(update.Content);
                             gate.TryExecuteFeature(permission,()=>{if(!stop.IsCancellationRequested&&ClipboardFormats.Granted(gate)==formats)send(update);});
                         }
                     }
-                    lock(sync)if(pending is not null){retry=pending;pending=null;attempts=0;}
+
                     if(retry is not null)
                     {
                         if(!formats.Allows(retry.Content)||!state.ShouldApply(retry))retry=null;
