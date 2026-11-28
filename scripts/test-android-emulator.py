@@ -52,7 +52,7 @@ def smoke(adb: str, serial: str, aapt: str, apk: str) -> None:
                     if n.get("text") == text and n.get("enabled") != "false":
                         return n.attrib
                     if (n.get("text") or "").startswith("设备密钥自检未通过"):
-                        raise RuntimeError("Android device key self-test failed")
+                        raise RuntimeError(n.attrib["text"])
             except (subprocess.SubprocessError, ET.ParseError):
                 pass
             time.sleep(1)

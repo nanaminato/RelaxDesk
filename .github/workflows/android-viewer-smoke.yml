@@ -107,6 +107,7 @@ jobs:
           vm=$!
           trap 'kill "$vm" 2>/dev/null || true' EXIT
           if ! python3 scripts/test-android-emulator.py "$PROBE_APK" --adb "$adb" --aapt "$ANDROID_HOME/build-tools/37.0.0/aapt"; then
-            tail -40 "$RUNNER_TEMP/relaxdesk-emulator.log"
+            "$adb" -s "$ANDROID_SERIAL" logcat -d -s RelaxDeskDeviceKey:E || true
+            grep -v 'androidboot.qemu.adb.pubkey' "$RUNNER_TEMP/relaxdesk-emulator.log" | tail -30
             exit 1
           fi

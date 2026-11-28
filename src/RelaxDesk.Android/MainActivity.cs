@@ -47,7 +47,14 @@ public sealed class MainActivity : Activity, ISurfaceHolderCallback
                 await Task.Run(DeviceKeyProbe.Run);
                 result = "签名验证通过：同一密钥可重开，证书指纹变化时拒绝。";
             }
-            catch (Exception e) { result = $"设备密钥自检未通过：{e.GetType().Name}"; }
+            catch (Exception e)
+            {
+#if DEBUG
+                // Fixed local self-test only: no Host, credentials or payloads.
+                global::Android.Util.Log.Error("RelaxDeskDeviceKey", e.ToString());
+#endif
+                result = $"设备密钥自检未通过：{e.GetType().Name}";
+            }
             if (!IsDestroyed)
             {
                 keyStatus.Text = result;
