@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$HostArchive,[Parameter(Mandatory)][string]$ViewerArchive,[Parameter(Mandatory)][string]$SmokeApplication,[Parameter(Mandatory)][string]$OutputDirectory,[switch]$SkipMachineServicePreview)
+﻿param([Parameter(Mandatory)][string]$HostArchive,[Parameter(Mandatory)][string]$ViewerArchive,[Parameter(Mandatory)][string]$SmokeApplication,[Parameter(Mandatory)][string]$OutputDirectory,[switch]$SkipMachineServicePreview)
 $ErrorActionPreference='Stop'
 $repository=Split-Path $PSScriptRoot -Parent
 $output=[IO.Path]::GetFullPath($OutputDirectory)
@@ -117,7 +117,7 @@ try {
         Confirm (!$preview.Changed -and $preview.Version -ceq $hostPackage.metadata.version) 'Service package readonly preview failed'
     }
     $ui=Invoke-App 'host-one-click-ui' $shellExe @('--service-setup-ui-contracts',$hostExe,(Join-Path $output 'ui-fixtures'))
-    Confirm ($ui.Contains('PASS 54 actual WPF')) 'One-click UI acceptance marker missing'
+    Confirm ($ui -match 'PASS ([0-9]+) actual WPF service setup UI contracts:' -and [int]$Matches[1] -ge 54) 'One-click UI acceptance marker missing'
     $inputUi = Invoke-App 'packaged-viewer-input' $viewerExe @('--input-ui-contracts')
     Confirm ($inputUi.Contains('standalone motion drops without cancelling and a rejected click position prevents button submission')) 'Packaged Viewer control queue overflow evidence missing'
     foreach($mode in @('deflate','approval-fallback-cpu','udp-cpu','auto-recovery-cpu')){
