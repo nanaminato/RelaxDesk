@@ -21,12 +21,14 @@ internal static class AndroidProbeFixtureHost
         int port = ((IPEndPoint)listener.LocalEndpoint).Port;
         Console.WriteLine($"READY {port} {pin} tester {password}");
         using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(8));
+        string? lastCompletedProof = null;
         for (int attempt = 0; attempt < 8; attempt++)
         {
             try
             {
-                using var control = await Accept();
+                using var control = await Accept(control: true);
                 var hello = await Wire.Read(control, timeout.Token, 16 * 1024);
+                Console.WriteLine("RECV login-request");
                 byte[] expected = PasswordVerifier.EncodePassword(password);
                 try
                 {
@@ -49,6 +51,7 @@ internal static class AndroidProbeFixtureHost
                 if (proof.Data is not { Length: 64 } || proof.Kind != FullControlProtocol.DeviceProof ||
                     !DeviceIdentity.Verify(publicKey, challenge, pin, proof.Data))
                     throw new AuthenticationException("Fixture device proof rejected");
+                string provenIdentity = DeviceIdentity.Fingerprint(publicKey);
                 Console.WriteLine("VALID device-proof-and-password");
                 string NewTicket() => Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
                 string[] tickets = Enumerable.Range(0, 4).Select(_ => NewTicket()).ToArray();
@@ -90,7 +93,14 @@ internal static class AndroidProbeFixtureHost
                             await Wire.Write(control, new("pong-v2", Sequence: ping.Sequence), timeout.Token);
                         }
                     }
-                    catch (EndOfStreamException) { Console.WriteLine("VALID control-closed"); }
+                    catch (EndOfStreamException)
+                    {
+                        if (lastCompletedProof is not null)
+                            Console.WriteLine(provenIdentity == lastCompletedProof
+                                ? "VALID same-device-fingerprint" : "INFO different-device-fingerprint");
+                        lastCompletedProof = provenIdentity;
+                        Console.WriteLine("VALID control-closed");
+                    }
                 }
                 finally { foreach (var tls in channels) await tls.DisposeAsync(); }
             }
@@ -98,9 +108,10 @@ internal static class AndroidProbeFixtureHost
             catch (Exception error) { Console.WriteLine($"STOP {error.GetType().Name}"); }
         }
 
-        async Task<SslStream> Accept()
+        async Task<SslStream> Accept(bool control = false)
         {
             var socket = await listener.AcceptTcpClientAsync(timeout.Token);
+            if (control) Console.WriteLine("ACCEPT control");
             var tls = new SslStream(socket.GetStream());
             try
             {
