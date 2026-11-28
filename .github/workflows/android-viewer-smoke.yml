@@ -62,7 +62,10 @@ jobs:
         run: |
           set -euo pipefail
           dotnet workload install android --skip-manifest-update --source https://api.nuget.org/v3/index.json
-          command -v ffmpeg
+          if ! command -v ffmpeg >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq ffmpeg
+          fi
           bash scripts/generate-android-probe.sh
           dotnet build src/RelaxDesk.Android -c Debug -m:1 \
             -p:AndroidSdkDirectory="$ANDROID_HOME" -p:JavaSdkDirectory="$JAVA_HOME" -p:RuntimeIdentifier=android-x64
