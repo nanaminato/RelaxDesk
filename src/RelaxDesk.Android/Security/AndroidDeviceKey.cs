@@ -34,15 +34,16 @@ internal sealed class AndroidDeviceKey : ProviderDeviceKey
                 using var generated = generator.GenerateKeyPair();
             }
 
-            using var cert = store.GetCertificate(Alias);
+            // GetKey is declared as java.security.Key and the .NET Android
+            // binding can wrap it as IKey only. Ask for the typed private-key
+            // entry so JNI wraps the handle as IPrivateKey without exporting it.
+            using var entry = store.GetEntry(Alias, null);
+            if (entry is not KeyStore.PrivateKeyEntry privateEntry)
+                throw new CryptographicException("Device signing entry is unavailable.");
+            using var cert = privateEntry.Certificate;
             using var peer = cert?.PublicKey;
             byte[] spki = peer?.GetEncoded() ?? throw new CryptographicException("Device public key is unavailable.");
-            var key = store.GetKey(Alias, null);
-            if (key is not IPrivateKey signingKey)
-            {
-                key?.Dispose();
-                throw new CryptographicException("Device signing key is unavailable.");
-            }
+            var signingKey = privateEntry.PrivateKey ?? throw new CryptographicException("Device signing key is unavailable.");
             try
             {
                 // Do not attempt a private-key export, or silently substitute
