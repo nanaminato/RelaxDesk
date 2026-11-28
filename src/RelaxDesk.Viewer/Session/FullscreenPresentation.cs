@@ -73,7 +73,7 @@ public sealed partial class ViewerWindow
         {
             var bounds = FullscreenMonitorBounds();
             // Use the monitor rectangle, never the work area left by the taskbar.
-            // Do not make the Viewer globally topmost: Alt+Tab must still work.
+            // Other local windows must remain accessible when viewer input is released.
             SetWindowPos(new WindowInteropHelper(this).Handle, 0, bounds.Left, bounds.Top,
                 bounds.Right - bounds.Left, bounds.Bottom - bounds.Top, 0x34);
         }

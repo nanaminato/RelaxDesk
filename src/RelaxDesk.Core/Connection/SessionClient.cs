@@ -83,6 +83,45 @@ public sealed class SessionClient : IDisposable
             throw;
         }
     }
+    public bool RequestClipboardRecovery { get; init; }
+    public bool SupportsClipboardRecovery { get; private set; }
+    string? clipboardHost;
+    int clipboardPort;
+    long lastClipboardOffer;
+
+    public bool AcceptClipboardRecoveryOffer(Packet packet)
+    {
+        long previous = Interlocked.Read(ref lastClipboardOffer);
+        return SupportsClipboardRecovery && ClipboardRecoveryProtocol.IsOffer(packet, previous) &&
+            Interlocked.CompareExchange(ref lastClipboardOffer, packet.Sequence, previous) == previous;
+    }
+
+    public async Task<SslStream> ReattachClipboard(Packet offer, CancellationToken ct)
+    {
+        if (!SupportsClipboardRecovery || clipboardHost is null || offer.Sequence != Interlocked.Read(ref lastClipboardOffer) ||
+            !ClipboardRecoveryProtocol.IsOffer(offer, 0)) throw new AuthenticationException("Invalid clipboard recovery offer");
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(ClipboardRecoveryProtocol.AttachTimeout);
+        var tcp = new TcpClient { NoDelay = true };
+        try
+        {
+            await tcp.ConnectAsync(clipboardHost, clipboardPort, deadline.Token);
+            var tls = new SslStream(tcp.GetStream(), false, (_, cert, _, _) =>
+                cert?.GetCertHashString(HashAlgorithmName.SHA256) == VerifiedFingerprint);
+            try
+            {
+                await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
+                    { TargetHost = "RelaxDesk", EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 }, deadline.Token);
+                await Wire.Write(tls, new(ClipboardRecoveryProtocol.BindKind, offer.Sequence, Text: offer.Text), deadline.Token);
+                if (await Wire.Read(tls, deadline.Token, 8192) != new Packet(ClipboardRecoveryProtocol.ApprovedKind, offer.Sequence))
+                    throw new AuthenticationException("Clipboard recovery binding rejected");
+                return tls;
+            }
+            catch { tls.Dispose(); throw; }
+        }
+        catch { tcp.Dispose(); throw; }
+    }
+
     public SslStream? ClipboardData{get;private set;}
     public SslStream? Data { get; private set; }
     public string[] Capabilities { get; private set; } = [];
@@ -220,6 +259,7 @@ public sealed class SessionClient : IDisposable
                 Capabilities: H264Only ? ["h264"] : ["h264", "deflate"], PointerBrotli: RequestPointerCompression ? true : null,
                 Features: requestedFeatures.Length == 0 ? null : requestedFeatures, FileResume:requestResume,InputVersion:RequestedInputVersion,
                 DisplayVersion:RequestedDisplayVersion,VideoVersion:RequestedVideoVersion, Network:requestedNetwork,
+                ClipboardRecovery: RequestClipboardRecovery ? true : null,
                 DeviceKey: deviceKey is null ? null : DeviceIdentity.Export(deviceKey), QuicRecovery: requestQuicRecovery ? true : null,
                 DeviceCredential: userName is null || (deviceCredential is null && confirmTakeover is null) ? null : deviceCredential ?? ""), ct);
         }
@@ -317,6 +357,11 @@ public sealed class SessionClient : IDisposable
         if (approval.QuicRecovery is not null && (approval.QuicRecovery != true || !requestQuicRecovery))
             throw new AuthenticationException("Unsolicited or invalid QUIC recovery capability");
         SupportsQuicRecovery = approval.QuicRecovery == true;
+        if (approval.ClipboardRecovery is not null && (approval.ClipboardRecovery != true || !RequestClipboardRecovery || !richClipboard))
+            throw new AuthenticationException("Unexpected clipboard recovery capability");
+        SupportsClipboardRecovery = approval.ClipboardRecovery == true;
+        clipboardHost = host;
+        clipboardPort = port;
 
         if (approval.QuicPort != 0)
         {

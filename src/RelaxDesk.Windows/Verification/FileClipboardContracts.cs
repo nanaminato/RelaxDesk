@@ -7,6 +7,21 @@ namespace RelaxDesk.Windows;
 
 public static class FileClipboardContracts
 {
+    sealed class BaselineClipboard:IContentClipboard
+    {
+        public bool TryRead(ClipboardFormats formats,out ClipboardContentSnapshot snapshot)
+        {
+            snapshot=new(1,new(Clear:true));
+            return true;
+        }
+        public bool TryWrite(ClipboardContent content,long expectedVersion,out long writtenVersion)
+        {
+            writtenVersion=expectedVersion;
+            return false;
+        }
+        public void Dispose(){}
+    }
+
     sealed class Local(string[] selected):ILocalFileClipboard
     {
         public int Published;public long Version=1;public string[] Paths=selected;
@@ -123,7 +138,35 @@ public static class FileClipboardContracts
             await flow.Download(offer,destination,ct,local.Version);
             if(local.Published!=1||File.ReadAllText(Path.Combine(local.Paths.Single(),"日本語.txt"))!=File.ReadAllText(file))
                 throw new IOException("Copied folder outside staging did not publish completed bytes");
+            sources.ClearLatest();
+            if(await client.LatestClipboardOffer(ct) is not null)
+                throw new IOException("Cleared clipboard still advertises a selection");
+
+            // The rich channel sees EOF before the Host copies another file.
+            // Keep the same file client, queue and authorization for the download.
+            await using var rich=new ClipboardContentSession(new MemoryStream(),()=>new BaselineClipboard(),gate,ct,receiveFiles:false);
+            if(!await rich.FileFallback.WaitAsync(ct)||rich.Completion.IsCompleted)
+                throw new IOException("Rich clipboard EOF did not leave the file clipboard available");
+            var afterEof=sources.Describe([file]);
+            string? offerId=await client.LatestClipboardOffer(ct);
+            if(offerId is null||offerId==offer.Paths[0].Split('/')[0])
+                throw new IOException("File channel did not discover the new Host selection after EOF");
+            var recovered=await client.ReadClipboardOffer(offerId,ct);
+            if(!recovered.Paths.SequenceEqual(afterEof.Paths))
+                throw new IOException("File channel returned the wrong selection after EOF");
+            await flow.Download(recovered,destination,ct,local.Version);
+            if(local.Published!=2||File.ReadAllText(local.Paths.Single())!=File.ReadAllText(file))
+                throw new IOException("File copied after rich clipboard EOF did not publish matching bytes");
+            string[] many=Enumerable.Range(0,TransferLimits.ListPage+1)
+                .Select(index=>Path.Combine(source,$"page-{index}.txt")).ToArray();
+            foreach(string path in many)File.WriteAllBytes(path,[]);
+            var multipage=sources.Describe(many);
+            string? multipageId=await client.LatestClipboardOffer(ct);
+            if(multipageId is null||!(await client.ReadClipboardOffer(multipageId,ct)).Paths.SequenceEqual(multipage.Paths))
+                throw new IOException("Clipboard offer lost entries across pages");
             gate.RevokeFeature(SessionCapabilities.ClipboardFiles);
+            await Reject(()=>client.LatestClipboardOffer(ct));
+            await Reject(()=>client.ReadClipboardOffer(offerId,ct));
             await Reject(()=>client.List(offer.Paths.Single(),0,ct));
         }
         finally
@@ -132,6 +175,6 @@ public static class FileClipboardContracts
             viewer.Close();server.Close();
             try{await worker;}catch(Exception error)when(error is IOException or OperationCanceledException or ObjectDisposedException){}
         }
-        Console.WriteLine("PASS clipboard-only server: staged upload, copied folder outside staging, session scope, and live revocation");
+        Console.WriteLine("PASS clipboard-only server: staged upload, copied folder outside staging, session scope, Host file copy after rich-channel EOF, and live revocation");
     }
 }

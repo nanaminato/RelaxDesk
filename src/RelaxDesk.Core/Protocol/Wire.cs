@@ -16,7 +16,8 @@ public record Packet(string Kind, long Sequence = 0, int Width = 0, int Height =
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] SessionEndReason? EndReason=null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? VideoFallbackReason=null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)] bool ReconnectOnly=false,
-    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? DeviceCredential=null)
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? DeviceCredential=null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] bool? ClipboardRecovery=null)
 {
     public override string ToString() => $"Packet kind={Kind} sequence={Sequence} (payload redacted)";
 }
@@ -112,7 +113,7 @@ public sealed class AccessGate
     {
         lock (sync)
         {
-            if(!inputAllowed||inputRevoked&&!discardRevoked||p.PointerBrotli is not null||p.Network is not null||p.QuicPort!=0||p.QuicTicket is not null||p.QuicSend is not null||p.DeviceKey is not null||p.QueryVideoQueue is not null||p.VideoQueue is not null||!VideoSettingsProtocol.Empty(p))return false;
+            if(p.ClipboardRecovery is not null||!inputAllowed||inputRevoked&&!discardRevoked||p.PointerBrotli is not null||p.Network is not null||p.QuicPort!=0||p.QuicTicket is not null||p.QuicSend is not null||p.DeviceKey is not null||p.QueryVideoQueue is not null||p.VideoQueue is not null||!VideoSettingsProtocol.Empty(p))return false;
             if(p.Kind=="input-v2"){if(!approved||inputVersion!=InputProtocol.Version||p.Sequence<=sequence||!InputProtocol.ValidPacket(p,displayVersion!=0))return false;sequence=p.Sequence;return true;}
             if(p.Input is not null||p.InputVersion!=0||p.ClipboardTicket is not null||p.AudioTicket is not null||!DisplayProtocol.Empty(p)||displayVersion!=0)return false;
             if (!approved || p.Sequence <= sequence || p.Kind != "input" || p.Code < 0 || p.Code > 259 || p.X < 0 || p.X > 65535 || p.Y < 0 || p.Y > 65535) return false;
@@ -123,7 +124,7 @@ public sealed class AccessGate
     {
         lock (sync)
         {
-            if (p.VideoQueue is not null || p.QueryVideoQueue is not null &&
+            if (p.ClipboardRecovery is not null || p.VideoQueue is not null || p.QueryVideoQueue is not null &&
                 p != new Packet("ping-v2", p.Sequence, QueryVideoQueue: true)) return false;
             if(p.PointerBrotli is not null||p.Network is not null||p.QuicPort!=0||p.QuicTicket is not null||p.QuicSend is not null||p.DeviceKey is not null)return false;
             if(p.Kind=="video-settings-v2"){if(!approved||videoVersion!=VideoSettingsProtocol.Version||p.Sequence<=sequence||!VideoSettingsProtocol.ValidCommand(p))return false;sequence=p.Sequence;return true;}

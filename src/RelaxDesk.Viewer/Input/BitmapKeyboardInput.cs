@@ -14,6 +14,7 @@ public sealed partial class ViewerWindow
     {
         base.OnSourceInitialized(e);
         InitializeFullscreenPresentation();
+        InstallFullscreenKeyboard();
         // The bitmap fallback must also use the remote machine's IME and
         // consume commands before WPF focus navigation/command bindings.
         InputMethod.SetIsInputMethodEnabled(image, false);
@@ -24,6 +25,7 @@ public sealed partial class ViewerWindow
     protected override void OnClosed(EventArgs e)
     {
         ComponentDispatcher.ThreadFilterMessage -= FilterBitmapKeyboard;
+        RemoveFullscreenKeyboard();
         base.OnClosed(e);
     }
     void FilterBitmapKeyboard(ref MSG message, ref bool handled)
@@ -51,16 +53,23 @@ public sealed partial class ViewerWindow
         bool repeated = ((long)message.lParam & (1L << 30)) != 0;
         if (repeated && localConnectionKeys.Contains(key)) return true;
         if (!repeated) localConnectionKeys.Remove(key);
-        if (modifiers != (ModifierKeys.Control | ModifierKeys.Alt) ||
-            key is not (0x03 or 0x13 or 0x24)) return false;
+        if (!IsConnectionShortcut(key, modifiers)) return false;
         localConnectionKeys.Add(key);
+        ExecuteConnectionShortcut(key);
+        return true;
+    }
+
+    static bool IsConnectionShortcut(int key, ModifierKeys modifiers) =>
+        modifiers == (ModifierKeys.Control | ModifierKeys.Alt) && key is 0x03 or 0x13 or 0x24;
+
+    void ExecuteConnectionShortcut(int key)
+    {
         if (key == 0x24)
         {
             ReleaseHeldInputs();
-            sessionToolbar.OpenSessionMenu();
+            sessionToolbar?.OpenSessionMenu();
         }
         else ToggleFullScreen();
-        return true;
     }
     void ForwardBitmapKey(KeyEventArgs args, bool up)
     {

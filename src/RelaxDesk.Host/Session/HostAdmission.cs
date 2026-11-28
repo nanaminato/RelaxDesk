@@ -78,7 +78,7 @@ internal sealed class HostAdmission(TcpListener listener, HostMediaIdentity iden
             {
                 if (hello.Kind != FullControlProtocol.PasswordRequest)
                 {
-                    if (hello.Data is null && hello.Kind is ("media-v2" or "data-v2" or "clipboard-v2" or "audio-v2"))
+                    if (hello.Data is null && hello.Kind is ("media-v2" or "data-v2" or "clipboard-v2" or "audio-v2" or ClipboardRecoveryProtocol.BindKind))
                         routed = attachments.Route(new(socket, stream, hello));
                     return;
                 }

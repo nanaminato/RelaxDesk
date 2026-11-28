@@ -55,7 +55,7 @@ static class ClipboardFileChecks
         await using(var hostSession=new ClipboardContentSession(wrongDirection,()=>hostMemory,hostGate,lifetime.Token,pollMilliseconds:10,receiveFiles:false))
         {
             using var frame=new MemoryStream();await ClipboardContentWire.Write(frame,new(origin,1,new(Files:valid)),1);wrongDirection.Feed(frame.ToArray());await hostSession.Completion.WaitAsync(TimeSpan.FromSeconds(2));
-            Check(hostMemory.Writes==0&&!hostGate.Allows(SessionCapabilities.ClipboardFiles));Check(hostGate.Allows(SessionCapabilities.FileTransfer)&&hostGate.Accept(new("input",1,Code:65)));
+            Check(!await hostSession.FileFallback&&hostMemory.Writes==0&&!hostGate.Allows(SessionCapabilities.ClipboardFiles));Check(hostGate.Allows(SessionCapabilities.FileTransfer)&&hostGate.Accept(new("input",1,Code:65)));
         }
         Console.WriteLine($"PASS {count} file clipboard core contracts: canonical bounded manifests, file source bounds, rich-header framing, strict file operations and late-file suppression without losing text; no native clipboard");return count;
     }

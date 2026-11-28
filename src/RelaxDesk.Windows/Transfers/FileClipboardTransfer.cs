@@ -34,7 +34,7 @@ public sealed class FileClipboardTransfer(FileTransferClient client,FileTransfer
     public async Task Upload(LocalClipboardFiles selection,CancellationToken ct)
     {
         Check(ct);_=ClipboardFileFormat.Encode(selection.Paths);
-        var fresh=await local.ReadFiles(ct);if(fresh is null||fresh.Version!=selection.Version||!fresh.Paths.SequenceEqual(selection.Paths))throw new IOException(Strings.Get("Ui.FileClipboardTransfer.Text331"));
+        var fresh=await local.ReadFiles(ct);if(fresh is null||fresh.Version!=selection.Version||!fresh.Paths.SequenceEqual(selection.Paths,StringComparer.OrdinalIgnoreCase))throw new IOException(Strings.Get("Ui.FileClipboardTransfer.Text331"));
         long version=await client.ClipboardVersion(ct);Check(ct);string stage=Stage();await client.CreateDirectory(stage,ct);
         Guid[] jobs=await queue.EnqueueUploads(selection.Paths,stage,ct);var completed=await Complete(jobs,ct);Check(ct);
         string[] tops=selection.Paths.Select(path=>stage+"/"+Path.GetFileName(path)).ToArray();

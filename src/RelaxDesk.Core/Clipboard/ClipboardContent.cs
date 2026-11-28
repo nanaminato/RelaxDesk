@@ -43,16 +43,14 @@ public sealed class ClipboardContentState
     public string Origin{get;}=Guid.NewGuid().ToString("N");
     long clock,revision;string lastOrigin="",digest="";
     public void Baseline(ClipboardContent content){if(!ClipboardContentRules.Valid(content))throw new InvalidDataException("Invalid clipboard baseline");digest=ClipboardContentRules.Digest(content);}
-    public ClipboardContentUpdate? ObserveLocal(ClipboardContent content, bool newCopy = false)
+    public ClipboardContentUpdate? ObserveLocal(ClipboardContent content)
     {
-        if(!ClipboardContentRules.Valid(content))return null;string next=ClipboardContentRules.Digest(content);if(!newCopy&&next==digest)return null;
+        if(!ClipboardContentRules.Valid(content))return null;string next=ClipboardContentRules.Digest(content);if(next==digest)return null;
         digest=next;revision=clock=checked(clock+1);lastOrigin=Origin;return new(Origin,revision,content.Own());
     }
     internal void ObserveRevision(long incomingRevision) => clock = Math.Max(clock, incomingRevision);
     internal void ObserveLocalFileSelection()
     {
-        revision = clock = checked(clock + 1);
-        lastOrigin = Origin;
         digest = "";
     }
     // A write this session just made may be observed again if Windows or a

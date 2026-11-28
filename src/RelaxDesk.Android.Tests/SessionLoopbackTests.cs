@@ -374,7 +374,7 @@ internal static class SessionLoopbackTests
                         // Exercise the actual Core clipboard worker over TLS with
                         // a provider that never accesses the platform clipboard.
                         var grants = new AccessGate();
-                        grants.Approve(SessionCapabilities.All);
+                        grants.Approve(SessionCapabilities.All.Where(feature=>feature!=SessionCapabilities.ClipboardFiles).ToArray());
                         bool receivedEof = false;
                         await using (var clipboard = new ClipboardContentSession(channels[2], () => new NoClipboard(), grants, ct,
                             message => receivedEof |= message.Contains("error_type=EndOfStreamException", StringComparison.Ordinal), receiveFiles: false))

@@ -157,6 +157,13 @@ public sealed class FileTransferServer(WindowsFileRoot root, AccessGate gate, Fi
                         }
                         case "ping": await Send(new("pong", message.Id)); break;
                         case "list" when upload is null && retained is null:
+                            if(fileSources is not null && message.Path==ClipboardFiles.LatestOfferPath)
+                            {
+                                AuthorizeClipboardSource();
+                                if(message.Offset!=0)throw new InvalidDataException("Invalid clipboard offer query");
+                                await Send(new("entries",message.Id,Entries:fileSources.Latest()));
+                                break;
+                            }
                             bool offered = IsClipboardSource(message.Path!);
                             if (offered) AuthorizeClipboardSource();
                             else if (fileSources is not null) throw new UnauthorizedAccessException("Listing requires a copied file selection");

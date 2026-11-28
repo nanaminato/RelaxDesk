@@ -21,9 +21,13 @@ Windows 使用 Desktop Duplication / Windows Graphics Capture 与硬件 H.264；
 
 Windows Viewer 支持 GPU 解码与 D3D11 显示；Android 用 MediaCodec 向 Surface 提交。API 提交时间不等于屏幕扫描完成。输入只对当前已授权且显示状态匹配的会话有效，断开时清理按键和鼠标状态。Windows 的权限和桌面边界仍适用。
 
+Windows Viewer 在已获输入授权、位于前台且全屏远程画面持有键盘焦点时，拦截物理键盘事件并转发到 Host，适用于 GPU 和位图显示。失焦、退出全屏或断开时释放远端按键。按 `Ctrl+Alt+Home` 可打开本地会话菜单，按 `Ctrl+Alt+Break` 可切换全屏。Windows 保留安全组合键，例如 `Ctrl+Alt+Del`。
+
+实机验收可在两台 Windows 机器上使用物理键盘进行。全屏并点击远程画面，依次检查 `Win`、`Win+E`、`Win+D` 和 `Alt+Tab` 仅在 Host 上生效。按住一个已转发的修饰键，使用鼠标将焦点移到本地窗口，再松键并确认两端都没有残留按键状态。检查 `Ctrl+Alt+Home` 打开本地菜单、退出全屏后本机系统快捷键恢复，以及断开后的按键清理。GPU 和位图显示各验证一次。
+
 ## 传输与认证
 
-控制使用 TCP/TLS；Windows 视频可选择 TCP/TLS 或 QUIC DATAGRAM，Android 当前使用 TCP/TLS。文件、富剪贴板和音频使用独立绑定的 TLS 通道。它们通过会话票据与已认证连接关联，不接受独立的未授权操作。Windows 文件剪贴板用本机快照标记区分远程写入与真实本地复制，写后序号在关闭剪贴板后确定；文本、HTML 和图片没有产品级大小上限，只有缓冲区和 PNG 字段的工程边界。当前文件内容仍是复制后分块传输到暂存区再发布 `CF_HDROP`，不是 OLE 延迟呈现。测试入口、根因和双机步骤见[验收清单](CLIPBOARD-WINDOWS-ACCEPTANCE.md)。
+控制使用 TCP/TLS；Windows 视频可选择 TCP/TLS 或 QUIC DATAGRAM，Android 当前使用 TCP/TLS。文件、富剪贴板和音频使用独立绑定的 TLS 通道。它们通过会话票据与已认证连接关联，不接受独立的未授权操作。Windows 剪贴板用本机快照标记、内容摘要和文件路径识别远程回显与重复观测，写后序号在关闭剪贴板后确定；文本、HTML 和图片没有产品级大小上限，只有缓冲区和 PNG 字段的工程边界。当前文件内容仍是复制后分块传输到暂存区再发布 `CF_HDROP`，不是 OLE 延迟呈现。富剪贴板发生 I/O 断流时，Viewer 改用已授权的文件 TLS 通道查询 Host 当前的文件复制快照。双方协商恢复时，Host 通过控制流发放一次性票据，Viewer 用相同证书指纹重建富剪贴板 TLS，复用原会话授权与剪贴板状态。测试入口、根因和双机步骤见[验收清单](CLIPBOARD-WINDOWS-ACCEPTANCE.md)。
 
 当前连接使用密码与设备私钥证明、证书固定和首次设备本机批准。受信任设备仍需有效密码；设备可撤销。Host 同时只允许一个控制会话。详见[连接安全](SESSION-ADMISSION.md)。
 

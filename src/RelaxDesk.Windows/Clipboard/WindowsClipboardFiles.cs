@@ -84,30 +84,49 @@ public sealed partial class WindowsTextClipboard:ILocalFileClipboard,IFileClipbo
         }
         finally{CloseClipboard();}
     }
-    public Task<long> ClipboardVersion(CancellationToken ct)=>ScheduleFileCommand<long>(_=>{Verify();Desktop.EnsureInteractiveDesktop();return GetClipboardSequenceNumber();},ct);
+    ClipboardContentSnapshot ReadFileBaseline(ClipboardFormats formats)
+    {
+        if(!ReadContent(formats,out var snapshot))throw new IOException("Clipboard is busy; copy again and retry");
+        return snapshot;
+    }
+
+    public Task<long> ClipboardVersion(CancellationToken ct)=>ScheduleFileCommand(formats=>
+    {
+        ReadFileBaseline(formats);
+        return fileClipboardVersion;
+    },ct);
     public Task<bool> PrepareFiles(ClipboardFiles files,long expectedVersion,CancellationToken ct)
     {
         if(clipboardFileRoot is null||!ClipboardFiles.Valid(files))throw new InvalidDataException("Clipboard file scope unavailable");
-        var owned=files.Own();return ScheduleFileCommand(formats=>TryWrite(new ClipboardContent(Files:owned),expectedVersion,out _),ct);
+        var owned=files.Own();
+        return ScheduleFileCommand(formats=>
+        {
+            var snapshot=ReadFileBaseline(formats);
+            return (expectedVersion==fileClipboardVersion||expectedVersion==snapshot.Version)&&
+                TryWrite(new ClipboardContent(Files:owned),snapshot.Version,out _);
+        },ct);
     }
-    public Task<LocalClipboardFiles?> ReadFiles(CancellationToken ct)=>ScheduleFileCommand<LocalClipboardFiles?>(_=>
+    public Task<LocalClipboardFiles?> ReadFiles(CancellationToken ct)=>ScheduleFileCommand<LocalClipboardFiles?>(formats=>
     {
-        Verify();Desktop.EnsureInteractiveDesktop();if(!TryOpenClipboard())throw new IOException("Clipboard is busy; copy again and retry");
-        try{if(!ReadMemory(15,ClipboardFileFormat.MaximumBytes,out var raw))throw new IOException("Clipboard is busy");return new(GetClipboardSequenceNumber(),raw is null?[]:ClipboardFileFormat.Decode(raw));}finally{CloseClipboard();}
+        ReadFileBaseline(formats);
+        return new(fileClipboardVersion,observedFilePaths?.ToArray()??[]);
     },ct);
     public Task<bool> PublishFiles(string[] paths,long expectedVersion,CancellationToken ct)
     {
         byte[] bytes=ClipboardFileFormat.Encode(paths);
         string marker="publish:"+Guid.NewGuid().ToString("N");
-        return ScheduleFileCommand(_=>
+        return ScheduleFileCommand(formats=>
         {
-            Verify();Desktop.EnsureInteractiveDesktop();nint drop=Allocate(bytes),tag=Allocate(StrictUtf8.GetBytes(marker+"\0"));
+            var snapshot=ReadFileBaseline(formats);
+            if(expectedVersion!=fileClipboardVersion&&expectedVersion!=snapshot.Version)return false;
+            nint drop=0,tag=0;
             try
             {
+                drop=Allocate(bytes);tag=Allocate(StrictUtf8.GetBytes(marker+"\0"));
                 if(!TryOpenClipboard())return false;
                 try
                 {
-                    if(GetClipboardSequenceNumber()!=expectedVersion||!EmptyClipboard())return false;
+                    if(GetClipboardSequenceNumber()!=snapshot.Version||!EmptyClipboard())return false;
                     if(SetClipboardData(15,drop)==0){EmptyClipboard();return false;}
                     drop=0;
                     if(SetClipboardData(Format(ref markerFormat,"RelaxDesk.ClipboardSnapshot"),tag)==0){EmptyClipboard();return false;}

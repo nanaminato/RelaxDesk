@@ -163,6 +163,7 @@ public sealed partial class ViewerWindow : Window
     void ReleaseMouseButtons() { foreach(var input in richHeld.ReleaseButtons())SendRich(input); foreach (int code in heldInputs.ReleaseButtons()) Send(code, true); }
     void ReleaseHeldInputs()
     {
+        forwardingKeys.Clear();
         foreach(var input in richHeld.ReleaseAll())SendRich(input);
         foreach (int code in heldInputs.ReleaseAll()) Send(code, true);
         if (Mouse.Captured == image) Mouse.Capture(null);
@@ -216,7 +217,7 @@ public sealed partial class ViewerWindow : Window
                 throw new IOException("Injected initial UDP connection failure");
             return WindowsQuicDatagrams.Connect(endpoint, certificate);
         }
-        using var connection = new SessionClient { RequestedFeatures = target.Features,RequestPointerCompression=true,RequestQuicRecovery=smoke is null || autoRecoveryTest,Network=target.Network,OpenDeviceKey=target.FullControl ? WindowsDeviceKey.Open : null,ConnectQuic=canOfferUdp ? OpenQuic : null,RequestedDisplayVersion=target.DisplayVersion,RequestedVideoVersion=VideoSettingsProtocol.Version }; using var abort = cancellation.Token.Register(connection.Dispose);
+        using var connection = new SessionClient { RequestedFeatures = target.Features,RequestPointerCompression=true,RequestClipboardRecovery=true,RequestQuicRecovery=smoke is null || autoRecoveryTest,Network=target.Network,OpenDeviceKey=target.FullControl ? WindowsDeviceKey.Open : null,ConnectQuic=canOfferUdp ? OpenQuic : null,RequestedDisplayVersion=target.DisplayVersion,RequestedVideoVersion=VideoSettingsProtocol.Version }; using var abort = cancellation.Token.Register(connection.Dispose);
         string attemptStage = "connect";
         connection.PhaseChanged+=phase=>{attemptStage=phase switch { ConnectionPhase.Authenticating=>"authenticating",ConnectionPhase.AwaitingApproval=>"awaiting-approval",ConnectionPhase.Negotiating=>"negotiating",ConnectionPhase.Connected=>"session-setup",_=>"connect" };if(ReferenceEquals(session,cancellation)&&!cancellation.IsCancellationRequested)SetConnectionPhase(phase);};
         var decoded = new LatestQueue<(DecodedMedia Frame, string? Transport)>(1); var cpu = new CpuBitmapRenderer(image);
@@ -349,10 +350,11 @@ public sealed partial class ViewerWindow : Window
             BeginVideoSettings(connection);
             controlTraffic = new(connection.Control, leaveOpen: true);
             fileTraffic = new(connection.Data!);
-            clipboardTraffic = new(connection.ClipboardData!);
+            var clipboardCounters = new TrafficAccountingCounters();
+            clipboardTraffic = new(connection.ClipboardData!, sharedCounters: clipboardCounters);
             audioTraffic = connection.AudioData is null ? null : new(connection.AudioData);
             await StartFileSession(connection,fileTraffic,cancellation.Token);
-            StartRichClipboard(connection,clipboardTraffic,permissionGate,cancellation.Token);
+            var clipboardOffers=StartRichClipboard(connection,clipboardTraffic,clipboardCounters,permissionGate,cancellation.Token);
             StartAudio(connection,audioTraffic,permissionGate,cancellation.Token);
             long initialCoalescedMoves = outgoing.CoalescedMoves;
             long initialDroppedPointerMoves = Interlocked.Read(ref droppedPointerMoves);
@@ -413,6 +415,13 @@ public sealed partial class ViewerWindow : Window
                                 decoded.Dropped+Interlocked.Read(ref skipped),connection.VideoTransportRevision,connection.HostVideoQueue,connection.ReadVideoNetworkStatistics()?.HostSend);
                             _ = Dispatcher.BeginInvoke(()=>{if(ReferenceEquals(session,cancellation)&&!cancellation.IsCancellationRequested)ObserveAutomaticVideoQuality(quality);});
                         }
+                        continue;
+                    }
+                    if (packet.Kind == ClipboardRecoveryProtocol.OfferKind)
+                    {
+                        if (!connection.AcceptClipboardRecoveryOffer(packet))
+                            throw new InvalidDataException("Unexpected clipboard recovery offer");
+                        if (ClipboardFormats.Granted(permissionGate).Any) clipboardOffers.TryWrite(packet);
                         continue;
                     }
                     if (packet.Kind == QuicRecoveryProtocol.OfferKind)

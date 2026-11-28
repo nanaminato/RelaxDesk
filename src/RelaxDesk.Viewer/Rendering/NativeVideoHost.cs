@@ -79,6 +79,7 @@ public sealed class NativeVideoHost : HwndHost
         keyboardOwned = GetFocus() == Handle;
     }
     internal void FocusInput() => FocusRemoteKeyboard();
+    internal bool OwnsKeyboard => Handle != 0 && keyboardOwned && GetFocus() == Handle;
     readonly HashSet<int> pointerButtons=[];
     [StructLayout(LayoutKind.Sequential)] struct Point { public int X,Y; }
     [DllImport("user32.dll")] static extern bool ClientToScreen(nint hwnd,ref Point point);

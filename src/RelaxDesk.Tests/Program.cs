@@ -3,6 +3,13 @@ using System.Globalization;
 using RelaxDesk.Core;
 using RelaxDesk.Core.Localization;
 if (args is ["--clipboard-content"]) { await ClipboardContentChecks.Run(); return; }
+if (args is ["--clipboard-files"]) { await ClipboardFileChecks.Run(); return; }
+if (args is ["--clipboard-recovery-tls"])
+{
+    try { Console.WriteLine($"PASS {await UnifiedSessionChecks.Run(clipboardRecoveryOnly:true)} TLS clipboard recovery and session profile checks"); }
+    catch (Exception error) { Console.Error.WriteLine(error); Environment.ExitCode=1; }
+    return;
+}
 int count = await SessionAdmissionChecks.Run();
 Console.WriteLine($"PASS {count} session admission checks");
 void Check(bool result) { if (!result) throw new Exception($"Test {count + 1} failed"); count++; }

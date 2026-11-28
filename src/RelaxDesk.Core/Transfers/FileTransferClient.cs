@@ -169,6 +169,40 @@ public sealed class FileTransferClient : IAsyncDisposable
         try { string id = Guid.NewGuid().ToString("N"); await Send(new("list", id, Path: relative, Offset: offset)); return (await Response(id, "entries")).Entries!; }
         finally { operation.Release(); }
     }
+    public async Task<string?> LatestClipboardOffer(CancellationToken ct)
+    {
+        if(!SupportsClipboardFiles)throw new InvalidOperationException("File clipboard not negotiated");
+        if(!await operation.WaitAsync(0,ct))return null;
+        try
+        {
+            string id=Guid.NewGuid().ToString("N");
+            await Send(new("list",id,Path:ClipboardFiles.LatestOfferPath));
+            var entries=(await Response(id,"entries")).Entries!;
+            if(entries.Length==0)return null;
+            if(entries is not [{Directory:true,Length:0} entry]||!ClipboardFiles.IsOfferId(entry.Path))
+                throw new InvalidDataException("Invalid clipboard offer reference");
+            return entry.Path;
+        }
+        catch(Exception error)when(error is ChannelInterrupted or InvalidDataException){FailChannel();throw;}
+        finally{operation.Release();}
+    }
+
+    public async Task<ClipboardFiles> ReadClipboardOffer(string offerId,CancellationToken ct)
+    {
+        if(!SupportsClipboardFiles||!ClipboardFiles.IsOfferId(offerId))throw new InvalidDataException("Invalid clipboard offer ID");
+        var paths=new List<string>();
+        for(int offset=0;offset<ClipboardFiles.MaximumEntries;offset+=TransferLimits.ListPage)
+        {
+            var entries=await List(offerId,offset,ct);
+            paths.AddRange(entries.Select(entry=>entry.Path));
+            if(entries.Length<TransferLimits.ListPage)break;
+        }
+        var files=new ClipboardFiles(paths.ToArray());
+        if(!ClipboardFiles.Valid(files)||files.Paths.Any(path=>!path.StartsWith(offerId+"/",StringComparison.Ordinal)||path.AsSpan(offerId.Length+1).Contains('/')))
+            throw new InvalidDataException("Invalid clipboard offer entries");
+        return files;
+    }
+
     public async Task CreateDirectory(string relative, CancellationToken ct)
     {
         _ = TransferPaths.Relative(relative); await operation.WaitAsync(ct);

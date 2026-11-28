@@ -15,7 +15,10 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
     string? publishedMarker;
     string? publishedFileMarker;
     bool publishedText,publishedHtml,publishedPng;
-    string publishedTextDigest="",publishedHtmlDigest="";
+    string publishedTextDigest="",publishedHtmlDigest="",publishedPngDigest="";
+    string? observedIdentity;
+    long fileClipboardVersion;
+    string[]? observedFilePaths;
     string[] publishedFilePaths=[];
     static readonly UTF8Encoding StrictUtf8=new(false,true);
     static string TextDigest(string value)=>Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(StrictUtf8.GetBytes(value)));
@@ -46,9 +49,37 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
         if(end==0||allocated.Length-end>64||allocated.AsSpan(end).ContainsAnyExcept((byte)0))throw new InvalidDataException("Invalid PNG clipboard allocation");
         var pixels=ClipboardImageCodec.DecodePng(allocated.AsSpan(0,end).ToArray(),out int width,out int height);return ClipboardImageCodec.Encode(pixels,width,height);
     }
+    void TrackClipboard(long sequence,string? identity)
+    {
+        // Keep the original sequence as an opaque file-publication token
+        // while the visible content remains equivalent.
+        if(observedClipboardVersion!=sequence&&(identity is null||identity!=observedIdentity))
+            fileClipboardVersion=sequence;
+        observedClipboardVersion=sequence;
+        observedIdentity=identity;
+    }
+    static bool IsStagedFile(string path)
+    {
+        string root=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"RelaxDesk");
+        foreach(string name in new[]{"Clipboard","Transfers"})
+        {
+            string prefix=Path.Combine(root,name)+Path.DirectorySeparatorChar;
+            if(!path.StartsWith(prefix,StringComparison.OrdinalIgnoreCase))continue;
+            string relative=path[prefix.Length..];
+            int separator=relative.IndexOf(Path.DirectorySeparatorChar);
+            string folder=separator<0?relative:relative[..separator];
+            if(folder.StartsWith("RelaxDesk-Clipboard-",StringComparison.OrdinalIgnoreCase))return true;
+        }
+        return false;
+    }
     public bool TryRead(ClipboardFormats formats,out ClipboardContentSnapshot snapshot)
     {
-        Verify();snapshot=new(0,null);RunFileCommand(formats);if(!formats.Any)return true;
+        Verify();RunFileCommand(formats);
+        return ReadContent(formats,out snapshot);
+    }
+    bool ReadContent(ClipboardFormats formats,out ClipboardContentSnapshot snapshot)
+    {
+        snapshot=new(0,null);if(!formats.Any)return true;
         PumpMessages();Desktop.EnsureInteractiveDesktop();uint sequence=GetClipboardSequenceNumber();if(sequence==0)return false;
         if(richCached?.Version==sequence&&cachedFormats==formats){snapshot=richCached;return true;}
         if(!TryOpenClipboard())return false;
@@ -57,8 +88,9 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
             string? text=null,html=null;byte[]? png=null;
             if(CountClipboardFormats()==0)
             {
-                observedClipboardVersion=sequence;
-                snapshot=richCached=new(GetClipboardSequenceNumber(),new(Clear:true));cachedFormats=formats;return true;
+                fileSources?.ClearLatest();
+                sequence=GetClipboardSequenceNumber();publishedMarker=null;publishedFilePaths=[];observedFilePaths=null;TrackClipboard(sequence,"clear");
+                snapshot=richCached=new(sequence,new(Clear:true));cachedFormats=formats;return true;
             }
             string? marker=ReadMarker();bool ownMarker=marker is not null&&marker==publishedMarker;
             if(formats.Files&&IsClipboardFormatAvailable(15))
@@ -67,31 +99,31 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
                 sequence=GetClipboardSequenceNumber();
                 string[]? paths=null;
                 if(drop is not null)try{paths=ClipboardFileFormat.Decode(drop);}catch(Exception error)when(error is InvalidDataException or IOException or ArgumentException){}
-                if(paths is not null)
+                bool samePaths=paths is not null&&observedFilePaths is not null&&paths.SequenceEqual(observedFilePaths,StringComparer.OrdinalIgnoreCase);
+                bool echo=paths is not null&&(paths.SequenceEqual(publishedFilePaths,StringComparer.OrdinalIgnoreCase)||paths.Any(IsStagedFile));
+                bool localFileSelection=false;
+                ClipboardContent? offered=null;
+                if(!echo&&paths is not null)
                 {
-                    bool echo=ownMarker&&publishedFilePaths.Length==paths.Length&&paths.SequenceEqual(publishedFilePaths,StringComparer.OrdinalIgnoreCase);
-                    if(echo)
+                    if(samePaths&&cachedFormats.Files)offered=richCached?.Content;
+                    else try
                     {
-                        // Our own CF_HDROP publication. Windows may report a later
-                        // sequence than the one captured at write time; never feed
-                        // this back as a local selection or a remote offer.
-                        observedClipboardVersion=sequence;snapshot=richCached=new(sequence,null,false,true);cachedFormats=formats;return true;
-                    }
-                }
-                ClipboardContent? offered=null;bool localFileSelection=false;
-                if(sequence!=publishedFileVersion)
-                {
-                    if(paths is not null)try
-                    {
-                        if(localFilesChanged is not null && observedClipboardVersion!=0 && observedClipboardVersion!=sequence)
-                        { localFileSelection=true;localFilesChanged(new(sequence,paths)); }
-                        if(fileSources is not null)offered=new(Files:fileSources.Describe(paths));
+                        localFileSelection=localFilesChanged is not null&&observedClipboardVersion!=0;
+                        if(fileSources is not null)
+                        {
+                            if(observedClipboardVersion!=0)offered=new(Files:fileSources.Describe(paths));
+                        }
                         else if(clipboardFileRoot is not null)offered=new(Files:clipboardFileRoot.DescribeClipboard(paths));
                     }
                     catch(Exception error)when(error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or NotSupportedException){}
                 }
-                observedClipboardVersion=sequence;
-                snapshot=richCached=new(sequence,offered,localFileSelection);cachedFormats=formats;return true;
+                if(!echo)publishedFilePaths=[];
+                if(offered is null)fileSources?.ClearLatest();
+                observedFilePaths=paths;
+                TrackClipboard(sequence,paths is null?null:"files:"+System.Text.Json.JsonSerializer.Serialize(paths.Select(path=>path.ToUpperInvariant())));
+                snapshot=richCached=new(sequence,offered,localFileSelection,echo);cachedFormats=formats;
+                if(localFileSelection)localFilesChanged!(new(fileClipboardVersion,paths!));
+                return true;
             }
             if(formats.Text)
             {
@@ -121,13 +153,17 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
                     }
                 }
             }
+            fileSources?.ClearLatest();
             var content=new ClipboardContent(text,png,html);bool valid=ClipboardContentRules.Valid(content);
-            // Re-encoding PNG can change its bytes, so an image echo is proven by
-            // the marker/part shape while text and HTML also compare a digest.
+            // Compare canonical PNG bytes to handle clipboard managers that
+            // republish the pixels without the private format.
             bool partsMatch=(text is not null)==publishedText&&(html is not null)==publishedHtml&&(png is not null)==publishedPng;
-            bool textEcho=valid&&ownMarker&&partsMatch&&
-                (text is null||TextDigest(text)==publishedTextDigest)&&(html is null||TextDigest(html)==publishedHtmlDigest);
-            observedClipboardVersion=GetClipboardSequenceNumber();
+            bool textEcho=valid&&publishedMarker is not null&&partsMatch&&
+                (text is null||TextDigest(text)==publishedTextDigest)&&(html is null||TextDigest(html)==publishedHtmlDigest)&&
+                (png is null||ownMarker||Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(png))==publishedPngDigest);
+            if(!textEcho){publishedMarker=null;publishedFilePaths=[];}
+            observedFilePaths=null;
+            TrackClipboard(GetClipboardSequenceNumber(),valid?ClipboardContentRules.Digest(content):null);
             snapshot=richCached=new(observedClipboardVersion,valid?content:null,false,textEcho);cachedFormats=formats;return true;
         }
         finally{CloseClipboard();}
@@ -148,7 +184,7 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
         {
             if(fileOffer is null&&remoteFilesReceived is null)throw new IOException("File clipboard receiver not configured");
             if(GetClipboardSequenceNumber()!=expectedVersion)return false;
-            remoteFilesReceived?.Invoke(content.Files.Own(),expectedVersion);
+            remoteFilesReceived?.Invoke(content.Files.Own(),fileClipboardVersion);
             fileOffer?.Invoke(content.Files.Own());return true;
         }
         string marker=snapshot??("local:"+Guid.NewGuid().ToString("N"));
@@ -189,10 +225,12 @@ public sealed partial class WindowsTextClipboard:IContentClipboard
             // open returns a version that is about to change, which made the next
             // poll treat this write as a fresh local copy and re-sent it.
             writtenVersion=GetClipboardSequenceNumber();
+            fileSources?.ClearLatest();
             publishedMarker=prepared.Count==0?null:marker;
             publishedText=content.Text is not null;publishedTextDigest=content.Text is null?"":TextDigest(content.Text);
             publishedHtml=content.Html is not null;publishedHtmlDigest=content.Html is null?"":TextDigest(content.Html);
             publishedPng=content.Png is not null;
+            publishedPngDigest=publishedPng?Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(prepared.First(entry=>entry.Format==pngFormat).Bytes)):"";
             publishedFilePaths=publishedAbsolute??[];
             if(content.Files is not null){publishedFileVersion=writtenVersion;publishedFileMarker=marker;}
             else publishedFileMarker=null;

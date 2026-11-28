@@ -4,6 +4,12 @@ namespace RelaxDesk.Core;
 
 public sealed record ClipboardFiles(string[] Paths)
 {
+    // A virtual list entry in the clipboard-only file scope, never a disk path.
+    public const string LatestOfferPath="RelaxDesk-Offer-Latest";
+    const string OfferPrefix="RelaxDesk-Offer-";
+    public static bool IsOfferId(string path)=>path.StartsWith(OfferPrefix,StringComparison.Ordinal)&&
+        Guid.TryParseExact(path.AsSpan(OfferPrefix.Length),"N",out var id)&&path.AsSpan(OfferPrefix.Length).SequenceEqual(id.ToString("N"));
+
     public const int MaximumEntries=128,MaximumBytes=64*1024;
     public override string ToString()=>"ClipboardFiles (paths redacted)";
     public ClipboardFiles Own()=>new(Paths.ToArray());

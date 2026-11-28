@@ -1,6 +1,8 @@
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.IO.Compression;
+using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using RelaxDesk.Core;
@@ -44,8 +46,96 @@ static class ClipboardContentChecks
         public override void Flush(){}public override int Read(byte[] buffer,int offset,int count)=>throw new NotSupportedException();public override long Seek(long offset,SeekOrigin origin)=>throw new NotSupportedException();public override void SetLength(long value)=>throw new NotSupportedException();public override void Write(byte[] buffer,int offset,int count){}
         protected override void Dispose(bool disposing){Disposed=true;base.Dispose(disposing);}
     }
+    sealed class SlowStream(byte[] data):MemoryStream(data)
+    {
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer,CancellationToken ct=default)
+        {
+            await Task.Delay(25,ct);
+            return await base.ReadAsync(buffer[..Math.Min(buffer.Length,4096)],ct);
+        }
+    }
+    sealed class SlowWriter:MemoryStream
+    {
+        public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer,CancellationToken ct=default)
+        {
+            await Task.Delay(60,ct);
+            await base.WriteAsync(buffer,ct);
+        }
+    }
     static async Task Until(Func<bool> predicate)
     {using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(5));while(!predicate())await Task.Delay(10,timeout.Token);}
+    static async Task<(TcpClient Host,TcpClient Viewer)> ConnectPair(CancellationToken ct)
+    {
+        using var listener=new TcpListener(IPAddress.Loopback,0);
+        listener.Start();
+        var viewer=new TcpClient { NoDelay=true };
+        try
+        {
+            await viewer.ConnectAsync((IPEndPoint)listener.LocalEndpoint,ct);
+            var host=await listener.AcceptTcpClientAsync(ct);
+            host.NoDelay=true;
+            return(host,viewer);
+        }
+        catch{viewer.Dispose();throw;}
+    }
+
+    static async Task CheckRecovery(Action<bool> check)
+    {
+        using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var ct=timeout.Token;
+        var (hostSocket,viewerSocket)=await ConnectPair(ct);
+        using var firstHost=hostSocket;
+        using var firstViewer=viewerSocket;
+        var (nextHostSocket,nextViewerSocket)=await ConnectPair(ct);
+        using var nextHost=nextHostSocket;
+        using var nextViewer=nextViewerSocket;
+        var allowAttach=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var hostGate=new AccessGate();
+        var viewerGate=new AccessGate();
+        hostGate.Approve(SessionCapabilities.All);
+        viewerGate.Approve(SessionCapabilities.All);
+        var host=new MemoryClipboard(new(Text:"initial host"));
+        var viewer=new MemoryClipboard(new(Text:"initial viewer"));
+        int hostCreates=0,viewerCreates=0,attempts=0;
+        var hostLog=new ConcurrentQueue<string>();
+        var firstHostTraffic=new TrafficAccountingStream(firstHost.GetStream());
+        await using var left=new ClipboardContentSession(firstHostTraffic,()=>{hostCreates++;return host;},hostGate,ct,hostLog.Enqueue,10,
+            reattach:async token=>
+            {
+                if(Interlocked.Increment(ref attempts)==1)throw new IOException("fixture connection failed");
+                await allowAttach.Task.WaitAsync(token);
+                return nextHost.GetStream();
+            });
+        await using var right=new ClipboardContentSession(firstViewer.GetStream(),()=>{viewerCreates++;return viewer;},viewerGate,ct,pollMilliseconds:10,
+            reattach:async token=>{await allowAttach.Task.WaitAsync(token);return nextViewer.GetStream();});
+        await Until(()=>host.Reads>=2&&viewer.Reads>=2);
+        while(firstHostTraffic.WrittenBytes==0)await Task.Delay(20,ct);
+        check(firstHostTraffic.WrittenBytes==4&&viewer.Writes==0);
+        host.Copy(new(Text:"before disconnect"));
+        await Until(()=>viewer.Writes==1);
+        firstHost.Client.Shutdown(SocketShutdown.Both);
+        check(await left.FileFallback.WaitAsync(ct)&&await right.FileFallback.WaitAsync(ct));
+        check(left.FileFallbackActive&&right.FileFallbackActive);
+        int reads=host.Reads;
+        host.Copy(new(Text:"copied while offline"));
+        await Until(()=>host.Reads>=reads+2);
+        await Until(()=>hostLog.Any(entry=>entry.Contains("clipboard_rich_recovery_retry")));
+        allowAttach.SetResult();
+        await Until(()=>viewer.Writes==2);
+        byte[] recoveredImage=Png(70);
+        viewer.Copy(new(Html:"<b>recovered HTML</b>",Png:recoveredImage));
+        await Until(()=>host.Writes==1);
+        host.TryRead(new(true,true,true,true),out var after);
+        if(after.Content?.Html!="<b>recovered HTML</b>"||after.Content.Png?.SequenceEqual(recoveredImage)!=true)
+            throw new IOException($"Unexpected recovered fixture clipboard text={after.Content?.Text} html={after.Content?.Html} imageBytes={after.Content?.Png?.Length}");
+        check(true);
+        check(hostCreates==1&&viewerCreates==1&&attempts==2&&!left.FileFallbackActive&&!right.FileFallbackActive);
+        check(ClipboardFormats.Granted(hostGate).Files&&ClipboardFormats.Granted(viewerGate).Image);
+        right.Stop();
+        await right.Completion.WaitAsync(ct);
+        check(viewer.Disposed&&!ClipboardFormats.Granted(viewerGate).Any);
+    }
+
     public static async Task<int> Run()
     {
         int count=0;void Check(bool value){if(!value)throw new IOException($"Rich clipboard contract {count+1} failed");count++;}
@@ -114,7 +204,7 @@ static class ClipboardContentChecks
         {
             await Until(()=>memory.Reads>=2);Check(sent.IsEmpty);Check(!worker.Receive(new(origin,10,new(Text:"not allowed"))));
             memory.Copy(new("private local text",Png(11),"<i>new</i>"));await Until(()=>sent.Count==1);Check(sent.TryPeek(out var observed)&&observed.Content.Text is null&&observed.Content.Html=="<i>new</i>"&&observed.Content.Png is not null);
-            var remote=new ClipboardContentUpdate(origin,100,new(Png:Png(12),Html:"<b>remote</b>"));Check(worker.Receive(remote));await Until(()=>memory.Writes==1);await Task.Delay(40);Check(sent.Count==1);
+            var remote=new ClipboardContentUpdate(origin,100,new(Png:Png(12),Html:"<b>remote</b>"));Check(worker.Receive(remote));await Until(()=>memory.Writes==1);memory.Copy(remote.Content);await Task.Delay(40);Check(sent.Count==1);
             Check(worker.Receive(remote with{Revision=101}));await Task.Delay(40);Check(memory.Writes==1);Check(worker.Receive(remote with{Revision=99,Content=new(Html:"stale")}));await Task.Delay(40);Check(memory.Writes==1);
             gate.RevokeFeature(SessionCapabilities.ClipboardImage);await Until(()=>!memory.LastFormats.Image);Check(!worker.Receive(remote));
             memory.Copy(new(Png:Png(13),Html:"new HTML only"));await Until(()=>sent.Count==2);Check(sent.Last().Content is{Png:null,Text:null,Html:"new HTML only"});
@@ -137,13 +227,18 @@ static class ClipboardContentChecks
             });
             await Until(()=>reading.IsSet);
             Check(worker.Receive(new(origin,100,new(Text:"waiting remote update"))));
-            collision.Copy(new(Text:"same local text"),localFile);
+            collision.Copy(new(Text:localFile?"same local text":"new local text"),localFile);
             int reads=collision.Reads;
             resumeRead.Set();
             await Until(()=>collision.Reads>=reads+2);
             Check(collision.Writes==0);
             Check(localFile?collisionSent.IsEmpty:collisionSent.Single().Revision>100);
             Check(collisions.Single().Contains("queued_remote_revision=100"));
+            if(localFile)
+            {
+                Check(worker.Receive(new(origin,101,new(Text:"next remote copy"))));
+                await Until(()=>collision.Writes==1);
+            }
         }
 
         var busyGate=new AccessGate();busyGate.Approve([SessionCapabilities.ClipboardHtml]);var busy=new MemoryClipboard(new(Html:"initial")){Busy=true};var messages=new ConcurrentQueue<string>();
@@ -166,8 +261,36 @@ static class ClipboardContentChecks
         var stoppedGate=new AccessGate();stoppedGate.Approve([SessionCapabilities.ClipboardImage]);var stoppedMemory=new MemoryClipboard(new(Clear:true));using var stoppedStream=new IdleStream();
         await using(var link=new ClipboardContentSession(stoppedStream,()=>stoppedMemory,stoppedGate,default,pollMilliseconds:10))
         {await Until(()=>stoppedMemory.Reads>=2);link.Stop();await link.Completion.WaitAsync(TimeSpan.FromSeconds(2));Check(!stoppedGate.Allows(SessionCapabilities.ClipboardImage)&&stoppedGate.Approved&&stoppedMemory.Disposed);}
+        using(var slowWriter=new SlowWriter())
+        {
+            var slowUpdate=new ClipboardContentUpdate(origin,8,new(Text:new string('x',65_536)));
+            var idleBudget=TimeSpan.FromMilliseconds(250);
+            await ClipboardContentWire.Write(slowWriter,slowUpdate,1,transferTimeout:idleBudget);
+            using var slowReader=new SlowStream(slowWriter.ToArray());
+            Check((await ClipboardContentWire.Read(slowReader,transferTimeout:idleBudget)).Update==slowUpdate);
+        }
+        var eofGate=new AccessGate();eofGate.Approve([SessionCapabilities.ClipboardFiles,SessionCapabilities.FileTransfer,SessionCapabilities.ClipboardText]);
+        var eofMemory=new MemoryClipboard(new(Text:"initial"));var eofMessages=new ConcurrentQueue<string>();
+        using(var eof=new MemoryStream())
+        await using(var link=new ClipboardContentSession(eof,()=>eofMemory,eofGate,default,eofMessages.Enqueue,10))
+        {
+            await Until(()=>eofMessages.Any(message=>message.Contains("EndOfStreamException")));
+            await Until(()=>eofMemory.Reads>=3);
+            Check(await link.FileFallback&&!link.Completion.IsCompleted&&!eofMemory.Disposed&&ClipboardFormats.Granted(eofGate).Files);
+            link.Stop();await link.Completion.WaitAsync(TimeSpan.FromSeconds(2));
+            Check(eofMemory.Disposed&&!ClipboardFormats.Granted(eofGate).Files);
+        }
         using var partialFrame=new IdleStream(true);var elapsed=System.Diagnostics.Stopwatch.StartNew();
         try{await ClipboardContentWire.Read(partialFrame,transferTimeout:TimeSpan.FromMilliseconds(100));throw new InvalidOperationException("Partial frame did not time out");}catch(IOException){Check(elapsed.Elapsed<TimeSpan.FromSeconds(2));}
-        Console.WriteLine($"PASS {count} rich clipboard content/PNG CRC/no product text-image caps/CF_HTML byte offsets/framing/state/permission/busy/revoke contracts; memory providers only, no Windows clipboard or negotiated session integration");return count;
+        await CheckRecovery(Check);
+        var ticket=new SessionTicket(DateTimeOffset.UtcNow+TimeSpan.FromSeconds(1));
+        var offer=new Packet(ClipboardRecoveryProtocol.OfferKind,1,Text:ticket.Value);
+        Check(ClipboardRecoveryProtocol.IsOffer(offer,0)&&!ClipboardRecoveryProtocol.IsOffer(offer,1));
+        Check(!ClipboardRecoveryProtocol.IsOffer(offer with{Data=[1]},0));
+        var binding=new Packet(ClipboardRecoveryProtocol.BindKind,offer.Sequence,Text:offer.Text);
+        Check(ClipboardRecoveryProtocol.IsBinding(binding,1)&&!ClipboardRecoveryProtocol.IsBinding(binding,2));
+        Check(ticket.Consume(binding.Text,DateTimeOffset.UtcNow)&&!ticket.Consume(binding.Text,DateTimeOffset.UtcNow));
+        Check(!new SessionTicket(DateTimeOffset.MinValue).Consume(binding.Text,DateTimeOffset.UtcNow));
+        Console.WriteLine($"PASS {count} rich clipboard content/PNG CRC/no product text-image caps/CF_HTML byte offsets/framing/state/permission/busy/revoke contracts; TCP recovery with memory providers; no Windows clipboard");return count;
     }
 }

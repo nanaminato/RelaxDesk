@@ -89,7 +89,8 @@ internal static class VideoHostSession
             catch { socket.Dispose(); stream.Dispose(); throw; }
         }
 
-        await Wire.Write(control, new Packet(FullControlProtocol.Approved, Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features, DataTicket: dataTicket?.Value,FileResume:resumeFiles,FileScope:fileScope,InputVersion:hello.InputVersion,ClipboardTicket:clipboardTicket?.Value,DisplayVersion:displayVersion,DisplayState:displays?.Switch.Snapshot,AudioTicket:audioTicket?.Value,VideoVersion:video is null?0:VideoSettingsProtocol.Version,VideoSettings:video?.Current, QuicPort:datagrams?.Port ?? 0, QuicTicket:quicTicket?.Value, QuicRecovery: hello.QuicRecovery, DeviceCredential: credential), stop);
+        bool clipboardRecovery = hello.ClipboardRecovery == true && clipboardTicket is not null && attachments is not null;
+        await Wire.Write(control, new Packet(FullControlProtocol.Approved, Text: ticket.Value, Capabilities: capabilities, Features: features.Length == 0 ? null : features, DataTicket: dataTicket?.Value,FileResume:resumeFiles,FileScope:fileScope,InputVersion:hello.InputVersion,ClipboardTicket:clipboardTicket?.Value,DisplayVersion:displayVersion,DisplayState:displays?.Switch.Snapshot,AudioTicket:audioTicket?.Value,VideoVersion:video is null?0:VideoSettingsProtocol.Version,VideoSettings:video?.Current, QuicPort:datagrams?.Port ?? 0, QuicTicket:quicTicket?.Value, QuicRecovery: hello.QuicRecovery, DeviceCredential: credential, ClipboardRecovery: clipboardRecovery ? true : null), stop);
         using var attach = CancellationTokenSource.CreateLinkedTokenSource(stop); attach.CancelAfter(TimeSpan.FromSeconds(15));
         int quicBudget = 0;
         if (datagrams is not null)
@@ -194,7 +195,8 @@ internal static class VideoHostSession
         using var session = CancellationTokenSource.CreateLinkedTokenSource(stop);
         var controlTraffic = new TrafficAccountingStream(control, leaveOpen: true);
         var dataTraffic = data is null ? null : new TrafficAccountingStream(data);
-        var clipboardTraffic = clipboardData is null ? null : new TrafficAccountingStream(clipboardData);
+        var clipboardCounters = new TrafficAccountingCounters();
+        var clipboardTraffic = clipboardData is null ? null : new TrafficAccountingStream(clipboardData, sharedCounters: clipboardCounters);
         var audioTraffic = audioData is null ? null : new TrafficAccountingStream(audioData);
         long mediaSentBytes = 0;
         var queue = new LatestQueue<QueuedFrame>(QuicSendStatistics.HostVideoQueueCapacity);
@@ -252,7 +254,27 @@ internal static class VideoHostSession
             }
             catch{clipboardReady.TrySetResult(null);throw;}
         }
-        await using var richClipboard=new ClipboardContentSession(clipboardTraffic??throw new InvalidDataException("Current clipboard channel missing"),CreateRichClipboard,gate,clipboardLifetime.Token,HostSessionLog.Write,receiveFiles:false);
+        long clipboardAttempt = 0;
+        async Task<Stream?> ReattachClipboard(CancellationToken ct)
+        {
+            if (!ClipboardFormats.Granted(gate).Any) return null;
+            long attempt = checked(++clipboardAttempt);
+            var freshTicket = new SessionTicket(DateTimeOffset.UtcNow + ClipboardRecoveryProtocol.AttachTimeout);
+            using var slot = attachments!.Register(ClipboardRecoveryProtocol.BindKind, freshTicket);
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            deadline.CancelAfter(ClipboardRecoveryProtocol.AttachTimeout);
+            await WriteControl(new(ClipboardRecoveryProtocol.OfferKind, attempt, Text: freshTicket.Value));
+            var incoming = await slot.Read(deadline.Token);
+            if (!ClipboardRecoveryProtocol.IsBinding(incoming.First, attempt) ||
+                !freshTicket.Consume(incoming.First.Text, DateTimeOffset.UtcNow) || !ClipboardFormats.Granted(gate).Any)
+                throw new AuthenticationException("Clipboard recovery binding rejected");
+            await Wire.Write(incoming.Stream, new(ClipboardRecoveryProtocol.ApprovedKind, attempt), deadline.Token);
+            slot.Detach(); // The authenticated stream now owns the accepted socket.
+            return new TrafficAccountingStream(incoming.Stream, sharedCounters: clipboardCounters);
+        }
+        await using var richClipboard=new ClipboardContentSession(clipboardTraffic??throw new InvalidDataException("Current clipboard channel missing"),
+            CreateRichClipboard,gate,clipboardLifetime.Token,HostSessionLog.Write,receiveFiles:false,
+            reattach:clipboardRecovery?ReattachClipboard:null);
         var clipboardSender = Task.Run(async () =>
         {
             await richClipboard.Completion;

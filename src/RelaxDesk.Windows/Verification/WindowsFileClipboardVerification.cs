@@ -10,6 +10,7 @@ namespace RelaxDesk.Windows;
 // caller explicitly allows replacing existing content.
 public static class WindowsFileClipboardVerification
 {
+    [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern uint RegisterClipboardFormat(string name);
     const uint CfUnicodeText = 13, CfHDrop = 15;
     [DllImport("user32.dll")] static extern bool OpenClipboard(nint owner);
     [DllImport("user32.dll")] static extern bool CloseClipboard();
@@ -111,6 +112,7 @@ public static class WindowsFileClipboardVerification
         string fixture = Path.Combine(Path.GetTempPath(), "RelaxDesk-Clipboard-Test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(fixture);
         string? savedText = ReadRawText();
+        bool replaceStarted=false;
         try
         {
             string file = Path.Combine(fixture, "中文-日本語.txt");
@@ -129,6 +131,7 @@ public static class WindowsFileClipboardVerification
                     return;
                 }
 
+                replaceStarted=true;
                 // A write must report the final sequence number, not the value
                 // observed while the clipboard is still open.
                 Check(clipboard.TryWrite(new ClipboardContent(Text: "RelaxDesk clipboard test", Html: "<b>test</b>"),
@@ -158,6 +161,9 @@ public static class WindowsFileClipboardVerification
                 byte[] decoded = ClipboardImageCodec.DecodePng(imageRead.Content!.Png!, out int width, out int height);
                 Check(width == 1600 && height == 1600 && decoded.AsSpan(0, 256).SequenceEqual(pixels.AsSpan(0, 256)),
                     "large PNG pixels round-trip");
+                PublishRaw(RegisterClipboardFormat("PNG"),largePng);
+                Check(clipboard.TryRead(formats,out var unmarkedImage)&&unmarkedImage.Echo,
+                    "unchanged PNG without private marker stays suppressed");
 
                 // The old 8192-pixel dimension cap rejected wide screenshots even
                 // when their byte size was small.
@@ -169,8 +175,8 @@ public static class WindowsFileClipboardVerification
                 _ = ClipboardImageCodec.DecodePng(wideRead.Content!.Png!, out int wideWidth, out int wideHeight);
                 Check(wideWidth == 8193 && wideHeight == 1, "8193-pixel width survives the dimension bound");
 
-                // Our own CF_HDROP publication must be an echo, while an
-                // identically-shaped local Explorer copy must be a real copy.
+                // Our own CF_HDROP publication must be an echo, even after its
+                // private marker is stripped. Different paths are a new copy.
                 Check(clipboard.TryWrite(new ClipboardContent(Text: "before files"), GetClipboardSequenceNumber(), out _),
                     "publish text before files");
                 Check(Execute(clipboard, clipboard.PublishFiles([file, empty], GetClipboardSequenceNumber(), default)),
@@ -178,9 +184,17 @@ public static class WindowsFileClipboardVerification
                 Check(clipboard.TryRead(formats, out var fileEcho) &&
                     fileEcho.Echo && fileEcho.Content is null && !fileEcho.LocalFileSelection,
                     "own file publication is suppressed as an echo");
+                long fileBaseline=Execute(clipboard,clipboard.ClipboardVersion(default));
                 PublishRawFiles([file, empty]);
+                Check(clipboard.TryRead(formats,out var unmarked)&&unmarked.Echo&&localCopies.IsEmpty,
+                    "unmarked matching file list stays suppressed");
+                Check(Execute(clipboard,clipboard.ClipboardVersion(default))==fileBaseline,
+                    "unchanged paths keep the file publication baseline");
+                PublishRawFiles([empty]);
+                Check(!Execute(clipboard,clipboard.PublishFiles([file],fileBaseline,default)),
+                    "changed paths reject stale publication");
                 Check(clipboard.TryRead(formats, out var localFile) && !localFile.Echo && localFile.LocalFileSelection,
-                    "unmarked identical file list is a real local copy");
+                    "different file paths are a real local copy");
                 Check(localCopies.Count == 1, "local file copy reported exactly once");
                 Check(Execute(clipboard, clipboard.PublishFiles([file], GetClipboardSequenceNumber(), default)),
                     "republish native file list");
@@ -200,6 +214,21 @@ public static class WindowsFileClipboardVerification
                     disconnected.Content is { Clear: true }, "invalidate the published file list on teardown");
             }
 
+            // Only a new Host selection is visible through the fallback list.
+            var sources=new ClipboardFileSources();
+            PublishRawFiles([file]);
+            using(var hostClipboard=new WindowsTextClipboard(fileSources:sources))
+            {
+                Check(hostClipboard.TryRead(formats,out _)&&sources.Latest().Length==0,
+                    "initial clipboard is not advertised");
+                PublishRawFiles([empty]);
+                Check(hostClipboard.TryRead(formats,out var selected)&&selected.Content?.Files is not null&&sources.Latest().Length==1,
+                    "new Host selection is published to the independent file channel");
+                PublishRawText("stop advertising the old file list");
+                Check(hostClipboard.TryRead(formats,out _)&&sources.Latest().Length==0,
+                    "replacing Host selection clears the fallback list");
+            }
+
             // Teardown must not clear unrelated text that replaced the file list.
             using (var textAdapter = new WindowsTextClipboard())
             {
@@ -215,7 +244,7 @@ public static class WindowsFileClipboardVerification
         }
         finally
         {
-            RestoreText(savedText);
+            if(replaceStarted)RestoreText(savedText);
             Directory.Delete(fixture, recursive: true);
         }
 

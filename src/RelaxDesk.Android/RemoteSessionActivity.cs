@@ -783,32 +783,31 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     void ShowDisplaySettings()
     {
         ResetTouchInput();
-        var layout = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        var builder = AndroidTheme.CreateDialogBuilder(this);
+        var dialogCtx = builder.Context!;
+        var layout = new LinearLayout(dialogCtx) { Orientation = Orientation.Vertical };
         layout.SetPadding(Dp(20), Dp(8), Dp(20), Dp(8));
-        var modes = new Spinner(this);
-        modes.Adapter = new ArrayAdapter<string>(this, global::Android.Resource.Layout.SimpleSpinnerDropDownItem,
+        var modes = CreateSettingsSpinner(dialogCtx,
             new[] { "display_fit", "display_fill", "display_pixels" }.Select(AndroidStrings.Get).ToArray());
         modes.SetSelection((int)viewport.DisplayMode);
         layout.AddView(modes);
-        layout.AddView(new TextView(this) { Text = AndroidStrings.Get("display_pixels_tip") });
-        var label = new TextView(this);
-        var sensitivity = new SeekBar(this) { Max = 250, Progress = (int)Math.Round(touchpadSensitivity * 100) - 50 };
+        layout.AddView(new TextView(dialogCtx) { Text = AndroidStrings.Get("display_pixels_tip") });
+        var label = new TextView(dialogCtx);
+        var sensitivity = new SeekBar(dialogCtx) { Max = 250, Progress = (int)Math.Round(touchpadSensitivity * 100) - 50 };
         void UpdateLabel() => label.Text = $"{AndroidStrings.Get("touchpad_sensitivity")}: {(sensitivity.Progress + 50) / 100f:0.00}";
         sensitivity.ProgressChanged += (_, _) => UpdateLabel();
         UpdateLabel();
         layout.AddView(label);
         layout.AddView(sensitivity);
-        var trafficLabel = new TextView(this) { Text = AndroidStrings.Get("traffic_rate_unit") };
+        var trafficLabel = new TextView(dialogCtx) { Text = AndroidStrings.Get("traffic_rate_unit") };
         trafficLabel.SetPadding(0, Dp(8), 0, 0);
         layout.AddView(trafficLabel);
-        var trafficUnits = new Spinner(this);
-        trafficUnits.Adapter = new ArrayAdapter<string>(this, global::Android.Resource.Layout.SimpleSpinnerDropDownItem,
-            new[] { "kb/s · Mb/s", "KB/s · MB/s" });
+        var trafficUnits = CreateSettingsSpinner(dialogCtx, ["kb/s · Mb/s", "KB/s · MB/s"]);
         trafficUnits.SetSelection(showTrafficInBytes ? 1 : 0);
         layout.AddView(trafficUnits);
-        var scroll = new ScrollView(this);
+        var scroll = new ScrollView(dialogCtx);
         scroll.AddView(layout);
-        AndroidTheme.CreateDialogBuilder(this).SetTitle(AndroidStrings.Get("display_settings"))!
+        builder.SetTitle(AndroidStrings.Get("display_settings"))!
             .SetView(scroll)!
             .SetNegativeButton(AndroidStrings.Get("cancel"), (_, _) => { })!
             .SetPositiveButton(AndroidStrings.Get("video_apply"), (_, _) =>
@@ -824,6 +823,17 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
                 editor.Apply();
                 UpdateVideoSurfaceLayout();
             })!.Show();
+    }
+
+    Spinner CreateSettingsSpinner(global::Android.Content.Context dialogContext, string[] items)
+    {
+        var palette = AndroidTheme.GetPalette(dialogContext);
+        var spinner = new Spinner(dialogContext);
+        spinner.Adapter = new ArrayAdapter<string>(dialogContext,
+            global::Android.Resource.Layout.SimpleSpinnerDropDownItem, items);
+        spinner.SetPopupBackgroundDrawable(AndroidTheme.MakeRounded(
+            palette.CardBackground, Dp(8), palette.CardStroke, Dp(1)));
+        return spinner;
     }
 
     void ShowVideoSettings()
@@ -845,11 +855,8 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         layout.AddView(fpsLabel);
 
         int[] rates = [5, 10, 15, 24, 30, 45, 60, 90, 120, 144];
-        var fps = new Spinner(dialogCtx);
-        fps.Adapter = new ArrayAdapter<string>(dialogCtx, global::Android.Resource.Layout.SimpleSpinnerDropDownItem,
-            rates.Select(value => $"{value} FPS").ToArray());
+        var fps = CreateSettingsSpinner(dialogCtx, rates.Select(value => $"{value} FPS").ToArray());
         fps.SetSelection(Math.Max(0, Array.IndexOf(rates, videoPreferences.FramesPerSecond)));
-        fps.SetPopupBackgroundDrawable(AndroidTheme.MakeRounded(p.CardBackground, Dp(8), p.CardStroke, Dp(1)));
         layout.AddView(fps);
 
         var bitrateLabel = new TextView(dialogCtx) { Text = AndroidStrings.Get("video_bitrate") };
@@ -858,11 +865,9 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         layout.AddView(bitrateLabel);
 
         int[] bitrates = [100_000, 250_000, 500_000, 1_000_000, 2_000_000, 4_000_000, 6_000_000, 8_000_000, 12_000_000, 16_000_000, 20_000_000, 30_000_000, 50_000_000, 100_000_000];
-        var bitrate = new Spinner(dialogCtx);
-        bitrate.Adapter = new ArrayAdapter<string>(dialogCtx, global::Android.Resource.Layout.SimpleSpinnerDropDownItem,
+        var bitrate = CreateSettingsSpinner(dialogCtx,
             bitrates.Select(value => $"{value / 1_000_000d:0.##} Mbps").ToArray());
         bitrate.SetSelection(Math.Max(0, Array.IndexOf(bitrates, videoPreferences.Bitrate)));
-        bitrate.SetPopupBackgroundDrawable(AndroidTheme.MakeRounded(p.CardBackground, Dp(8), p.CardStroke, Dp(1)));
         layout.AddView(bitrate);
 
         var automatic = new CheckBox(dialogCtx) { Text = AndroidStrings.Get("video_auto"), Checked = videoPreferences.Automatic };

@@ -13,6 +13,8 @@ public sealed partial class ViewerWindow
     FileClipboardTransfer? fileClipboardTransfer;
     Func<Action<LocalClipboardFiles>,Action<ClipboardFiles,long>,IContentClipboard>? fileClipboardVerificationFactory=null;
     Task? automaticClipboardCopy;
+    Task? clipboardOfferPolling;
+    string? lastClipboardOffer;
     CancellationTokenSource? activeClipboardCopy;
     Func<FileClipboardTransfer,CancellationToken,Task>? pendingClipboardCopy;
     string fileClipboardStatus = "";
@@ -29,17 +31,64 @@ public sealed partial class ViewerWindow
         return folder;
     }
 
-    void QueueClipboardCopy(AccessGate gate,CancellationToken sessionToken,Func<FileClipboardTransfer,CancellationToken,Task> copy)
+    void QueueClipboardCopy(AccessGate gate,CancellationToken sessionToken,Func<FileClipboardTransfer,CancellationToken,Task> copy,string? offerId=null)
+        => Dispatcher.BeginInvoke(()=>EnqueueClipboardCopy(gate,sessionToken,copy,offerId));
+
+    void EnqueueClipboardCopy(AccessGate gate,CancellationToken sessionToken,Func<FileClipboardTransfer,CancellationToken,Task> copy,string? offerId)
     {
-        Dispatcher.BeginInvoke(()=>
+        if(!ReferenceEquals(sessionPermissions,gate)||sessionToken.IsCancellationRequested||
+            !FileClipboardAllowed||fileClipboardLifetime is not {IsCancellationRequested:false} lifetime)return;
+        if(offerId is not null)
         {
-            if(!ReferenceEquals(sessionPermissions,gate)||sessionToken.IsCancellationRequested||
-                !FileClipboardAllowed||fileClipboardLifetime is not {IsCancellationRequested:false} lifetime)return;
-            pendingClipboardCopy=copy;
-            activeClipboardCopy?.Cancel();
-            if(automaticClipboardCopy is not {IsCompleted:false})
-                automaticClipboardCopy=CopyClipboardFiles(lifetime.Token);
-        });
+            if(offerId==lastClipboardOffer)return;
+            lastClipboardOffer=offerId;
+        }
+        pendingClipboardCopy=copy;
+        activeClipboardCopy?.Cancel();
+        if(automaticClipboardCopy is not {IsCompleted:false})
+            automaticClipboardCopy=CopyClipboardFiles(lifetime.Token);
+    }
+
+    async Task PollClipboardOffers(ClipboardContentSession clipboard,AccessGate gate,CancellationToken ct)
+    {
+        try
+        {
+            if(!await clipboard.FileFallback.WaitAsync(ct))return;
+            var client=fileClient;
+            while(FileClipboardAllowed&&client is {Active:true})
+            {
+                await Task.Delay(500,ct);
+                if(!clipboard.FileFallbackActive||!FileClipboardAllowed||automaticClipboardCopy is {IsCompleted:false})continue;
+                string? offerId;
+                try{offerId=await client.LatestClipboardOffer(ct);}
+                catch(TransferRejectedException error)when(error.Code is "access-denied" or "file-io" or "invalid-data")
+                {
+                    // Older hosts do not recognize the virtual offer list.
+                    ViewerSessionLog.Record("file-clipboard-offer-query",error);
+                    return;
+                }
+                if(offerId is null||offerId==lastClipboardOffer||automaticClipboardCopy is {IsCompleted:false})continue;
+                try
+                {
+                    var local=await LocalFileClipboard(ct);
+                    long baseline=await local.ClipboardVersion(ct);
+                    var files=await client.ReadClipboardOffer(offerId,ct);
+                    if(automaticClipboardCopy is {IsCompleted:false})continue;
+                    EnqueueClipboardCopy(gate,ct,(flow,token)=>flow.Download(files,ClipboardStagingDirectory(),token,baseline),offerId);
+                }
+                catch(IOException error)when(client.Active&&!ct.IsCancellationRequested)
+                {
+                    // A newer Host copy may have displaced this selection, or
+                    // Explorer may briefly hold the clipboard open.
+                    ViewerSessionLog.Record("file-clipboard-offer-read",error);
+                }
+            }
+        }
+        catch(OperationCanceledException)when(ct.IsCancellationRequested){}
+        catch(Exception error)when(error is IOException or InvalidDataException or ObjectDisposedException)
+        {
+            ViewerSessionLog.Record("file-clipboard-offer-poll",error);
+        }
     }
 
     async Task CopyClipboardFiles(CancellationToken ct)
@@ -77,8 +126,9 @@ public sealed partial class ViewerWindow
     {
         StopFileClipboard();localFileClipboard?.TrySetResult(null);localFileClipboard=null;
         pendingClipboardCopy=null;
+        if(clipboardOfferPolling is {} polling){await polling;clipboardOfferPolling=null;}
         if(automaticClipboardCopy is {} copy){await copy;automaticClipboardCopy=null;}
-        fileClipboardTransfer=null;
+        fileClipboardTransfer=null;lastClipboardOffer=null;
         fileClipboardLifetime?.Dispose();fileClipboardLifetime=null;
     }
 }

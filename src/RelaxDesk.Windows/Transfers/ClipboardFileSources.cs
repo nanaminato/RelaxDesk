@@ -11,6 +11,14 @@ public sealed class ClipboardFileSources
     sealed record Offer(string Id, Dictionary<string, Source> Sources);
     readonly object sync = new();
     readonly List<Offer> offers = [];
+    string? latest;
+
+    public TransferEntry[] Latest()
+    {
+        lock(sync)return latest is null?[]:[new(latest,true,0)];
+    }
+
+    public void ClearLatest(){lock(sync)latest=null;}
 
     public static bool IsOfferPath(string path) => path.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase);
 
@@ -37,13 +45,14 @@ public sealed class ClipboardFileSources
             // still listing or opening them. The list is bounded and cleared at
             // session teardown, so no path survives a disconnect.
             offers.Add(new Offer(id, sources));
+            latest=id;
             if (offers.Count > RetainedOffers) offers.RemoveAt(0);
         }
         return files;
     }
 
     // Session teardown: drop every snapshot so no path survives a disconnect.
-    public void Clear() { lock (sync) offers.Clear(); }
+    public void Clear() { lock (sync) { latest=null;offers.Clear(); } }
 
     Offer Find(string path)
     {

@@ -34,11 +34,11 @@ public sealed class ClipboardContentSynchronizer:IAsyncDisposable
     long receivedRevision;string receivedOrigin="";
     int disposed;
     public Task Completion=>worker;
-    public ClipboardContentSynchronizer(Func<IContentClipboard> create,AccessGate gate,Action<ClipboardContentUpdate> send,CancellationToken ct,Action<string>? diagnostic=null,int pollMilliseconds=250)
+    public ClipboardContentSynchronizer(Func<IContentClipboard> create,AccessGate gate,Action<ClipboardContentUpdate> send,CancellationToken ct,Action<string>? diagnostic=null,int pollMilliseconds=250,Action? discardOutgoing=null)
     {
         if(pollMilliseconds is <10 or >1000)throw new ArgumentOutOfRangeException(nameof(pollMilliseconds));
         this.gate=gate;this.diagnostic=diagnostic??(_=>{});stop=CancellationTokenSource.CreateLinkedTokenSource(ct);
-        worker=Task.Factory.StartNew(()=>Run(create,send,pollMilliseconds),CancellationToken.None,TaskCreationOptions.LongRunning,TaskScheduler.Default);
+        worker=Task.Factory.StartNew(()=>Run(create,send,pollMilliseconds,discardOutgoing),CancellationToken.None,TaskCreationOptions.LongRunning,TaskScheduler.Default);
     }
     public bool Receive(ClipboardContentUpdate update)
     {
@@ -62,7 +62,7 @@ public sealed class ClipboardContentSynchronizer:IAsyncDisposable
             {pending=owned;receivedRevision=update.Revision;receivedOrigin=update.Origin;}
         });
     }
-    void Run(Func<IContentClipboard> create,Action<ClipboardContentUpdate> send,int interval)
+    void Run(Func<IContentClipboard> create,Action<ClipboardContentUpdate> send,int interval,Action? discardOutgoing)
     {
         IContentClipboard? clipboard=null;
         try
@@ -94,13 +94,21 @@ public sealed class ClipboardContentSynchronizer:IAsyncDisposable
                         }
                         else
                         {
-                            if(snapshot.LocalFileSelection)state.ObserveLocalFileSelection();
-                            if(retry is not null&&(snapshot.LocalFileSelection||ClipboardContentRules.Valid(content)))
+                            var update=content is null?null:state.ObserveLocal(content);
+                            if(retry is not null&&(snapshot.LocalFileSelection||update is not null))
                                 diagnostic($"clipboard_rich_collision local_version={version} queued_remote_revision={retry.Revision}");
-                            if(content is not null&&state.ObserveLocal(content, newCopy:true) is{} update&&!stop.IsCancellationRequested&&ClipboardFormats.Granted(gate)==formats)
+                            if(update is not null&&!stop.IsCancellationRequested&&ClipboardFormats.Granted(gate)==formats)
                             {
                                 string permission=formats.Permission(update.Content);
                                 gate.TryExecuteFeature(permission,()=>{if(!stop.IsCancellationRequested&&ClipboardFormats.Granted(gate)==formats)send(update);});
+                            }
+                            if(snapshot.LocalFileSelection)
+                            {
+                                // Reject the queued update without inventing a revision
+                                // the peer cannot observe on the separate file channel.
+                                if(update is null)discardOutgoing?.Invoke();
+                                state.ObserveLocalFileSelection();
+                                retry=null;
                             }
                         }
                     }
@@ -116,7 +124,7 @@ public sealed class ClipboardContentSynchronizer:IAsyncDisposable
                             string marker=$"{retry.Origin}:{retry.Revision}:{Guid.NewGuid():N}";
                             if(!stop.IsCancellationRequested&&ClipboardFormats.Granted(gate)==formats)
                                 written=content is not null&&ClipboardContentRules.Valid(content)&&ClipboardContentRules.Digest(content)==ClipboardContentRules.Digest(retry.Content)||clipboard.TryWrite(retry.Content,version,out writtenVersion,marker);
-                            if(written){state.Applied(retry);version=writtenVersion;retry=null;}
+                            if(written){discardOutgoing?.Invoke();state.Applied(retry);version=writtenVersion;retry=null;}
                             else if(++attempts>=8){retry=null;diagnostic("clipboard_rich_write_unavailable attempts=8 update_discarded=True");}
                         }
                     }

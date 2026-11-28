@@ -19,7 +19,17 @@ internal sealed class AttachmentRouter
     internal sealed class Slot(AttachmentRouter owner, string kind, string ticket) : IDisposable
     {
         internal readonly TaskCompletionSource<IncomingConnection> Connection = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        bool closed;
+        bool closed, detached;
+        public void Detach()
+        {
+            lock (owner.sync)
+            {
+                if (closed || detached || !Connection.Task.IsCompletedSuccessfully)
+                    throw new InvalidOperationException("No attachment to detach");
+                detached = true;
+                owner.slots.Remove((kind, ticket));
+            }
+        }
         public Task<IncomingConnection> Read(CancellationToken ct) => Connection.Task.WaitAsync(ct);
         public void Dispose()
         {
@@ -29,6 +39,7 @@ internal sealed class AttachmentRouter
                 closed = true;
                 owner.slots.Remove((kind, ticket));
             }
+            if (detached) return;
             if (Connection.Task.IsCompletedSuccessfully) Connection.Task.Result.Dispose();
             else Connection.TrySetCanceled();
         }

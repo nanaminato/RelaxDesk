@@ -97,6 +97,8 @@ internal static class HostConnection
             throw new AuthenticationException("Unexpected video queue statistics on session request");
         if (hello.QuicRecovery is not null && (hello.QuicRecovery != true || hello.Network != NetworkMode.Auto))
             throw new AuthenticationException("Invalid QUIC recovery capability");
+        if (hello.ClipboardRecovery is not null && (hello.ClipboardRecovery != true || !SessionCapabilities.RichClipboard(requestedFeatures)))
+            throw new AuthenticationException("Invalid clipboard recovery capability");
         if (hello.PointerBrotli is not null && hello.PointerBrotli != true)
             throw new AuthenticationException("Invalid pointer compression request");
         return requestedFeatures;
