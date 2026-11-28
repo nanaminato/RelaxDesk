@@ -284,8 +284,10 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         {
             edit.SetTextColor(p.PrimaryText);
             edit.SetHintTextColor(p.HintText);
+            edit.BackgroundTintList = ColorStateList.ValueOf(p.CardStroke);
         }
         rememberPassCheck.SetTextColor(p.SecondaryText);
+        rememberPassCheck.ButtonTintList = ColorStateList.ValueOf(p.AccentBg);
 
         backListBtn.SetTextColor(p.ButtonNeutralText);
         backListBtn.Background = AndroidTheme.MakeRounded(p.ButtonNeutralBg, Dp(18));
@@ -748,29 +750,57 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
 
     void ShowVideoSettings()
     {
-        var layout = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        layout.SetPadding(Dp(20), Dp(8), Dp(20), Dp(8));
-        layout.AddView(new TextView(this) { Text = AndroidStrings.Get("video_current") + " " + session?.VideoSettingsStatus });
-        layout.AddView(new TextView(this) { Text = AndroidStrings.Get("video_fps") });
+        var builder = AndroidTheme.CreateDialogBuilder(this);
+        var dialogCtx = builder.Context!;
+        var p = AndroidTheme.GetPalette(this);
+
+        var layout = new LinearLayout(dialogCtx) { Orientation = Orientation.Vertical };
+        layout.SetPadding(Dp(20), Dp(10), Dp(20), Dp(10));
+
+        var currentText = new TextView(dialogCtx) { Text = AndroidStrings.Get("video_current") + " " + session?.VideoSettingsStatus };
+        currentText.SetTextColor(p.SecondaryText);
+        currentText.SetPadding(0, 0, 0, Dp(8));
+        layout.AddView(currentText);
+
+        var fpsLabel = new TextView(dialogCtx) { Text = AndroidStrings.Get("video_fps") };
+        fpsLabel.SetTextColor(p.PrimaryText);
+        layout.AddView(fpsLabel);
+
         int[] rates = [5, 10, 15, 24, 30, 45, 60, 90, 120, 144];
-        var fps = new Spinner(this);
-        fps.Adapter = new ArrayAdapter<string>(this, global::Android.Resource.Layout.SimpleSpinnerDropDownItem,
+        var fps = new Spinner(dialogCtx);
+        fps.Adapter = new ArrayAdapter<string>(dialogCtx, global::Android.Resource.Layout.SimpleSpinnerDropDownItem,
             rates.Select(value => $"{value} FPS").ToArray());
         fps.SetSelection(Math.Max(0, Array.IndexOf(rates, videoPreferences.FramesPerSecond)));
+        fps.SetPopupBackgroundDrawable(AndroidTheme.MakeRounded(p.CardBackground, Dp(8), p.CardStroke, Dp(1)));
         layout.AddView(fps);
-        layout.AddView(new TextView(this) { Text = AndroidStrings.Get("video_bitrate") });
+
+        var bitrateLabel = new TextView(dialogCtx) { Text = AndroidStrings.Get("video_bitrate") };
+        bitrateLabel.SetTextColor(p.PrimaryText);
+        bitrateLabel.SetPadding(0, Dp(8), 0, 0);
+        layout.AddView(bitrateLabel);
+
         int[] bitrates = [100_000, 250_000, 500_000, 1_000_000, 2_000_000, 4_000_000, 6_000_000, 8_000_000, 12_000_000, 16_000_000, 20_000_000, 30_000_000, 50_000_000, 100_000_000];
-        var bitrate = new Spinner(this);
-        bitrate.Adapter = new ArrayAdapter<string>(this, global::Android.Resource.Layout.SimpleSpinnerDropDownItem,
+        var bitrate = new Spinner(dialogCtx);
+        bitrate.Adapter = new ArrayAdapter<string>(dialogCtx, global::Android.Resource.Layout.SimpleSpinnerDropDownItem,
             bitrates.Select(value => $"{value / 1_000_000d:0.##} Mbps").ToArray());
         bitrate.SetSelection(Math.Max(0, Array.IndexOf(bitrates, videoPreferences.Bitrate)));
+        bitrate.SetPopupBackgroundDrawable(AndroidTheme.MakeRounded(p.CardBackground, Dp(8), p.CardStroke, Dp(1)));
         layout.AddView(bitrate);
-        var automatic = new CheckBox(this) { Text = AndroidStrings.Get("video_auto"), Checked = videoPreferences.Automatic };
+
+        var automatic = new CheckBox(dialogCtx) { Text = AndroidStrings.Get("video_auto"), Checked = videoPreferences.Automatic };
+        automatic.SetTextColor(p.PrimaryText);
+        automatic.ButtonTintList = ColorStateList.ValueOf(p.AccentBg);
         layout.AddView(automatic);
-        layout.AddView(new TextView(this) { Text = AndroidStrings.Get("video_tip") });
-        var scroll = new ScrollView(this);
+
+        var tipText = new TextView(dialogCtx) { Text = AndroidStrings.Get("video_tip"), TextSize = 12f };
+        tipText.SetTextColor(p.SecondaryText);
+        tipText.SetPadding(0, Dp(6), 0, 0);
+        layout.AddView(tipText);
+
+        var scroll = new ScrollView(dialogCtx);
         scroll.AddView(layout);
-        AndroidTheme.CreateDialogBuilder(this)!.SetTitle(AndroidStrings.Get("video_settings"))!
+
+        builder.SetTitle(AndroidStrings.Get("video_settings"))!
             .SetView(scroll)!
             .SetNegativeButton(AndroidStrings.Get("cancel"), (_, _) => { })!
             .SetPositiveButton(AndroidStrings.Get("video_apply"), (_, _) =>
@@ -973,10 +1003,22 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     void ShowTextInputDialog()
     {
         if (session is null) return;
-        var input = new EditText(this) { Hint = AndroidStrings.Get("text_hint") };
-        AndroidTheme.CreateDialogBuilder(this)
+        var builder = AndroidTheme.CreateDialogBuilder(this);
+        var dialogCtx = builder.Context!;
+        var p = AndroidTheme.GetPalette(this);
+
+        var container = new LinearLayout(dialogCtx) { Orientation = Orientation.Vertical };
+        container.SetPadding(Dp(20), Dp(12), Dp(20), Dp(4));
+
+        var input = new EditText(dialogCtx) { Hint = AndroidStrings.Get("text_hint") };
+        input.SetTextColor(p.PrimaryText);
+        input.SetHintTextColor(p.HintText);
+        input.BackgroundTintList = ColorStateList.ValueOf(p.CardStroke);
+        container.AddView(input);
+
+        builder
             .SetTitle(AndroidStrings.Get("send_text"))!
-            .SetView(input)!
+            .SetView(container)!
             .SetPositiveButton(AndroidStrings.Get("send"), (_, _) =>
             {
                 string text = input.Text ?? "";

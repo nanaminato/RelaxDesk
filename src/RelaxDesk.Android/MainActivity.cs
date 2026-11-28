@@ -321,18 +321,22 @@ public sealed class MainActivity : Activity
 
     void ShowHostDialog(SavedHostEntry? existing)
     {
-        var container = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        var builder = AndroidTheme.CreateDialogBuilder(this);
+        var dialogCtx = builder.Context!;
+        var p = AndroidTheme.GetPalette(this);
+
+        var container = new LinearLayout(dialogCtx) { Orientation = Orientation.Vertical };
         container.SetPadding(Dp(20), Dp(12), Dp(20), Dp(4));
 
-        var nameEdit = AddDialogField(container, AndroidStrings.Get("hint_name"), existing?.Name ?? "");
-        var hostEdit = AddDialogField(container, AndroidStrings.Get("hint_host"), existing?.Host ?? "");
-        var portEdit = AddDialogField(container, AndroidStrings.Get("hint_port"), (existing?.Port ?? 48200).ToString(), InputTypes.ClassNumber);
-        var userEdit = AddDialogField(container, AndroidStrings.Get("hint_user"), existing?.Username ?? "");
+        var nameEdit = AddDialogField(dialogCtx, container, p, AndroidStrings.Get("hint_name"), existing?.Name ?? "");
+        var hostEdit = AddDialogField(dialogCtx, container, p, AndroidStrings.Get("hint_host"), existing?.Host ?? "");
+        var portEdit = AddDialogField(dialogCtx, container, p, AndroidStrings.Get("hint_port"), (existing?.Port ?? 48200).ToString(), InputTypes.ClassNumber);
+        var userEdit = AddDialogField(dialogCtx, container, p, AndroidStrings.Get("hint_user"), existing?.Username ?? "");
 
-        var scroll = new ScrollView(this);
+        var scroll = new ScrollView(dialogCtx);
         scroll.AddView(container);
 
-        var builder = AndroidTheme.CreateDialogBuilder(this)
+        builder
             .SetTitle(AndroidStrings.Get(existing is null ? "dialog_add_pc" : "dialog_edit_pc"))!
             .SetView(scroll)!
             .SetPositiveButton(AndroidStrings.Get("save"), (_, _) =>
@@ -354,7 +358,7 @@ public sealed class MainActivity : Activity
                 ConnectionStore.SaveOrUpdate(this, new SavedHostEntry(displayName, ip, port, existing?.Fingerprint ?? "", user, DateTime.UtcNow.Ticks));
                 RefreshPcList();
             })!
-            .SetNegativeButton(AndroidStrings.Get("cancel"), (_, _) => { })!;
+            .SetNegativeButton(AndroidStrings.Get("cancel"), (_, _) => { });
 
         if (existing is not null)
         {
@@ -369,9 +373,9 @@ public sealed class MainActivity : Activity
         builder.Show();
     }
 
-    EditText AddDialogField(LinearLayout parent, string hint, string value, InputTypes type = InputTypes.ClassText)
+    EditText AddDialogField(Context dialogCtx, LinearLayout parent, ThemePalette p, string hint, string value, InputTypes type = InputTypes.ClassText)
     {
-        var edit = new EditText(this)
+        var edit = new EditText(dialogCtx)
         {
             Hint = hint,
             Text = value,
@@ -380,6 +384,9 @@ public sealed class MainActivity : Activity
             ImportantForAutofill = ImportantForAutofill.No
         };
         edit.SetSingleLine(true);
+        edit.SetTextColor(p.PrimaryText);
+        edit.SetHintTextColor(p.HintText);
+        edit.BackgroundTintList = ColorStateList.ValueOf(p.CardStroke);
         parent.AddView(edit);
         return edit;
     }

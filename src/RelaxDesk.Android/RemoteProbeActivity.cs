@@ -149,6 +149,7 @@ public sealed class RemoteProbeActivity : Activity, ISurfaceHolderCallback
         {
             edit.SetTextColor(p.PrimaryText);
             edit.SetHintTextColor(p.HintText);
+            edit.BackgroundTintList = ColorStateList.ValueOf(p.CardStroke);
         }
 
         connect.SetTextColor(p.AccentText);
