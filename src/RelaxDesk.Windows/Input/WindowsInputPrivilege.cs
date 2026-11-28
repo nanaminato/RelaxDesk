@@ -38,6 +38,13 @@ public static class WindowsInputPrivilege
             throw new IOException("Start RelaxDesk Host with an ordinary Windows token to share this desktop.");
     }
 
+    public static void EnsureHostProcess()
+    {
+        var token = ReadProcessToken();
+        if (!AllowsOrdinaryHost(token) && !AllowsSystemHost(token))
+            throw new IOException("Start RelaxDesk Host with an ordinary Windows token or via the LocalSystem service.");
+    }
+
     public static void EnsureElevatedProcess()
     {
         if (!AllowsElevatedWorker(ReadProcessToken()))
@@ -45,6 +52,7 @@ public static class WindowsInputPrivilege
     }
 
     internal static bool AllowsOrdinaryHost(WindowsInputToken token) => !token.Elevated && !token.UiAccess && token.IntegrityRid <= 0x2000;
+    internal static bool AllowsSystemHost(WindowsInputToken token) => WindowsDesktopSwitch.IsLocalSystemProcess && token.IntegrityRid >= 0x4000;
     internal static bool AllowsElevatedWorker(WindowsInputToken token) => token.Elevated && !token.UiAccess && token.IntegrityRid == 0x3000;
 
     static int ReadIntegrity(nint buffer)

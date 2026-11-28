@@ -21,9 +21,13 @@ public static class MachineServiceSetup
         BrokerServiceSecurity.Validate(item.Security,owner);
         var match=System.Text.RegularExpressions.Regex.Match(item.Command,"app-([a-f0-9]{32})",System.Text.RegularExpressions.RegexOptions.CultureInvariant);
         string expected=match.Success?"\""+Path.Combine(ServiceFilePolicy.MachineRoot,"app-"+match.Groups[1].Value,"RelaxDesk.Service.exe")+"\" --service --owner-sid "+owner:"";
-        if(item.Type!=16||!item.Account.Equals(@"NT AUTHORITY\LocalService",StringComparison.OrdinalIgnoreCase)||item.Startup is not (2 or 3)||!item.Command.Equals(expected,StringComparison.OrdinalIgnoreCase))throw new SecurityException("Service does not match this user's broker configuration");
+        if(item.Type!=16||!IsAllowedServiceAccount(item.Account)||item.Startup is not (2 or 3)||!item.Command.Equals(expected,StringComparison.OrdinalIgnoreCase))throw new SecurityException("Service does not match this user's broker configuration");
         return new(true,item.State,item.Startup,false);
     }
+    internal static bool IsAllowedServiceAccount(string account) =>
+        account.Equals("LocalSystem", StringComparison.OrdinalIgnoreCase) ||
+        account.Equals(@"NT AUTHORITY\SYSTEM", StringComparison.OrdinalIgnoreCase) ||
+        account.Equals(@"NT AUTHORITY\LocalService", StringComparison.OrdinalIgnoreCase);
     public static Task<ServiceSetupResult> Install(string package,string owner,bool? automatic,bool start,bool whatIf,CancellationToken ct)=>new ServiceSetupTransaction(new(ServiceFilePolicy.MachineRoot),new WindowsServiceRegistrationStore(),()=>WindowsServiceRegistrationStore.Administrator,inputTasks:new AdminInputTask()).Install(package,owner,automatic,start,whatIf,ct);
     public static Task<ServiceSetupResult> Uninstall(string owner,bool whatIf,CancellationToken ct)=>new ServiceSetupTransaction(new(ServiceFilePolicy.MachineRoot),new WindowsServiceRegistrationStore(),()=>WindowsServiceRegistrationStore.Administrator,inputTasks:new AdminInputTask()).Uninstall(owner,whatIf,ct);
 }
@@ -42,7 +46,7 @@ internal sealed class ServiceSetupTransaction(ServiceFilePolicy files,IServiceRe
         if(state is null)throw new SecurityException("Existing service has no owned machine installation");
         if(registration.PendingDelete){if(!state.PendingDelete)throw new SecurityException("Unowned pending service deletion");return;}
         BrokerServiceSecurity.Validate(registration.Security,state.Owner);
-        if(registration.Type!=16||!registration.Account.Equals(@"NT AUTHORITY\LocalService",StringComparison.OrdinalIgnoreCase)||registration.Startup is not (2 or 3)||!state.Releases.Any(release=>registration.Command.Equals(Command(files,release.Id,state.Owner),StringComparison.OrdinalIgnoreCase)))throw new SecurityException("Existing service configuration is not owned");
+        if(registration.Type!=16||!MachineServiceSetup.IsAllowedServiceAccount(registration.Account)||registration.Startup is not (2 or 3)||!state.Releases.Any(release=>registration.Command.Equals(Command(files,release.Id,state.Owner),StringComparison.OrdinalIgnoreCase)))throw new SecurityException("Existing service configuration is not owned");
     }
     void Preflight(ServiceInstallState? state,string owner)
     {

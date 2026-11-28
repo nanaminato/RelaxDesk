@@ -71,6 +71,7 @@ public sealed class DxgiCaptureBackend : ICaptureBackend
     readonly Context context;
     public DxgiCaptureBackend(string? device=null, bool reusePointerShape=false)
     {
+        WindowsDesktopSwitch.SyncThreadToInputDesktop();
         WindowsSessionAccess.EnsureAllowed();
         context = new(device);
         this.reusePointerShape = reusePointerShape;
@@ -85,6 +86,7 @@ public sealed class DxgiCaptureBackend : ICaptureBackend
     }
     public CapturedFrame? Capture(int timeoutMilliseconds = 100)
     {
+        WindowsDesktopSwitch.SyncThreadToInputDesktop();
         WindowsSessionAccess.EnsureAllowed();
         int hr = NativeMethods.rd_capture_next(context.Value, checked((uint)timeoutMilliseconds), out var info);
         try{NativeMethods.Check(hr);}catch{cached=null;throw;}

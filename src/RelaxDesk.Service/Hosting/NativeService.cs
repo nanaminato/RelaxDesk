@@ -57,7 +57,9 @@ internal static class NativeService
             {
                 State(2);
                 using var identity=WindowsIdentity.GetCurrent();using var process=Process.GetCurrentProcess();
-                if(process.SessionId!=0||identity.User?.IsWellKnown(WellKnownSidType.LocalServiceSid)!=true)throw new SecurityException("Broker requires LocalService in Session 0");
+                bool allowedAccount = identity.User?.IsWellKnown(WellKnownSidType.LocalSystemSid) == true ||
+                    identity.User?.IsWellKnown(WellKnownSidType.LocalServiceSid) == true;
+                if(process.SessionId!=0||!allowedAccount)throw new SecurityException("Broker requires LocalSystem or LocalService in Session 0");
                 ServiceDeploymentTrust.RequireRuntime(AppContext.BaseDirectory,approvedUser);
                 broker=new(approvedUser,diagnostic:text=>Log(text));
                 if(Volatile.Read(ref stopRequested)!=0)broker.RequestStop();

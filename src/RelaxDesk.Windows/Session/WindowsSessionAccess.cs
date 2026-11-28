@@ -6,12 +6,15 @@ namespace RelaxDesk.Windows;
 
 public sealed record WindowsSessionSnapshot(uint? SessionId, int? ConnectionState, bool? VisibleWindowStation,
     string? ThreadDesktop, string? InputDesktop, bool? Locked = null, uint? ConsoleSessionId = null,
-    int? InputDesktopOpenError = null)
+    int? InputDesktopOpenError = null, bool AllowSecureDesktop = false)
 {
+    static bool DesktopAllowed(string? name, bool allowSecure) =>
+        name == "Default" || (allowSecure && string.Equals(name, "Winlogon", StringComparison.OrdinalIgnoreCase));
+
     public string? Denial => SessionId is null ? "session-query-failed" : SessionId == 0 ? "session-zero" :
         ConnectionState != 0 ? "session-not-active" : Locked == true ? "session-locked" : VisibleWindowStation != true ? "window-station-not-visible" :
-        ThreadDesktop != "Default" ? "thread-desktop-unsupported" : InputDesktop is null ? "input-desktop-unavailable" :
-        InputDesktop != "Default" ? "input-desktop-unsupported" : null;
+        !DesktopAllowed(ThreadDesktop, AllowSecureDesktop) ? "thread-desktop-unsupported" : InputDesktop is null ? "input-desktop-unavailable" :
+        !DesktopAllowed(InputDesktop, AllowSecureDesktop) ? "input-desktop-unsupported" : null;
     public void EnsureAllowed() { if (Denial is {} reason) throw new WindowsSessionUnavailableException(reason); }
 
     public bool TemporaryInputDesktopUnavailable =>
@@ -92,7 +95,7 @@ public static class WindowsSessionAccess
         int? inputOpenError = input == 0 ? Marshal.GetLastPInvokeError() : null;
         string? inputName;
         try { inputName=Name(input); } finally { if(input!=0)CloseDesktop(input); }
-        return new(id,state,visible,thread,inputName,locked,WTSGetActiveConsoleSessionId(),inputOpenError);
+        return new(id,state,visible,thread,inputName,locked,WTSGetActiveConsoleSessionId(),inputOpenError,WindowsDesktopSwitch.IsLocalSystemProcess);
     }
     public static void EnsureAllowed()=>Read().EnsureAllowed();
 

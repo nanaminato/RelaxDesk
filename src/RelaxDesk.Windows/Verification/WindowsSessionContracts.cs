@@ -19,6 +19,18 @@ public static class WindowsSessionContracts
         Check((active with { Locked = true }).Denial == "session-locked");
         Check((active with { InputDesktop = null }).Denial == "input-desktop-unavailable");
         Check((active with { InputDesktop = "Winlogon" }).Denial == "input-desktop-unsupported");
+        var systemSecure = active with { ThreadDesktop = "Winlogon", InputDesktop = "Winlogon", AllowSecureDesktop = true };
+        Check(systemSecure.Denial is null);
+        systemSecure.EnsureAllowed();
+        var autoPause = new DesktopElevationPause(new PauseClock());
+        autoPause.CheckOrAutoPause(active);
+        Check(!autoPause.IsPaused);
+        autoPause.CheckOrAutoPause(active with { InputDesktop = null, InputDesktopOpenError = 5 });
+        Check(autoPause.IsPaused);
+        autoPause.CheckOrAutoPause(active with { InputDesktop = "Winlogon" });
+        Check(autoPause.IsPaused);
+        autoPause.CheckOrAutoPause(active);
+        Check(!autoPause.IsPaused);
         var physical = active with { ConsoleSessionId = 1 };
         foreach (var secure in new[] { physical with { InputDesktop = null, InputDesktopOpenError = 5 },
                                       physical with { InputDesktop = "Winlogon" } })

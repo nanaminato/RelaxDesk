@@ -36,7 +36,11 @@ public sealed class Desktop : IDisposable
         if (Width <= 0 || Height <= 0 || (long)Width * Height > 8_294_400) throw new InvalidOperationException("Unsupported primary display size");
 
     }
-    internal static void EnsureInteractiveDesktop()=>WindowsSessionAccess.EnsureAllowed();
+    internal static void EnsureInteractiveDesktop()
+    {
+        WindowsDesktopSwitch.SyncThreadToInputDesktop();
+        WindowsSessionAccess.EnsureAllowed();
+    }
     public byte[] Capture(bool includePointer = false)
     {
         nint previousDpi=SetThreadDpiAwarenessContext(-4);

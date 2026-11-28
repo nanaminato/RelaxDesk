@@ -92,13 +92,13 @@ internal sealed class WindowsServiceRegistrationStore:IServiceRegistrationStore
     public void Create(string command,string owner)
     {
         DemandAdmin();using var manager=Manager(1|2);
-        using var service=CreateService(manager,LocalAgentPipe.ServiceName,"RelaxDesk local session broker",0xF01FF,16,3,1,command,null,0,null,@"NT AUTHORITY\LocalService",null);
+        using var service=CreateService(manager,LocalAgentPipe.ServiceName,"RelaxDesk local session broker",0xF01FF,16,3,1,command,null,0,null,"LocalSystem",null);
         if(service.IsInvalid)throw new Win32Exception(Marshal.GetLastWin32Error());
         try{var descriptor=BrokerServiceSecurity.Descriptor(owner);byte[] bytes=new byte[descriptor.BinaryLength];descriptor.GetBinaryForm(bytes,0);Check(SetServiceObjectSecurity(service,1|4,bytes));}
         catch{_=DeleteService(service);throw;}
     }
     public void Configure(ServiceRegistration expected,string command,uint startup)
-    {using var service=OpenExpected(expected,2);Check(ChangeServiceConfig(service,16,startup,1,command,null,0,null,@"NT AUTHORITY\LocalService",null,null));}
+    {using var service=OpenExpected(expected,2);Check(ChangeServiceConfig(service,16,startup,1,command,null,0,null,"LocalSystem",null,null));}
     public async Task Stop(ServiceRegistration expected,CancellationToken ct)
     {
         using(var service=OpenExpected(expected,0x20))if(!ControlService(service,1,out _)&&Marshal.GetLastWin32Error()!=1062)throw new Win32Exception(Marshal.GetLastWin32Error());

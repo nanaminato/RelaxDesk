@@ -63,7 +63,7 @@ internal static class HostConnection
         {
             if (!synthetic)
             {
-                WindowsInputPrivilege.EnsureOrdinaryProcess();
+                WindowsInputPrivilege.EnsureHostProcess();
                 WindowsSessionAccess.EnsureAllowed();
                 selectedDisplay = new WindowsDisplaySelection(selectedDisplay).Device;
             }

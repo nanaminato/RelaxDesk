@@ -42,7 +42,10 @@ public sealed class WindowsAudio:IAudioEndpoint
     }
     public AudioFrame? Read()
     {
-        Guard();if(!capture)throw new InvalidOperationException("Not a capture stream");
+        try { Guard(); }
+        catch (WindowsSessionUnavailableException error) when (error.Reason is "input-desktop-unavailable" or "input-desktop-unsupported")
+        { return null; }
+        if(!capture)throw new InvalidOperationException("Not a capture stream");
         var source=(IAudioCaptureClient)service!;Check(source.GetNextPacketSize(out uint next));if(next==0)return null;
         Check(source.GetBuffer(out nint data,out uint frames,out uint flags,out _,out ulong clock));
         try

@@ -620,7 +620,7 @@ internal static class VideoHostSession
         Task sessionWatch=backend is "test-session-unavailable" or "test-session-locked" or "test-session-switched" or "test-session-desktop"
             ? WindowsSessionAccess.Watch(session.Token, TransitionSnapshot):
             simulatedPause?WindowsSessionAccess.Watch(session.Token, TestDesktop, authorize:desktopPause.Check):
-            synthetic?Task.Delay(Timeout.Infinite,session.Token):WindowsSessionAccess.Watch(session.Token, authorize:desktopPause.Check);
+            synthetic?Task.Delay(Timeout.Infinite,session.Token):WindowsSessionAccess.Watch(session.Token, authorize:desktopPause.CheckOrAutoPause);
         Task observedSession=Observe(sessionWatch,"windows-session",failures,session.Token);
         async Task WatchAdmin()
         {
@@ -941,7 +941,7 @@ internal static class VideoHostSession
                     displays.Invalidate(releaseInput);var oldEncoder=encoder;encoder=null;var oldCapture=capture;capture=null;
                     try{oldEncoder?.Dispose();}finally{oldCapture?.Dispose();}forceNextKeyFrame=true;if(ct.WaitHandle.WaitOne(250))break;
                 }
-                catch (ExternalException e) when (PipelineRecovery.IsDeviceLoss(e) && !ct.IsCancellationRequested)
+                catch (ExternalException e) when ((PipelineRecovery.IsDeviceLoss(e) || (WindowsDesktopSwitch.IsLocalSystemProcess && e.HResult == unchecked((int)0x80070005))) && !ct.IsCancellationRequested)
                 {
                     bool retry = recovery.TryBegin(stage, sequence, e);
                     HostSessionLog.Write($"pipeline_recovery state={recovery.State} attempt={recovery.Attempts} stage={stage} completed_frames={sequence} hresult=0x{e.HResult:X8} reason={e.Message} first_stage={recovery.First!.Stage} first_hresult=0x{recovery.First.Error.HResult:X8}");

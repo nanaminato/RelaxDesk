@@ -8,6 +8,7 @@ public sealed class DesktopElevationPause(TimeProvider? clock = null)
     readonly object sync = new();
     readonly TimeProvider time = clock ?? TimeProvider.System;
     TaskCompletionSource? parked;
+    bool autoParked;
     uint origin;
     bool startedOnPhysicalConsole;
     long started;
@@ -39,6 +40,41 @@ public sealed class DesktopElevationPause(TimeProvider? clock = null)
         {
             if (parked is null) { current.EnsureAllowed(); return; }
             RequireSameSession(current);
+            if (current.Denial is not (null or "input-desktop-unavailable" or "input-desktop-unsupported"))
+                current.EnsureAllowed();
+        }
+    }
+
+    /// <summary>
+    /// Automatically parks capture/input when an unexpected secure desktop (UAC)
+    /// appears in ordinary-user mode and resumes once the Default desktop returns,
+    /// keeping the remote session connected.
+    /// </summary>
+    public void CheckOrAutoPause(WindowsSessionSnapshot current)
+    {
+        lock (sync)
+        {
+            if (parked is null)
+            {
+                if (current.TemporaryInputDesktopUnavailable && current.SessionId is { } sid)
+                {
+                    origin = sid;
+                    startedOnPhysicalConsole = current.ConsoleSessionId == sid;
+                    started = time.GetTimestamp();
+                    parked = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                    autoParked = true;
+                    return;
+                }
+                current.EnsureAllowed();
+                return;
+            }
+            RequireSameSession(current);
+            if (autoParked && current.Denial is null)
+            {
+                parked = null;
+                autoParked = false;
+                return;
+            }
             if (current.Denial is not (null or "input-desktop-unavailable" or "input-desktop-unsupported"))
                 current.EnsureAllowed();
         }
