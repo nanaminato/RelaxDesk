@@ -27,13 +27,21 @@ internal sealed class RemoteDesktopSession : IDisposable
 
     BoundedAvcQueue? videoQueue;
     LiveAvcDecoder? decoder;
+    AndroidAudioPlayer? audioPlayer;
     CancellationTokenSource? sessionCts;
+    bool audioMuted;
     long sequence;
     long activeDisplayGeneration;
     long lastKeyFrameRequestTimestamp;
     int disposed;
 
     public AndroidPipelineTelemetry Telemetry => telemetry;
+    public bool AudioMuted => audioMuted;
+    public void SetAudioMuted(bool muted)
+    {
+        audioMuted = muted;
+        if (audioPlayer is not null) audioPlayer.Muted = muted;
+    }
     public event Action<int, int>? VideoSizeChanged;
     public event Action<RemotePointerState>? PointerUpdated;
     public event Action<string>? StatusChanged;
@@ -158,7 +166,9 @@ internal sealed class RemoteDesktopSession : IDisposable
         if (!string.IsNullOrEmpty(client.VerifiedFingerprint))
             onFingerprintVerified?.Invoke(client.VerifiedFingerprint);
 
-        ScreenOnlyAttachments.DisableAfterBinding(client);
+        // Close unused clipboard & file data streams; keep AudioData active for native AudioTrack playback.
+        client.ClipboardData?.Dispose();
+        client.Data?.Dispose();
         var initialDisplay = client.DisplayState ?? throw new InvalidDataException("Missing approved display.");
         global::Android.Util.Log.Info("RelaxDesk", $"Session connected: displayGen={initialDisplay.Generation}, videoGen={client.VideoSettings?.Generation}");
         var displaySession = new AndroidDisplaySession(initialDisplay, client.DisplayVersion == DisplayProtocol.TopologyVersion,
@@ -198,6 +208,12 @@ internal sealed class RemoteDesktopSession : IDisposable
         var controlReadTask = RunControlReaderAsync(client.Control, displaySession, activeCts.Token);
         var videoReadTask = RunVideoReaderAsync(client.Video, displaySession, activeCts.Token);
         var decodeTask = Task.Run(() => RunDecodeLoopAsync(activeCts.Token), activeCts.Token);
+        Task audioTask = Task.CompletedTask;
+        if (client.AudioData is { } audioStream)
+        {
+            audioPlayer = new AndroidAudioPlayer { Muted = audioMuted };
+            audioTask = Task.Run(() => audioPlayer.RunAsync(audioStream, activeCts.Token), activeCts.Token);
+        }
         var telemetryTask = Task.Run(async () =>
         {
             while (true)
@@ -223,6 +239,9 @@ internal sealed class RemoteDesktopSession : IDisposable
             await Observe(controlReadTask).ConfigureAwait(false);
             await Observe(videoReadTask).ConfigureAwait(false);
             await Observe(decodeTask).ConfigureAwait(false);
+            await Observe(audioTask).ConfigureAwait(false);
+            audioPlayer?.Dispose();
+            audioPlayer = null;
             await Observe(telemetryTask).ConfigureAwait(false);
             decoder.Dispose();
             decoder = null;

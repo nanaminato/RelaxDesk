@@ -54,7 +54,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     CheckBox rememberPassCheck = null!;
     string savedFingerprint = "";
     Button connectBtn = null!, backListBtn = null!, modeBtn = null!, collapseBtn = null!;
-    Button keysToggleBtn = null!, hudToggleBtn = null!, disconnectBtn = null!;
+    Button keysToggleBtn = null!, audioToggleBtn = null!, hudToggleBtn = null!, disconnectBtn = null!;
     Button ctrlBtn = null!, altBtn = null!, shiftBtn = null!, winBtn = null!;
 
     Surface? activeSurface;
@@ -62,7 +62,11 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     bool requestingPermission;
     bool touchpadMode = true;
     bool showHud = true;
+    bool audioMuted;
     bool pillExpanded = true;
+    float pillDragStartRawX;
+    float pillStartTranslationX;
+    bool pillDragging;
     bool stickyCtrl, stickyAlt, stickyShift, stickyWin;
     float lastTouchX, lastTouchY;
     float prevPinchDist;
@@ -103,6 +107,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         collapseBtn = FindViewById<Button>(Resource.Id.btn_pill_collapse)!;
         modeBtn = FindViewById<Button>(Resource.Id.btn_mode)!;
         keysToggleBtn = FindViewById<Button>(Resource.Id.btn_keys_toggle)!;
+        audioToggleBtn = FindViewById<Button>(Resource.Id.btn_audio_toggle)!;
         hudToggleBtn = FindViewById<Button>(Resource.Id.btn_hud_toggle)!;
         disconnectBtn = FindViewById<Button>(Resource.Id.btn_disconnect)!;
         extraKeysBar = FindViewById<HorizontalScrollView>(Resource.Id.extra_keys_bar)!;
@@ -116,11 +121,50 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         backListBtn = FindViewById<Button>(Resource.Id.btn_back_list)!;
         connectBtn = FindViewById<Button>(Resource.Id.btn_connect)!;
 
-        collapseBtn.Click += (_, _) =>
+        // Tap to toggle collapse/expand; when collapsed, drag horizontally to reposition.
+        collapseBtn.Touch += (_, e) =>
         {
-            pillExpanded = !pillExpanded;
-            pillButtonsContainer.Visibility = pillExpanded ? ViewStates.Visible : ViewStates.Gone;
-            collapseBtn.Text = pillExpanded ? "‹" : "≡";
+            var ev = e.Event;
+            if (ev is null) return;
+            switch (ev.ActionMasked)
+            {
+                case MotionEventActions.Down:
+                    pillDragStartRawX = ev.RawX;
+                    pillStartTranslationX = sessionPill.TranslationX;
+                    pillDragging = false;
+                    e.Handled = true;
+                    break;
+
+                case MotionEventActions.Move:
+                    float dx = ev.RawX - pillDragStartRawX;
+                    if (!pillExpanded && (pillDragging || MathF.Abs(dx) > Dp(8)))
+                    {
+                        pillDragging = true;
+                        float maxOffset = Math.Max(0f, (stage.Width - sessionPill.Width) * 0.5f - Dp(8));
+                        sessionPill.TranslationX = Math.Clamp(pillStartTranslationX + dx, -maxOffset, maxOffset);
+                    }
+                    e.Handled = true;
+                    break;
+
+                case MotionEventActions.Up:
+                case MotionEventActions.Cancel:
+                    if (!pillDragging)
+                    {
+                        pillExpanded = !pillExpanded;
+                        pillButtonsContainer.Visibility = pillExpanded ? ViewStates.Visible : ViewStates.Gone;
+                        collapseBtn.Text = pillExpanded ? "‹" : "≡";
+                        if (pillExpanded) sessionPill.TranslationX = 0f;
+                    }
+                    pillDragging = false;
+                    e.Handled = true;
+                    break;
+            }
+        };
+        audioToggleBtn.Click += (_, _) =>
+        {
+            audioMuted = !audioMuted;
+            audioToggleBtn.Text = audioMuted ? "🔇" : "🔊";
+            session?.SetAudioMuted(audioMuted);
         };
         modeBtn.Click += (_, _) =>
         {
@@ -373,6 +417,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         });
         activeSession.PointerUpdated += ptr => RunOnUiThread(() =>
         {
+            if (!ReferenceEquals(session, activeSession)) return;
             cursorView.ApplyRemoteState(ptr);
             if (viewport.TrySyncRemotePointer(ptr))
             {
@@ -414,7 +459,8 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
                 "takeover-cancel-v5" => "已取消接管。",
                 _ => "会话状态已变化，请重新连接。"
             }; }
-            catch (RemoteSessionEndedException) { endMessage = "远程会话已结束或已由其他设备接管。"; }
+            catch (RemoteSessionEndedException ex) { endMessage = ex.Reason == SessionEndReason.ReplacedByViewer
+                ? "会话已被另一台设备接管。" : "远程会话已结束。"; }
             catch (AuthenticationException) { endMessage = "TLS authentication failed."; }
             catch (Exception ex) { endMessage = $"{ex.GetType().Name}: {ex.Message}"; }
             finally
@@ -492,7 +538,8 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         uiHandler?.PostDelayed(() =>
         {
             if (session is null || IsDestroyed) return;
-            if (showHud) hudText.Text = session.Telemetry.FormatHud();
+            if (showHud) hudText.Text = session.Telemetry.FormatHud() +
+                $"\nPointer {viewport.CursorNormalizedX},{viewport.CursorNormalizedY}";
             ScheduleHudTick();
         }, 500);
     }

@@ -28,6 +28,7 @@ internal sealed class LiveAvcDecoder : IDisposable
     int configuredWidth;
     int configuredHeight;
     int configuredVideoGeneration;
+    long configuredDisplayGeneration;
     byte[] configuredSps = [], configuredPps = [];
     readonly Dictionary<long, long> submittedAt = new();
     bool disposed;
@@ -66,6 +67,7 @@ internal sealed class LiveAvcDecoder : IDisposable
             try
             {
                 bool needsConfigure = decoder is null ||
+                                      configuredDisplayGeneration != frame.DisplayGeneration ||
                                       configuredVideoGeneration != frame.VideoGeneration ||
                                       configuredWidth != frame.Width ||
                                       configuredHeight != frame.Height;
@@ -82,6 +84,7 @@ internal sealed class LiveAvcDecoder : IDisposable
                 {
                     ConfigureDecoderLocked(surface, frame.Width, frame.Height, sps, pps);
                     configuredVideoGeneration = frame.VideoGeneration;
+                    configuredDisplayGeneration = frame.DisplayGeneration;
                     configuredSps = sps; configuredPps = pps;
                 }
 
@@ -127,11 +130,15 @@ internal sealed class LiveAvcDecoder : IDisposable
         format.SetInteger(MediaFormat.KeyMaxInputSize, Math.Max(2 * 1024 * 1024, width * height));
         format.SetInteger(MediaFormat.KeyPriority, 0); // Realtime priority
 
+        bool lowLatency = false;
         if (OperatingSystem.IsAndroidVersionAtLeast(30))
         {
             var caps = candidate.GetCapabilitiesForType(Mime);
             if (caps?.IsFeatureSupported("low-latency") == true)
+            {
                 format.SetInteger(MediaFormat.KeyLowLatency, 1);
+                lowLatency = true;
+            }
         }
 
         using var spsBuf = Java.Nio.ByteBuffer.Wrap(sps)!;
@@ -148,7 +155,7 @@ internal sealed class LiveAvcDecoder : IDisposable
             activeCodecName = candidate.Name ?? "hw-avc";
             configuredWidth = width;
             configuredHeight = height;
-            global::Android.Util.Log.Info("RelaxDesk", $"MediaCodec configured: {activeCodecName} {width}x{height}");
+            global::Android.Util.Log.Info("RelaxDesk", $"MediaCodec configured: {activeCodecName} {width}x{height} low_latency={lowLatency}");
         }
         catch
         {
@@ -227,6 +234,7 @@ internal sealed class LiveAvcDecoder : IDisposable
         configuredWidth = 0;
         configuredHeight = 0;
         configuredVideoGeneration = 0;
+        configuredDisplayGeneration = 0;
         configuredSps = []; configuredPps = []; submittedAt.Clear();
         if (codec is null) return;
         try { codec.Release(); } catch { }
