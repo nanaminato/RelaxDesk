@@ -1,4 +1,4 @@
-param([ValidateRange(60,1800)][int]$Frames = 300, [string]$OutputDirectory = 'benchmarks/latest-video', [string]$ArtifactsDirectory = '', [string]$PackageRoot = '')
+﻿param([ValidateRange(60,1800)][int]$Frames = 300, [string]$OutputDirectory = 'benchmarks/latest-video', [string]$ArtifactsDirectory = '', [string]$PackageRoot = '')
 $ErrorActionPreference = 'Stop'
 Import-Module "$PSScriptRoot/RelaxDesk.Benchmark.psm1" -Force
 if ($ArtifactsDirectory -and $PackageRoot) { throw 'Choose an artifacts directory or a package root' }

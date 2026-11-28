@@ -1,4 +1,4 @@
-param([string]$BuildDirectory = 'build/native')
+﻿param([string]$BuildDirectory = 'build/native')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"

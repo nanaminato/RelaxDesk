@@ -1,4 +1,4 @@
-param([string]$OutputDirectory='', [string]$NativeBuildDirectory='build/native-roles', [switch]$SkipNativeBuild,
+﻿param([string]$OutputDirectory='', [string]$NativeBuildDirectory='build/native-roles', [switch]$SkipNativeBuild,
     [string]$MsQuicOpenSslPackage='', [string]$MsQuicSchannelPackage='')
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent

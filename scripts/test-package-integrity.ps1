@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$PackageRoot)
+﻿param([Parameter(Mandatory)][string]$PackageRoot)
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $package=[IO.Path]::GetFullPath($PackageRoot)

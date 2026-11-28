@@ -1,4 +1,4 @@
-param([string]$OutputDirectory = '')
+﻿param([string]$OutputDirectory = '')
 $ErrorActionPreference = 'Stop'
 Import-Module "$PSScriptRoot/RelaxDesk.Benchmark.psm1" -Force
 if (!$OutputDirectory) { $OutputDirectory = Join-Path (Split-Path $PSScriptRoot -Parent) ('build/benchmark-tools-' + [guid]::NewGuid().ToString('N')) }

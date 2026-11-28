@@ -1,4 +1,4 @@
-param([int]$Frames = 120, [string]$OutputDirectory = 'benchmarks/latest-renderers', [string]$PackageRoot = '', [string]$ArtifactsDirectory = '',
+﻿param([int]$Frames = 120, [string]$OutputDirectory = 'benchmarks/latest-renderers', [string]$PackageRoot = '', [string]$ArtifactsDirectory = '',
       [ValidateSet('deflate','software','hardware-cpu','gpu','desktop-gpu-udp','desktop-gpu-auto-recovery','cpu-idle-long')][string[]]$Modes = @('deflate','software','hardware-cpu','gpu'))
 $ErrorActionPreference = 'Stop'
 Import-Module "$PSScriptRoot/RelaxDesk.Benchmark.psm1" -Force

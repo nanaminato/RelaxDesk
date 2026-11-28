@@ -1,4 +1,4 @@
-param([string]$OutputDirectory = '', [string]$NativeBuildDirectory = 'build/native-package', [switch]$SkipNativeBuild)
+﻿param([string]$OutputDirectory = '', [string]$NativeBuildDirectory = 'build/native-package', [switch]$SkipNativeBuild)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 Push-Location $root

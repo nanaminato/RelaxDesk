@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$InstallerDirectory,[Parameter(Mandatory)][string]$OutputDirectory,[switch]$RunUserIntegration,[switch]$SkipMachineServicePreview,[switch]$AllowHostedRunAliasLookupFailure)
+﻿param([Parameter(Mandatory)][string]$InstallerDirectory,[Parameter(Mandatory)][string]$OutputDirectory,[switch]$RunUserIntegration,[switch]$SkipMachineServicePreview,[switch]$AllowHostedRunAliasLookupFailure)
 $ErrorActionPreference='Stop'
 if(!$RunUserIntegration){throw 'Explicit -RunUserIntegration required: temporary current-user Apps entries, shortcuts and the Viewer Run alias will be exercised'}
 $repository=Split-Path $PSScriptRoot -Parent;$output=[IO.Path]::GetFullPath($OutputDirectory)

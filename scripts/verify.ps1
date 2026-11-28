@@ -1,4 +1,4 @@
-param([switch]$Graphics, [switch]$Wpf, [switch]$Capture, [switch]$SkipBuild, [string]$NativeBuildDirectory = 'build/native', [string]$PackageRoot = '', [string]$ArtifactsDirectory = '', [switch]$SkipInteractiveInput, [switch]$SkipPhysicalGraphics,[switch]$LargeFiles, [switch]$Quic)
+﻿param([switch]$Graphics, [switch]$Wpf, [switch]$Capture, [switch]$SkipBuild, [string]$NativeBuildDirectory = 'build/native', [string]$PackageRoot = '', [string]$ArtifactsDirectory = '', [switch]$SkipInteractiveInput, [switch]$SkipPhysicalGraphics,[switch]$LargeFiles, [switch]$Quic)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 if ($PackageRoot) { $root = [IO.Path]::GetFullPath($PackageRoot); $SkipBuild = $true }

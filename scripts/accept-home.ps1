@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$OutputDirectory = '',
     [string]$NativeBuildDirectory = 'build/native-home',
     [switch]$SkipBuild,

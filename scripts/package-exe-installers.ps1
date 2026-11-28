@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$RoleDirectory,[Parameter(Mandatory)][string]$CompilerDirectory,[string]$OutputDirectory='', [switch]$CheckOnly)
+﻿param([Parameter(Mandatory)][string]$RoleDirectory,[Parameter(Mandatory)][string]$CompilerDirectory,[string]$OutputDirectory='', [switch]$CheckOnly)
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 Push-Location $root
