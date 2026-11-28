@@ -126,6 +126,7 @@ internal sealed class RemoteDesktopSession : IDisposable
 
         ScreenOnlyAttachments.DisableAfterBinding(client);
         var initialDisplay = client.DisplayState ?? throw new InvalidDataException("Missing approved display.");
+        global::Android.Util.Log.Info("RelaxDesk", $"Session connected: displayGen={initialDisplay.Generation}, videoGen={client.VideoSettings?.Generation}, surfaceValid={initialSurface?.IsValid}");
         var displaySession = new DisplayViewerSession(initialDisplay, client.DisplayVersion == DisplayProtocol.TopologyVersion);
         Volatile.Write(ref activeDisplayGeneration, initialDisplay.Generation);
 
@@ -222,11 +223,18 @@ internal sealed class RemoteDesktopSession : IDisposable
     async Task RunVideoReaderAsync(IVideoFrameChannel videoChannel, DisplayViewerSession displaySession, CancellationToken ct)
     {
         int lastW = 0, lastH = 0;
+        long rxCount = 0;
         while (!ct.IsCancellationRequested)
         {
             var frame = await videoChannel.Read(ct).ConfigureAwait(false);
+            rxCount++;
+            if (rxCount <= 3)
+                global::Android.Util.Log.Info("RelaxDesk", $"Rx frame #{rxCount}: seq={frame.Sequence} codec={frame.Codec} {frame.Width}x{frame.Height} key={frame.KeyFrame} bytes={frame.Data.Length} dGen={frame.DisplayGeneration} vGen={frame.VideoGeneration}");
             if (!displaySession.AcceptFrame(frame))
+            {
+                if (rxCount <= 5) global::Android.Util.Log.Warn("RelaxDesk", $"DisplaySession rejected frame #{rxCount} dGen={frame.DisplayGeneration}");
                 continue;
+            }
 
             if (frame.Width != lastW || frame.Height != lastH)
             {
@@ -238,7 +246,9 @@ internal sealed class RemoteDesktopSession : IDisposable
             if (frame.Metadata.Length > 0 && pointerParser.TryParse(frame.Metadata, out var pointer) && pointer is not null)
                 PointerUpdated?.Invoke(pointer);
 
-            videoQueue!.TryEnqueue(frame, out _);
+            bool ok = videoQueue!.TryEnqueue(frame, out var dropReason);
+            if (!ok && rxCount <= 5)
+                global::Android.Util.Log.Warn("RelaxDesk", $"Queue dropped frame #{rxCount}: reason={dropReason}");
             telemetry.RecordReceived(frame.Width, frame.Height, videoQueue.Depth);
         }
     }

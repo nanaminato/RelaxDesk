@@ -136,6 +136,7 @@ internal sealed class LiveAvcDecoder : IDisposable
             activeCodecName = candidate.Name ?? "hw-avc";
             configuredWidth = width;
             configuredHeight = height;
+            global::Android.Util.Log.Info("RelaxDesk", $"MediaCodec configured: {activeCodecName} {width}x{height}");
         }
         catch
         {

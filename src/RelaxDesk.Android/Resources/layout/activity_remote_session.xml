@@ -211,6 +211,15 @@
             android:textColor="#FFFFFFFF"
             android:textColorHint="#A0BEC8D7" />
 
+        <CheckBox
+            android:id="@+id/chk_remember_password"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="记住密码（优先使用 Android Keystore 加密）"
+            android:textSize="13sp"
+            android:textColor="#FFD0D7E2" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

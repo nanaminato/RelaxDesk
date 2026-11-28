@@ -51,6 +51,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     LinearLayout pillButtonsContainer = null!;
     HorizontalScrollView extraKeysBar = null!;
     EditText hostInput = null!, portInput = null!, userInput = null!, passInput = null!;
+    CheckBox rememberPassCheck = null!;
     string savedFingerprint = "";
     Button connectBtn = null!, backListBtn = null!, modeBtn = null!, collapseBtn = null!;
     Button keysToggleBtn = null!, hudToggleBtn = null!, disconnectBtn = null!;
@@ -60,7 +61,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     bool foreground;
     bool requestingPermission;
     bool touchpadMode = true;
-    bool showHud;
+    bool showHud = true;
     bool pillExpanded = true;
     bool stickyCtrl, stickyAlt, stickyShift, stickyWin;
     float lastTouchX, lastTouchY;
@@ -111,6 +112,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         portInput = FindViewById<EditText>(Resource.Id.input_port)!;
         userInput = FindViewById<EditText>(Resource.Id.input_user)!;
         passInput = FindViewById<EditText>(Resource.Id.input_password)!;
+        rememberPassCheck = FindViewById<CheckBox>(Resource.Id.chk_remember_password)!;
         backListBtn = FindViewById<Button>(Resource.Id.btn_back_list)!;
         connectBtn = FindViewById<Button>(Resource.Id.btn_connect)!;
 
@@ -204,6 +206,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             portInput.Text = (Intent?.GetIntExtra(ExtraPort, 48200) ?? 48200).ToString();
             savedFingerprint = Intent?.GetStringExtra(ExtraPin) ?? "";
             userInput.Text = Intent?.GetStringExtra(ExtraUser) ?? "";
+            LoadSavedPasswordIfAny();
             passInput.RequestFocus();
             return;
         }
@@ -217,6 +220,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             portInput.Text = latest.Port.ToString();
             savedFingerprint = latest.Fingerprint;
             userInput.Text = latest.Username;
+            LoadSavedPasswordIfAny();
         }
         else
         {
@@ -284,12 +288,61 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
 
         string username = userInput.Text ?? "";
         string password = passInput.Text ?? "";
+        bool shouldRemember = rememberPassCheck.Checked;
         passInput.Text = "";
         if (!PasswordVerifier.ValidUserName(username) || password.Length == 0)
         {
             statusText.Text = AndroidStrings.Get("err_invalid_user");
             return;
         }
+
+        if (shouldRemember)
+        {
+            if (!PasswordStore.TrySaveEncrypted(this, ip, port, username, password))
+            {
+                // Keystore encryption unavailable: ask user whether to save in plaintext or not save.
+                new AlertDialog.Builder(this)
+                    .SetTitle("加密存储不可用")!
+                    .SetMessage("当前设备的 Android Keystore 加密不可用。是否以明文方式保存密码，或选择不保存密码继续连接？")!
+                    .SetCancelable(false)!
+                    .SetPositiveButton("明文保存", (_, _) =>
+                    {
+                        PasswordStore.SavePlaintext(this, ip, port, username, password);
+                        BeginSessionConnect(ip, port, username, password);
+                    })!
+                    .SetNegativeButton("不保存", (_, _) =>
+                    {
+                        PasswordStore.Clear(this, ip, port, username);
+                        BeginSessionConnect(ip, port, username, password);
+                    })!
+                    .Show();
+                return;
+            }
+        }
+        else
+        {
+            PasswordStore.Clear(this, ip, port, username);
+        }
+
+        BeginSessionConnect(ip, port, username, password);
+    }
+
+    void LoadSavedPasswordIfAny()
+    {
+        string ip = (hostInput.Text ?? "").Trim();
+        string user = (userInput.Text ?? "").Trim();
+        if (string.IsNullOrEmpty(ip) || string.IsNullOrEmpty(user) || !int.TryParse(portInput.Text, out int port))
+            return;
+        string? saved = PasswordStore.Load(this, ip, port, user);
+        if (!string.IsNullOrEmpty(saved))
+        {
+            passInput.Text = saved;
+            rememberPassCheck.Checked = true;
+        }
+    }
+
+    void BeginSessionConnect(string ip, int port, string username, string password)
+    {
 
         string displayName = string.IsNullOrWhiteSpace(pcName) ? ip : pcName;
         string pinToUse = savedFingerprint;

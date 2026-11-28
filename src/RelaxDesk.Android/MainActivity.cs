@@ -166,6 +166,7 @@ public sealed class MainActivity : Activity
             builder.SetNeutralButton(AndroidStrings.Get("delete"), (_, _) =>
             {
                 ConnectionStore.Delete(this, existing.Host, existing.Port);
+                PasswordStore.Clear(this, existing.Host, existing.Port, existing.Username);
                 RefreshPcList();
             });
         }
