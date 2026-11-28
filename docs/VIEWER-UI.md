@@ -1,102 +1,35 @@
-# Viewer connection and session UI
+# Windows 连接端使用
 
-The Viewer follows the familiar MSTSC structure while retaining RelaxDesk's
-physical-desktop protocol and Host authorization.
+基本连接步骤见[连接端快速开始](../packaging/roles/VIEWER.zh-CN.md)。使用匹配版本的 Host 与 Viewer，默认端口为 48200。
 
-## Before connecting
+## 连接与保存信息
 
-The compact 560 × 470 DIP window contains computer IP, port, username,
-password, an unchecked-by-default Remember credentials option, recent
-connections, Connect, Cancel and Show options. Show options expands the
-window to 610 DIPs high with General, Display, Local Resources and Advanced
-tabs. The settings region scrolls on smaller desktops. Display can request
-full-screen startup (enabled by default). Resource controls retain their existing permissions and
-defaults. The Advanced tab contains transport, file rate and certificate reset.
-The connection form is disabled while connecting; cancellation remains outside
-it. Credentials and settings are hidden throughout the connected session.
+输入地址、端口、用户名和密码。首次核对 Host TLS 指纹，并由 Host 本机批准设备；已信任设备仍需正确密码。
 
-## Connected
+连接历史和成功登录的用户名可保存在本机，密码只有明确勾选“记住我的凭据”后才由 Windows 凭据管理器保存。取消保存会删除对应地址的已存密码。保存信息不代替证书检查或设备批准。
 
-After authorization, the session enters full screen by default; uncheck
-全屏启动 to begin windowed at 1100 × 750 DIPs. Maximizing a connected window,
-including its title-bar maximize button, enters full screen. The connection
-bar restore button returns to the normal decorated window and its saved bounds.
-The desktop defaults to physical 1:1 with thin scrollbars for cropped regions;
-the session menu retains fit-to-window and custom zoom.
-In full screen, a 460 × 30 DIP single-row blue owned-window connection bar shows the endpoint
-and icon controls for menu, minimize (full screen), full screen/restore and
-disconnect. Full screen also exposes a left pin. Text tooltips and accessibility
-names identify every icon. Media encoder/display information is in a tooltip;
-files, statistics and other functions remain in the session menu.
+## 全屏、缩放与显示器
 
-Windowed mode leaves the area below the Windows title bar for the remote desktop.
-Use Ctrl+Alt+Home for the session menu, Ctrl+Alt+Break to toggle full screen, and
-the title bar's Close button to disconnect. File-copy status appears in the
-window title. Full screen covers the entire selected monitor,
-including the local taskbar work-area reservation; the remote taskbar remains
-part of the shared desktop. Shell restore/activation cannot leave a full-screen
-session in a normal-sized borderless window. Exit restores prior bounds/style.
+默认全屏连接；可在连接前的显示选项改为窗口模式。全屏蓝色连接栏提供菜单、最小化、全屏/还原和断开；取消固定后可将鼠标停在连接栏所在的屏幕顶部唤出，拖动电脑名称可左右移动。
 
-The full-screen bar starts pinned. Unpinning enables a one-second leave grace;
-a two-physical-pixel strip at its current horizontal location reveals the bar
-after 200 ms of pointer dwell. Menu/captured click/drag keeps it open. Drag the
-endpoint area left/right; the whole bar stays within the monitor and pinned to
-the top. Pin/position survive bar recreation within this Viewer instance.
-Ctrl+Alt+Home and Ctrl+Alt+Break remain.
-Both bitmap and native renderers exclude local toolbar/menu pointer input,
-including captured drags. Disconnect restores the prior connection-window
-bounds and expanded/collapsed state. This changes Viewer presentation only.
+- `Ctrl+Alt+Home`：会话菜单。
+- `Ctrl+Alt+Break`：全屏切换。
+- 关闭窗口或选择断开：结束连接。
 
-## Remembered connection options
+会话菜单可切换显示器和缩放模式。物理 1:1 可能需要滚动，适应窗口会缩放文字。混合 DPI、旋转屏和 HDR 的效果应在目标设备上确认。
 
-Startup preselects the most recent successfully authorized endpoint without
-connecting automatically. Windows Credential Manager may independently refill
-an explicitly saved login for that endpoint.
+## 剪贴板、文件与声音
 
-`%LOCALAPPDATA%\RelaxDesk\preferences\viewer.json` remembers global Viewer
-choices: full-screen startup, GPU display, topology compatibility, text/image/
-HTML/file clipboard requests, audio request, history recording, transport,
-file rate limit, zoom and selected FPS/H.264 bitrate. Changes are serialized to
-an atomic replacement file off the Dispatcher and flushed on close. A bounded,
-versioned document validates ranges; missing/corrupt/unreadable preferences use
-defaults. Storage errors do not terminate an active session. These are requests,
-not Host grants; each connection still authenticates and negotiates permission.
-The last successfully authenticated username is remembered separately for each
-IP/port (up to 20 endpoints) in this preferences document. Startup and endpoint
-selection fill that username even when Remember credentials is unchecked.
-Typing a different username or failing authentication does not replace the
-remembered successful login. Passwords, pins, tickets, grants, and video
-generations are excluded.
-Separate Viewer processes use last-writer-wins preferences. Verification modes
-use defaults or injected fixture stores and never write actual user preferences.
+在连接前的本地资源选项选择需要的剪贴板格式和声音。连接批准后按协商能力工作，无需重复批准每项资源。
 
-## Remembered credentials
+文件通过两端资源管理器复制粘贴，等待准备完成后再粘贴；没有单独文件浏览器。断线后请重新复制，不假设未完成队列自动恢复。高级选项中的文件限速只控制文件传输，实际速度仍受网络和磁盘限制。
 
-An explicit opt-in additionally stores a successfully authenticated username/password in
-Windows Credential Manager as a generic credential. A service-prefixed SHA-256
-hash of the canonical endpoint identifies the entry. Each endpoint has one
-saved login; saving another username replaces it. Persistence is local to this
-computer and Windows user. No password is added to history JSON, source files,
-preferences JSON, diagnostics or package manifests.
+声音为 Host 系统输出，可在会话菜单调整音量或静音，不是麦克风或通用设备重定向。没有声音时检查 Host 是否正在播放、两端设备与会话静音状态。
 
-Changing endpoint clears the old username/password before loading a matching
-saved entry. Changing username clears the old password and only refills on an
-exact match. Selecting a recent connection can refill from this separate store.
-Unchecking Remember credentials deletes the matching saved password entry;
-successful unchecked connections remove any old password for that endpoint
-while preserving its remembered username. Failed authentication never
-triggers a write. Once logged in, automatic reconnection continues to use the
-existing in-memory target. Saved credentials never replace certificate checks,
-device trust or Host approval. Windows storage failures permit manual entry.
+## 画质与统计
 
-The implementation uses supported [CredWriteW](https://learn.microsoft.com/en-us/windows/win32/api/wincred/nf-wincred-credwritew)
-and [generic credential/local-machine persistence](https://learn.microsoft.com/en-us/windows/win32/api/wincred/ns-wincred-credentialw)
-APIs. MSTSC interaction references: [connection-bar shortcuts](https://learn.microsoft.com/en-us/windows/win32/termserv/terminal-services-shortcut-keys)
-and [mstsc display modes](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/mstsc).
+视频设置提供帧率上限、H.264 目标码率及自动质量调节。高档位需两端支持；设置值不是保证帧率。降低目标可改善弱网负载，手动选档会退出自动模式。
 
-## Validation
+统计窗口显示控制 RTT、帧提交速率、媒体速率和部分阶段耗时。它们不等于输入到屏幕的延迟或网卡总流量，分段 P95 不能相加。性能数据见[实测入口](../benchmarks/README.md)。
 
-See 2026-11-26 UI validation.
-The follow-up full-screen fix and delivery evidence are in full-screen validation.
-
-> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).
+异常中断可能有限重试；被其他设备接管后不应自动抢回。详见[连接安全](SESSION-ADMISSION.md)、[输入说明](INPUT.md)和[排障指南](DIAGNOSTICS.md)。

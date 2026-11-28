@@ -1,6 +1,6 @@
 # RelaxDesk
 
-HDR capture uses an explicit FP16 Windows Graphics Capture frame pool on HDR monitors. [Capture policy and physical gray-ramp results](docs/HDR-CAPTURE.md).
+HDR capture uses an explicit FP16 Windows Graphics Capture frame pool on HDR monitors. [Capture policy and physical gray-ramp results](docs/VIEWER-UI.md).
 
 Viewer uses a compact MSTSC-style connection window, four option tabs and a thin
 blue session bar, with optional Windows-protected saved credentials. See
@@ -15,7 +15,7 @@ and [Viewer guide](packaging/roles/VIEWER.zh-CN.md).
 
 Latest requested delivery now has [independent Host and Viewer EXE installers](docs/EXE-INSTALLERS.md), with current-user desktop/Start Menu shortcuts and separate Apps uninstall entries. Actual final installers pass 46 lifecycle checks including both installed WPF launches, payload hashes and independent removal; no manual unzip/CMD is needed. Portable ZIPs remain available. Real Home/service-UAC/hardware acceptance is still pending.
 
-Latest delivery is now [separate self-contained Host and Viewer ZIPs](docs/ROLE-PACKAGES.md), version `0.4.2-roles.20261124-202127.g7e51e95`. Host includes the one-click service UI; Viewer contains no Host/service payload. Actual split-archive hash/version/runtime/preflight/UI and synthetic cross-role checks pass. Historical source-only/no-package checkpoints below predate this explicit packaging request. Physical UAC/SCM/Home acceptance remains pending.
+Latest delivery is now [separate self-contained Host and Viewer ZIPs](docs/EXE-INSTALLERS.md), version `0.4.2-roles.20261124-202127.g7e51e95`. Host includes the one-click service UI; Viewer contains no Host/service payload. Actual split-archive hash/version/runtime/preflight/UI and synthetic cross-role checks pass. Historical source-only/no-package checkpoints below predate this explicit packaging request. Physical UAC/SCM/Home acceptance remains pending.
 
 Service UI is now [one-click enable](docs/SERVICE-SETUP-UI.md): automatic install/start/connection, original-user identity, no second ordinary-success dialog, existing-running-service fast path; advanced startup/repair/removal stays collapsed. Source-only change, no new package or real SCM/UAC acceptance.
 
@@ -23,35 +23,35 @@ Current source adds [service installation/update/start/removal inside HostShell]
 
 ## Final unified candidate — 2026-11-24
 
-The final self-contained office bundle includes the source features described below. See [exact artifact, automated result and open physical gates](docs/FINAL-DELIVERY.md) and the [original requirement audit](docs/REQUIREMENTS-AUDIT.md). The first unified candidate was rejected and replaced after a deep-path service regression; its failure remains documented. Home dual-PC, actual clipboard/input/audio, hardware/office performance and real administrator deployment are not certified.
+The final self-contained office bundle includes the source features described below. See [exact artifact, automated result and open physical gates](docs/ROADMAP.md) and the [original requirement audit](docs/ROADMAP.md). The first unified candidate was rejected and replaced after a deep-path service regression; its failure remains documented. Home dual-PC, actual clipboard/input/audio, hardware/office performance and real administrator deployment are not certified.
 
 The following source-checkpoint paragraphs predate this unified delivery; their statements about deferred packaging or historical ZIP contents describe those earlier checkpoints. Current artifact status comes from the delivery report.
 
 ## Earlier source checkpoints
 
-Source now includes [independently authorized system audio](docs/AUDIO.md): separate pinned TLS, WASAPI output mix/playback, volume/mute/revoke, bounded device recovery and video-correlated scheduling. Production WPF/TLS tests use synthetic endpoints; real Home sound quality/A-V sync remain pending. The existing distributed ZIP predates this feature; final unified packaging remains deferred.
+Source now includes [independently authorized system audio](docs/VIEWER-UI.md): separate pinned TLS, WASAPI output mix/playback, volume/mute/revoke, bounded device recovery and video-correlated scheduling. Production WPF/TLS tests use synthetic endpoints; real Home sound quality/A-V sync remain pending. The existing distributed ZIP predates this feature; final unified packaging remains deferred.
 
-Viewer source also includes [IP/port-only recent connections](docs/CONNECTION-HISTORY.md) and an explicitly opened [live statistics panel](docs/LIVE-STATISTICS.md). Statistics distinguish application bytes, control RTT and processing/API timings from physical end-to-end measurements. These additions are not in the historical distributed ZIP.
+Viewer source also includes [IP/port-only recent connections](docs/VIEWER-UI.md) and an explicitly opened [live statistics panel](docs/VIEWER-UI.md). Statistics distinguish application bytes, control RTT and processing/API timings from physical end-to-end measurements. These additions are not in the historical distributed ZIP.
 
-Negotiated [FPS/target bitrate controls](docs/VIDEO-SETTINGS.md) now use keyframe-confirmed settings generations. [Controlled TCP delay/bandwidth/interruption tests](docs/NETWORK-VALIDATION.md) exercise real encrypted Host/decoder paths with synthetic pixels; they do not establish physical Home or office performance. For matched two-PC tests under measured bandwidth, latency and loss, see the [weak-network and MSTSC testing guide (中文)](docs/WEAK-NETWORK-TESTING.md). Final unified packaging remains deferred.
+Negotiated [FPS/target bitrate controls](docs/VIEWER-UI.md) now use keyframe-confirmed settings generations. [Controlled TCP delay/bandwidth/interruption tests](docs/WEAK-NETWORK-TESTING.md) exercise real encrypted Host/decoder paths with synthetic pixels; they do not establish physical Home or office performance. For matched two-PC tests under measured bandwidth, latency and loss, see the [weak-network and MSTSC testing guide (中文)](docs/WEAK-NETWORK-TESTING.md). Final unified packaging remains deferred.
 
-Scoped [file task and byte resume](docs/FILE-RESUME.md) is now implemented: fresh Host authorization, fixed identity/directory scope, explicit continue/discard, five-minute tickets, SHA-256 and bounded partial retention. Actual WPF/TLS directory recovery and real non-sparse files above 1GiB pass recorded checks. Physical Home/network/input acceptance remains pending; no per-slice package.
+Scoped [file task and byte resume](docs/VIEWER-UI.md) is now implemented: fresh Host authorization, fixed identity/directory scope, explicit continue/discard, five-minute tickets, SHA-256 and bounded partial retention. Actual WPF/TLS directory recovery and real non-sparse files above 1GiB pass recorded checks. Physical Home/network/input acceptance remains pending; no per-slice package.
 
-Host now returns to Listening after each separately authorized session. HostShell distinguishes session disconnect from global stop; [lifecycle and security contract](docs/SESSION-LIFECYCLE.md). Viewer now reconnects with bounded backoff, the original certificate pin and fresh Host consent; revoked optional features and old input are not replayed. File tasks can now resume under a new grant and explicit confirmation. No package is generated for this slice.
+Host now returns to Listening after each separately authorized session. HostShell distinguishes session disconnect from global stop; [lifecycle and security contract](docs/SESSION-ADMISSION.md). Viewer now reconnects with bounded backoff, the original certificate pin and fresh Host consent; revoked optional features and old input are not replayed. File tasks can now resume under a new grant and explicit confirmation. No package is generated for this slice.
 
-File-transfer UI checkpoint: [scoped directory + third pinned TLS stream](docs/FILE-TRANSFER.md), Host folder consent, Viewer directory browser, recursive queue, confirmed drag-drop and live revoke are implemented. Automated evidence. Cross-session resume is implemented in memory; physical Home acceptance remains pending; no new package until the final milestone.
+File-transfer UI checkpoint: [scoped directory + third pinned TLS stream](docs/VIEWER-UI.md), Host folder consent, Viewer directory browser, recursive queue, confirmed drag-drop and live revoke are implemented. Automated evidence. Cross-session resume is implemented in memory; physical Home acceptance remains pending; no new package until the final milestone.
 
-Viewer now offers [fit, physical 1:1, custom zoom and local panning](docs/VIEWPORT.md), with shared CPU/GPU/input geometry and redraw readiness. Physical mixed-DPI and pointer landing acceptance remain pending.
+Viewer now offers [fit, physical 1:1, custom zoom and local panning](docs/VIEWER-UI.md), with shared CPU/GPU/input geometry and redraw readiness. Physical mixed-DPI and pointer landing acceptance remain pending.
 
-Current development source adds [independently authorized text/image/HTML clipboard](docs/CLIPBOARD-CONTENT.md) and [rich keyboard/pointer input with explicit local-IME text submission](docs/INPUT-PROTOCOL.md). Production Host/Viewer clipboard integration is tested with isolated providers; real Windows clipboard/Home application and IME acceptance remain pending. Packaging is deferred until the final milestone at the owner's request; the existing 0.4.2 ZIP predates these features.
+Current development source adds [independently authorized text/image/HTML clipboard](docs/VIEWER-UI.md) and [rich keyboard/pointer input with explicit local-IME text submission](docs/INPUT.md). Production Host/Viewer clipboard integration is tested with isolated providers; real Windows clipboard/Home application and IME acceptance remain pending. Packaging is deferred until the final milestone at the owner's request; the existing 0.4.2 ZIP predates these features.
 
-2026-11-23 continuation: bounded capture recovery/control liveness, remote shortcut menu and pointer-motion coalescing are delivered as a self-contained 0.4.2 acceptance slice. See [product readiness](docs/PRODUCT-READINESS.md) and exact build/test evidence. This historical package predates clipboard, file and reconnect development; physical Home acceptance remains open.
+2026-11-23 continuation: bounded capture recovery/control liveness, remote shortcut menu and pointer-motion coalescing are delivered as a self-contained 0.4.2 acceptance slice. See [product readiness](docs/ROADMAP.md) and exact build/test evidence. This historical package predates clipboard, file and reconnect development; physical Home acceptance remains open.
 
 **A high-performance, open-source remote desktop project for Windows Home.**
 
 RelaxDesk aims to provide responsive, pixel-based remote control of an existing Windows desktop, with an office-productivity experience approaching Microsoft Remote Desktop (MSTSC)—without requiring Windows Pro, enabling Microsoft's RDP host, or modifying Windows system files.
 
-> **Status: experimental DXGI/H.264 architecture implemented; Windows Home physical-console acceptance is pending.** GPU H.264 encode/decode, authenticated binary video and actual WPF render submissions pass synthetic-video tests. Dual-PC Windows Home validation remains pending. See [implementation evidence](docs/IMPLEMENTATION.md). The “80% of MSTSC” target is an engineering hypothesis to validate through reproducible benchmarks, not a measured result.
+> **Status: experimental DXGI/H.264 architecture implemented; Windows Home physical-console acceptance is pending.** GPU H.264 encode/decode, authenticated binary video and actual WPF render submissions pass synthetic-video tests. Dual-PC Windows Home validation remains pending. See [implementation evidence](docs/ROADMAP.md). The “80% of MSTSC” target is an engineering hypothesis to validate through reproducible benchmarks, not a measured result.
 
 ## Goals
 
@@ -118,7 +118,7 @@ See [Architecture](docs/ARCHITECTURE.md), [Roadmap](docs/ROADMAP.md), [Benchmark
 
 ## Build
 
-Build with stable SDK 11.0.100 (run `./scripts/build-native.ps1` first): `dotnet build RelaxDesk.sln -c Release`. Run checks: `dotnet run --project src/RelaxDesk.Tests -c Release`. .NET 11 is now installed and pinned. See [run instructions, protocol and validation status](docs/IMPLEMENTATION.md).
+Build with stable SDK 11.0.100 (run `./scripts/build-native.ps1` first): `dotnet build RelaxDesk.sln -c Release`. Run checks: `dotnet run --project src/RelaxDesk.Tests -c Release`. .NET 11 is now installed and pinned. See [run instructions, protocol and validation status](docs/ROADMAP.md).
 
 ## License
 
@@ -137,18 +137,18 @@ Windows Home local-console one-command validation: `powershell.exe -NoProfile -F
 
 Windows acceptance package: run `Start-Host.cmd` on the shared PC and `Start-Viewer.cmd` on the client. Host approval is a WPF button; IP and port are sufficient. HDR-to-SDR GPU mapping is implemented and synthetic-color tested; physical HDR appearance remains pending. See [package instructions](packaging/RUN-ME.zh-CN.md).
 
-Desktop file copy and paste now prepares files automatically across an approved session using the Windows clipboard. See [file clipboard behavior and acceptance](docs/FILE-CLIPBOARD.md).
+Desktop file copy and paste now prepares files automatically across an approved session using the Windows clipboard. See [file clipboard behavior and acceptance](docs/VIEWER-UI.md).
 
-Host-selected screens and all-screen capture/input now support physical negative origins. Unrotated single screens retain DXGI/GPU encode; rotated/all-screen scope uses explicit GDI compatibility. See [display contract and remaining P4 work](docs/DISPLAYS.md). Identity-scoped [live topology recovery](docs/DISPLAY-TOPOLOGY.md) is implemented; physical multi-monitor/DPI acceptance remains open.
+Host-selected screens and all-screen capture/input now support physical negative origins. Unrotated single screens retain DXGI/GPU encode; rotated/all-screen scope uses explicit GDI compatibility. See [display contract and remaining P4 work](docs/VIEWER-UI.md). Identity-scoped [live topology recovery](docs/VIEWER-UI.md) is implemented; physical multi-monitor/DPI acceptance remains open.
 
-Viewer live screen selection is now negotiated within the approved Host scope. Input pauses until a matching new-generation frame is displayed; capture/encoder and same-size decoder state are replaced. See [display protocol and limits](docs/DISPLAYS.md). Identity-scoped topology refresh is implemented; physical P4 acceptance remains open. No per-slice package.
+Viewer live screen selection is now negotiated within the approved Host scope. Input pauses until a matching new-generation frame is displayed; capture/encoder and same-size decoder state are replaced. See [display protocol and limits](docs/VIEWER-UI.md). Identity-scoped topology refresh is implemented; physical P4 acceptance remains open. No per-slice package.
 
-Windows integration checkpoint: [session/desktop eligibility and controlled teardown](docs/WINDOWS-SESSIONS.md) now guard real capture/input/clipboard and an idle-session watch. Session 0, inactive/unknown WTS, invisible window station and non-Default/unavailable desktop fail closed; persistent Host waits for fresh consent. Service/agent coordination, installer, audio and physical Home/UAC/lock acceptance remain open. No package.
+Windows integration checkpoint: [session/desktop eligibility and controlled teardown](docs/SESSION-ADMISSION.md) now guard real capture/input/clipboard and an idle-session watch. Session 0, inactive/unknown WTS, invisible window station and non-Default/unavailable desktop fail closed; persistent Host waits for fresh consent. Service/agent coordination, installer, audio and physical Home/UAC/lock acceptance remain open. No package.
 
-Current-user [install/upgrade/uninstall](docs/USER-INSTALL.md) is implemented with manifest verification, isolated release staging, rollback, HKCU version/uninstall registration and optional desktop shortcuts. Source tests cover PowerShell 5.1/7; actual unified-package installation, service mode and audio remain open. No package is produced for this slice.
+Current-user [install/upgrade/uninstall](docs/EXE-INSTALLERS.md) is implemented with manifest verification, isolated release staging, rollback, HKCU version/uninstall registration and optional desktop shortcuts. Source tests cover PowerShell 5.1/7; actual unified-package installation, service mode and audio remain open. No package is produced for this slice.
 
-Optional [LocalService broker and interactive-agent coordination](docs/SESSION-BROKER.md) are implemented in source: authenticated local-only pipe, per-session leases/health and HostShell opt-in/stop-on-loss, with no remote approval or graphics in Session 0. Actual SCM/LocalService deployment, machine service installer, opt-in logon/restart coordination and audio remain open. Console/WPF synthetic tests do not accept those exits. No package.
+Optional [LocalService broker and interactive-agent coordination](docs/SERVICE-SETUP-UI.md) are implemented in source: authenticated local-only pipe, per-session leases/health and HostShell opt-in/stop-on-loss, with no remote approval or graphics in Session 0. Actual SCM/LocalService deployment, machine service installer, opt-in logon/restart coordination and audio remain open. Console/WPF synthetic tests do not accept those exits. No package.
 
-Protected [machine broker install/upgrade/removal](docs/MACHINE-SERVICE-INSTALL.md) is now implemented in source, with explicit administrator/owner selection, manual default, opt-in automatic startup and no desktop grant. 80 real-file/ACL and simulated-SCM contracts pass; real elevated SCM/LocalService deployment and final self-contained package acceptance remain unverified. Next: opt-in interactive logon/restart coordination and audio. No package.
+Protected [machine broker install/upgrade/removal](docs/SERVICE-SETUP-UI.md) is now implemented in source, with explicit administrator/owner selection, manual default, opt-in automatic startup and no desktop grant. 80 real-file/ACL and simulated-SCM contracts pass; real elevated SCM/LocalService deployment and final self-contained package acceptance remain unverified. Next: opt-in interactive logon/restart coordination and audio. No package.
 
 > Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](benchmarks/README.md).

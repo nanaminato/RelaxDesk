@@ -111,13 +111,15 @@ dotnet run --project src/RelaxDesk.Tests -c Release
 
 ## 相关文档
 
+[完整文档导航](docs/README.md)
+
 - **用户与部署**
   - [公网与异地远程访问配置指南](docs/REMOTE-ACCESS.zh-CN.md)
   - [被控端使用说明](packaging/roles/HOST.zh-CN.md) / [连接端使用说明](packaging/roles/VIEWER.zh-CN.md)
   - [独立 EXE 安装包说明](docs/EXE-INSTALLERS.md) / [系统服务设置 UI](docs/SERVICE-SETUP-UI.md)
   - [近期性能实测与限制](benchmarks/README.md)
   - [弱网与 MSTSC 对比测试指南](docs/WEAK-NETWORK-TESTING.md)
-- **架构与设计（英文技术文档）**
+- **架构与项目说明**
   - [Architecture](docs/ARCHITECTURE.md) / [Roadmap](docs/ROADMAP.md) / [Benchmark Plan](docs/BENCHMARKS.md)
   - [旧版英文 README 归档](README-en.md)
 

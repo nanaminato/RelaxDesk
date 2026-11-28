@@ -1,37 +1,25 @@
-# Bounded local diagnostics
+# 故障排查与日志
 
-## Viewer first failure and stage attribution
+## 连接失败
 
-Viewer uses the existing Core `FirstSessionFailure` before canceling related workers. A media failure previously could cancel control first and become hidden behind the control task's cancellation result. Media read/validation, CPU/GPU decode, renderer creation, GPU Present, CPU bitmap submission and post-frame UI update now have separate local stages. CPU rendering and scheduled post-frame callbacks capture failures and stop the session instead of escaping WPF event handlers. The first exception object/type/HRESULT is retained; queued input, workers and graphics resources still follow existing teardown. Logs record received-frame count, not physical displayed frames.
+先记录两端版本、出错时间和操作步骤。确认 Host 已开始共享、地址及端口正确、网络可达，并检查证书核对、账号密码和 Host 本机批准状态。不要通过关闭认证或自动接受不匹配指纹来排障。
 
-After existing bounded GPU recovery/fallback is exhausted, decode/render/UI failures stop automatic retry, including display-side `IOException`. Transport read/write failures retain the existing pinned/fresh-consent retry policy; malformed protocol data still fails it. A valid Host terminal notice takes precedence over transport EOF arriving on another socket, preserving explicit-stop semantics, while an already captured decode/display failure remains its own diagnostic cause. Normal user cancellation does not invent a failure.
+Host 忙时按[接管流程](SESSION-ADMISSION.md)操作。使用公网转发或虚拟组网时先验证 LAN，再按[异地访问指南](REMOTE-ACCESS.zh-CN.md)检查路径。
 
-The first-failure signal wakes the coordinator before worker cleanup completes. A media reader closes its own stream instead of canceling the control reader. For transient media-read failure only, the coordinator allows up to 300ms for the independent control task to deliver a terminal notice, then cancels/disposes the whole attempt and joins workers. Other fatal stages do not wait. A missing/lost notice still permits only the existing bounded pinned retry with fresh Host approval, never inherited authority. The reconnect fixture delays Host control bytes by 150ms while media closes, to exercise this ordering explicitly.
+## 黑屏、输入与声音
 
-Viewer displays distinct decode/display/UI failure notices. GPU occlusion remains a visibility condition, logged once per renderer generation without a device-rebuild loop. Recoverable GPU events include their current stage/type/code, with existing retry limits unchanged. Actual GPU Present, driver-loss and visible-image acceptance remain physical tests; synthetic CPU/UI failure injection does not verify those paths. Viewer stage evidence.
+- 黑屏或画面冻结：确认 Host 处于登录、解锁的普通桌面，检查两端版本、驱动与所用视频路径；降低画质后重试并记录实际结果。
+- 输入异常：先核对焦点、缩放、显示器切换及目标窗口权限，见[输入说明](INPUT.md)。
+- 没有声音：检查本地资源中的声音选项、Host 是否播放、两端默认音频设备以及会话静音和音量。
+- 文件粘贴失败：重新复制并等待准备完成，确认目标账户有权限和空间；断线后不要假设原队列仍有效。
+- 安装或服务维护失败：关闭相关应用后查看详情，保留收据和未知文件，见[安装](EXE-INSTALLERS.md)及[服务](SERVICE-SETUP-UI.md)说明。
 
-## File storage and privacy
+## 收集诊断
 
-Current source writes `%LOCALAPPDATA%/RelaxDesk/logs/host.log` and `viewer.log`; each has three rolling archives (`.1` newest through `.3`). Each file is limited to 2MiB, for at most 8MiB newly managed data per role. Existing date-named logs from historical packages are preserved and are not included in this bound or automatically removed. Oversized pre-existing managed files are refused, not silently truncated. No package is produced by this change.
+Windows 应用日志位于 `%LOCALAPPDATA%\RelaxDesk\logs`，当前角色日志为 `host.log`、`viewer.log`，轮转档为 `.1` 至 `.3`。旧包可能留下日期命名日志。日志队列有界，压力下可能丢记录；日志不是完整审计轨迹。
 
-Host keeps existing structured stage/type/HRESULT/reason and cleanup diagnostics on its console; startup fingerprint, pairing token, invitation and protocol/input payloads never go through the file logger. Viewer stores only operation, exception type/HRESULT and local correlation, deliberately excluding exception messages that can contain user-supplied credentials. Normalized records replace control characters, cap diagnostic text at 2,048 UTF-16 characters and mark truncation; bounded UTF-8 records fit within the minimum configured file cap. Neither screenshots, clipboard text, file contents nor full keyboard data belong in this API. This is developer-controlled diagnostic text, not a general-purpose redactor for arbitrary secret strings.
+Viewer 可展开安全错误详情，复制阶段、类型、HRESULT 和本地关联 ID。两端关联 ID 不保证相同，请同时提供时间和步骤。Android 源码测试可用 ADB logcat 收集 `RelaxDeskPerf` / `RelaxDeskPipeline`，记录设备、构建配置和采样窗口。
 
-Each accepted Host connection and Viewer v2 attempt uses a new random `correlation_id`, carried by execution context into async/thread workers and restored at scope exit. Host `session_end` and `session_cleanup` share that connection's ID. IDs differ across sequential sessions/reconnect attempts. These IDs are process-local diagnostic labels; they are not transmitted, do not match across the two PCs and grant no authentication/permission. Existing HostShell consent IDs and network tickets are unchanged.
+报错请包含：两端版本、OS、CPU/GPU/驱动、分辨率/DPI/HDR、网络与传输模式、复现步骤及脱敏错误详情。性能问题附实际统计窗口，区别目标 FPS 与收到/提交 FPS。
 
-One background worker per role owns file IO/rotation. Callers only normalize and attempt insertion into a 64-entry queue; they never wait on disk, the named writer mutex or file permissions. A full/closed queue drops the new record and increments a counter, preserving already queued records. File/permission/rotation failures increment a separate counter and do not stop the session. Subsequent records carry cumulative `logger_dropped`/`logger_file_failures`, when writing becomes possible. `TryWrite` means queued, not persisted. `Flush` is a queue-drain barrier, not a durability or write-success assertion; file failure counters must also be checked. Normal process exit drains for up to two seconds. Abrupt crash, full queues or a blocked filesystem can lose recent diagnostics; this is not an audit journal.
-
-Rotation serializes same-session writers with a path-derived local mutex and a 100ms acquisition budget. Appends share read access; directory/reparse paths, redirected ancestors and invalid archive destinations are refused. Same-user filesystem changes can still race path inspection; this logger is not a security boundary against the account controlling its own directory. Cross-session writer contention may drop records instead of blocking application work. Legacy logs and foreign/oversized data are not silently deleted. A blocked kernel filesystem call can outlive the bounded exit wait; no UI or remote-control worker joins it indefinitely.
-
-Viewer logs remain lazy and close after the WPF application exits. Host starts the logger before file-resume storage and disposes it afterward, so storage teardown diagnostics can still drain. No UI dependency is added to Host/Core. No wire capability, permission grant, service, startup or firewall behavior changes.
-
-Executable checks:
-
-```powershell
-dotnet <Smoke.dll> --diagnostic-log-contracts build/diagnostic-fixtures
-dotnet <Viewer.dll> --diagnostic-log-contracts build/diagnostic-fixtures
-dotnet <Smoke.dll> <Host.dll> --persistent-host build/persistent-fixtures
-```
-
-The Viewer executable needs an ordinary WPF-capable Windows session. All test log files use isolated fixture directories, including an exception whose message contains a generated credential sentinel; that sentinel must not persist. `scripts/verify.ps1` includes filesystem contracts and the optional `-Wpf` privacy/dispatcher test. Evidence distinguishes actual file/TLS/WPF execution from pending Home/physical and long-soak acceptance.
-
-> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).
+发送前检查隐私，不上传密码、私钥、设备凭证、会话票据、业务截图、完整输入或剪贴板内容。不要把未经检查的抓包载荷作为普通问题附件。

@@ -1,6 +1,6 @@
 # RelaxDesk 低带宽与弱网性能测试指南
 
-适用于 `codex/dxgi-media-pipeline` 的双机实测。对真实物理桌面验证 RelaxDesk 的 TCP/TLS 和 QUIC DATAGRAM 视频路径，并用 Windows 原生 `mstsc` 做办公室操作对照。本文是操作手册，不是性能报告。合成回归和已有证据见[受控网络验证](NETWORK-VALIDATION.md)。
+适用于版本匹配的 Windows Host 与 Viewer 双机实测。对真实物理桌面验证 RelaxDesk 的 TCP/TLS 和 QUIC DATAGRAM 视频路径，并用 Windows 原生 `mstsc` 做办公室操作对照。本文是操作手册，不是性能报告。合成回归和已有证据见[受控网络验证](WEAK-NETWORK-TESTING.md)。
 
 ## 1. 测试拓扑与档位
 

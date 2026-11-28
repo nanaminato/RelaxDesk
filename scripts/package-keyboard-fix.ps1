@@ -55,7 +55,7 @@ try {
     $tools=Join-Path $package 'Tools/Native';[IO.Directory]::CreateDirectory($tools)|Out-Null;Copy-Item $native,$probe -Destination $tools
     Copy-Item (Join-Path $source 'packaging/Collect-Logs.cmd'),(Join-Path $source 'packaging/Collect-Logs.ps1') -Destination $package
     Copy-Item (Join-Path $source 'scripts') -Destination $package -Recurse
-    Copy-Item (Join-Path $root 'docs/KEYBOARD_FIX.md') -Destination (Join-Path $package 'RUN-ME.zh-CN.md')
+    Copy-Item (Join-Path $root 'docs/INPUT.md') -Destination (Join-Path $package 'RUN-ME.zh-CN.md')
     $manifest=[pscustomobject]@{version=$version;revision=$revision;keyboard_patch_files=$files;native_baseline_sha256=(Get-FileHash $native -Algorithm SHA256).Hash;scope='Keyboard fix only; excludes concurrent parent HDR/UI changes';self_contained=$true;rid='win-x64';physical_chrome_ime='NOT_TESTED'}
     $manifest | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $package 'package.json') -Encoding utf8
     $version | Set-Content (Join-Path $package 'BUILD-INFO.txt') -Encoding utf8

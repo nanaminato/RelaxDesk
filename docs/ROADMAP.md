@@ -1,162 +1,26 @@
-# Roadmap
+# 路线与当前限制
 
-> This is a proposal, not a claim of completed functionality. Ship verifiable vertical slices rather than skeletons.
+更新：2026-11-28。RelaxDesk 仍为实验版。源码功能、自动化覆盖与实际硬件验收是不同状态；当前记录不代表完整发布认证。
 
-## Phase 0 — Baseline and research
-- Verify current stable .NET SDK/compiler/Windows platform support in the build environment; target latest stable release, not preview by accident.
-- Inventory Windows graphics APIs, capture restrictions, codec/GPU availability, WPF HWND interop and installer/service privilege requirements.
-- Establish threat model, protocol capability versioning, test inventory and benchmark methodology.
-- Make a smallest real end-to-end spike and document actual blockers.
+## 阶段与退出条件
 
-**Exit:** repository builds on Windows; basic automated tests pass; unsupported assumptions are written down.
+| 阶段 | 目标与退出条件 | 当前边界 |
+| --- | --- | --- |
+| Phase 0：基础 | 稳定 SDK 构建、认证与协议测试、明确平台限制 | 项目固定 .NET SDK 11.0.100；原生图形另需 C++ 工具链 |
+| Phase 1：LAN 闭环 | 两台真实 Windows Home 设备完成加密连接、批准、桌面、输入和断开 | 已有真实桌面与 Android LAN 观察；不能代替完整的双 Windows Home 验收 |
+| Phase 1.5：GPU 管线 | 明确采集、编码、解码与显示路径，验证资源回收和回退 | 已实现 DXGI/WGC、硬件 H.264 和 Windows GPU 显示；驱动/HDR/多设备矩阵仍需实测 |
+| Phase 2：响应与可靠性 | 用同条件负载测量尾延迟、画质、吞吐、弱网恢复与空闲负载 | 有近期 Android 队列对照；稳定 60 FPS、物理 input-to-photon 与 MSTSC 对照未完成 |
+| Phase 3：部署与会话 | 安装升级、服务及登录/重启行为在目标 Home 机器验收 | 有独立安装器及服务维护入口；真实 SCM、跨账户授权和重启矩阵不能由模拟测试代替 |
+| Phase 4：兼容与发布 | 多显示器/DPI、输入法、剪贴板/文件、音频、长时运行与签名分发 | 功能已进入源码；跨硬件、长时稳定和完整发布验收仍需补齐 |
 
-## Phase 1 — Authenticated LAN MVP
-- Host runs on stock Windows 10/11 Home with no RDP service modification.
-- Viewer connects via authenticated, encrypted local-network connection.
-- Capture desktop, encode, decode, display; control mouse, keyboard and wheel.
-- Cursor data separated from video where useful; basic scaling and disconnect cleanup.
-- Instrument pipeline and test 1080p interactions, not just compilation.
+Android 目前为实验性连接端：已进行真机连接及性能测试，仍需更多编解码器、旋转/前后台、输入设备、长时热稳定和发布包覆盖。
 
-**Exit:** demonstration on two real Windows systems, reproducible build/run steps, measured performance and known limitations.
+## 后续重点
 
-## Phase 1.5 — GPU media bring-up (current)
+1. 用同版本双机和固定负载完成真实桌面、输入、声音、剪贴板及文件测试。
+2. 分开测量 Host 编码、发送背压、接收突发与显示延迟，避免由阶段耗时推断端到端性能。
+3. 覆盖 Intel/NVIDIA/AMD、混合 DPI/HDR、多显示器、断网及设备丢失后的清理和恢复。
+4. 在空闲测试机器验证安装升级、真实管理员服务部署及卸载、登录/重启行为。
+5. 完成发布签名和发行流程。项目许可证尚待所有者决定。
 
-- Implemented/compiled: ICaptureBackend, GDI fallback, real Desktop Duplication GPU texture/metadata, bounded capture recreation, native C ABI.
-- Implemented and actually GPU-tested: Media Foundation hardware H.264 encode, D3D11 GPU decode/color conversion; explicit software H.264/Deflate fallbacks.
-- Implemented and automatically exercised: v2 binary media, separate pinned TLS control/media sockets, one-use expiring binding tickets, bounded queues, gap-to-IDR recovery, production Host to shared Viewer decoder, actual WPF rendering submissions.
-- Build now uses installed stable .NET 11.0.100; native C++20 uses installed MSVC/Windows SDK. Core remains platform neutral.
-- BLOCKED: current Server 2022 remote session has valid GDI handles but first BitBlt returns access denied, and DuplicateOutput returns E_ACCESSDENIED. Independent native reproducer records session/console mismatch. No security bypass or repeated speculative GDI repairs.
-- NOT ACCEPTED: real desktop DXGI capture -> H.264 -> Viewer on two Home PCs, actual input, physical Present, 60-second office workload measurements and fair GDI comparison. Synthetic GPU tests do not satisfy these exits.
-
-**Next exit:** run on an authorized Home local console, prove real DXGI frames and the complete desktop pipeline, then address measured WPF readback/CPU costs and perform matched workloads. See [implementation and commands](IMPLEMENTATION.md) and measured results.
-
-## Phase 2 — Performance and fidelity
-- Compare full-frame baseline vs dirty/move rect approaches.
-- Add hardware codec capability detection/fallback, low-copy D3D11 pipeline, latency-aware buffering, quality/rate adaptation and crisp text handling.
-- Include DPI, multi-display coordinate correctness and keyboard layout/IME tests.
-- Compare fairly with MSTSC on **an RDP-enabled system**, and with alternative screen-sharing tools. Windows Home is the intended product target, not a native MSTSC host.
-
-**Exit:** benchmark matrix with P50/P95 input-to-photon or clearly defined surrogate, CPU/GPU %, bandwidth and crisp-text observations; no invented “80%” result.
-
-## Phase 3 — Windows service and robustness
-- Introduce narrow service and per-session workers with restricted IPC and authorization checks.
-- Validate UAC secure desktop and lock/login scenarios on supported versions; disclose unsupported cases.
-- Restore connections after desktop switching, device loss, user sign-out, host reboot and abrupt network interruption.
-- Add installer/uninstaller, diagnostics and safe update path.
-
-**Exit:** manual permissioned tests on Home, Pro and Server where feasible; successful upgrade/uninstall; privilege boundaries reviewed.
-
-## Phase 4 — Internet networking and product UX
-- Optional NAT traversal and relay, safe device trust/revocation, connection history, multiple monitors, clipboard with opt-in and granular permissions.
-- LAN direct connections remain usable without account services.
-- Harden the protocol, fuzz input parser, test unreliable networks and fail closed.
-
-**Exit:** usable outside LAN under documented threat model, documented network metrics and compatibility.
-
-## Phase 5 — Portability
-- Consider Avalonia viewer or Linux/macOS target via isolated platform adapters, without regressing Windows performance.
-
-## Milestone evidence
-Each phase must report: implemented commits/files, build/test commands and results, actual hardware and Windows versions, benchmark conditions, open bugs, and tasks that were NOT verified. Never mark manual UAC or real-network testing complete without the requisite environment.
-
-
-## 2026-11-22 implementation update
-
-Phase 0 Windows build/test exit is met here. Phase 1/1.5 and Phase 2 exits remain open. GPU codecs, binary authenticated video, recovery and WPF synthetic tests now pass, with a later successful RDP-desktop capture/display proof; dual-PC Home/office validation is pending. See [implementation evidence](IMPLEMENTATION.md).
-
-
-## GPU display milestone update — 2026-11-22
-
-- Implemented/compiled: same-device NV12 decoder → native D3D11 SwapChain via HwndHost, CPU renderer fallback, independent pointer composition, idle resize redraw, bounded recovery and stage instrumentation.
-- Recorded automated GPU execution: native 65 Presents, WPF streaming/recovery/resize and actual RDP-desktop end-to-end proof. Final Core/TLS 236 and Windows contracts 15 pass.
-- **Not accepted:** final matched GPU display benchmark fails with DXGI_STATUS_OCCLUDED despite visible matching-adapter window. Earlier successful tests do not establish current-environment stability. Hardware H.264 total latency improvement is unproven.
-- Next exit: reproduce on unlocked Home local console; rerun the strict four-profile benchmark and full verification, real driver loss/DPI/long soak, then dual-PC office/input measurements. Phase 1/1.5/2 and main merge acceptance remain open.
-
-See detailed evidence and limitations.
-
-
-## Occlusion follow-up — 2026-11-22
-
-Fixed a confirmed HwndHost WndProc base-call omission (layout/destruction contract), tightened real Present vs TEST/mode-change status handling, and added independent bounded top-level/child SwapChain lifecycle diagnostics. Both targets remain occluded in the current RDP environment, including after recreation; this excludes a HwndHost-only explanation but does not identify the exact compositor/driver cause. Real WPF lifecycle tests pass; an old-behavior negative control fails as expected. Home/physical GPU acceptance remains pending.
-
-One-command Home local-console validation and evidence collection: `powershell.exe -NoProfile -File scripts/accept-home.ps1`. The runner checks edition/session, matches DLL hashes, preserves logs/results, applies per-step timeouts and stops after a blocked independent comparison. An RDP/Server run cannot report Home acceptance. See diagnosis, tests, commands and limitations.
-
-
-## Self-contained Home acceptance bundle — 2026-11-22
-
-Implemented a win-x64 self-contained publisher (`scripts/package-acceptance.ps1`), native static MSVC CRT linkage, EXE-aware Smoke child launch, and default EXE log collector. Complete ZIP includes Host, WPF Viewer, native DLL/Probe, Core/TLS and security tests, runtime redistribution notices, per-file SHA256 manifest and Chinese run/return checklist. Default Collect-Logs.cmd invokes the bundled tool directly; no SDK, dotnet CLI, Git, Python or .ps1 execution-policy bypass is needed. PowerShell scripts remain optional. Logs/results are archived separately from binaries, with no pairing credentials saved by the automated collector.
-
-Server/RDP tests with development tools removed from PATH demonstrate app-local .NET runtime loading, authenticated self-contained EXE child processes, safety tests and WPF lifecycle; full Home local-console GPU acceptance remains pending. This is packaging progress, not a completed phase exit or latency improvement claim. See [package instructions](../packaging/RUN-ME.zh-CN.md).
-
-
-Viewer usability follow-up: single invitation, folded credentials after approval, offline preview, control heartbeat and first-failure diagnostics implemented. Remaining: reproduce delayed LAN disconnect with both ends logs; HDR/scRGB capture and calibrated SDR tone mapping, plus HDR↔SDR host/viewer matrix on physical monitors. UI/idle tests do not close physical Home acceptance.
-
-
-Usability correction v0.3: actual IP/port → explicit Host approval is now the default connection flow, with session certificate/media binding and strict pinned compatibility mode. Publication identity must be visible and verified from a fresh ZIP extraction. Dual-PC physical Home validation, delayed disconnect and HDR tone mapping remain open.
-
-
-v0.3.1 fixes producer fault masking and adds one software-H264 fallback with decoder reinitialization; injected four-frame and WPF recovery tests pass. Await operator NVIDIA root-error logs and real DXGI fallback validation. This does not close HDR, Home GPU or physical input acceptance.
-
-
-v0.3.2: pointer-only duplication updates reuse the last owned image; explicit BGRA format negotiation and descriptor-rich errors added. 24 native/WARP contracts pass; NVIDIA physical format failure and HDR accuracy remain unverified. Next operator log must include actual width/height/format/API if capture still fails.
-
-
-## 2026-11-23 — HDR normalization and WPF Host shell (0.4.0)
-
-Implemented and compiled: Desktop Duplication requests FP16 scRGB / RGB10 / BGRA / RGBA; GPU shader converts FP16 linear scRGB (1=80nit), HDR10 PQ BT.2020, and SDR typed formats to owned SDR BGRA. Windows DISPLAYCONFIG_SDR_WHITE_LEVEL calibrates reference white; unknown white is explicitly flagged (80nit fallback). A documented hue-preserving max-channel shoulder above 0.8 compresses highlights, followed by sRGB encoding. This is a custom SDR mapping, not a claim of BT.2390 or calibrated HDR reproduction. Production conversion uses one reusable GPU intermediate copy where source SRV binding is unavailable; no full-frame CPU readback is added. Existing decoder GPU display remains unchanged. Eight-bit HDR fallback cannot recover lost precision and is shown as limited. Unsupported formats still produce detailed errors.
-
-Added a separate WPF HostShell with modern shared rounded controls, local IP selection, listen/stop, explicit allow/deny, status and bounded diagnostics. It launches the UI-free Host via a stdio bridge, does not display credentials, and stops its child on close. TLS, explicit authorization, media binding and strict pinned mode remain intact. Viewer uses the same modern control templates and hides the connection form after approval.
-
-Executed: Release solution build (7 projects, zero warnings/errors); 42 real D3D11 WARP capture/color/release contracts; 253 protocol/access/TLS checks; actual WPF HostShell + Host child approval/deny/stop + encrypted H264 test; actual Host→Viewer synthetic hardware H264 CPU-render test (60 frames, native_live_resources=0, Host exits 126ms after Viewer). Color tests include scRGB gray/white/highlights, 160nit white normalization, PQ neutral and BT.2020 red, SDR sRGB round-trip. Raw native and shell outputs are in benchmarks/2026-11-23-*.txt. Synthetic end-to-end was SDR, not a physical HDR desktop.
-
-NOT VERIFIED: physical HDR capture/tone-map appearance on NVIDIA or Windows Home; HDR synthetic color→hardware encode→physical display; two-PC office/HDR comparison, true input-to-photon. Development desktop remains Server/RDP and cannot establish physical capture success. No measured HDR latency improvement or MSTSC target claim. New self-contained package includes HostUi, Host, Viewer, native DLL, Start-Host.cmd / Start-Viewer.cmd and existing log collector. Physical-console acceptance remains required.
-
-
-## 2026-11-23 — Connected Viewer toolbar (0.4.1)
-
-Connected sessions collapse fixed header/footer and use the entire client area with aspect ratio preserved. A nonactivating owned WPF window overlays the native HwndHost safely; it retracts to a 5-DIP central top tab, expands on hover and hides after pointer departure. It follows client origin/DPI/resize, hides on minimize/deactivation and releases timer/window on disconnect/close. Fullscreen, return-to-window and disconnect remain available; connection errors/status return with the form. No protocol, authentication or HDR changes. Real HWND test covers airspace hit-testing, simulated-pointer hide/reveal, fullscreen actions, minimize/restore, disconnect/owner-close disposal. Physical pointer and multi-monitor DPI validation on Windows Home remain pending.
-
-
-## Office continuation — 2026-11-23
-
-Implemented source now includes independently authorized text clipboard, scoped third-channel file transfer with Host folder consent and Viewer recursive queues/confirmed drops, persistent single-controller Host and bounded pinned Viewer reconnect with fresh consent. See [current product ledger](PRODUCT-READINESS.md) and lifecycle evidence. Core/TLS 656 and executable WPF/Host/relay tests pass; these do not close physical Home phase exits.
-
-Scoped file-task/byte resume is implemented with new consent/confirmation and actual >1GiB TLS evidence; [contract](FILE-RESUME.md). Rich input/TextCommit is implemented; [contract](INPUT-PROTOCOL.md). Image/HTML clipboard now binds an independently pinned channel with exact consent and optional failure isolation; [contract](CLIPBOARD-CONTENT.md), session evidence. Confirmed scoped file clipboard is implemented; [contract](FILE-CLIPBOARD.md). Monitor selection, viewport scaling and identity-scoped topology recovery are implemented. Next: Windows session/service integration and audio. Owner defers packaging and physical operator tests to the final milestone; environment-blocked tests remain explicit skips while other development continues.
-
-Host-selected screens and all-screen capture/input now support physical negative origins. Unrotated single screens retain DXGI/GPU encode; rotated/all-screen scope uses explicit GDI compatibility. See [display contract and remaining P4 work](DISPLAYS.md). Identity-scoped [live topology recovery](DISPLAY-TOPOLOGY.md) is implemented; physical multi-monitor/DPI acceptance remains open.
-
-Viewer live screen selection is now negotiated within the approved Host scope. Input pauses until a matching new-generation frame is displayed; capture/encoder and same-size decoder state are replaced. See [display protocol and limits](DISPLAYS.md). Identity-scoped topology refresh is implemented; physical P4 acceptance remains open. No per-slice package.
-
-Viewer [viewport geometry and scaling](VIEWPORT.md) now drive CPU bitmap transforms, native video-processor source/destination crop and rich/legacy pointer mapping. SwapChain dimensions stay bounded to the visible client area; local redraw readiness prevents input against an old view. Fit, physical 1:1, 25–400% custom zoom and scrollbar panning are implemented. Identity-scoped topology refresh is implemented; physical mixed-DPI/foreground landing remain open.
-
-Windows integration checkpoint: [session/desktop eligibility and controlled teardown](WINDOWS-SESSIONS.md) now guard real capture/input/clipboard and an idle-session watch. Session 0, inactive/unknown WTS, invisible window station and non-Default/unavailable desktop fail closed; persistent Host waits for fresh consent. Service/agent coordination, installer, audio and physical Home/UAC/lock acceptance remain open. No package.
-
-Current-user [install/upgrade/uninstall](USER-INSTALL.md) is implemented with manifest verification, isolated release staging, rollback, HKCU version/uninstall registration and optional desktop shortcuts. Source tests cover PowerShell 5.1/7; actual unified-package installation, service mode and audio remain open. No package is produced for this slice.
-
-Optional [LocalService broker and interactive-agent coordination](SESSION-BROKER.md) are implemented in source: authenticated local-only pipe, per-session leases/health and HostShell opt-in/stop-on-loss, with no remote approval or graphics in Session 0. Actual SCM/LocalService deployment, machine service installer, opt-in logon/restart coordination and audio remain open. Console/WPF synthetic tests do not accept those exits. No package.
-
-Protected [machine broker install/upgrade/removal](MACHINE-SERVICE-INSTALL.md) is now implemented in source, with explicit administrator/owner selection, manual default, opt-in automatic startup and no desktop grant. 80 real-file/ACL and simulated-SCM contracts pass; real elevated SCM/LocalService deployment and final self-contained package acceptance remain unverified. Next: opt-in interactive logon/restart coordination and audio. No package.
-
-Opt-in [visible per-user logon launch and bounded worker restart](WORKER-RECOVERY.md) are implemented in source. Login never starts sharing; recovery defaults off and requires fresh approval after each replacement process. Installer fixture evidence covers both supported PowerShell versions. Actual login/reboot and physical crash-input cleanup remain pending. Next implementation: independently authorized audio capture/transport/playback; final unified packaging and owner testing remain deferred.
-
-System [audio capture/transport/playback](AUDIO.md) now has actual source integration: independent default-off request/grant/revoke, one-use pinned TLS stream, managed WASAPI output mix, local mute/volume, bounded queues/device replacement and video-submission clock scheduling. Synthetic production WPF/TLS and empty-device API checks are distinct from real audibility/sync/driver acceptance. Next: requirement-by-requirement office-readiness/performance/diagnostic audit and remaining runnable gaps; microphone/device redirection remain optional, and final unified packaging/operator tests remain deferred.
-
-The original Viewer UI audit found missing [non-sensitive connection history](CONNECTION-HISTORY.md); IP/port-only MRU, session opt-out and clear are implemented, preserving strict identity mode and fresh consent. Next: negotiated quality/frame-rate and live diagnostics UI, then remaining original-scope audit. Final packaging/owner physical tests are still deferred.
-
-The [live statistics panel](LIVE-STATISTICS.md) now exposes bounded Host/Viewer stage timings, recent submitted FPS/application rate, Viewer resources/known discards and matched existing-heartbeat RTT, with physical-vs-API limits shown explicitly. Synthetic production WPF/TLS and render checks validate behavior, not office performance. Next: negotiated quality/frame-rate controls, then continue original-scope audit. No package.
-
-Negotiated [FPS/target bitrate controls](VIDEO-SETTINGS.md) are implemented with separate video epochs, keyframe confirmation, same-size decoder reset, bounded rate/pacing and static refresh. Actual codec/TLS/WPF tests distinguish configured targets from measured delivery/quality; physical Home/DXGI/static/driver acceptance remains open. Continue original-scope reliability/performance/diagnostic audit and runnable gaps before final unified packaging. No package.
-
-The remaining network-test audit added [bounded opaque TCP impairment fixtures](NETWORK-VALIDATION.md): control delay, media byte cap/short stall/removal and individual control/media cuts exercise production TLS/Host/decoder with exact synthetic pixels and causal cleanup assertions. They join `verify.ps1`; real IP loss, NIC change, physical office workloads and long soak remain open. Next audit: reproducible office/performance collection and final release readiness, while preserving source-vs-physical evidence and the single final package preference.
-
-[Performance collection](BENCHMARK-COLLECTION.md) now supports isolated builds/future bundle EXEs, explicit process roles/creation times, raw resource arrays, application/native hashes and strict terminal results. PowerShell 5.1/7 and summary integrity have actual source/contract evidence; short synthetic traces are archived. Next: remaining original-scope release/diagnostic audit and final unified delivery readiness. Physical Home/office/matched MSTSC, IP loss and long soak remain open; no intermediate package.
-
-The diagnostic audit replaces unbounded daily synchronous file appends with [bounded asynchronous rolling logs and local connection IDs](DIAGNOSTICS.md). File pressure/lock/junction/rotation, Viewer secret exclusion/dispatcher and production failure/reconnect paths have executable evidence. Continue Viewer failure-stage and remaining release-readiness audit; physical Home/office and long soak remain explicitly unaccepted. No intermediate package.
-
-Viewer failure-stage audit now fixes the cancellation-order loss of decoder errors and unhandled render/UI callbacks. Evidence preserves original exceptions, stops display-side IO retry, distinguishes UI notices and retains explicit Host termination over transport EOF. Three actual WPF/TLS injected stages and normal/fallback/reconnect regressions pass within their stated scopes. Continue original-requirement/release-readiness audit; no intermediate package or physical success claim.
-
-The [office collector](OFFICE-ACCEPTANCE.md) now shares 75 executable cases with developer source verification and validates bounded manifests/output without accepting failed evidence writes. Full-suite execution exposed another explicit-stop ordering race; receiver cleanup now preserves control long enough for a bounded terminal-notice drain, with a 150ms delayed-control regression. The physical checklist reflects implemented features and pending real-device acceptance. Next concrete original UI gap: dedicated Viewer error details, then remaining original-scope audit/final unified delivery readiness. No intermediate package.
-
-The [Viewer error detail requirement](ERROR-DETAILS.md) is now implemented: bounded credential-free metadata, readonly selection, async button/command copying and stale/clear/success handling. Full shared suite is now 76 passing source cases with 2,070 Core/TLS checks; evidence separates memory-copy/UI tests from actual clipboard/Home acceptance. Next: original requirement-by-requirement source completion audit and one final unified delivery when required source gaps are closed. No intermediate package.
-
-> Historical benchmark attachments were removed during documentation cleanup. Historical results describe their original revision, not current acceptance; original records remain in Git history. See the [current benchmark index](../benchmarks/README.md).
+不承诺固定帧率或“达到 MSTSC 的 80%”。[近期实测](../benchmarks/README.md)、[测试方法](BENCHMARKS.md)和[物理清单](PHYSICAL-ACCEPTANCE.md)分别提供数据、方法与待验证项。
