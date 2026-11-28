@@ -79,6 +79,47 @@ internal static class PipelineAndViewportTests
         mapper.ResetTransform();
         Check(Math.Abs(mapper.Zoom - 1.0f) < 0.01f && mapper.PanX == 0f && mapper.PanY == 0f, "ResetTransform restores 1x centered view");
 
+        foreach (var size in new[] { (2400, 1080), (2304, 1440) })
+        {
+            mapper.SetViewSize(size.Item1, size.Item2);
+            foreach (var mode in Enum.GetValues<ViewportDisplayMode>())
+            {
+                mapper.SetDisplayMode(mode);
+                mapper.TryGetFittedRect(out left, out top, out width, out height);
+                Check(mode switch
+                {
+                    ViewportDisplayMode.Fit => width <= size.Item1 + 1 && height <= size.Item2 + 1,
+                    ViewportDisplayMode.Fill => width >= size.Item1 - 1 && height >= size.Item2 - 1,
+                    _ => width == 1920 && height == 1080
+                }, $"{mode} baseline at {size}");
+                float focusX = size.Item1 / 2f, focusY = size.Item2 / 2f;
+                mapper.TryViewToNormalized(focusX, focusY, true, out int beforeX, out int beforeY);
+                mapper.ApplyScaleAndPan(2, focusX, focusY, 0, 0);
+                mapper.TryViewToNormalized(focusX, focusY, true, out int afterX, out int afterY);
+                Check(Math.Abs(beforeX - afterX) < 40 && Math.Abs(beforeY - afterY) < 40, "Centered zoom retains focus");
+                mapper.ApplyScaleAndPan(1, focusX, focusY, 100000, -100000);
+                mapper.TryGetFittedRect(out left, out top, out width, out height);
+                Check(width <= size.Item1 || left <= 0.01f && left + width >= size.Item1 - 0.01f, "Horizontal pan stays bounded");
+                Check(height <= size.Item2 || top <= 0.01f && top + height >= size.Item2 - 0.01f, "Vertical pan stays bounded");
+                mapper.TryNormalizedToView(20000, 30000, out float vx, out float vy);
+                mapper.TryViewToNormalized(vx, vy, true, out int roundX, out int roundY);
+                Check(Math.Abs(roundX - 20000) <= 1 && Math.Abs(roundY - 30000) <= 1, "Coordinates round-trip in every mode");
+                mapper.ResetTransform();
+                Check(mapper.DisplayMode == mode && mapper.Zoom == 1 && mapper.PanX == 0 && mapper.PanY == 0, "Reset retains display mode");
+            }
+        }
+        var gesture = new TouchGestureState();
+        gesture.BeginDirect();
+        Check(gesture.EnterMultiplePointers() && !gesture.DirectButtonDown && gesture.MultiplePointers, "Second finger releases direct button");
+        Check(!gesture.EnterMultiplePointers() && !gesture.ReleaseDirect(), "Multiple pointer moves never repeat button release");
+        gesture.Reset();
+        Check(!gesture.MultiplePointers && !gesture.DirectButtonDown, "Cancel resets multi-touch state");
+        gesture.BeginDirect();
+        Check(gesture.ReleaseDirect() && !gesture.ReleaseDirect(), "Single finger releases exactly once");
+        gesture.BeginDirect();
+        gesture.Reset();
+        Check(!gesture.DirectButtonDown, "Lifecycle reset clears button ownership");
+
         // 4. AndroidPipelineTelemetry
         var telemetry = new AndroidPipelineTelemetry();
         telemetry.RecordReceived(1920, 1080, 1);

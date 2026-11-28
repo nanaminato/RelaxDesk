@@ -36,6 +36,11 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     const int LanRequest = 32;
 
     readonly ViewportMapper viewport = new();
+    readonly TouchGestureState gesture = new();
+    float touchpadSensitivity = 1.35f;
+    Button displayBtn = null!;
+    TextView zoomText = null!;
+    int zoomHintVersion;
     RemoteDesktopSession? session;
     CancellationTokenSource? sessionCts;
     Task? sessionWorker;
@@ -92,6 +97,11 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             try { videoPreferences = new AndroidVideoPreferences(prefs!.GetInt("fps", 30), prefs.GetInt("bitrate", 8_000_000), prefs.GetBoolean("automatic", false)).Validate(); }
             catch (InvalidDataException) { videoPreferences = new(); }
         }
+        using (var prefs = GetSharedPreferences("relaxdesk_input_v1", global::Android.Content.FileCreationMode.Private))
+        {
+            float saved = prefs!.GetFloat("sensitivity", 1.35f);
+            touchpadSensitivity = float.IsFinite(saved) ? Math.Clamp(saved, 0.5f, 3f) : 1.35f;
+        }
         Window?.SetFlags(WindowManagerFlags.Secure | WindowManagerFlags.KeepScreenOn,
                         WindowManagerFlags.Secure | WindowManagerFlags.KeepScreenOn);
 
@@ -112,6 +122,12 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         };
         stage.Touch += OnStageTouch;
         stage.GenericMotion += OnStageGenericMotion;
+
+        zoomText = new TextView(this) { TextSize = 22f, Visibility = ViewStates.Gone, Clickable = false };
+        zoomText.SetTextColor(Color.White);
+        zoomText.SetPadding(Dp(16), Dp(8), Dp(16), Dp(8));
+        zoomText.Background = AndroidTheme.MakeRounded(Color.Argb(210, 20, 24, 32), Dp(12));
+        ((FrameLayout)sessionRoot).AddView(zoomText, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent, GravityFlags.Center));
 
         hudText = FindViewById<TextView>(Resource.Id.session_hud)!;
         sessionPill = FindViewById<LinearLayout>(Resource.Id.session_pill_bar)!;
@@ -192,8 +208,13 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             audioToggleBtn.Text = audioMuted ? "🔇" : "🔊";
             session?.SetAudioMuted(audioMuted);
         };
+        displayBtn = new Button(this) { TextSize = 12f };
+        displayBtn.SetAllCaps(false);
+        pillButtonsContainer.AddView(displayBtn, 3, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, Dp(34)));
+        displayBtn.Click += (_, _) => ShowDisplaySettings();
         modeBtn.Click += (_, _) =>
         {
+            ResetTouchInput();
             touchpadMode = !touchpadMode;
             modeBtn.Text = AndroidStrings.Get(touchpadMode ? "mode_touchpad" : "mode_direct");
         };
@@ -242,6 +263,8 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         videoBtn.Text = AndroidStrings.Get("video_settings");
         modeBtn.Text = AndroidStrings.Get(touchpadMode ? "mode_touchpad" : "mode_direct");
         keysToggleBtn.Text = AndroidStrings.Get("keys_bar");
+        displayBtn.Text = AndroidStrings.Get("display_settings");
+        resetZoomBtn.Text = AndroidStrings.Get("display_reset");
         hudToggleBtn.Text = AndroidStrings.Get("metrics");
         disconnectBtn.Text = AndroidStrings.Get("disconnect");
         sendTextBtn.Text = AndroidStrings.Get("send_text");
@@ -271,7 +294,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
 
         sessionPill.Background = AndroidTheme.MakeRounded(p.SessionPillBg, Dp(22), p.SessionPillStroke, Dp(1));
         collapseBtn.SetTextColor(p.PrimaryText);
-        foreach (var btn in new[] { videoBtn, modeBtn, keysToggleBtn, resetZoomBtn, audioToggleBtn, hudToggleBtn })
+        foreach (var btn in new[] { videoBtn, modeBtn, keysToggleBtn, displayBtn, resetZoomBtn, audioToggleBtn, hudToggleBtn })
         {
             btn.SetTextColor(p.ButtonNeutralText);
             btn.Background = AndroidTheme.MakeRounded(p.ButtonNeutralBg, Dp(18));
@@ -662,8 +685,65 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     void Disconnect()
     {
         ReleaseStickyModifiers();
-        session?.ReleaseAllInputs();
+        ResetTouchInput();
         sessionCts?.Cancel();
+    }
+
+    void ResetTouchInput()
+    {
+        ReleaseStickyModifiers();
+        session?.ReleaseAllInputs();
+        gesture.Reset();
+        isPinching = false;
+        movedSinceDown = false;
+    }
+
+    void ShowZoomHint()
+    {
+        int version = ++zoomHintVersion;
+        zoomText.Animate()?.Cancel();
+        zoomText.Alpha = 1f;
+        zoomText.Text = $"{viewport.Zoom:0.0}×";
+        zoomText.Visibility = ViewStates.Visible;
+        uiHandler?.PostDelayed(() =>
+        {
+            if (IsDestroyed || version != zoomHintVersion) return;
+            zoomText.Animate()?.Alpha(0f)?.SetDuration(250)?.Start();
+        }, 800);
+    }
+
+    void ShowDisplaySettings()
+    {
+        ResetTouchInput();
+        var layout = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        layout.SetPadding(Dp(20), Dp(8), Dp(20), Dp(8));
+        var modes = new Spinner(this);
+        modes.Adapter = new ArrayAdapter<string>(this, global::Android.Resource.Layout.SimpleSpinnerDropDownItem,
+            new[] { "display_fit", "display_fill", "display_pixels" }.Select(AndroidStrings.Get).ToArray());
+        modes.SetSelection((int)viewport.DisplayMode);
+        layout.AddView(modes);
+        layout.AddView(new TextView(this) { Text = AndroidStrings.Get("display_pixels_tip") });
+        var label = new TextView(this);
+        var sensitivity = new SeekBar(this) { Max = 250, Progress = (int)Math.Round(touchpadSensitivity * 100) - 50 };
+        void UpdateLabel() => label.Text = $"{AndroidStrings.Get("touchpad_sensitivity")}: {(sensitivity.Progress + 50) / 100f:0.00}";
+        sensitivity.ProgressChanged += (_, _) => UpdateLabel();
+        UpdateLabel();
+        layout.AddView(label);
+        layout.AddView(sensitivity);
+        AndroidTheme.CreateDialogBuilder(this).SetTitle(AndroidStrings.Get("display_settings"))!
+            .SetView(layout)!
+            .SetNegativeButton(AndroidStrings.Get("cancel"), (_, _) => { })!
+            .SetPositiveButton(AndroidStrings.Get("video_apply"), (_, _) =>
+            {
+                if ((int)viewport.DisplayMode != modes.SelectedItemPosition)
+                    viewport.SetDisplayMode((ViewportDisplayMode)modes.SelectedItemPosition);
+                touchpadSensitivity = (sensitivity.Progress + 50) / 100f;
+                using var prefs = GetSharedPreferences("relaxdesk_input_v1", global::Android.Content.FileCreationMode.Private);
+                using var editor = prefs!.Edit();
+                editor!.PutFloat("sensitivity", touchpadSensitivity);
+                editor.Apply();
+                UpdateVideoSurfaceLayout();
+            })!.Show();
     }
 
     void ShowVideoSettings()
@@ -725,6 +805,8 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         lp.LeftMargin = (int)Math.Round(left);
         lp.TopMargin = (int)Math.Round(top);
         videoSurface.LayoutParameters = lp;
+        if (viewport.TryNormalizedToView(viewport.CursorNormalizedX, viewport.CursorNormalizedY, out float x, out float y))
+            cursorView.UpdateLocalPosition(x, y);
     }
 
     void OnStageTouch(object? sender, View.TouchEventArgs e)
@@ -733,11 +815,18 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         if (ev is null || session is null) return;
         e.Handled = true;
 
+        if (ev.ActionMasked == MotionEventActions.Cancel)
+        {
+            ResetTouchInput();
+            return;
+        }
         int pointers = ev.PointerCount;
         var action = ev.ActionMasked;
 
         if (pointers >= 2)
         {
+            if (gesture.EnterMultiplePointers())
+                session.SendInput(new CoreRemoteInput("button", Button: 1, Up: true));
             float dx = ev.GetX(0) - ev.GetX(1);
             float dy = ev.GetY(0) - ev.GetY(1);
             float dist = MathF.Sqrt(dx * dx + dy * dy);
@@ -759,13 +848,14 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
                 lastTouchX = midX;
                 lastTouchY = midY;
                 UpdateVideoSurfaceLayout();
+                ShowZoomHint();
             }
             return;
         }
 
-        if (isPinching)
+        if (gesture.MultiplePointers)
         {
-            if (action is MotionEventActions.Up or MotionEventActions.Cancel) isPinching = false;
+            if (action == MotionEventActions.Up) { gesture.Reset(); isPinching = false; }
             return;
         }
 
@@ -783,6 +873,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
                 {
                     cursorView.UpdateLocalPosition(x, y);
                     session.SendInput(new CoreRemoteInput("move", X: nx, Y: ny));
+                    gesture.BeginDirect();
                     session.SendInput(new CoreRemoteInput("button", Button: 1, Up: false));
                 }
                 break;
@@ -798,7 +889,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
 
                 if (touchpadMode)
                 {
-                    if (viewport.TryApplyRelativeDelta(mdx, mdy, 1.35f, out int rx, out int ry))
+                    if (viewport.TryApplyRelativeDelta(mdx, mdy, touchpadSensitivity, out int rx, out int ry))
                     {
                         if (viewport.TryNormalizedToView(rx, ry, out float vx, out float vy))
                             cursorView.UpdateLocalPosition(vx, vy);
@@ -823,17 +914,13 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
                         session.SendInput(new CoreRemoteInput("button", Button: button, Up: true));
                     }
                 }
-                else
+                else if (gesture.ReleaseDirect())
                 {
                     session.SendInput(new CoreRemoteInput("button", Button: 1, Up: true));
                 }
                 movedSinceDown = false;
                 break;
 
-            case MotionEventActions.Cancel:
-                session.ReleaseAllInputs();
-                movedSinceDown = false;
-                break;
         }
     }
 
@@ -941,7 +1028,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         requestingPermission = false;
         passInput.Text = "";
         ReleaseStickyModifiers();
-        session?.ReleaseAllInputs();
+        ResetTouchInput();
         session?.AttachSurface(null);
         base.OnStop();
     }

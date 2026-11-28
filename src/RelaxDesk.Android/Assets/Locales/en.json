@@ -93,5 +93,12 @@
   "probe_timeout": "Connection or first frame timed out. Disconnected.",
   "probe_auth_failed": "Authentication failed. Check host status and certificate fingerprint.",
   "probe_lan_unavailable": "LAN permission unavailable. Not connected.",
-  "probe_failed": "First-frame probe failed: {0}"
+  "probe_failed": "First-frame probe failed: {0}",
+  "display_settings": "Display",
+  "display_reset": "Reset",
+  "display_fit": "Fit",
+  "display_fill": "Fill (crop)",
+  "display_pixels": "Video pixels 1:1",
+  "display_pixels_tip": "One video pixel per display pixel; downsampled video is not host-native resolution.",
+  "touchpad_sensitivity": "Touchpad sensitivity"
 }

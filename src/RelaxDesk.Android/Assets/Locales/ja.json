@@ -93,5 +93,12 @@
   "probe_timeout": "接続または初回フレームがタイムアウトしました。",
   "probe_auth_failed": "認証に失敗しました。ホスト状態と証明書フィンガープリントを確認してください。",
   "probe_lan_unavailable": "LAN 権限を利用できません。未接続です。",
-  "probe_failed": "初回フレームプローブ失敗: {0}"
+  "probe_failed": "初回フレームプローブ失敗: {0}",
+  "display_settings": "表示",
+  "display_reset": "リセット",
+  "display_fit": "全体表示",
+  "display_fill": "画面を埋める（切り抜き）",
+  "display_pixels": "映像ピクセル 1:1",
+  "display_pixels_tip": "映像の1ピクセルを画面の1ピクセルで表示。縮小映像はホストの元の解像度ではありません。",
+  "touchpad_sensitivity": "タッチパッド感度"
 }

@@ -1,5 +1,7 @@
 namespace RelaxDesk.Mobile.Media;
 
+public enum ViewportDisplayMode { Fit, Fill, NativePixels }
+
 /// <summary>
 /// Maps coordinates between Android view space (with zoom and pan) and
 /// RelaxDesk normalized remote desktop space (0..65535), supporting both
@@ -22,6 +24,22 @@ public sealed class ViewportMapper
     // Local predicted normalized pointer position (0..65535) for touchpad & cursor overlay.
     double cursorNormX = 32767.5;
     double cursorNormY = 32767.5;
+
+    public ViewportDisplayMode DisplayMode { get; private set; }
+
+    public void SetDisplayMode(ViewportDisplayMode mode)
+    {
+        if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
+        DisplayMode = mode;
+        ResetTransform();
+    }
+
+    float BaseScale => DisplayMode switch
+    {
+        ViewportDisplayMode.Fill => Math.Max(viewWidth / videoWidth, viewHeight / videoHeight),
+        ViewportDisplayMode.NativePixels => 1f,
+        _ => Math.Min(viewWidth / videoWidth, viewHeight / videoHeight)
+    };
 
     public float Zoom => zoom;
     public float PanX => panX;
@@ -82,7 +100,7 @@ public sealed class ViewportMapper
         if (viewWidth <= 0 || viewHeight <= 0 || videoWidth <= 0 || videoHeight <= 0)
             return false;
 
-        float baseScale = Math.Min(viewWidth / videoWidth, viewHeight / videoHeight);
+        float baseScale = BaseScale;
         width = videoWidth * baseScale * zoom;
         height = videoHeight * baseScale * zoom;
         left = (viewWidth - width) * 0.5f + panX;
@@ -171,8 +189,8 @@ public sealed class ViewportMapper
         if (!TryGetFittedRect(out float left, out float top, out float width, out float height))
             return false;
 
-        viewX = left + (float)(Math.Clamp(normalizedX, 0, 65535) / 65535.0) * width;
-        viewY = top + (float)(Math.Clamp(normalizedY, 0, 65535) / 65535.0) * height;
+        viewX = left + (float)(Math.Clamp(normalizedX, 0, 65535) / 65535.0) * Math.Max(1f, width - 1f);
+        viewY = top + (float)(Math.Clamp(normalizedY, 0, 65535) / 65535.0) * Math.Max(1f, height - 1f);
         return true;
     }
 
@@ -183,7 +201,7 @@ public sealed class ViewportMapper
             panX = panY = 0;
             return;
         }
-        float baseScale = Math.Min(viewWidth / videoWidth, viewHeight / videoHeight);
+        float baseScale = BaseScale;
         float scaledW = videoWidth * baseScale * zoom;
         float scaledH = videoHeight * baseScale * zoom;
         float maxPanX = Math.Max(0f, (scaledW - viewWidth) * 0.5f);

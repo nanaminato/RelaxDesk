@@ -93,5 +93,12 @@
   "probe_timeout": "Délai de connexion ou première image dépassé.",
   "probe_auth_failed": "Échec d'authentification. Vérifiez l'hôte et l'empreinte du certificat.",
   "probe_lan_unavailable": "Autorisation LAN indisponible. Non connecté.",
-  "probe_failed": "Échec de la sonde : {0}"
+  "probe_failed": "Échec de la sonde : {0}",
+  "display_settings": "Affichage",
+  "display_reset": "Réinitialiser",
+  "display_fit": "Ajuster",
+  "display_fill": "Remplir (rogner)",
+  "display_pixels": "Pixels vidéo 1:1",
+  "display_pixels_tip": "Un pixel vidéo par pixel écran ; une vidéo réduite ne représente pas la résolution native de l’hôte.",
+  "touchpad_sensitivity": "Sensibilité du pavé tactile"
 }

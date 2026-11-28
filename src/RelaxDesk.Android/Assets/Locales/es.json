@@ -93,5 +93,12 @@
   "probe_timeout": "Tiempo agotado de conexión o primer fotograma.",
   "probe_auth_failed": "Error de autenticación. Comprueba el host y la huella del certificado.",
   "probe_lan_unavailable": "Permiso LAN no disponible. Sin conexión.",
-  "probe_failed": "Error en la sonda: {0}"
+  "probe_failed": "Error en la sonda: {0}",
+  "display_settings": "Pantalla",
+  "display_reset": "Restablecer",
+  "display_fit": "Ajustar",
+  "display_fill": "Rellenar (recortar)",
+  "display_pixels": "Píxeles de vídeo 1:1",
+  "display_pixels_tip": "Un píxel de vídeo por píxel de pantalla; el vídeo reducido no equivale a la resolución nativa del host.",
+  "touchpad_sensitivity": "Sensibilidad del panel táctil"
 }

@@ -7,7 +7,7 @@
 - [Windows 被控端快速开始](../packaging/roles/HOST.zh-CN.md) / [Windows 连接端快速开始](../packaging/roles/VIEWER.zh-CN.md)
 - [Windows 安装、升级与卸载](EXE-INSTALLERS.md)
 - [Windows 连接端使用](VIEWER-UI.md)
-- [Android 连接端](ANDROID-VIEWER.md)
+- [Android 连接端](ANDROID-VIEWER.md) / [显示与触控改进及验收](ANDROID-DISPLAY-INPUT.md)
 - [系统服务设置](SERVICE-SETUP-UI.md)
 - [公网与异地访问](REMOTE-ACCESS.zh-CN.md)
 

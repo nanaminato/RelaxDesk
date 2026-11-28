@@ -93,5 +93,12 @@
   "probe_timeout": "连接或首帧超时，已断开。",
   "probe_auth_failed": "认证失败，请检查被控端状态及证书指纹。",
   "probe_lan_unavailable": "局域网权限不可用，未连接。",
-  "probe_failed": "首帧探针未通过：{0}"
+  "probe_failed": "首帧探针未通过：{0}",
+  "display_settings": "显示",
+  "display_reset": "重置",
+  "display_fit": "适应屏幕",
+  "display_fill": "填充（裁剪）",
+  "display_pixels": "视频原始像素 1:1",
+  "display_pixels_tip": "一个视频像素对应一个屏幕像素；降采样视频不代表主机原始分辨率。",
+  "touchpad_sensitivity": "触控板灵敏度"
 }
