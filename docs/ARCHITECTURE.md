@@ -40,3 +40,5 @@ Windows Viewer 在已获输入授权、位于前台且全屏远程画面持有�
 锁屏、UAC 安全桌面和管理员窗口具有单独的访问限制。不能据服务已安装推断远程登录、UAC 控制或重启后自动共享可用；支持范围与待验证项见[路线](ROADMAP.md)及[服务说明](SERVICE-SETUP-UI.md)。
 
 性能结论必须附带设备和测量方法，见[当前实测](../benchmarks/README.md)。
+
+Windows Server 本机内置 Administrator 可以从当前交互会话发起共享。界面为网络 Host 创建同一登录会话的中等完整性受限令牌。管理员组在子进程中为仅拒绝，Host 启动时仍执行自己的权限检查。现有系统服务继续负责经授权的高权限输入，详见[系统服务设置](SERVICE-SETUP-UI.md)。

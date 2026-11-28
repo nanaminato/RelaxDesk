@@ -11,6 +11,7 @@ internal sealed class HostProcess
 {
     Process? process;
     Task? completion;
+    StreamWriter? commandInput;
     bool stopping;
     readonly SemaphoreSlim commands = new(1);
     public string? SessionId { get; private set; }
@@ -41,14 +42,30 @@ internal sealed class HostProcess
         if(display is not null){start.ArgumentList.Add("--display");start.ArgumentList.Add(display);}
         foreach(string value in new[]{ip,port.ToString(),backend})start.ArgumentList.Add(value);
         stopping=false;Pending=false;SessionId=null;Lines.Clear();
-        var child=new Process{StartInfo=start};process=child;
-        try { if(!child.Start())throw new IOException(Strings.Get("Ui.HostProcess.Text285")); }
-        catch {process=null;child.Dispose();throw;}
+        RestrictedHostLaunch.Child child;
+        if (!backend.StartsWith("test-",StringComparison.Ordinal) && RestrictedHostLaunch.Required())
+            child=RestrictedHostLaunch.Start(start);
+        else
+        {
+            var ordinary=new Process { StartInfo=start };
+            try
+            {
+                if(!ordinary.Start())throw new IOException(Strings.Get("Ui.HostProcess.Text285"));
+                child=new(ordinary,ordinary.StandardInput,ordinary.StandardOutput,ordinary.StandardError);
+            }
+            catch {ordinary.Dispose();throw;}
+        }
+        process=child.Process;
+        commandInput=child.Input;
         completion=Run(child,++Generation);
         await Task.Yield();
     }
-    async Task Run(Process child,int generation)
+    async Task Run(RestrictedHostLaunch.Child launch,int generation)
     {
+        using var input=launch.Input;
+        using var output=launch.Output;
+        using var error=launch.Error;
+        var child=launch.Process;
         void Emit(HostEvent value)=>Changed?.Invoke(value with{Generation=generation});
         async Task Read(StreamReader reader)
         {
@@ -79,14 +96,21 @@ internal sealed class HostProcess
                 if(line.StartsWith("capture_color "))Emit(new("color",line[14..],SessionId));
             }
         }
-        try {await Task.WhenAll(Read(child.StandardOutput),Read(child.StandardError),child.WaitForExitAsync());if(child.ExitCode!=0)Diagnostic?.Invoke($"Host exit_code={child.ExitCode}");}
+        try {await Task.WhenAll(Read(output),Read(error),child.WaitForExitAsync());if(child.ExitCode!=0)Diagnostic?.Invoke($"Host exit_code={child.ExitCode}");}
         catch(Exception e){Diagnostic?.Invoke(e.Message);}
-        finally {int? exit=child.HasExited?child.ExitCode:null;Pending=false;SessionId=null;process=null;child.Dispose();Emit(new(stopping?"stopped":"ended",ExitCode:exit));}
+        finally {int? exit=child.HasExited?child.ExitCode:null;Pending=false;SessionId=null;process=null;commandInput=null;child.Dispose();Emit(new(stopping?"stopped":"ended",ExitCode:exit));}
     }
     async Task Send(Process child,string command)
     {
         await commands.WaitAsync();
-        try {await child.StandardInput.WriteLineAsync(command);await child.StandardInput.FlushAsync();}
+        try
+        {
+            if(ReferenceEquals(process,child)&&commandInput is {} input)
+            {
+                await input.WriteLineAsync(command);
+                await input.FlushAsync();
+            }
+        }
         catch(Exception e) when(e is IOException or ObjectDisposedException or InvalidOperationException) { }
         finally {commands.Release();}
     }

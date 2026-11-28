@@ -51,6 +51,8 @@ if (args is ["--input-token-diagnose"])
     {
         WindowsInputPrivilege.EnsureOrdinaryProcess();
         Console.WriteLine("ordinary_input_token=allowed");
+        using var process = System.Diagnostics.Process.GetCurrentProcess();
+        Console.WriteLine($"input_token_session={process.SessionId}");
     }
     catch (IOException error)
     {

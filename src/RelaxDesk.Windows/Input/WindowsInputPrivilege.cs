@@ -38,9 +38,18 @@ public static class WindowsInputPrivilege
         using var threadIdentity = WindowsIdentity.GetCurrent(ifImpersonating: true);
         if (threadIdentity is not null) throw new IOException("RelaxDesk cannot inspect the input process token while impersonating.");
         using var identity = WindowsIdentity.GetCurrent(TokenAccessLevels.Query);
-        return new(Read(identity.AccessToken, TokenInformation.Elevation, Marshal.ReadInt32) != 0,
-            Read(identity.AccessToken, TokenInformation.UIAccess, Marshal.ReadInt32) != 0,
-            Read(identity.AccessToken, TokenInformation.IntegrityLevel, ReadIntegrity));
+        return ReadToken(identity.AccessToken);
+    }
+
+    static WindowsInputToken ReadToken(SafeAccessTokenHandle token) =>
+        new(Read(token, TokenInformation.Elevation, Marshal.ReadInt32) != 0,
+            Read(token, TokenInformation.UIAccess, Marshal.ReadInt32) != 0,
+            Read(token, TokenInformation.IntegrityLevel, ReadIntegrity));
+
+    public static void EnsureOrdinaryToken(SafeAccessTokenHandle token)
+    {
+        if (!AllowsOrdinaryHost(ReadToken(token)))
+            throw new IOException("The restricted sharing token is not an ordinary Windows token.");
     }
 
     public static void EnsureOrdinaryProcess()

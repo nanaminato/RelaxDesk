@@ -8,6 +8,18 @@
 
 只接受未锁定会话的 Default/Winlogon；Winlogon 还要求前台是 Windows 系统目录中的 consent.exe。未知安全界面、无法验证的状态、锁屏或登录桌面不按 UAC 授权。该功能不关闭 UAC、不修改系统策略、不代表锁屏登录或重启后自动共享。仅普通模式仍会暂停采集与输入。支持及实测范围见 [UAC 与任务栏验收](UAC-DESKTOP-VALIDATION.md)。
 
+## Windows Server 本机内置 Administrator
+
+在服务器以本机内置 `Administrator` 登录后，启动完整 Host 发布包，配置 RelaxDesk 登录信息，再点「开始共享」。如果界面进程使用完整管理员令牌，它会从当前登录令牌创建受限子进程，在同一交互式会话的 `WinSta0\Default` 桌面运行网络共享 Host。启动前确认子进程令牌仍属于同一用户、没有管理员角色或 UIAccess，并满足普通 Host 的完整性要求。其他管理员账户沿用普通 Host 启动规则。
+
+这条启动路径使用当前账户的 RelaxDesk 设置和设备信任记录。普通共享可独立启动，操作提升权限窗口则按原流程启用系统服务。发布前在目标 Server 登录该账户，运行以下探针，再用另一台机器连接，验证当前桌面、设备批准、输入和停止共享：
+
+```powershell
+HostUi/RelaxDesk.HostShell.exe --restricted-host-launch-probe Host/RelaxDesk.Host.exe C:/Temp/relaxdesk-restricted-host.txt
+```
+
+探针检查受限 Host 的权限判断、Windows 会话编号和输出管道。结果文件必须是尚不存在的路径。Windows 拒绝受限令牌或进程启动时，界面会报告错误并停止此次启动。
+
 ## 启用与维护
 
 1. 使用完整的 Host 发布包打开被控端，在服务设置中选择“启用系统服务”。界面措辞可能随版本变化。

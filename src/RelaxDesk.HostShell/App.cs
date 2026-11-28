@@ -9,6 +9,11 @@ public sealed class App:Application
         if(args is ["--version"]){Console.WriteLine(BuildIdentity.Version);return;}
         if(args is ["--uac-consent-request"]){Environment.ExitCode=UacConsentTrigger.Request();return;}
         if(args is ["--uac-consent-trigger",var triggerOutput]){Environment.ExitCode=UacConsentTrigger.Trigger(triggerOutput);return;}
+        if(args is ["--restricted-host-launch-probe",var restrictedHost,var restrictedOutput])
+        {
+            Environment.ExitCode=RestrictedHostLaunchVerification.Run(restrictedHost,restrictedOutput);
+            return;
+        }
         var app=new App();
         if(args is ["--secure-desktop-probe",var secureOutput])SecureDesktopVerification.Run(app,secureOutput);
         else if(args is ["--physical-taskbar-input-probe",var taskbarOutput])TaskbarInputVerification.Run(app,taskbarOutput);
