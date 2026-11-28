@@ -142,7 +142,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             hudText.Visibility = showHud && session is not null ? ViewStates.Visible : ViewStates.Gone;
         };
         disconnectBtn.Click += (_, _) => Disconnect();
-        backListBtn.Click += (_, _) => Finish();
+        backListBtn.Click += (_, _) => { if (session is not null) Disconnect(); else Finish(); };
         connectBtn.Click += (_, _) => StartConnect();
 
         PopulateExtraKeysBar();
@@ -157,6 +157,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         portInput.Hint = AndroidStrings.Get("hint_port");
         userInput.Hint = AndroidStrings.Get("hint_user");
         passInput.Hint = AndroidStrings.Get("hint_password");
+        rememberPassCheck.Text = AndroidStrings.Get("remember_password");
         backListBtn.Text = AndroidStrings.Get("back_list");
         connectBtn.Text = AndroidStrings.Get("connect_btn");
         modeBtn.Text = AndroidStrings.Get(touchpadMode ? "mode_touchpad" : "mode_direct");
@@ -302,15 +303,15 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             {
                 // Keystore encryption unavailable: ask user whether to save in plaintext or not save.
                 new AlertDialog.Builder(this)
-                    .SetTitle("加密存储不可用")!
-                    .SetMessage("当前设备的 Android Keystore 加密不可用。是否以明文方式保存密码，或选择不保存密码继续连接？")!
+                    .SetTitle(AndroidStrings.Get("enc_unavail_title"))!
+                    .SetMessage(AndroidStrings.Get("enc_unavail_msg"))!
                     .SetCancelable(false)!
-                    .SetPositiveButton("明文保存", (_, _) =>
+                    .SetPositiveButton(AndroidStrings.Get("save_plain"), (_, _) =>
                     {
                         PasswordStore.SavePlaintext(this, ip, port, username, password);
                         BeginSessionConnect(ip, port, username, password);
                     })!
-                    .SetNegativeButton("不保存", (_, _) =>
+                    .SetNegativeButton(AndroidStrings.Get("dont_save"), (_, _) =>
                     {
                         PasswordStore.Clear(this, ip, port, username);
                         BeginSessionConnect(ip, port, username, password);
@@ -345,15 +346,26 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     {
 
         string displayName = string.IsNullOrWhiteSpace(pcName) ? ip : pcName;
-        string pinToUse = savedFingerprint;
+        // An Intent/list row may predate a completed certificate confirmation.
+        // Resolve trust for the actual endpoint on every attempt.
+        string pinToUse = ConnectionStore.Load(this).FirstOrDefault(e =>
+            string.Equals(e.Host, ip, StringComparison.OrdinalIgnoreCase) && e.Port == port)?.Fingerprint ?? "";
         ConnectionStore.SaveOrUpdate(this, new SavedHostEntry(displayName, ip, port, pinToUse, username, DateTime.UtcNow.Ticks));
 
         var cts = new CancellationTokenSource();
         var activeSession = new RemoteDesktopSession();
         sessionCts = cts;
         session = activeSession;
+        viewport.ResetPointer();
+        activeSession.AttachSurface(activeSurface);
 
         activeSession.StatusChanged += msg => RunOnUiThread(() => statusText.Text = msg);
+        activeSession.FirstFramePresented += () => RunOnUiThread(() =>
+        {
+            if (!ReferenceEquals(session, activeSession)) return;
+            connectOverlay.Visibility = ViewStates.Gone;
+            sessionPill.Visibility = ViewStates.Visible;
+        });
         activeSession.VideoSizeChanged += (w, h) => RunOnUiThread(() =>
         {
             viewport.SetVideoSize(w, h);
@@ -362,16 +374,17 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         activeSession.PointerUpdated += ptr => RunOnUiThread(() =>
         {
             cursorView.ApplyRemoteState(ptr);
-            if (!movedSinceDown)
+            if (viewport.TrySyncRemotePointer(ptr))
             {
-                viewport.SyncRemotePointer(ptr.X, ptr.Y);
                 if (viewport.TryNormalizedToView(viewport.CursorNormalizedX, viewport.CursorNormalizedY, out float vx, out float vy))
                     cursorView.UpdateLocalPosition(vx, vy);
             }
         });
 
-        connectOverlay.Visibility = ViewStates.Gone;
-        sessionPill.Visibility = ViewStates.Visible;
+        connectOverlay.Visibility = ViewStates.Visible;
+        connectBtn.Enabled = false;
+        hostInput.Enabled = portInput.Enabled = userInput.Enabled = passInput.Enabled = false;
+        sessionPill.Visibility = ViewStates.Gone;
         hudText.Visibility = showHud ? ViewStates.Visible : ViewStates.Gone;
         ScheduleHudTick();
 
@@ -388,14 +401,27 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
                         savedFingerprint = verifiedPin;
                         ConnectionStore.SaveOrUpdate(this, new SavedHostEntry(displayName, ip, port, verifiedPin, username, DateTime.UtcNow.Ticks));
                     },
-                    activeSurface, cts.Token);
+                    cts.Token, ConfirmSessionTakeoverAsync);
             }
             catch (System.OperationCanceledException) when (cts.IsCancellationRequested) { endMessage = AndroidStrings.Get("disconnected"); }
             catch (HostConsentRejectedException) { endMessage = "Host rejected connection."; }
             catch (PasswordLoginRejectedException) { endMessage = "Invalid username or password."; }
+            catch (HostAdmissionException ex) { endMessage = ex.Reason switch
+            {
+                "admission-pending-v5" => "被控端正在建立或清理另一个会话，请稍后重试。",
+                "admission-busy-v5" => "被控端正在使用中；此设备须先在空闲时连接并获批准。",
+                "admission-rate-limited-v5" => "连接尝试过于频繁，请稍后重试。",
+                "takeover-cancel-v5" => "已取消接管。",
+                _ => "会话状态已变化，请重新连接。"
+            }; }
+            catch (RemoteSessionEndedException) { endMessage = "远程会话已结束或已由其他设备接管。"; }
             catch (AuthenticationException) { endMessage = "TLS authentication failed."; }
             catch (Exception ex) { endMessage = $"{ex.GetType().Name}: {ex.Message}"; }
-            finally { password = ""; }
+            finally
+            {
+                password = "";
+                global::Android.Util.Log.Info("RelaxDesk", "session_end=" + endMessage);
+            }
 
             RunOnUiThread(() =>
             {
@@ -409,32 +435,49 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
                 extraKeysBar.Visibility = ViewStates.Gone;
                 hudText.Visibility = ViewStates.Gone;
                 connectOverlay.Visibility = ViewStates.Visible;
+                connectBtn.Enabled = true;
+                hostInput.Enabled = portInput.Enabled = userInput.Enabled = passInput.Enabled = true;
+                LoadSavedPasswordIfAny();
                 statusText.Text = endMessage;
             });
         });
     }
 
+    Task<bool> ConfirmSessionTakeoverAsync(CancellationToken ct) => ConfirmConnectionAsync(
+        "接管连接", "继续将断开当前控制端。是否接管这台电脑？", "接管连接", ct);
+
     Task<bool> ConfirmServerCertificateAsync(string fingerprint, CancellationToken ct)
     {
+        string formatted = string.Join(":", Enumerable.Range(0, fingerprint.Length / 2).Select(i => fingerprint.Substring(i * 2, 2)));
+        return ConfirmConnectionAsync("核对主机 TLS 证书指纹",
+            $"首次连接或主机证书已变更，请核对 Windows 被控端显示的 SHA-256 指纹：\n\n{formatted}", "信任并连接", ct);
+    }
+
+    async Task<bool> ConfirmConnectionAsync(string title, string message, string accept, CancellationToken ct)
+    {
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var reg = ct.Register(() => tcs.TrySetResult(false));
+        AlertDialog? dialog = null;
+        using var reg = ct.Register(() =>
+        {
+            tcs.TrySetCanceled(ct);
+            RunOnUiThread(() => dialog?.Dismiss());
+        });
         RunOnUiThread(() =>
         {
-            if (IsDestroyed || IsFinishing)
+            if (ct.IsCancellationRequested || IsDestroyed || IsFinishing)
             {
                 tcs.TrySetResult(false);
                 return;
             }
-            string formatted = string.Join(":", Enumerable.Range(0, fingerprint.Length / 2).Select(i => fingerprint.Substring(i * 2, 2)));
-            new AlertDialog.Builder(this)
-                .SetTitle("核对主机 TLS 证书指纹")!
-                .SetMessage($"首次连接或主机证书已变更，请核对 Windows 被控端显示的 SHA-256 指纹：\n\n{formatted}")!
+            dialog = new AlertDialog.Builder(this)
+                .SetTitle(title)!
+                .SetMessage(message)!
                 .SetCancelable(false)!
-                .SetPositiveButton("信任并连接", (_, _) => tcs.TrySetResult(true))!
+                .SetPositiveButton(accept, (_, _) => tcs.TrySetResult(true))!
                 .SetNegativeButton(AndroidStrings.Get("cancel"), (_, _) => tcs.TrySetResult(false))!
                 .Show();
         });
-        return tcs.Task;
+        return await tcs.Task;
     }
 
     void Disconnect()

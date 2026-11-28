@@ -22,6 +22,8 @@ internal sealed class RemoteDesktopSession : IDisposable
     readonly PointerMetadataParser pointerParser = new();
     readonly ConcurrentDictionary<long, long> pendingPings = new();
     readonly object inputLock = new();
+    readonly object surfaceLock = new();
+    Surface? currentSurface;
 
     BoundedAvcQueue? videoQueue;
     LiveAvcDecoder? decoder;
@@ -35,10 +37,16 @@ internal sealed class RemoteDesktopSession : IDisposable
     public event Action<int, int>? VideoSizeChanged;
     public event Action<RemotePointerState>? PointerUpdated;
     public event Action<string>? StatusChanged;
+    public event Action? FirstFramePresented;
+    int presented;
 
     public void AttachSurface(Surface? surface)
     {
-        decoder?.SetSurface(surface);
+        lock (surfaceLock)
+        {
+            currentSurface = surface;
+            decoder?.SetSurface(surface);
+        }
     }
 
     public bool SendInput(CoreRemoteInput input)
@@ -96,8 +104,8 @@ internal sealed class RemoteDesktopSession : IDisposable
         Func<ECDsa> openKey,
         Func<string, CancellationToken, Task<bool>> confirmServer,
         Action<string>? onFingerprintVerified,
-        Surface? initialSurface,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<CancellationToken, Task<bool>>? confirmTakeover = null)
     {
         host = host.Trim();
         if (string.IsNullOrWhiteSpace(host) || port is < 1 or > 65535)
@@ -113,12 +121,38 @@ internal sealed class RemoteDesktopSession : IDisposable
             RequestFileResume = false,
             OpenDeviceKey = openKey
         };
+        string connectStep = "control-tcp";
+        client.ConnectionStepChanged += step =>
+        {
+            connectStep = step;
+            global::Android.Util.Log.Info("RelaxDesk", "connect_step=" + step);
+            StatusChanged?.Invoke(step switch
+            {
+                "control-tcp" => "正在连接被控端…",
+                "control-tls" => "正在建立加密连接…",
+                "certificate-confirmation" => "请核对被控端证书指纹…",
+                "device-key" or "device-challenge" or "device-proof" => "正在验证设备身份…",
+                "password-request" => "正在验证登录信息…",
+                "host-approval" => "等待被控端本机批准；首次连接请在 Windows 被控端允许此设备。",
+                _ => "正在建立画面与附属通道…"
+            });
+        };
 
         using (var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
         {
-            connectCts.CancelAfter(TimeSpan.FromSeconds(50));
-            await client.ConnectWithPassword(host, port, savedPin ?? "", user, password, confirmServer, connectCts.Token)
-                .ConfigureAwait(false);
+            // Host local consent itself allows 60 seconds; do not abandon it
+            // after 50 seconds while its approval dialog is still valid.
+            connectCts.CancelAfter(TimeSpan.FromSeconds(120));
+            try
+            {
+                await client.ConnectWithPassword(host, port, savedPin ?? "", user, password,
+                    (pin, token) => ServerTrustConfirmation.Confirm(pin, confirmServer, onFingerprintVerified, token),
+                    connectCts.Token, confirmTakeover: confirmTakeover).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            { throw new TimeoutException(connectStep == "host-approval"
+                ? "等待被控端批准超时。请检查 Windows 被控端的连接请求后重试。"
+                : "连接超时，阶段：" + connectStep); }
         }
 
         if (!string.IsNullOrEmpty(client.VerifiedFingerprint))
@@ -126,9 +160,9 @@ internal sealed class RemoteDesktopSession : IDisposable
 
         ScreenOnlyAttachments.DisableAfterBinding(client);
         var initialDisplay = client.DisplayState ?? throw new InvalidDataException("Missing approved display.");
-        global::Android.Util.Log.Info("RelaxDesk", $"Session connected: displayGen={initialDisplay.Generation}, videoGen={client.VideoSettings?.Generation}, surfaceValid={initialSurface?.IsValid}");
-        var displaySession = new DisplayViewerSession(initialDisplay, client.DisplayVersion == DisplayProtocol.TopologyVersion);
-        Volatile.Write(ref activeDisplayGeneration, initialDisplay.Generation);
+        global::Android.Util.Log.Info("RelaxDesk", $"Session connected: displayGen={initialDisplay.Generation}, videoGen={client.VideoSettings?.Generation}");
+        var displaySession = new AndroidDisplaySession(initialDisplay, client.DisplayVersion == DisplayProtocol.TopologyVersion,
+            packet => { if (!controlQueue.TryWrite(packet)) throw new IOException("Control queue full"); });
 
         using var activeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         sessionCts = activeCts;
@@ -137,12 +171,20 @@ internal sealed class RemoteDesktopSession : IDisposable
             capacity: 2,
             onKeyFrameNeeded: RequestKeyFrame,
             onFrameDropped: telemetry.RecordDrop);
-        decoder = new LiveAvcDecoder(telemetry, () =>
+        lock (surfaceLock)
         {
-            videoQueue?.RequestRecovery();
-            RequestKeyFrame();
-        });
-        decoder.SetSurface(initialSurface);
+            decoder = new LiveAvcDecoder(telemetry, () =>
+            {
+                videoQueue?.RequestRecovery();
+                RequestKeyFrame();
+            }, generation =>
+            {
+                displaySession.Presented(generation);
+                Volatile.Write(ref activeDisplayGeneration, displaySession.InputGeneration);
+                if (Interlocked.Exchange(ref presented, 1) == 0) FirstFramePresented?.Invoke();
+            });
+            decoder.SetSurface(currentSurface);
+        }
 
         StatusChanged?.Invoke("已连接，正在接收画面…");
 
@@ -150,19 +192,25 @@ internal sealed class RemoteDesktopSession : IDisposable
         var heartbeatTask = ControlHeartbeat.Run(token =>
         {
             long seq = Interlocked.Increment(ref sequence);
-            pendingPings[seq] = Stopwatch.GetTimestamp();
             controlQueue.TryWrite(new Packet("ping-v2", Sequence: seq));
             return Task.CompletedTask;
         }, activeCts.Token);
         var controlReadTask = RunControlReaderAsync(client.Control, displaySession, activeCts.Token);
         var videoReadTask = RunVideoReaderAsync(client.Video, displaySession, activeCts.Token);
         var decodeTask = Task.Run(() => RunDecodeLoopAsync(activeCts.Token), activeCts.Token);
+        var telemetryTask = Task.Run(async () =>
+        {
+            while (true)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), activeCts.Token).ConfigureAwait(false);
+                global::Android.Util.Log.Info("RelaxDeskPerf", System.Text.Json.JsonSerializer.Serialize(telemetry.Sample()));
+            }
+        }, activeCts.Token);
 
         try
         {
-            var finished = await Task.WhenAny(controlWriteTask, heartbeatTask, controlReadTask, videoReadTask, decodeTask)
-                .ConfigureAwait(false);
-            await finished.ConfigureAwait(false);
+            await SessionTermination.Wait(controlReadTask,
+                [controlWriteTask, heartbeatTask, videoReadTask, decodeTask, telemetryTask], activeCts.Token).ConfigureAwait(false);
         }
         finally
         {
@@ -175,6 +223,7 @@ internal sealed class RemoteDesktopSession : IDisposable
             await Observe(controlReadTask).ConfigureAwait(false);
             await Observe(videoReadTask).ConfigureAwait(false);
             await Observe(decodeTask).ConfigureAwait(false);
+            await Observe(telemetryTask).ConfigureAwait(false);
             decoder.Dispose();
             decoder = null;
             videoQueue = null;
@@ -184,13 +233,16 @@ internal sealed class RemoteDesktopSession : IDisposable
 
     async Task RunControlWriterAsync(Stream controlStream, CancellationToken ct)
     {
+        long writtenSequence = 0;
         await foreach (var packet in controlQueue.ReadAllAsync(ct).ConfigureAwait(false))
         {
-            await Wire.Write(controlStream, packet, ct).ConfigureAwait(false);
+            var ordered = packet with { Sequence = ++writtenSequence };
+            if (ordered.Kind == "ping-v2") pendingPings[ordered.Sequence] = Stopwatch.GetTimestamp();
+            await Wire.Write(controlStream, ordered, ct).ConfigureAwait(false);
         }
     }
 
-    async Task RunControlReaderAsync(Stream controlStream, DisplayViewerSession displaySession, CancellationToken ct)
+    async Task RunControlReaderAsync(Stream controlStream, AndroidDisplaySession displaySession, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
@@ -208,19 +260,19 @@ internal sealed class RemoteDesktopSession : IDisposable
             if (ScreenOnlyAttachments.IsUnavailableNotice(packet))
                 continue;
 
-            if (packet.Kind == "display-state-v2" && packet.DisplayState is { } nextState)
+            if (packet.Kind is "display-state-v2" or "display-topology-v2" && packet.DisplayState is { } nextState)
             {
-                displaySession.ReceiveTopology(nextState);
-                Volatile.Write(ref activeDisplayGeneration, nextState.Generation);
-                long seq = Interlocked.Increment(ref sequence);
-                controlQueue.TryWrite(new Packet("display-configured-v2", Sequence: seq, DisplayGeneration: nextState.Generation));
+                ReleaseAllInputs();
+                displaySession.Receive(packet);
+                Volatile.Write(ref activeDisplayGeneration, 0);
                 videoQueue?.RequestRecovery();
+                RequestKeyFrame();
                 continue;
             }
         }
     }
 
-    async Task RunVideoReaderAsync(IVideoFrameChannel videoChannel, DisplayViewerSession displaySession, CancellationToken ct)
+    async Task RunVideoReaderAsync(IVideoFrameChannel videoChannel, AndroidDisplaySession displaySession, CancellationToken ct)
     {
         int lastW = 0, lastH = 0;
         long rxCount = 0;
@@ -255,11 +307,20 @@ internal sealed class RemoteDesktopSession : IDisposable
 
     async Task RunDecodeLoopAsync(CancellationToken ct)
     {
+        // Keep one pending dequeue. Output can become ready without another
+        // incoming frame, particularly on an unchanged desktop.
+        var pending = videoQueue!.DequeueAsync(ct).AsTask();
         while (!ct.IsCancellationRequested)
         {
-            var item = await videoQueue!.DequeueAsync(ct).ConfigureAwait(false);
+            await Task.WhenAny(pending, Task.Delay(10, ct)).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+            decoder?.DrainOutput();
+            if (!pending.IsCompleted) continue;
+            var item = await pending.ConfigureAwait(false);
             if (item is null) break;
+            telemetry.RecordQueueDepth(videoQueue!.Depth);
             decoder?.ProcessFrame(item.Value, ct);
+            pending = videoQueue!.DequeueAsync(ct).AsTask();
         }
     }
 

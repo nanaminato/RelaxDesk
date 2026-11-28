@@ -150,15 +150,16 @@
         android:padding="6dp" />
   </HorizontalScrollView>
 
-  <!-- Connection / password prompt overlay -->
+  <!-- Connection / password prompt overlay (responsive for phones & tablets) -->
   <FrameLayout
       android:id="@+id/connect_overlay"
       android:layout_width="match_parent"
       android:layout_height="match_parent"
-      android:background="#F5101318">
+      android:background="#F5101318"
+      android:padding="16dp">
 
     <ScrollView
-        android:layout_width="460dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="center">
 
@@ -167,7 +168,7 @@
           android:layout_height="wrap_content"
           android:orientation="vertical"
           android:background="@drawable/bg_card_dark"
-          android:padding="22dp">
+          android:padding="20dp">
 
         <TextView
             android:id="@+id/connect_status"

@@ -18,7 +18,7 @@ public sealed class MainActivity : Activity
 {
     LinearLayout appBar = null!;
     LinearLayout pcListContainer = null!;
-    Button btnAddPc = null!, btnLanguage = null!, btnDiagnostics = null!;
+    Button btnAddPc = null!, btnMoreMenu = null!;
     TextView txtSectionTitle = null!;
 
     protected override void OnCreate(Bundle? savedInstanceState)
@@ -31,20 +31,18 @@ public sealed class MainActivity : Activity
         appBar = FindViewById<LinearLayout>(Resource.Id.main_app_bar)!;
         pcListContainer = FindViewById<LinearLayout>(Resource.Id.pc_list_container)!;
         btnAddPc = FindViewById<Button>(Resource.Id.btn_add_pc)!;
-        btnLanguage = FindViewById<Button>(Resource.Id.btn_language)!;
-        btnDiagnostics = FindViewById<Button>(Resource.Id.btn_diagnostics)!;
+        btnMoreMenu = FindViewById<Button>(Resource.Id.btn_more_menu)!;
         txtSectionTitle = FindViewById<TextView>(Resource.Id.txt_section_title)!;
 
         // Android 15+ edge-to-edge: apply system bar & display cutout insets cleanly.
         root.SetOnApplyWindowInsetsListener(new InsetsListener((top, bottom, left, right) =>
         {
-            appBar.SetPadding(Dp(20) + left, Dp(14) + top, Dp(12) + right, Dp(14));
+            appBar.SetPadding(Dp(18) + left, Dp(12) + top, Dp(12) + right, Dp(12));
             root.SetPadding(0, 0, 0, bottom);
         }));
 
         btnAddPc.Click += (_, _) => ShowHostDialog(null);
-        btnLanguage.Click += (_, _) => ShowLanguageDialog();
-        btnDiagnostics.Click += (_, _) => ShowDiagnosticsMenu();
+        btnMoreMenu.Click += (_, _) => ShowMoreMenu();
 
         ApplyLocalization();
         RefreshPcList();
@@ -60,9 +58,19 @@ public sealed class MainActivity : Activity
     void ApplyLocalization()
     {
         btnAddPc.Text = AndroidStrings.Get("add_pc");
-        btnLanguage.Text = AndroidStrings.Get("language");
-        btnDiagnostics.Text = AndroidStrings.Get("diagnostics");
         txtSectionTitle.Text = AndroidStrings.Get("saved_pcs");
+    }
+
+    void ShowMoreMenu()
+    {
+        string[] items = [AndroidStrings.Get("select_language"), AndroidStrings.Get("diag_title")];
+        new AlertDialog.Builder(this)
+            .SetItems(items, (_, e) =>
+            {
+                if (e.Which == 0) ShowLanguageDialog();
+                else if (e.Which == 1) ShowDiagnosticsMenu();
+            })!
+            .Show();
     }
 
     void RefreshPcList()

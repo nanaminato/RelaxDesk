@@ -6,7 +6,7 @@
     android:orientation="vertical"
     android:background="#FF121418">
 
-  <!-- Top AppBar (NoActionBar theme avoids duplicate system title bar) -->
+  <!-- Clean Microsoft RD Client style Top AppBar: title never wraps on narrow phones -->
   <LinearLayout
       android:id="@+id/main_app_bar"
       android:layout_width="match_parent"
@@ -14,10 +14,10 @@
       android:orientation="horizontal"
       android:gravity="center_vertical"
       android:background="#FF181B22"
-      android:paddingLeft="20dp"
-      android:paddingTop="14dp"
+      android:paddingLeft="18dp"
+      android:paddingTop="12dp"
       android:paddingRight="12dp"
-      android:paddingBottom="14dp">
+      android:paddingBottom="12dp">
 
     <TextView
         android:id="@+id/main_title"
@@ -27,12 +27,15 @@
         android:text="RelaxDesk"
         android:textSize="20sp"
         android:textStyle="bold"
+        android:maxLines="1"
+        android:ellipsize="end"
         android:textColor="#FFF2F4F8" />
 
     <Button
         android:id="@+id/btn_add_pc"
         android:layout_width="wrap_content"
-        android:layout_height="38dp"
+        android:layout_height="36dp"
+        android:minWidth="0dp"
         android:text="+ 添加电脑"
         android:textSize="13sp"
         android:textAllCaps="false"
@@ -42,30 +45,16 @@
         android:paddingRight="14dp" />
 
     <Button
-        android:id="@+id/btn_language"
-        android:layout_width="wrap_content"
-        android:layout_height="38dp"
+        android:id="@+id/btn_more_menu"
+        android:layout_width="38dp"
+        android:layout_height="36dp"
+        android:minWidth="0dp"
         android:layout_marginLeft="8dp"
-        android:text="语言"
-        android:textSize="13sp"
-        android:textAllCaps="false"
+        android:text="⋮"
+        android:textSize="18sp"
         android:textColor="#FFFFFFFF"
         android:background="@drawable/bg_pill_dark"
-        android:paddingLeft="12dp"
-        android:paddingRight="12dp" />
-
-    <Button
-        android:id="@+id/btn_diagnostics"
-        android:layout_width="wrap_content"
-        android:layout_height="38dp"
-        android:layout_marginLeft="8dp"
-        android:text="诊断"
-        android:textSize="13sp"
-        android:textAllCaps="false"
-        android:textColor="#FFFFFFFF"
-        android:background="@drawable/bg_pill_dark"
-        android:paddingLeft="12dp"
-        android:paddingRight="12dp" />
+        android:padding="0dp" />
   </LinearLayout>
 
   <TextView

@@ -50,6 +50,7 @@ internal static class ConnectionStore
         using var prefs = context.GetSharedPreferences(PrefsName, FileCreationMode.Private);
         using var editor = prefs?.Edit();
         editor?.PutString(KeyEntries, JsonSerializer.Serialize(list));
-        editor?.Apply();
+        if (editor is null || !editor.Commit())
+            throw new IOException("Could not save the host certificate and connection settings.");
     }
 }

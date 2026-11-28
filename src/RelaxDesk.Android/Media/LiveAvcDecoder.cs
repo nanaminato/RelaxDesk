@@ -18,6 +18,8 @@ internal sealed class LiveAvcDecoder : IDisposable
     readonly object surfaceLock = new();
     readonly AndroidPipelineTelemetry telemetry;
     readonly Action onRecoveryNeeded;
+    readonly Action<long> onPresented;
+    long outputDisplayGeneration;
     readonly PlatformCodec.BufferInfo bufferInfo = new();
 
     Surface? activeSurface;
@@ -25,12 +27,16 @@ internal sealed class LiveAvcDecoder : IDisposable
     string activeCodecName = "-";
     int configuredWidth;
     int configuredHeight;
+    int configuredVideoGeneration;
+    byte[] configuredSps = [], configuredPps = [];
+    readonly Dictionary<long, long> submittedAt = new();
     bool disposed;
 
-    public LiveAvcDecoder(AndroidPipelineTelemetry telemetry, Action onRecoveryNeeded)
+    public LiveAvcDecoder(AndroidPipelineTelemetry telemetry, Action onRecoveryNeeded, Action<long> onPresented)
     {
         this.telemetry = telemetry;
         this.onRecoveryNeeded = onRecoveryNeeded;
+        this.onPresented = onPresented;
     }
 
     public string ActiveCodecName => activeCodecName;
@@ -60,21 +66,27 @@ internal sealed class LiveAvcDecoder : IDisposable
             try
             {
                 bool needsConfigure = decoder is null ||
-                                      queued.Action == FrameAction.Reconfigure ||
+                                      configuredVideoGeneration != frame.VideoGeneration ||
                                       configuredWidth != frame.Width ||
                                       configuredHeight != frame.Height;
 
+                byte[] sps = [], pps = [];
+                if (needsConfigure || queued.Action == FrameAction.Reconfigure)
+                {
+                    if (!AvcAccessUnit.TryGetCodecSpecificData(frame.Data, out sps, out pps))
+                    { onRecoveryNeeded(); return; }
+                    needsConfigure |= !sps.AsSpan().SequenceEqual(configuredSps) || !pps.AsSpan().SequenceEqual(configuredPps);
+                }
+
                 if (needsConfigure)
                 {
-                    if (!AvcAccessUnit.TryGetCodecSpecificData(frame.Data, out var sps, out var pps))
-                    {
-                        onRecoveryNeeded();
-                        return;
-                    }
                     ConfigureDecoderLocked(surface, frame.Width, frame.Height, sps, pps);
+                    configuredVideoGeneration = frame.VideoGeneration;
+                    configuredSps = sps; configuredPps = pps;
                 }
 
                 if (decoder is null) return;
+                outputDisplayGeneration = frame.DisplayGeneration;
 
                 long submitStart = Stopwatch.GetTimestamp();
                 if (!SubmitInputLocked(decoder, frame, ct))
@@ -166,6 +178,8 @@ internal sealed class LiveAvcDecoder : IDisposable
                 throw new InvalidDataException("AVC frame exceeds MediaCodec input buffer capacity.");
             input.Put(frame.Data);
             codec.QueueInputBuffer(index, 0, frame.Data.Length, frame.Timestamp100ns / 10, MediaCodecBufferFlags.None);
+            if (submittedAt.Count >= 64) submittedAt.Remove(submittedAt.Keys.First());
+            submittedAt[frame.Timestamp100ns / 10] = Stopwatch.GetTimestamp();
             return true;
         }
         return false;
@@ -176,15 +190,32 @@ internal sealed class LiveAvcDecoder : IDisposable
         // Drain all ready output buffers immediately for lowest display latency.
         for (int i = 0; i < 4; i++)
         {
-            int index = codec.DequeueOutputBuffer(bufferInfo, i == 0 ? 4000 : 0);
+            int index = codec.DequeueOutputBuffer(bufferInfo, 0);
+            if (index == (int)MediaCodecInfoState.OutputFormatChanged) continue;
             if (index < 0) break;
 
             bool render = bufferInfo.Size > 0;
             codec.ReleaseOutputBuffer(index, render);
             if (render)
             {
-                double ms = Stopwatch.GetElapsedTime(submitStart).TotalMilliseconds;
+                double ms = submittedAt.Remove(bufferInfo.PresentationTimeUs, out long submitted)
+                    ? Stopwatch.GetElapsedTime(submitted).TotalMilliseconds : 0;
                 telemetry.RecordDecodedAndPresented(ms, activeCodecName);
+                onPresented(outputDisplayGeneration);
+            }
+        }
+    }
+
+    public void DrainOutput()
+    {
+        lock (surfaceLock)
+        {
+            if (disposed || decoder is null) return;
+            try { DrainOutputLocked(decoder, Stopwatch.GetTimestamp()); }
+            catch (PlatformCodec.CodecException)
+            {
+                ReleaseDecoderLocked();
+                onRecoveryNeeded();
             }
         }
     }
@@ -195,6 +226,8 @@ internal sealed class LiveAvcDecoder : IDisposable
         decoder = null;
         configuredWidth = 0;
         configuredHeight = 0;
+        configuredVideoGeneration = 0;
+        configuredSps = []; configuredPps = []; submittedAt.Clear();
         if (codec is null) return;
         try { codec.Release(); } catch { }
         try { codec.Dispose(); } catch { }
