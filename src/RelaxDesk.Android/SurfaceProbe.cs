@@ -41,10 +41,11 @@ internal static class SurfaceProbe
         format.SetByteBuffer("csd-0", sps);
         format.SetByteBuffer("csd-1", pps);
         using var decoder = PlatformCodec.CreateByCodecName(candidate.Name!);
-        decoder.Configure(format, surface, null, MediaCodecConfigFlags.None);
-        decoder.Start();
+        Exception? pending = null;
         try
         {
+            decoder.Configure(format, surface, null, MediaCodecConfigFlags.None);
+            decoder.Start();
             using var info = new PlatformCodec.BufferInfo();
             var elapsed = Stopwatch.StartNew();
             int submitted = 0;
@@ -116,6 +117,25 @@ internal static class SurfaceProbe
             }
             throw new TimeoutException("Timed out waiting for decoder EOS");
         }
-        finally { decoder.Stop(); }
+        catch (Exception error)
+        {
+            pending = error;
+            throw;
+        }
+        finally
+        {
+            // Release the native codec from any state (including configure
+            // failure), not merely its managed wrapper. Stop() is unnecessary
+            // for a one-use decoder and can mask a prior codec error.
+            try { decoder.Release(); }
+            catch (Exception cleanup) when (pending is not null)
+            {
+#if DEBUG
+                global::Android.Util.Log.Warn("RelaxDeskCodec", $"Release after failure: {cleanup.GetType().Name}");
+#else
+                _ = cleanup;
+#endif
+            }
+        }
     }
 }

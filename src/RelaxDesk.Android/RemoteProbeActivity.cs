@@ -145,7 +145,7 @@ public sealed class RemoteProbeActivity : Activity, ISurfaceHolderCallback
             {
 #if DEBUG
                 // Codec diagnostics only; never log credentials or frame content.
-                global::Android.Util.Log.Error("RelaxDeskCodec", e.ToString());
+                global::Android.Util.Log.Error("RelaxDeskCodec", $"{e.DiagnosticInfo} (code {e.ErrorCode}): {e}");
 #endif
                 result = $"首帧探针未通过：{e.GetType().Name}";
             }
