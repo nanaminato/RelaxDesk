@@ -150,6 +150,7 @@ def smoke(adb: str, serial: str, aapt: str, apk: str, fixture: tuple[str, str] |
                 assert count("RECV login-request") == 0, "Wrong pin sent a login request"
                 print("PASS wrong pin dials TLS but sends no login", flush=True)
 
+                decode_failures = []
                 for attempt in range(1, 3):
                     open_form(pin)
                     connect()
@@ -164,11 +165,13 @@ def smoke(adb: str, serial: str, aapt: str, apk: str, fixture: tuple[str, str] |
                     elif outcome == "首帧探针未通过：NotSupportedException":
                         print("SKIP decoder acceptance: emulator has no qualifying AVC decoder", flush=True)
                     else:
-                        raise RuntimeError(f"Unexpected Android first-frame outcome: {outcome}")
+                        decode_failures.append(outcome)
                     print(f"PASS pinned Android TLS, device proof and all bindings after launch {attempt}", flush=True)
                 await_line("VALID same-device-fingerprint", 1)
                 assert count("INFO different-device-fingerprint") == 0
                 print("PASS same authenticated Android device identity across force-stop", flush=True)
+                if decode_failures:
+                    raise RuntimeError("Unexpected Android first-frame outcome: " + ", ".join(decode_failures))
             finally:
                 host.terminate()
                 try:

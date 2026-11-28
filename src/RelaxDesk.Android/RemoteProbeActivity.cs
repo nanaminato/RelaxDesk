@@ -141,6 +141,14 @@ public sealed class RemoteProbeActivity : Activity, ISurfaceHolderCallback
             catch (PasswordLoginRejectedException) { result = "被控端未接受登录。"; }
             catch (AuthenticationException) { result = "认证失败，请检查被控端状态及证书指纹。"; }
             catch (UnauthorizedAccessException) { result = "局域网权限不可用，未连接。"; }
+            catch (global::Android.Media.MediaCodec.CodecException e)
+            {
+#if DEBUG
+                // Codec diagnostics only; never log credentials or frame content.
+                global::Android.Util.Log.Error("RelaxDeskCodec", e.ToString());
+#endif
+                result = $"首帧探针未通过：{e.GetType().Name}";
+            }
             catch (Exception e) { result = $"首帧探针未通过：{e.GetType().Name}"; }
             finally { credential = ""; }
             RunOnUiThread(() =>
