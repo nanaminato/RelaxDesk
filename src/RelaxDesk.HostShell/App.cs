@@ -7,8 +7,12 @@ public sealed class App:Application
     [STAThread] public static void Main(string[] args)
     {
         if(args is ["--version"]){Console.WriteLine(BuildIdentity.Version);return;}
+        if(args is ["--uac-consent-request"]){Environment.ExitCode=UacConsentTrigger.Request();return;}
+        if(args is ["--uac-consent-trigger",var triggerOutput]){Environment.ExitCode=UacConsentTrigger.Trigger(triggerOutput);return;}
         var app=new App();
-        if(args is ["--physical-input-elevated-target",var elevatedState])PhysicalInputSwitchVerification.RunElevatedTarget(app,elevatedState);
+        if(args is ["--secure-desktop-probe",var secureOutput])SecureDesktopVerification.Run(app,secureOutput);
+        else if(args is ["--physical-taskbar-input-probe",var taskbarOutput])TaskbarInputVerification.Run(app,taskbarOutput);
+        else if(args is ["--physical-input-elevated-target",var elevatedState])PhysicalInputSwitchVerification.RunElevatedTarget(app,elevatedState);
         else if(args is ["--physical-input-elevated-probe",var targetState,var elevatedOutput])PhysicalInputSwitchVerification.RunElevated(app,targetState,elevatedOutput);
         else if(args is ["--physical-input-switch-probe",var inputMode,var inputOutput])PhysicalInputSwitchVerification.Run(app,inputMode,inputOutput);
         else if(args is ["--password-login-contracts",var loginHost,var loginOutput])HostWindow.VerifyPasswordLogin(app,loginHost,loginOutput);

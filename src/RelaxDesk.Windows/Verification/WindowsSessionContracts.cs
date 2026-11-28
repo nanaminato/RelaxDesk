@@ -22,6 +22,12 @@ public static class WindowsSessionContracts
         var systemSecure = active with { ThreadDesktop = "Winlogon", InputDesktop = "Winlogon", AllowSecureDesktop = true };
         Check(systemSecure.Denial is null);
         systemSecure.EnsureAllowed();
+        ServiceDesktopWorker.EnsureCaptureAllowed(systemSecure with { Locked = false }); Check(true);
+        foreach (bool? locked in new bool?[] { true, null })
+        {
+            try { ServiceDesktopWorker.EnsureCaptureAllowed(systemSecure with { Locked = locked }); throw new Exception("Unverified lock state allowed secure capture"); }
+            catch (WindowsSessionUnavailableException) { Check(true); }
+        }
         var autoPause = new DesktopElevationPause(new PauseClock());
         autoPause.CheckOrAutoPause(active);
         Check(!autoPause.IsPaused);

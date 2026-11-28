@@ -15,6 +15,7 @@ namespace RelaxDesk.Host;
 
 internal static class VideoHostSession
 {
+    sealed record DesktopBinding(long Epoch, long DisplayGeneration);
     sealed record QueuedFrame(MediaFrame Frame, long EnqueuedAt);
     sealed record RecoveredPath(WindowsQuicDatagrams Datagrams, DatagramVideoChannel Video)
     {
@@ -411,6 +412,8 @@ internal static class VideoHostSession
         bool elevatedInputForwarded = false;
         int ignoredDisplayInputs=0;
         bool ordinaryInputBlocked = false;
+        DesktopBinding? desktopBinding = elevated?.Desktop is { } initialDesktop
+            ? new(initialDesktop.Epoch, displays!.Switch.Generation) : null;
         var input = Task.Run(async () =>
         {
             while (true)
@@ -490,7 +493,13 @@ internal static class VideoHostSession
                     displays!.Request(packet.DisplayId!, packet.DisplayGeneration, ReleaseDisplayInput);
                 }
                 else if(packet.Kind=="display-configured-v2")displays!.Switch.ConfirmConfiguration(packet.DisplayGeneration);
-                else if(packet.Kind=="display-ready-v2")displays!.Switch.Confirm(packet.DisplayGeneration);
+                else if(packet.Kind=="display-ready-v2")
+                {
+                    if (displays!.Switch.Confirm(packet.DisplayGeneration) && elevated?.Desktop is { } serviceDesktop &&
+                        Volatile.Read(ref desktopBinding) is { } binding && binding.DisplayGeneration == packet.DisplayGeneration &&
+                        binding.Epoch == serviceDesktop.Epoch)
+                        serviceDesktop.TryConfirmDisplayed(binding.Epoch);
+                }
                 else if (packet.Kind == "keyframe-v2") Interlocked.Exchange(ref forceKeyFrame, 1);
                 else if (packet.Kind == "ping-v2")
                 {
@@ -508,7 +517,8 @@ internal static class VideoHostSession
         var producer = Task.Factory.StartNew(() => Produce(queue, backend, capabilities, () => Interlocked.Exchange(ref forceKeyFrame, 0) != 0,
             (stage, frames, error) => { if (!session.IsCancellationRequested) failures.Record("capture-encode", stage, frames, error); }, session.Token,displaySelection,displays,(state,topology)=>WriteControl(new(topology?"display-topology-v2":"display-state-v2",DisplayState:state)).GetAwaiter().GetResult(),ReleaseDisplayInput,audioTicket is not null,video,state=>WriteControl(new("video-settings-state-v2",VideoVersion:VideoSettingsProtocol.Version,VideoSettings:state)).GetAwaiter().GetResult(),
                 ceiling => (Volatile.Read(ref activeRecovered)?.Adaptation ??
-                    (Volatile.Read(ref fallbackRequested) == 0 ? adaptation : null))?.Target(ceiling) ?? ceiling,desktopPause,hello.PointerBrotli == true),
+                    (Volatile.Read(ref fallbackRequested) == 0 ? adaptation : null))?.Target(ceiling) ?? ceiling,desktopPause,hello.PointerBrotli == true,elevated?.Desktop,
+                (epoch,generation)=>Volatile.Write(ref desktopBinding,new(epoch,generation))),
             session.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         var sender = Task.Run(async () =>
         {
@@ -547,6 +557,7 @@ internal static class VideoHostSession
                     { stale++; Interlocked.Exchange(ref forceKeyFrame, 1); continue; }
                     if (desktopPause.IsPaused) continue;
                     var frame = queued.Frame;
+                    if (elevated?.Desktop is not null && frame.DisplayGeneration != displays!.Switch.Generation) continue;
                     using var deadline = CancellationTokenSource.CreateLinkedTokenSource(session.Token); deadline.CancelAfter(TimeSpan.FromSeconds(2));
                     bool independentlyDecodable = frame.Codec != MediaCodec.H264 || frame.KeyFrame;
                     var candidate = Volatile.Read(ref recoveryVideo);
@@ -622,7 +633,8 @@ internal static class VideoHostSession
         Task sessionWatch=backend is "test-session-unavailable" or "test-session-locked" or "test-session-switched" or "test-session-desktop"
             ? WindowsSessionAccess.Watch(session.Token, TransitionSnapshot):
             simulatedPause?WindowsSessionAccess.Watch(session.Token, TestDesktop, authorize:desktopPause.Check):
-            synthetic?Task.Delay(Timeout.Infinite,session.Token):WindowsSessionAccess.Watch(session.Token, authorize:desktopPause.CheckOrAutoPause);
+            synthetic?Task.Delay(Timeout.Infinite,session.Token):WindowsSessionAccess.Watch(session.Token, authorize:
+                elevated?.Desktop is null ? desktopPause.CheckOrAutoPause : snapshot=>snapshot.EnsureBrokerLeaseAllowedFrom(originalDesktop!));
         Task observedSession=Observe(sessionWatch,"windows-session",failures,session.Token);
         async Task WatchAdmin()
         {
@@ -737,8 +749,9 @@ internal static class VideoHostSession
         catch (Exception error) { if (!ct.IsCancellationRequested) failures.Record(worker, worker, 0, error); throw; }
     }
 
-    static void Produce(LatestQueue<QueuedFrame> queue, string backend, string[] capabilities, Func<bool> requestedKeyFrame, Action<string, long, Exception> failed, CancellationToken ct,WindowsDisplaySelection? displaySelection,HostDisplaySession? displays,Action<DisplaySessionInfo,bool> displayChanged,Action releaseInput,bool commonClock=false,HostVideoSettings? video=null,Action<VideoSettings>? videoChanged=null,Func<int,int>? bitrateTarget=null,DesktopElevationPause? desktopPause=null, bool compressPointer=false)
+    static void Produce(LatestQueue<QueuedFrame> queue, string backend, string[] capabilities, Func<bool> requestedKeyFrame, Action<string, long, Exception> failed, CancellationToken ct,WindowsDisplaySelection? displaySelection,HostDisplaySession? displays,Action<DisplaySessionInfo,bool> displayChanged,Action releaseInput,bool commonClock=false,HostVideoSettings? video=null,Action<VideoSettings>? videoChanged=null,Func<int,int>? bitrateTarget=null,DesktopElevationPause? desktopPause=null, bool compressPointer=false, ServiceDesktopConnection? serviceDesktop=null,Action<long,long>? desktopChanged=null)
     {
+        long desktopEpoch = serviceDesktop?.Epoch ?? 0;
         int attemptedBitrate = 0;
         bool synthetic = backend.StartsWith("test-", StringComparison.Ordinal);
         ICaptureBackend? capture = null; H264Encoder? encoder = null;
@@ -746,6 +759,7 @@ internal static class VideoHostSession
         var recovery = new PipelineRecovery();
         bool injectedCaptureLoss = false,injectedTopologyRace=false;
         MediaCodec codec = backend is not ("test-deflate" or "test-oversized-udp") && capabilities.Contains("h264") ? MediaCodec.H264 : MediaCodec.DeflateBgra;
+        MediaCodec preferredCodec = codec;
         var encodeMetrics = new PipelineMetrics(); long uploaded = 0; uint accepted = 0; int gpuSamples = 0;
         long dxgiFrames = 0, dxgiEmpty = 0, dxgiFull = 0, dxgiMove = 0, dxgiRepeatedTime = 0;
         long dxgiDesktopChanges = 0, dxgiPointerOnly = 0, dxgiUnknownChanges = 0, dxgiIdlePolls = 0;
@@ -773,10 +787,46 @@ internal static class VideoHostSession
                     ct.WaitHandle.WaitOne(25);
                     continue;
                 }
+                ServiceDesktopFrame? serviceFrame = null;
                 try
                 {
+                    double serviceCaptureMs = 0;
+                    if (serviceDesktop is not null)
+                    {
+                        if (displaySelection is null)
+                        {
+                            var observed = displays!.CurrentTopology(); displays.Observe(observed, releaseInput);
+                            if (displays.NeedsRefresh)
+                            {
+                                var refreshed = displays.Refresh(observed); displaySelection = displays.Active;
+                                displayChanged(refreshed, true);
+                            }
+                            if (displaySelection is null) { ct.WaitHandle.WaitOne(250); continue; }
+                        }
+                        long requestStart = Stopwatch.GetTimestamp();
+                        serviceFrame = serviceDesktop.Capture(displaySelection!.Device, ct).GetAwaiter().GetResult();
+                        serviceCaptureMs = Stopwatch.GetElapsedTime(requestStart).TotalMilliseconds;
+                        if (serviceFrame.Epoch != desktopEpoch)
+                        {
+                            // Reuse the negotiated display-generation barrier: old input is
+                            // rejected until the Viewer actually presents the new desktop.
+                            encoder?.Dispose(); encoder = null; capture?.Dispose(); capture = null;
+                            forceNextKeyFrame = true; codec = preferredCodec;
+                            displays!.Invalidate(releaseInput);
+                            var renewed = displays.Refresh(displays.Switch.Snapshot.Displays);
+                            displaySelection = displays.Active;
+                            desktopEpoch = serviceFrame.Epoch;
+                            desktopChanged!(desktopEpoch, renewed.Generation);
+                            displayChanged(renewed, true);
+                            HostSessionLog.Write($"service_desktop_transition epoch={desktopEpoch} display_generation={renewed.Generation} kind={serviceFrame.Kind}");
+                            continue;
+                        }
+                        if (displays!.Switch.Ready) serviceDesktop.TryConfirmDisplayed(desktopEpoch);
+                        if (serviceFrame.Kind == ServiceDesktopKind.Transition) { ct.WaitHandle.WaitOne(25); continue; }
+                    }
+                    bool serviceSecure = serviceFrame?.Kind == ServiceDesktopKind.Secure;
                     if (backend == "test-idle" && sequence >= 1) { ct.WaitHandle.WaitOne(); break; }
-                    if(displays?.TopologyEnabled==true)
+                    if(displays?.TopologyEnabled==true && !serviceSecure)
                     {
                         stage="display-topology-probe";
                         var observed=displays.CurrentTopology();displays.Observe(observed,releaseInput);
@@ -792,6 +842,12 @@ internal static class VideoHostSession
                         stage="display-switch";encoder?.Dispose();encoder=null;capture?.Dispose();capture=null;
                         var changed=displays.Commit(requestedDisplay);if(changed is null)continue;displaySelection=displays.Active;forceNextKeyFrame=true;
                         displayChanged(changed,false);HostSessionLog.Write($"display_switch generation={changed.Generation} selected={changed.Selected}");
+                        if (serviceDesktop is not null)
+                        {
+                            if (serviceFrame?.Pixels is { Length: > 0 } oldPixels) System.Security.Cryptography.CryptographicOperations.ZeroMemory(oldPixels);
+                            serviceFrame = serviceDesktop.Capture(displaySelection!.Device, ct).GetAwaiter().GetResult();
+                            serviceSecure = serviceFrame.Kind == ServiceDesktopKind.Secure;
+                        }
                     }
                     if(displays?.Switch.Unavailable==true){ct.WaitHandle.WaitOne(250);continue;}
                     if(displays is not null&&!displays.Switch.Configured){ct.WaitHandle.WaitOne(50);continue;}
@@ -799,11 +855,12 @@ internal static class VideoHostSession
                     {stage="video-settings-apply";encoder?.Dispose();encoder=null;activeVideo=desired;forceNextKeyFrame=true;videoKeyAttempts=0;}
                     int desiredBitrate = bitrateTarget?.Invoke(activeVideo.Bitrate) ?? activeVideo.Bitrate;
                     int effectiveFps = QuicBitrateController.FramesPerSecond(activeVideo.FramesPerSecond, desiredBitrate);
+                    if (serviceSecure) effectiveFps = Math.Min(effectiveFps, 10);
                     if(ct.WaitHandle.WaitOne(pacer.Delay(effectiveFps)))break;pacer.Started();
                     stage="capture-init";
                     if(backend=="test-topology-init-race"&&sequence>=4&&!injectedTopologyRace&&displays?.Switch.Ready==true){injectedTopologyRace=true;throw new ExternalException("Injected output disappeared during initialization",unchecked((int)0x887A0002));}
-                    stage = "capture-init"; capture ??= synthetic ? null : CreateCapture(backend,displaySelection);
-                    if(capture is DxgiCaptureBackend)displaySelection?.EnsureCurrent();
+                    stage = "capture-init"; capture ??= synthetic || serviceSecure ? null : CreateCapture(backend,displaySelection);
+                    if(!serviceSecure && capture is DxgiCaptureBackend)displaySelection?.EnsureCurrent();
                     stage = "capture-frame";
                     if ((backend == "test-capture-recovery" && sequence >= 4 && !injectedCaptureLoss) || (backend == "test-capture-exhausted" && sequence >= 4))
                     {
@@ -816,10 +873,11 @@ internal static class VideoHostSession
                     if(displays is not null&&synthetic){var bounds=displays.Bounds;testWidth=bounds.Width;testHeight=bounds.Height;}
                     if (oversizedTest) { testWidth = 2560; testHeight = 1440; }
                     bool forceRequested=requestedKeyFrame();bool refresh=forceRequested||forceNextKeyFrame||video?.Pending is not null||queue.Dropped!=previousDrops;
-                    var frame = synthetic ? backend is ("test-video-settings-static" or "test-desktop-pause")&&sequence>0?(refresh?staticFrame:null):new CapturedFrame(testWidth, testHeight, CodecVerification.Pattern(testWidth, testHeight, (int)(sequence % 200)), new(Stopwatch.GetTimestamp(), 1, [], [], 0, 0, false, 0, 0, 0, 0, 0, 0, [])) : CaptureFrameRefresh.Read(capture!,refresh);
+                    var frame = serviceSecure ? new CapturedFrame(serviceFrame!.Width,serviceFrame.Height,serviceFrame.Pixels,
+                        new(Stopwatch.GetTimestamp(),1,[],[],0,0,false,CaptureMetadata.HostManagedPointer,0,0,0,0,0,[])) : synthetic ? backend is ("test-video-settings-static" or "test-desktop-pause")&&sequence>0?(refresh?staticFrame:null):new CapturedFrame(testWidth, testHeight, CodecVerification.Pattern(testWidth, testHeight, (int)(sequence % 200)), new(Stopwatch.GetTimestamp(), 1, [], [], 0, 0, false, 0, 0, 0, 0, 0, 0, [])) : CaptureFrameRefresh.Read(capture!,refresh);
                     if (oversizedTest && frame?.Bgra is { } pixels) new Random(1).NextBytes(pixels);
                     if(backend is ("test-video-settings-static" or "test-desktop-pause")&&frame is not null)staticFrame=frame;
-                    double captureMs = Stopwatch.GetElapsedTime(captureStarted).TotalMilliseconds;
+                    double captureMs = serviceSecure ? serviceCaptureMs : Stopwatch.GetElapsedTime(captureStarted).TotalMilliseconds;
                     if (frame is null)
                     {
                         if (capture is DxgiCaptureBackend) dxgiIdlePolls++;
@@ -900,7 +958,7 @@ internal static class VideoHostSession
                     if(video?.Pending==activeVideo&&++videoKeyAttempts>60)throw new InvalidDataException("Video settings keyframe boundary unavailable");
                     if (backend == "test-producer-failure" && sequence >= 4) throw new InvalidDataException("Injected producer failure after four frames");
                     if (backend == "test-runtime-fallback" && encoder?.Hardware == true && sequence >= 4) throw new ExternalException("Injected hardware encoder runtime failure", unchecked((int)0x80004005));
-                    if (encoder is { Hardware: true } && capture is DxgiCaptureBackend) encoded = encoder.EncodeGpu(timestamp, force);
+                    if (!serviceSecure && encoder is { Hardware: true } && capture is DxgiCaptureBackend) encoded = encoder.EncodeGpu(timestamp, force);
                     else if (encoder is not null) encoded = encoder.EncodeBgra(frame.Bgra ?? capture!.ReadPixels(frame), timestamp, force);
                     else
                     {
@@ -934,6 +992,12 @@ internal static class VideoHostSession
                     if (recovery.FramePublished())
                         HostSessionLog.Write($"pipeline_recovery state=Recovered attempt={recovery.Attempts} completed_frames={sequence} keyframe={encoded.KeyFrame}");
                 }
+                catch (WindowsSessionUnavailableException error) when (serviceDesktop is not null &&
+                    error.Reason is "input-desktop-unavailable" or "input-desktop-unsupported" && !ct.IsCancellationRequested)
+                {
+                    capture?.Dispose(); capture = null; encoder?.Dispose(); encoder = null;
+                    forceNextKeyFrame = true; ct.WaitHandle.WaitOne(25);
+                }
                 catch(DisplayTopologyChangedException changed)when(displays?.TopologyEnabled==true&&!ct.IsCancellationRequested)
                 {displays.Observe(changed.Displays,releaseInput);}
                 catch(ExternalException error)when(displays?.TopologyEnabled==true&&stage=="capture-init"&&PipelineRecovery.IsTopologyInitializationRace(error)&&!ct.IsCancellationRequested)
@@ -963,6 +1027,10 @@ internal static class VideoHostSession
                     encoder.Dispose(); encoder = null;
                     // Keep DXGI capture and authenticated transport; reinitialize
                     // software H264 on the next frame, once per session only.
+                }
+                finally
+                {
+                    if (serviceFrame?.Pixels is { Length: > 0 } pixels) System.Security.Cryptography.CryptographicOperations.ZeroMemory(pixels);
                 }
             }
         }

@@ -16,14 +16,19 @@ public static class AdminInputLauncher
         var request = new AdminInputLaunchRequest(grant, Environment.ProcessId, owner, display);
         string executable = ServiceDeploymentTrust.ResolveElevatedInput(owner);
         var server = LocalAgentPipe.CreateAdminServer(grant, owner);
+        System.IO.Pipes.NamedPipeServerStream? desktopServer = null;
         SessionAgentClient? lease = null;
+        AdminInputConnection? input = null;
         try
         {
+            desktopServer = LocalAgentPipe.CreateDesktopServer(grant, owner);
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
             deadline.CancelAfter(TimeSpan.FromSeconds(20));
             lease = await SessionAgentClient.ConnectInput(request, deadline.Token);
-            var input = await AdminInputConnection.Accept(server, grant, lease.InputWorkerPid, deadline.Token,
+            input = await AdminInputConnection.Accept(server, grant, lease.InputWorkerPid, deadline.Token,
                 executable, systemWorker: true);
+            input.Desktop = await ServiceDesktopConnection.Accept(desktopServer, grant, lease.InputWorkerPid!.Value,
+                executable, display, input.FailDesktop, deadline.Token);
             input.BindServiceLease(lease);
             lease = null;
             return input;
@@ -31,6 +36,8 @@ public static class AdminInputLauncher
         catch
         {
             server.Dispose();
+            desktopServer?.Dispose();
+            if (input is not null) await input.DisposeAsync();
             if (lease is not null) await lease.DisposeAsync();
             throw;
         }

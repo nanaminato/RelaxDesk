@@ -80,6 +80,7 @@ public sealed class WindowsInputSession : IDisposable
     static uint SendNativeInput(NativeInput[] batch)
     {
         WindowsDesktopSwitch.SyncThreadToInputDesktop();
+        WindowsDesktopSwitch.EnsureExpectedInputDesktop();
         return SendInput((uint)batch.Length, batch, Marshal.SizeOf<NativeInput>());
     }
     public WindowsInputSession():this(SendNativeInput,Desktop.EnsureInteractiveDesktop,

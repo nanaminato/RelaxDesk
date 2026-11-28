@@ -29,7 +29,13 @@ try
     }
     // Readiness comes from the worker after it checks the administrator token
     // and the interactive desktop.
-    await ElevatedInputWorker.Run(pipe, request.Grant, () => new WindowsDisplaySelection(request.Display), CancellationToken.None, serviceInput);
+    if (serviceInput)
+    {
+        using var desktop = await LocalAgentPipe.ConnectDesktop(request.Grant, startup.Token);
+        LocalAgentPipe.AuthenticateAdminCoordinator(desktop, request.CoordinatorPid, request.Owner);
+        await ServiceDesktopWorker.Run(pipe, desktop, request.Grant, () => new WindowsDisplaySelection(request.Display), CancellationToken.None);
+    }
+    else await ElevatedInputWorker.Run(pipe, request.Grant, () => new WindowsDisplaySelection(request.Display), CancellationToken.None);
     return 0;
 }
 catch (Exception error) when (error is IOException or SecurityException or UnauthorizedAccessException or

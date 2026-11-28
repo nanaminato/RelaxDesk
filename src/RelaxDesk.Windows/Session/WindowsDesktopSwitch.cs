@@ -41,6 +41,20 @@ public static class WindowsDesktopSwitch
     });
 
     public static bool IsLocalSystemProcess => LocalSystem.Value;
+    [ThreadStatic] internal static string? ExpectedInputDesktop;
+    [ThreadStatic] internal static Action? ExpectedInputAuthorization;
+    internal static void EnsureExpectedInputDesktop()
+    {
+        ExpectedInputAuthorization?.Invoke();
+        if (ExpectedInputDesktop is null) return;
+        nint input = OpenInputDesktop(0, false, DesktopReadObjects);
+        try
+        {
+            if (input == 0 || ReadDesktopName(input) != ExpectedInputDesktop)
+                throw new InputDesktopChangedException();
+        }
+        finally { if (input != 0) CloseDesktop(input); }
+    }
     [ThreadStatic] static nint attachedDesktop;
     [ThreadStatic] static nint originalDesktop;
 
@@ -109,3 +123,5 @@ public static class WindowsDesktopSwitch
         }
     }
 }
+
+internal sealed class InputDesktopChangedException() : IOException("Input desktop changed before native submission");

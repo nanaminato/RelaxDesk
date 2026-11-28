@@ -55,6 +55,19 @@ public static class LocalAgentPipe
         return CreateServerCore(AdminName(grant), $"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;RC;;;OW)(A;;0x{ClientAccess:X8};;;{owner})", true, 1);
     }
 
+    public static NamedPipeServerStream CreateDesktopServer(Guid grant, string owner)
+    {
+        _ = AdminName(grant);
+        owner = CanonicalUser(owner);
+        return CreateServerCore("RelaxDesk.ServiceDesktop." + grant.ToString("N"),
+            $"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;RC;;;OW)(A;;0x{ClientAccess:X8};;;{owner})", true, 1);
+    }
+    public static Task<NamedPipeClientStream> ConnectDesktop(Guid grant, CancellationToken cancellation)
+    {
+        _ = AdminName(grant);
+        return ConnectCore("RelaxDesk.ServiceDesktop." + grant.ToString("N"), 0x10000, cancellation);
+    }
+
     public static Task<NamedPipeClientStream> ConnectAdmin(Guid grant, CancellationToken cancellation) =>
         ConnectCore(AdminName(grant), 0x10000, cancellation); // Identification only. The server cannot impersonate the elevated client.
 

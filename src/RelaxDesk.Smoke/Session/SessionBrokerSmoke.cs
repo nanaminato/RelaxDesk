@@ -60,6 +60,25 @@ internal static class SessionBrokerSmoke
             catch (SecurityException) { rejected = true; }
             Check(rejected);
         }
+        Guid desktopGrant = Guid.NewGuid();
+        using (var desktopServer=LocalAgentPipe.CreateDesktopServer(desktopGrant,own))
+        using (var inputServer=LocalAgentPipe.CreateAdminServer(desktopGrant,own))
+        using (var desktopDeadline=new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            bool duplicateDenied=false;
+            try { using var duplicate=LocalAgentPipe.CreateDesktopServer(desktopGrant,own); }
+            catch(Win32Exception error)when(error.NativeErrorCode==5){duplicateDenied=true;}
+            Check(duplicateDenied);
+            var accepting=desktopServer.WaitForConnectionAsync(desktopDeadline.Token);
+            using var desktopPeer=await LocalAgentPipe.ConnectDesktop(desktopGrant,desktopDeadline.Token);
+            await accepting;
+            LocalAgentPipe.AuthenticateAdminCoordinator(desktopPeer,Environment.ProcessId,own);
+            await Wire.Write(desktopPeer,new(ServiceDesktopProtocol.Ready,Origin:desktopGrant.ToString("N")),desktopDeadline.Token);
+            _=await Wire.Read(desktopServer,desktopDeadline.Token);
+            try {LocalAgentPipe.AuthenticateAdminWorker(desktopServer,Environment.ProcessId,Environment.ProcessPath!,systemWorker:true);throw new IOException("Ordinary capture peer impersonated SYSTEM");}
+            catch(SecurityException){Check(true);}
+            Check(inputServer.IsConnected==false&&desktopServer.IsConnected);
+        }
         Guid systemGrant = Guid.NewGuid();
         using (var systemServer = LocalAgentPipe.CreateAdminServer(systemGrant, own))
         using (var systemDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(5)))

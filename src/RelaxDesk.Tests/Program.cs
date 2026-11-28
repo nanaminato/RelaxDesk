@@ -184,6 +184,7 @@ count += await FileProtocolChecks.Run();
 count += await FilePacingChecks.Run();
 count += await ConsentChecks.Run();
 count += await SessionAgentChecks.Run();
+count += await ServiceDesktopChecks.Run();
 count += RecoveryChecks.Run();
 count += WorkerRestartChecks.Run();
 count += await AudioChecks.Run();

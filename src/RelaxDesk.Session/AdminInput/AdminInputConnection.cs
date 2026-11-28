@@ -29,6 +29,8 @@ public sealed class AdminInputConnection : IAsyncDisposable
     }
 
     public Task Completion => heartbeat;
+    public ServiceDesktopConnection? Desktop { get; internal set; }
+    internal void FailDesktop() => Close();
 
     public static async Task<AdminInputConnection> Accept(NamedPipeServerStream server, Guid grant,
         int? workerPid, CancellationToken cancellation, string? workerImage = null, string? elevatedOwner = null, bool systemWorker = false)
@@ -118,7 +120,8 @@ public sealed class AdminInputConnection : IAsyncDisposable
             deadline.Token.ThrowIfCancellationRequested();
             try
             {
-                await Wire.Write(pipe, new(kind, checked(++sequence), Text: text, Origin: binding, Input: input), deadline.Token);
+                await Wire.Write(pipe, new(kind, checked(++sequence), Text: text, Origin: binding, Input: input,
+                    Revision: input is not null && Desktop is not null ? Desktop.InputEpoch : 0), deadline.Token);
             }
             catch
             {
@@ -149,6 +152,7 @@ public sealed class AdminInputConnection : IAsyncDisposable
     {
         if (Interlocked.Exchange(ref closing, 1) != 0) return;
         closed.Cancel();
+        Desktop?.Dispose();
         pipe.Dispose();
     }
 

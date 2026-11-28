@@ -10,7 +10,7 @@ public static class AdminInputChannel
     public static bool ValidDisplay(string? display) => display is { Length: > 0 and <= 256 } && !display.Any(char.IsControl);
 
     public static async Task Run(Stream stream, Guid grant, Action<RemoteInput> inject,
-        Action release, CancellationToken cancellation, Action<string>? selectDisplay = null)
+        Action release, CancellationToken cancellation, Action<string>? selectDisplay = null, Action<RemoteInput, long>? injectBound = null)
     {
         if (grant == Guid.Empty) throw new ArgumentException("Administrator input grant required", nameof(grant));
         string binding = grant.ToString("N");
@@ -41,9 +41,10 @@ public static class AdminInputChannel
                     continue;
                 }
                 if (packet.Input is not { } input || !InputProtocol.Valid(input) ||
-                    packet != new Packet("admin-input", sequence, Origin: binding, Input: input))
+                    (injectBound is null ? packet.Revision != 0 : packet.Revision is < 1 or > 1_000_000) ||
+                    packet != new Packet("admin-input", sequence, Origin: binding, Input: input, Revision: packet.Revision))
                     throw new InvalidDataException("Invalid administrator input command");
-                inject(input);
+                if (injectBound is null) inject(input); else injectBound(input, packet.Revision);
             }
         }
         finally { release(); }
