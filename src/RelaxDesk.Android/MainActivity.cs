@@ -36,6 +36,7 @@ public sealed class MainActivity : Activity
 
     int insetTop, insetBottom, insetLeft, insetRight;
     int currentColumns = 1;
+    bool openingSession;
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
@@ -76,6 +77,7 @@ public sealed class MainActivity : Activity
     protected override void OnResume()
     {
         base.OnResume();
+        openingSession = false;
         AndroidStrings.Init(this);
         AndroidTheme.Init(this);
         ApplyLocalization();
@@ -260,12 +262,13 @@ public sealed class MainActivity : Activity
 
     void LaunchSession(SavedHostEntry entry)
     {
+        if (openingSession) return;
         var intent = new Intent(this, typeof(RemoteSessionActivity));
         intent.PutExtra(RemoteSessionActivity.ExtraName, entry.Name);
         intent.PutExtra(RemoteSessionActivity.ExtraHost, entry.Host);
         intent.PutExtra(RemoteSessionActivity.ExtraPort, entry.Port);
-        intent.PutExtra(RemoteSessionActivity.ExtraPin, entry.Fingerprint);
         intent.PutExtra(RemoteSessionActivity.ExtraUser, entry.Username);
+        openingSession = true;
         StartActivity(intent);
     }
 

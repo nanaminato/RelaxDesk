@@ -29,7 +29,6 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     public const string ExtraName = "rd_name";
     public const string ExtraHost = "rd_host";
     public const string ExtraPort = "rd_port";
-    public const string ExtraPin = "rd_pin";
     public const string ExtraUser = "rd_user";
 
     const string LanPermission = "android.permission.ACCESS_LOCAL_NETWORK";
@@ -43,10 +42,10 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     int zoomHintVersion;
     RemoteDesktopSession? session;
     CancellationTokenSource? sessionCts;
-    Task? sessionWorker;
 
     View sessionRoot = null!;
     View connectOverlay = null!;
+    View connectionFields = null!;
     LinearLayout connectCard = null!;
     FrameLayout stage = null!;
     SurfaceView videoSurface = null!;
@@ -59,7 +58,6 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     HorizontalScrollView extraKeysBar = null!;
     EditText hostInput = null!, portInput = null!, userInput = null!, passInput = null!;
     CheckBox rememberPassCheck = null!;
-    string savedFingerprint = "";
     Button connectBtn = null!, backListBtn = null!, videoBtn = null!, modeBtn = null!, collapseBtn = null!;
     Button keysToggleBtn = null!, resetZoomBtn = null!, audioToggleBtn = null!, hudToggleBtn = null!, disconnectBtn = null!;
     Button ctrlBtn = null!, altBtn = null!, shiftBtn = null!, winBtn = null!, sendTextBtn = null!;
@@ -70,6 +68,8 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     Surface? activeSurface;
     bool foreground;
     bool requestingPermission;
+    bool autoConnectPending;
+    bool retryAutoAfterPermission;
     bool touchpadMode = true;
     bool showHud = true;
     bool audioMuted;
@@ -145,6 +145,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         disconnectBtn = FindViewById<Button>(Resource.Id.btn_disconnect)!;
         extraKeysBar = FindViewById<HorizontalScrollView>(Resource.Id.extra_keys_bar)!;
         connectOverlay = FindViewById<View>(Resource.Id.connect_overlay)!;
+        connectionFields = FindViewById<View>(Resource.Id.connect_fields)!;
         connectCard = FindViewById<LinearLayout>(Resource.Id.connect_card)!;
         statusText = FindViewById<TextView>(Resource.Id.connect_status)!;
         hostInput = FindViewById<EditText>(Resource.Id.input_host)!;
@@ -234,15 +235,15 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             showHud = !showHud;
             hudText.Visibility = showHud && session is not null ? ViewStates.Visible : ViewStates.Gone;
         };
-        disconnectBtn.Click += (_, _) => Disconnect();
-        backListBtn.Click += (_, _) => { if (session is not null) Disconnect(); else Finish(); };
+        disconnectBtn.Click += (_, _) => ReturnToList();
+        backListBtn.Click += (_, _) => ReturnToList();
         connectBtn.Click += (_, _) => StartConnect();
 
         PopulateExtraKeysBar();
         ApplyLocalization();
         ApplyTheme();
         ApplyResponsiveLayout();
-        PopulateFromIntentOrStore();
+        autoConnectPending = PopulateFromIntentOrStore() && savedInstanceState is null;
         EnterImmersiveMode();
     }
 
@@ -394,7 +395,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         row.AddView(sendTextBtn);
     }
 
-    void PopulateFromIntentOrStore()
+    bool PopulateFromIntentOrStore()
     {
         string? intentHost = Intent?.GetStringExtra(ExtraHost);
         if (!string.IsNullOrWhiteSpace(intentHost))
@@ -402,11 +403,8 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             pcName = Intent?.GetStringExtra(ExtraName) ?? intentHost;
             hostInput.Text = intentHost;
             portInput.Text = (Intent?.GetIntExtra(ExtraPort, 48200) ?? 48200).ToString();
-            savedFingerprint = Intent?.GetStringExtra(ExtraPin) ?? "";
             userInput.Text = Intent?.GetStringExtra(ExtraUser) ?? "";
-            LoadSavedPasswordIfAny();
-            passInput.RequestFocus();
-            return;
+            return true;
         }
 
         var saved = ConnectionStore.Load(this);
@@ -416,7 +414,6 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             pcName = latest.Name;
             hostInput.Text = latest.Host;
             portInput.Text = latest.Port.ToString();
-            savedFingerprint = latest.Fingerprint;
             userInput.Text = latest.Username;
             LoadSavedPasswordIfAny();
         }
@@ -424,6 +421,7 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         {
             portInput.Text = "48200";
         }
+        return false;
     }
 
     void EnterImmersiveMode()
@@ -469,30 +467,53 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
     bool HasLanPermission() =>
         (int)Build.VERSION.SdkInt < 37 || CheckSelfPermission(LanPermission) == Permission.Granted;
 
-    void StartConnect()
+    void StartPendingAutoConnect()
     {
-        if (!foreground || requestingPermission || session is not null) return;
+        if (!foreground || !autoConnectPending || IsFinishing) return;
+        autoConnectPending = false;
+        StartConnect(useSavedPassword: true);
+    }
+
+    void StartConnect(bool useSavedPassword = false)
+    {
+        if (!foreground || requestingPermission || session is not null || IsFinishing) return;
         string ip = (hostInput.Text ?? "").Trim();
         if (string.IsNullOrWhiteSpace(ip) || !int.TryParse(portInput.Text, out int port) || port is < 1 or > 65535)
         {
             statusText.Text = AndroidStrings.Get("err_invalid_endpoint");
             return;
         }
+        string username = userInput.Text ?? "";
+        string password = useSavedPassword
+            ? PasswordStore.Load(this, ip, port, username) ?? ""
+            : passInput.Text ?? "";
+        if (useSavedPassword && password.Length == 0)
+        {
+            ShowConnectionProgress(false);
+            return;
+        }
+        bool shouldRemember = rememberPassCheck.Checked;
+        if (!PasswordVerifier.ValidUserName(username) || password.Length == 0)
+        {
+            ShowConnectionProgress(false);
+            statusText.Text = AndroidStrings.Get("err_invalid_user");
+            return;
+        }
+
         if (!HasLanPermission())
         {
-            passInput.Text = "";
+            retryAutoAfterPermission = useSavedPassword;
             requestingPermission = true;
+            if (useSavedPassword) ShowConnectionProgress(true);
             RequestPermissions([LanPermission], LanRequest);
             return;
         }
 
-        string username = userInput.Text ?? "";
-        string password = passInput.Text ?? "";
-        bool shouldRemember = rememberPassCheck.Checked;
         passInput.Text = "";
-        if (!PasswordVerifier.ValidUserName(username) || password.Length == 0)
+        if (useSavedPassword)
         {
-            statusText.Text = AndroidStrings.Get("err_invalid_user");
+            rememberPassCheck.Checked = true;
+            BeginSessionConnect(ip, port, username, password);
             return;
         }
 
@@ -541,9 +562,15 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         }
     }
 
+    void ShowConnectionProgress(bool connecting)
+    {
+        connectionFields.Visibility = connectBtn.Visibility = connecting ? ViewStates.Gone : ViewStates.Visible;
+        if (connecting) statusText.Text = AndroidStrings.Get("status_connecting_tls");
+    }
+
     void BeginSessionConnect(string ip, int port, string username, string password)
     {
-
+        if (session is not null || IsFinishing) return;
         string displayName = string.IsNullOrWhiteSpace(pcName) ? ip : pcName;
         // An Intent/list row may predate a completed certificate confirmation.
         // Resolve trust for the actual endpoint on every attempt.
@@ -559,21 +586,25 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         viewport.ResetPointer();
         activeSession.AttachSurface(activeSurface);
 
-        activeSession.StatusChanged += msg => RunOnUiThread(() => statusText.Text = msg);
+        activeSession.StatusChanged += msg => RunOnUiThread(() =>
+        {
+            if (ReferenceEquals(session, activeSession) && !IsFinishing) statusText.Text = msg;
+        });
         activeSession.FirstFramePresented += () => RunOnUiThread(() =>
         {
-            if (!ReferenceEquals(session, activeSession)) return;
+            if (!ReferenceEquals(session, activeSession) || IsFinishing) return;
             connectOverlay.Visibility = ViewStates.Gone;
             sessionPill.Visibility = ViewStates.Visible;
         });
         activeSession.VideoSizeChanged += (w, h) => RunOnUiThread(() =>
         {
+            if (!ReferenceEquals(session, activeSession) || IsFinishing) return;
             viewport.SetVideoSize(w, h);
             UpdateVideoSurfaceLayout();
         });
         activeSession.PointerUpdated += ptr => RunOnUiThread(() =>
         {
-            if (!ReferenceEquals(session, activeSession)) return;
+            if (!ReferenceEquals(session, activeSession) || IsFinishing) return;
             cursorView.ApplyRemoteState(ptr);
             if (viewport.TrySyncRemotePointer(ptr))
             {
@@ -583,30 +614,32 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         });
 
         connectOverlay.Visibility = ViewStates.Visible;
-        connectBtn.Enabled = false;
-        hostInput.Enabled = portInput.Enabled = userInput.Enabled = passInput.Enabled = false;
+        ShowConnectionProgress(true);
         sessionPill.Visibility = ViewStates.Gone;
         hudText.Visibility = showHud ? ViewStates.Visible : ViewStates.Gone;
-        ScheduleHudTick();
+        ScheduleHudTick(activeSession);
 
-        sessionWorker = Task.Run(async () =>
+        _ = Task.Run(async () =>
         {
             string endMessage = AndroidStrings.Get("disconnected");
+            bool credentialsRejected = false;
+            bool replaced = false;
             try
             {
                 await activeSession.RunAsync(ip, port, pinToUse, username, password,
                     AndroidDeviceKey.OpenProbeKey,
                     ConfirmServerCertificateAsync,
-                    verifiedPin =>
-                    {
-                        savedFingerprint = verifiedPin;
-                        ConnectionStore.SaveOrUpdate(this, new SavedHostEntry(displayName, ip, port, verifiedPin, username, DateTime.UtcNow.Ticks));
-                    },
+                    verifiedPin => ConnectionStore.SaveOrUpdate(this,
+                        new SavedHostEntry(displayName, ip, port, verifiedPin, username, DateTime.UtcNow.Ticks)),
                     cts.Token, ConfirmSessionTakeoverAsync);
             }
             catch (System.OperationCanceledException) when (cts.IsCancellationRequested) { endMessage = AndroidStrings.Get("disconnected"); }
             catch (HostConsentRejectedException) { endMessage = AndroidStrings.Get("err_host_rejected"); }
-            catch (PasswordLoginRejectedException) { endMessage = AndroidStrings.Get("err_invalid_credentials"); }
+            catch (PasswordLoginRejectedException)
+            {
+                credentialsRejected = true;
+                endMessage = AndroidStrings.Get("err_invalid_credentials");
+            }
             catch (HostAdmissionException ex) { endMessage = ex.Reason switch
             {
                 "admission-pending-v5" => AndroidStrings.Get("err_admission_pending"),
@@ -615,8 +648,11 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
                 "takeover-cancel-v5" => AndroidStrings.Get("err_takeover_cancelled"),
                 _ => AndroidStrings.Get("err_session_state_changed")
             }; }
-            catch (RemoteSessionEndedException ex) { endMessage = ex.Reason == SessionEndReason.ReplacedByViewer
-                ? AndroidStrings.Get("err_session_replaced") : AndroidStrings.Get("err_session_ended"); }
+            catch (RemoteSessionEndedException ex)
+            {
+                replaced = ex.Reason == SessionEndReason.ReplacedByViewer;
+                endMessage = AndroidStrings.Get(replaced ? "err_session_replaced" : "err_session_ended");
+            }
             catch (AuthenticationException) { endMessage = AndroidStrings.Get("err_tls_auth_failed"); }
             catch (Exception ex) { endMessage = $"{ex.GetType().Name}: {ex.Message}"; }
             finally
@@ -628,18 +664,32 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             RunOnUiThread(() =>
             {
                 if (!ReferenceEquals(session, activeSession)) return;
+                ResetTouchInput();
                 activeSession.Dispose();
                 session = null;
                 sessionCts?.Dispose();
                 sessionCts = null;
-                sessionWorker = null;
+                if (IsFinishing || IsDestroyed) return;
+                if (replaced)
+                {
+                    Toast.MakeText(this, endMessage, ToastLength.Short)?.Show();
+                    Finish();
+                    return;
+                }
                 sessionPill.Visibility = ViewStates.Gone;
                 extraKeysBar.Visibility = ViewStates.Gone;
                 hudText.Visibility = ViewStates.Gone;
                 connectOverlay.Visibility = ViewStates.Visible;
-                connectBtn.Enabled = true;
-                hostInput.Enabled = portInput.Enabled = userInput.Enabled = passInput.Enabled = true;
-                LoadSavedPasswordIfAny();
+                ShowConnectionProgress(false);
+                if (credentialsRejected)
+                {
+                    PasswordStore.Clear(this, ip, port, username);
+                    if (foreground) passInput.RequestFocus();
+                }
+                else if (foreground)
+                {
+                    LoadSavedPasswordIfAny();
+                }
                 statusText.Text = endMessage;
             });
         });
@@ -686,9 +736,14 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         return await tcs.Task;
     }
 
-    void Disconnect()
+    void ReturnToList()
     {
-        ReleaseStickyModifiers();
+        StopSession();
+        Finish();
+    }
+
+    void StopSession()
+    {
         ResetTouchInput();
         sessionCts?.Cancel();
     }
@@ -818,14 +873,14 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
             })!.Show();
     }
 
-    void ScheduleHudTick()
+    void ScheduleHudTick(RemoteDesktopSession activeSession)
     {
         uiHandler?.PostDelayed(() =>
         {
-            if (session is null || IsDestroyed) return;
-            if (showHud) hudText.Text = session.VideoSettingsStatus + "\n" + session.Telemetry.FormatHud() +
+            if (!ReferenceEquals(session, activeSession) || IsFinishing || IsDestroyed) return;
+            if (showHud) hudText.Text = activeSession.VideoSettingsStatus + "\n" + activeSession.Telemetry.FormatHud() +
                 $"\nPointer {viewport.CursorNormalizedX},{viewport.CursorNormalizedY}";
-            ScheduleHudTick();
+            ScheduleHudTick(activeSession);
         }, 500);
     }
 
@@ -1091,27 +1146,49 @@ public sealed class RemoteSessionActivity : Activity, ISurfaceHolderCallback
         }
     }
 
-    protected override void OnStart() { base.OnStart(); foreground = true; EnterImmersiveMode(); }
+    protected override void OnStart()
+    {
+        base.OnStart();
+        foreground = true;
+        EnterImmersiveMode();
+        StartPendingAutoConnect();
+    }
 
     protected override void OnStop()
     {
         foreground = false;
-        requestingPermission = false;
         passInput.Text = "";
-        ReleaseStickyModifiers();
         ResetTouchInput();
         session?.AttachSurface(null);
         base.OnStop();
     }
 
-    protected override void OnDestroy() { Disconnect(); base.OnDestroy(); }
+    protected override void OnDestroy() { StopSession(); base.OnDestroy(); }
 
     public override void OnRequestPermissionsResult(int requestCode, string[] permissions, Permission[] grantResults)
     {
         base.OnRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode != LanRequest || !requestingPermission) return;
         requestingPermission = false;
-        statusText.Text = HasLanPermission() ? AndroidStrings.Get("connect_prompt") : AndroidStrings.Get("err_lan_permission_denied");
+        bool retryAuto = retryAutoAfterPermission;
+        retryAutoAfterPermission = false;
+        if (IsFinishing || IsDestroyed) return;
+        if (!HasLanPermission())
+        {
+            ShowConnectionProgress(false);
+            statusText.Text = AndroidStrings.Get("err_lan_permission_denied");
+            return;
+        }
+        if (retryAuto)
+        {
+            autoConnectPending = true;
+            StartPendingAutoConnect();
+        }
+        else
+        {
+            statusText.Text = AndroidStrings.Get("connect_prompt");
+            if (!string.IsNullOrEmpty(passInput.Text)) StartConnect();
+        }
     }
 
     public void SurfaceCreated(ISurfaceHolder holder) { activeSurface = holder.Surface; session?.AttachSurface(activeSurface); }

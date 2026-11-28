@@ -201,6 +201,7 @@
       android:layout_width="match_parent"
       android:layout_height="match_parent"
       android:background="#F5101318"
+      android:clickable="true"
       android:padding="16dp">
 
     <ScrollView
@@ -230,48 +231,57 @@
               android:textColor="#FFFFFFFF"
               android:paddingBottom="8dp" />
 
-          <EditText
-              android:id="@+id/input_host"
+          <LinearLayout
+              android:id="@+id/connect_fields"
               android:layout_width="match_parent"
               android:layout_height="wrap_content"
-              android:singleLine="true"
-              android:textColor="#FFFFFFFF"
-              android:textColorHint="#A0BEC8D7" />
+              android:orientation="vertical">
 
-          <EditText
-              android:id="@+id/input_port"
-              android:layout_width="match_parent"
-              android:layout_height="wrap_content"
-              android:singleLine="true"
-              android:inputType="number"
-              android:textColor="#FFFFFFFF"
-              android:textColorHint="#A0BEC8D7" />
+            <EditText
+                android:id="@+id/input_host"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:singleLine="true"
+                android:textColor="#FFFFFFFF"
+                android:textColorHint="#A0BEC8D7" />
 
-          <EditText
-              android:id="@+id/input_user"
-              android:layout_width="match_parent"
-              android:layout_height="wrap_content"
-              android:singleLine="true"
-              android:textColor="#FFFFFFFF"
-              android:textColorHint="#A0BEC8D7" />
+            <EditText
+                android:id="@+id/input_port"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:singleLine="true"
+                android:inputType="number"
+                android:textColor="#FFFFFFFF"
+                android:textColorHint="#A0BEC8D7" />
 
-          <EditText
-              android:id="@+id/input_password"
-              android:layout_width="match_parent"
-              android:layout_height="wrap_content"
-              android:singleLine="true"
-              android:inputType="textPassword"
-              android:textColor="#FFFFFFFF"
-              android:textColorHint="#A0BEC8D7" />
+            <EditText
+                android:id="@+id/input_user"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:singleLine="true"
+                android:textColor="#FFFFFFFF"
+                android:textColorHint="#A0BEC8D7" />
 
-          <CheckBox
-              android:id="@+id/chk_remember_password"
-              android:layout_width="wrap_content"
-              android:layout_height="wrap_content"
-              android:layout_marginTop="4dp"
-              android:text="Remember password"
-              android:textSize="13sp"
-              android:textColor="#FFD0D7E2" />
+            <EditText
+                android:id="@+id/input_password"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:singleLine="true"
+                android:inputType="textPassword"
+                android:saveEnabled="false"
+                android:textColor="#FFFFFFFF"
+                android:textColorHint="#A0BEC8D7" />
+
+            <CheckBox
+                android:id="@+id/chk_remember_password"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="Remember password"
+                android:textSize="13sp"
+                android:textColor="#FFD0D7E2" />
+
+          </LinearLayout>
 
           <LinearLayout
               android:layout_width="match_parent"
