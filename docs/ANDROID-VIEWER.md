@@ -139,3 +139,9 @@ dotnet run --project src/RelaxDesk.Android.Tests -c Release -- \
 可分开观察：Android 权限弹窗、Keystore 签名、Host 看到四条绑定、Host 写入首帧、App 报告 Surface 提交。夹具自动批准合成桌面，不能代替 Windows 的真实同意、硬件编码或真实局域网。模拟器即便报告硬件解码器，也不能作为手机硬件解码和性能的证据。
 
 外部客户端夹具冒烟已在 Linux 通过：独立进程以合成凭据完成证书固定、P-256 证明、媒体及三个辅助通道绑定，校验首帧，放慢替身呈现至超过一个心跳周期后正常断开；辅助通道没有应用载荷。含静止场景的 **204** 项回环、**74** 项媒体和 **20** 项设备证明检查通过。这个结果不替代真机或模拟器验收。
+
+### Android 17 模拟器安装与 Keystore 验证
+
+在 [KVM 加速的 GitHub Actions 运行](https://github.com/nanaminato/RelaxDesk/actions/runs/46086840167) 中，x86-64 Debug APK 构建零警告、零错误；Android 17 (API 37) 完成启动、安装、打开应用，并在强制停止后再次打开。两次应用启动都通过本地 Keystore 签名自检，包括重开密钥和拒绝不匹配的证书指纹。原实现使用通用 `GetKey`，运行时未得到所需的 `IPrivateKey` 句柄；改用标准 `PrivateKeyEntry` 读取同一别名的非导出句柄，未更改签名或协议格式。
+
+该用例没有比较两次进程启动的公开身份，也没有运行局域网授权和 Host 联调。接下来将在同一隔离模拟器中验证拒绝授权、允许后不自动拨号、指纹错误及正常 TLS，然后用 ARM64 真机和 Windows 验收硬件解码与首帧。此测试没有发布安装包。
