@@ -1,6 +1,6 @@
-# UAC 安全桌面与 Server 任务栏验收
+﻿# UAC 安全桌面与 Server 任务栏验收
 
-实现日期：2026-11-28。此文件区分实现、自动化契约与真实 Windows 测试；真实结果在本轮测试完成后补充。
+实现日期：2026-11-28。此文件区分实现、自动化契约与真实 Windows 测试；本轮真实结果见下方。
 
 ## 链路与权限
 
@@ -42,3 +42,20 @@ Windows Home 双机、全部 Windows 10/11 和不同 Server 管理策略、Windo
 Windows Server 2022 上通过真实 SCM/SYSTEM 通道完成 12 次 Explorer 任务栏点击，包含两个专用窗口的最小化恢复；两边均收到 6 组 F8 按下/释放。Shell 按可执行文件分组命名按钮，验收以独立 AppUserModelID 创建两个组，并在真实前台变化后确认按钮映射，避免将异步点击写入完成误当作已经激活窗口。
 
 安全桌面采集初轮获得了 Winlogon 画面；画面传输及鼠标操作仍在本轮真实验证中，不能据此标为全部通过。后台读帧不依赖 WPF 同步上下文，防止本机 UAC 切换使 UI 验收阻塞；本机输入发生短暂拒绝时不重放点击/按键，也不因此断开整个已授权连接。
+
+## 本轮实际结果（2026-11-28）
+
+- 构建环境：Windows Server 2022，.NET SDK 11.0.100；本机真实 SCM 服务已升级。
+- `build/uac-taskbar-confirmed.json`：PASS，12 次真实任务栏点击，两个最小化窗口恢复、各 6 组 F8 按下/释放。
+- 生产 TCP/TLS 连接使用随机密码、设备密钥证明和证书固定。`build/uac-tls-dedicated/uac-through-tls.png` 已人工查看，包含完整真实 UAC 凭据提示框；生产采集、编码、媒体传输和软件解码正常。默认桌面恢复后生成新的显示代次，恢复原 DXGI 编码链路。
+- SYSTEM 诊断记录 `service_input_gate=temporarily-blocked desktop_epoch=2`，鼠标位置未达到目标，Escape 未执行。因此**安全桌面输入没有通过真实验收**。本环境的提权提示由外部管理设施自动填写并关闭；不能仅凭这一现象断言是它调用了 BlockInput，也不能以此替代真实鼠标/键盘验证。没有关闭 UAC、修改策略或尝试解除其他程序的输入阻塞。
+- 修正了首帧暂未到达时错误地永久回退 GDI、物理鼠标坐标，以及测试解码器跨异步线程使用的问题。输入短暂失败不重放点击/按键，桌面变更会拒绝旧输入。
+- 自动化：Core 13989、服务 IPC 75、Windows 会话 92、输入状态/线程 70 项通过。此结果不等于真实 UAC 输入通过；Home 双机、管理员确认按钮操作及性能测量仍未完成。
+
+## 生产传输复测
+
+```powershell
+Host/RelaxDesk.Host.exe --secure-desktop-transport-probe C:/Temp/relaxdesk-uac-tls
+```
+
+等待 READY 后在同一物理会话本地请求一个无害提升操作。此探针仅监听 loopback，临时密码和密钥不持久化；检查真实 UAC 帧、目标鼠标坐标、Escape 取消和新代次 Default 帧。图形解码器全部在同一专用线程运行。`INCOMPLETE` 或退出码 2 表示只验证到画面/恢复，不能当作输入通过。正式双机验收应在无外部输入注入/提权自动化竞争的 Home 和 Server 上，用连接端展示画面并实际操作取消按钮，保存服务诊断及结果。

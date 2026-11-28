@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Authentication;
@@ -40,7 +40,7 @@ internal static class SecureDesktopTransportProbe
             await client.ConnectWithPassword("127.0.0.1",port,pin,user,password,(presented,_)=>Task.FromResult(presented==pin),lifetime.Token);
             display=new(client.DisplayState!,true);
             Task control=Controls();
-            using var decoder=new MediaDecoder(()=>{_ = WriteControl(new("keyframe-v2"));},preferHardware:false);
+            using var decoder=new ProbeDecoder(()=>{_ = WriteControl(new("keyframe-v2"));});
             while(!returned)
             {
                 var reading=client.Video.Read(lifetime.Token);
@@ -68,12 +68,13 @@ internal static class SecureDesktopTransportProbe
                         }
                     }
                 }
-                else if(secureGeneration>0&&mouse&&frame.DisplayGeneration>secureGeneration)returned=true;
+                else if(secureGeneration>0&&frame.DisplayGeneration>secureGeneration)returned=true;
             }
-            File.WriteAllText(Path.Combine(output,"result.json"),JsonSerializer.Serialize(new{status="PASS",decodedFrames,secureGeneration,mouseVerified=mouse,
-                escapeReturnedToDefault=returned,certificatePinned=true,passwordAndDeviceProof=true,network="TCP/TLS loopback",
+            File.WriteAllText(Path.Combine(output,"result.json"),JsonSerializer.Serialize(new{status=mouse?"PASS":"INCOMPLETE",decodedFrames,secureGeneration,mouseVerified=mouse,
+                escapeReturnedToDefault=mouse&&returned,defaultRecovered=returned,certificatePinned=true,passwordAndDeviceProof=true,network="TCP/TLS loopback",
                 capture="production VideoHostSession + real SCM worker",decoder="production MediaDecoder",uacFrame="uac-through-tls.png"}));
-            Console.WriteLine("PASS production TLS password/device authentication, UAC capture/encode/decode, generation-bound mouse/Escape and Default recovery");
+            Console.WriteLine(mouse?"PASS production TLS UAC capture, mouse/Escape and Default recovery":"INCOMPLETE UAC capture and Default recovery passed; secure mouse/Escape not verified");
+            if(!mouse)Environment.ExitCode=2;
             await lifetime.CancelAsync();client.Dispose();
             try{await control;}catch(Exception){}
         }
@@ -124,4 +125,29 @@ internal static class SecureDesktopTransportProbe
                 lifetime.Token,null,selected);
         }
     }
+    sealed class ProbeDecoder : IDisposable
+    {
+        readonly System.Collections.Concurrent.BlockingCollection<Action> work = new();
+        readonly Thread thread;
+        readonly MediaDecoder decoder;
+        public ProbeDecoder(Action keyframe)
+        {
+            decoder = new(keyframe, preferHardware:false);
+            thread = new Thread(() => { foreach(var action in work.GetConsumingEnumerable()) action(); }) { IsBackground=true, Name="UAC probe decoder" };
+            thread.Start();
+        }
+        T Invoke<T>(Func<T> action)
+        {
+            var result = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+            work.Add(() => {try{result.SetResult(action());}catch(Exception error){result.SetException(error);}});
+            return result.Task.GetAwaiter().GetResult();
+        }
+        public DecodedMedia? Decode(MediaFrame frame) => Invoke(() => decoder.Decode(frame));
+        public void Dispose()
+        {
+            try{Invoke(() => {decoder.Dispose();return true;});}
+            finally{work.CompleteAdding();thread.Join();work.Dispose();}
+        }
+    }
+
 }
