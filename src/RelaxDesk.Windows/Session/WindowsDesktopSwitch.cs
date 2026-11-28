@@ -14,9 +14,10 @@ public static class WindowsDesktopSwitch
     const uint GenericAll = 0x10000000;
     const uint DesktopReadObjects = 0x0001;
     const uint DesktopCreateWindow = 0x0002;
+    const uint DesktopJournalPlayback = 0x0020; // SendInput fails with Win32 5 without it.
     const uint DesktopWriteObjects = 0x0080;
     const uint DesktopSwitchDesktop = 0x0100;
-    const uint InputDesktopAccess = DesktopReadObjects | DesktopCreateWindow | DesktopWriteObjects | DesktopSwitchDesktop;
+    const uint InputDesktopAccess = DesktopReadObjects | DesktopCreateWindow | DesktopJournalPlayback | DesktopWriteObjects | DesktopSwitchDesktop;
 
     [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] static extern nint GetThreadDesktop(uint threadId);
