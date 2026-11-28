@@ -22,7 +22,7 @@ internal sealed class ServiceSecureCapture(WindowsDisplaySelection selection, Ac
                 if(display.Rotation!=0)throw new NotSupportedException("Rotated secure desktop requires GDI compatibility");
                 if(!captures.TryGetValue(display.Id,out var capture))captures.Add(display.Id,capture=new(display.Id));
                 var frame=capture.Capture(150)??capture.CachedFrame();
-                if(frame is null)throw new IOException("Secure DXGI frame not available");
+                if(frame is null)throw new SecureFramePendingException();
                 if(frame.Width!=display.Bounds.Width||frame.Height!=display.Bounds.Height)throw new IOException("Secure output geometry changed");
                 byte[] pixels=capture.ReadPixels(frame);
                 try
@@ -37,6 +37,12 @@ internal sealed class ServiceSecureCapture(WindowsDisplaySelection selection, Ac
             if(!reported){reported=true;diagnostic?.Invoke("secure_capture_backend=dxgi-readback");}
             return output;
         }
+        catch(SecureFramePendingException)
+        {
+            CryptographicOperations.ZeroMemory(output);
+            if(!reported){reported=true;diagnostic?.Invoke("secure_capture_backend=dxgi-waiting-for-first-frame");}
+            throw;
+        }
         catch(Exception error)when(error is ExternalException or IOException or NotSupportedException or DllNotFoundException or EntryPointNotFoundException)
         {
             CryptographicOperations.ZeroMemory(output);
@@ -48,3 +54,5 @@ internal sealed class ServiceSecureCapture(WindowsDisplaySelection selection, Ac
     byte[] Gdi(){using var desktop=new Desktop(selection);return desktop.Capture(includePointer:true);}
     public void Dispose(){foreach(var capture in captures.Values)capture.Dispose();captures.Clear();}
 }
+
+internal sealed class SecureFramePendingException : Exception;

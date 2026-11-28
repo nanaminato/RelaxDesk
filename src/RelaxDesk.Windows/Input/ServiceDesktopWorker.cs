@@ -6,7 +6,7 @@ public static class ServiceDesktopWorker
 {
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
     struct CursorPoint { public int X,Y; }
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [System.Runtime.InteropServices.DllImport("user32.dll",EntryPoint="GetPhysicalCursorPos")]
     static extern bool GetCursorPos(out CursorPoint point);
     internal static void EnsureCaptureAllowed(WindowsSessionSnapshot snapshot)
     {
@@ -27,6 +27,12 @@ public static class ServiceDesktopWorker
         WindowsInputSession? input = null;
         var state = new ServiceDesktopEpoch();
         ServiceSecureCapture? secureCapture=null;
+        string? lastInputGate=null;
+        void InputGate(string value)
+        {
+            if(lastInputGate==value)return;
+            lastInputGate=value;diagnostic?.Invoke($"service_input_gate={value} desktop_epoch={state.Epoch}");
+        }
         thread.Invoke(() =>
         {
             input = new WindowsInputSession(() => selection);
@@ -57,15 +63,15 @@ public static class ServiceDesktopWorker
             try { snapshot = Observe(); }
             catch (WindowsSessionUnavailableException error) when (error.Reason == "input-desktop-unavailable")
             { state.BeginTransition(); return; }
-            if (state.Secure && !WindowsUacDesktop.ConsentIsForeground()) return;
-            if (!state.Accept(epoch)) return; // Never replay an event from the old visible desktop.
+            if (state.Secure && !WindowsUacDesktop.ConsentIsForeground()) {InputGate("consent-not-foreground");return;}
+            if (!state.Accept(epoch)) {InputGate("stale-epoch");return;} // Never replay an event from the old visible desktop.
             WindowsDesktopSwitch.ExpectedInputDesktop = snapshot.InputDesktop;
             WindowsDesktopSwitch.ExpectedInputAuthorization = () =>
             {
                 var current = WindowsSessionAccess.Read(); EnsureCaptureAllowed(current);
                 if (current.InputDesktop == "Winlogon" && !WindowsUacDesktop.ConsentIsForeground()) throw new InputDesktopChangedException();
             };
-            try { _ = input!.TryInject(command); }
+            try { InputGate(input!.TryInject(command)?"accepted":"temporarily-blocked"); }
             catch (InputDesktopChangedException) { } // A racing switch is observed on the next capture/input.
             finally { WindowsDesktopSwitch.ExpectedInputDesktop = null; WindowsDesktopSwitch.ExpectedInputAuthorization = null; }
         });
@@ -80,7 +86,9 @@ public static class ServiceDesktopWorker
                 if (!WindowsUacDesktop.ConsentIsForeground()) { frame = new(sequence,state.Epoch,ServiceDesktopKind.Transition,0,0,[]); return; }
                 long epoch = state.Epoch;
                 secureCapture??=new ServiceSecureCapture(selection,diagnostic);
-                byte[] pixels = secureCapture.Capture();
+                byte[] pixels;
+                try{pixels=secureCapture.Capture();}
+                catch(SecureFramePendingException){frame=new(sequence,state.Epoch,ServiceDesktopKind.Transition,0,0,[]);return;}
                 var after = Observe();
                 if (!GetCursorPos(out var pointer)) throw new IOException("Secure desktop cursor position unavailable");
                 if (after.InputDesktop != snapshot.InputDesktop || state.Epoch != epoch || !WindowsUacDesktop.ConsentIsForeground())
