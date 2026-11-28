@@ -24,7 +24,7 @@ internal sealed class HostProcess
     public readonly List<string> Lines = [];
     public string[] Snapshot(){lock(Lines)return Lines.ToArray();}
     public Task Finished => completion ?? Task.CompletedTask;
-    public async Task Start(string application,string ip,int port,string backend="dxgi",string? fileRoot=null,string? display=null,RelaxDesk.Core.PasswordVerifier? testVerifier=null)
+    public async Task Start(string application,string ip,int port,string backend="dxgi",string? fileRoot=null,string? display=null,RelaxDesk.Core.PasswordVerifier? testVerifier=null,bool serviceInput=false)
     {
         if(Running) throw new InvalidOperationException(Strings.Get("Ui.HostProcess.Text122"));
         if(!IPAddress.TryParse(ip,out var address)||address.Equals(IPAddress.Any)||address.Equals(IPAddress.IPv6Any)||port is <1 or >65535)throw new ArgumentException(Strings.Get("Ui.HostProcess.Text464"));
@@ -32,6 +32,8 @@ internal sealed class HostProcess
         var start=new ProcessStartInfo(Path.GetExtension(application).Equals(".exe",StringComparison.OrdinalIgnoreCase)?application:"dotnet") {UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true};
         if(!application.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))start.ArgumentList.Add(application);
         start.ArgumentList.Add("--shell");
+        if (serviceInput && !backend.StartsWith("test-", StringComparison.Ordinal)) start.Environment["RELAXDESK_SERVICE_INPUT"] = "1";
+        else start.Environment.Remove("RELAXDESK_SERVICE_INPUT");
         if (testVerifier is not null && backend.StartsWith("test-", StringComparison.Ordinal))
             start.Environment["RELAXDESK_TEST_PASSWORD_VERIFIER"] = JsonSerializer.Serialize(testVerifier);
         fileRootConfigured=!string.IsNullOrWhiteSpace(fileRoot);

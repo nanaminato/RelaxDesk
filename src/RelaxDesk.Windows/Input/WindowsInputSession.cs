@@ -120,7 +120,15 @@ public sealed class WindowsInputSession : IDisposable
             if (releaseBeforeNextInput)
             {
                 try { ReleaseAll(); }
-                catch (InputRejectedException) { return false; }
+                catch (InputRejectedException)
+                {
+                    // A blocked key-up must not suppress pointer motion forever. Let the
+                    // user move away from a higher-integrity foreground target, but do not
+                    // send another key/button down until outstanding releases succeed.
+                    if (input.Kind != "move") return false;
+                    try { Inject(input); return true; }
+                    catch (InputRejectedException) { return false; }
+                }
                 releaseBeforeNextInput = false;
             }
             try

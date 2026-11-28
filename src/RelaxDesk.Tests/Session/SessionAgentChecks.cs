@@ -12,6 +12,8 @@ internal static class SessionAgentChecks
         var registry=new SessionAgentRegistry("approved");var registration=new SessionAgentPacket("register",nonce);
         foreach(var identity in new[]{who with{User="other"},who with{SessionId=0},who with{ProcessId=0},who with{ProcessId=-1}})Reject(()=>registry.Acquire(identity,registration));
         foreach(var packet in new[]{registration with{Kind="heartbeat"},registration with{Nonce="bad"},registration with{Sequence=1},registration with{Lease=other},registration with{Version=2}})Reject(()=>registry.Acquire(who,packet));
+        Reject(()=>registry.Acquire(who,new("input-register",nonce)));
+        Reject(()=>registry.Acquire(who,new("input-started",nonce,123,other)));
         var first=registry.Acquire(who,registration);Check(SessionAgentProtocol.Identifier(first.Id));Check(first.Approval==new SessionAgentPacket("registered",nonce,Lease:first.Id));
         Reject(()=>registry.Acquire(who with{ProcessId=999},registration));
         var heartbeat=new SessionAgentPacket("heartbeat",nonce,1,first.Id);
@@ -28,7 +30,7 @@ internal static class SessionAgentChecks
         foreach(var item in leases)registry.Release(item);Reject(()=>registry.Acquire(who,registration));
         var raced=new SessionAgentRegistry("approved");int acquired=0;var attempts=await Task.WhenAll(Enumerable.Range(0,16).Select(_=>Task.Run(()=>{try{var lease=raced.Acquire(who,registration);Interlocked.Increment(ref acquired);return lease;}catch(InvalidDataException){return null;}})));
         Check(acquired==1);raced.Release(attempts.Single(item=>item is not null)!);
-        foreach(var packet in new[]{registration,first.Approval,heartbeat,new SessionAgentPacket("alive",nonce,1,first.Id),new SessionAgentPacket("stopped",nonce,Lease:first.Id)})
+        foreach(var packet in new[]{registration,first.Approval,heartbeat,new SessionAgentPacket("alive",nonce,1,first.Id),new SessionAgentPacket("stopped",nonce,Lease:first.Id),new SessionAgentPacket("input-register",nonce),new SessionAgentPacket("input-started",nonce,123,first.Id)})
         {using var stream=new MemoryStream();await SessionAgentProtocol.Write(stream,packet,CancellationToken.None);stream.Position=0;Check(await SessionAgentProtocol.Read(stream,CancellationToken.None)==packet);}
         async Task RejectBytes(byte[] bytes)
         {try{await SessionAgentProtocol.Read(new MemoryStream(bytes),CancellationToken.None);throw new Exception("Invalid agent framing accepted");}catch(Exception error)when(error is IOException or InvalidDataException or System.Text.Json.JsonException){count++;}}

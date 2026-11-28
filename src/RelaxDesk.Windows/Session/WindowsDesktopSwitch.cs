@@ -41,6 +41,16 @@ public static class WindowsDesktopSwitch
     });
 
     public static bool IsLocalSystemProcess => LocalSystem.Value;
+    [ThreadStatic] static nint attachedDesktop;
+    [ThreadStatic] static nint originalDesktop;
+
+    internal static void ReleaseThreadDesktop()
+    {
+        if (attachedDesktop == 0) return;
+        if (originalDesktop != 0 && SetThreadDesktop(originalDesktop)) CloseDesktop(attachedDesktop);
+        attachedDesktop = 0;
+        originalDesktop = 0;
+    }
 
     static unsafe string? ReadDesktopName(nint handle)
     {
@@ -70,11 +80,18 @@ public static class WindowsDesktopSwitch
             string? threadName = ReadDesktopName(GetThreadDesktop(GetCurrentThreadId()));
             if (inputName is not null && string.Equals(inputName, threadName, StringComparison.OrdinalIgnoreCase))
                 return false;
-            return SetThreadDesktop(input);
+            nint current = GetThreadDesktop(GetCurrentThreadId());
+            if (!SetThreadDesktop(input))
+                throw new IOException($"Input desktop association failed: Win32 {Marshal.GetLastWin32Error()}");
+            if (originalDesktop == 0) originalDesktop = current;
+            if (attachedDesktop != 0) CloseDesktop(attachedDesktop);
+            attachedDesktop = input;
+            input = 0; // Keep the handle alive while the thread uses this desktop.
+            return true;
         }
         finally
         {
-            CloseDesktop(input);
+            if (input != 0) CloseDesktop(input);
         }
     }
 

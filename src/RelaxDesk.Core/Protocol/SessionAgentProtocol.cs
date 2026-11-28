@@ -14,7 +14,7 @@ public static class SessionAgentProtocol
     public static bool Identifier(string? value)=>value is {Length:32}&&value.All(char.IsAsciiHexDigit);
     public static void Validate(SessionAgentPacket packet)
     {
-        if(packet.Version!=1||!Identifier(packet.Nonce)||packet.Sequence<0||packet.Lease is not null&&!Identifier(packet.Lease)||packet.Kind is not ("register" or "registered" or "heartbeat" or "alive" or "stopped"))throw new InvalidDataException("Invalid session-agent packet");
+        if(packet.Version!=1||!Identifier(packet.Nonce)||packet.Sequence<0||packet.Lease is not null&&!Identifier(packet.Lease)||packet.Kind is not ("register" or "registered" or "heartbeat" or "alive" or "stopped" or "input-register" or "input-started"))throw new InvalidDataException("Invalid session-agent packet");
     }
     public static async Task Write(Stream stream,SessionAgentPacket packet,CancellationToken ct)
     {

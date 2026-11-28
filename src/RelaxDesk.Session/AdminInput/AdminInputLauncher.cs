@@ -9,6 +9,33 @@ public sealed class AdminInputDeploymentException(Exception cause) : IOException
 
 public static class AdminInputLauncher
 {
+    public static async Task<AdminInputConnection> StartService(Guid grant, string display, CancellationToken cancellation)
+    {
+        using var ownerIdentity = WindowsIdentity.GetCurrent();
+        string owner = ownerIdentity.User?.Value ?? throw new IOException("Interactive owner SID unavailable");
+        var request = new AdminInputLaunchRequest(grant, Environment.ProcessId, owner, display);
+        string executable = ServiceDeploymentTrust.ResolveElevatedInput(owner);
+        var server = LocalAgentPipe.CreateAdminServer(grant, owner);
+        SessionAgentClient? lease = null;
+        try
+        {
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+            deadline.CancelAfter(TimeSpan.FromSeconds(20));
+            lease = await SessionAgentClient.ConnectInput(request, deadline.Token);
+            var input = await AdminInputConnection.Accept(server, grant, lease.InputWorkerPid, deadline.Token,
+                executable, systemWorker: true);
+            input.BindServiceLease(lease);
+            lease = null;
+            return input;
+        }
+        catch
+        {
+            server.Dispose();
+            if (lease is not null) await lease.DisposeAsync();
+            throw;
+        }
+    }
+
     public static void CheckScheduledDeployment(string owner)
     {
         string executable = ServiceDeploymentTrust.ResolveElevatedInput(owner);

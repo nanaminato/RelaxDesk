@@ -230,7 +230,7 @@ internal sealed partial class HostWindow:Window
                 restartBudget = new();
                 restartBackend = backend;
             }
-            if(address is not null)ip.Text=address;if(number.HasValue)port.Text=number.Value.ToString();if(!int.TryParse(port.Text,out int selected))throw new ArgumentException(Strings.Get("Ui.HostWindow.Text398"));ip.IsEnabled=port.IsEnabled=start.IsEnabled=false;SetDisplayConfigurationEnabled(false);LocalizedText.Bind(state,"Text","Ui.HostWindow.Text350");await Host.Start(application,ip.Text.Trim(),selected,backend,selectedFileRoot,SelectedDisplay,loginVerifierForTests);}
+            if(address is not null)ip.Text=address;if(number.HasValue)port.Text=number.Value.ToString();if(!int.TryParse(port.Text,out int selected))throw new ArgumentException(Strings.Get("Ui.HostWindow.Text398"));ip.IsEnabled=port.IsEnabled=start.IsEnabled=false;SetDisplayConfigurationEnabled(false);LocalizedText.Bind(state,"Text","Ui.HostWindow.Text350");await Host.Start(application,ip.Text.Trim(),selected,backend,selectedFileRoot,SelectedDisplay,loginVerifierForTests,ServiceRequired);}
         catch(Exception e){LocalizedText.Bind(state,"Text","Ui.HostWindow.Text287");detail.Text=e.Message;ip.IsEnabled=port.IsEnabled=start.IsEnabled=true;SetDisplayConfigurationEnabled(true);}
         finally{UpdateServiceControls();}
     }

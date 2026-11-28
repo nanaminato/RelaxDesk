@@ -22,6 +22,17 @@ public static class WindowsInputPrivilege
     [DllImport("advapi32.dll")]
     static extern nint GetSidSubAuthority(nint sid, uint index);
 
+    [DllImport("user32.dll")] static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(nint window, out uint process);
+
+    public static string ForegroundDiagnostic()
+    {
+        uint process = 0;
+        _ = GetWindowThreadProcessId(GetForegroundWindow(), out process);
+        var token = ReadProcessToken();
+        return $"foreground_pid={process} coordinator_integrity=0x{token.IntegrityRid:X4} coordinator_elevated={token.Elevated}";
+    }
+
     public static WindowsInputToken ReadProcessToken()
     {
         using var threadIdentity = WindowsIdentity.GetCurrent(ifImpersonating: true);
@@ -43,6 +54,13 @@ public static class WindowsInputPrivilege
         var token = ReadProcessToken();
         if (!AllowsOrdinaryHost(token) && !AllowsSystemHost(token))
             throw new IOException("Start RelaxDesk Host with an ordinary Windows token or via the LocalSystem service.");
+    }
+
+    public static void EnsureSystemInputProcess()
+    {
+        var token = ReadProcessToken();
+        if (!WindowsDesktopSwitch.IsLocalSystemProcess || token.IntegrityRid != 0x4000 || token.UiAccess)
+            throw new IOException("Service input requires a LocalSystem interactive worker without UIAccess.");
     }
 
     public static void EnsureElevatedProcess()

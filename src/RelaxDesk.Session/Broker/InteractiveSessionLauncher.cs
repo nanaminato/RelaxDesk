@@ -7,14 +7,47 @@ using Microsoft.Win32.SafeHandles;
 namespace RelaxDesk.Session;
 
 /// <summary>
-/// Launches a LocalSystem process inside the active physical console session
-/// (winsta0\default) from the Session 0 broker service so the interactive host
-/// can dynamically follow Winlogon/Default desktop switches for UAC control.
+/// Launches the broker-selected protected input worker in the authenticated
+/// caller's active interactive session on winsta0\default. The broker must
+/// derive the executable, arguments and session from verified local identity.
 /// </summary>
 public static class InteractiveSessionLauncher
 {
     const uint TokenDuplicate = 0x0002;
     const uint TokenQuery = 0x0008;
+    const uint TokenAdjustPrivileges = 0x0020;
+    static readonly object launchSync = new();
+    [StructLayout(LayoutKind.Sequential)]
+    struct TokenPrivileges { public uint Count; public uint LuidLow; public int LuidHigh; public uint Attributes; }
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern bool LookupPrivilegeValue(string? system, string name, out long luid);
+    [DllImport("advapi32.dll", SetLastError = true)]
+    static extern bool AdjustTokenPrivileges(SafeAccessTokenHandle token, bool disableAll,
+        ref TokenPrivileges state, uint length, out TokenPrivileges previous, out uint required);
+
+    sealed class SessionPrivilege : IDisposable
+    {
+        readonly SafeAccessTokenHandle token;
+        TokenPrivileges previous;
+        public SessionPrivilege()
+        {
+            if (!OpenProcessToken(GetCurrentProcess(), TokenQuery | TokenAdjustPrivileges, out token))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            try
+            {
+                if (!LookupPrivilegeValue(null, "SeTcbPrivilege", out long luid)) throw new Win32Exception(Marshal.GetLastWin32Error());
+                var enabled = new TokenPrivileges { Count = 1, LuidLow = (uint)luid, LuidHigh = (int)(luid >> 32), Attributes = 2 };
+                if (!AdjustTokenPrivileges(token, false, ref enabled, (uint)Marshal.SizeOf<TokenPrivileges>(), out previous, out _) ||
+                    Marshal.GetLastWin32Error() != 0) throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+            catch { token.Dispose(); throw; }
+        }
+        public void Dispose()
+        {
+            try { _ = AdjustTokenPrivileges(token, false, ref previous, 0, out _, out _); }
+            finally { token.Dispose(); }
+        }
+    }
     const uint TokenAssignPrimary = 0x0001;
     const uint TokenAdjustDefault = 0x0080;
     const uint TokenAdjustSessionId = 0x0100;
@@ -80,41 +113,47 @@ public static class InteractiveSessionLauncher
         if (string.IsNullOrWhiteSpace(executablePath) || !Path.IsPathFullyQualified(executablePath))
             throw new ArgumentException("Executable path must be fully qualified.", nameof(executablePath));
 
-        uint sessionId = targetSessionId ?? ActiveConsoleSessionId();
-        if (sessionId is 0 or uint.MaxValue)
-            throw new IOException("Target interactive session is invalid.");
-
-        uint desired = TokenDuplicate | TokenQuery | TokenAssignPrimary | TokenAdjustDefault | TokenAdjustSessionId;
-        if (!OpenProcessToken(GetCurrentProcess(), desired, out var currentToken))
-            throw new Win32Exception(Marshal.GetLastWin32Error());
-
-        using (currentToken)
+        lock (launchSync)
         {
-            if (!DuplicateTokenEx(currentToken, MaximumAllowed, 0, SecurityIdentification, TokenPrimary, out var sessionToken))
+            // TokenSessionId requires SeTcbPrivilege enabled on the caller. Keep it
+            // scoped to launch and restore the prior process privilege state.
+            using var privilege = new SessionPrivilege();
+            uint sessionId = targetSessionId ?? ActiveConsoleSessionId();
+            if (sessionId is 0 or uint.MaxValue)
+                throw new IOException("Target interactive session is invalid.");
+
+            uint desired = TokenDuplicate | TokenQuery | TokenAssignPrimary | TokenAdjustDefault | TokenAdjustSessionId;
+            if (!OpenProcessToken(GetCurrentProcess(), desired, out var currentToken))
                 throw new Win32Exception(Marshal.GetLastWin32Error());
 
-            using (sessionToken)
+            using (currentToken)
             {
-                if (!SetTokenInformation(sessionToken, TokenSessionId, ref sessionId, sizeof(uint)))
+                if (!DuplicateTokenEx(currentToken, MaximumAllowed, 0, SecurityIdentification, TokenPrimary, out var sessionToken))
                     throw new Win32Exception(Marshal.GetLastWin32Error());
 
-                var startup = new StartupInfo
+                using (sessionToken)
                 {
-                    Size = (uint)Marshal.SizeOf<StartupInfo>(),
-                    Desktop = @"winsta0\default"
-                };
-                string commandLine = string.IsNullOrWhiteSpace(arguments)
-                    ? $"\"{executablePath}\""
-                    : $"\"{executablePath}\" {arguments}";
-                string? workingDirectory = Path.GetDirectoryName(executablePath);
+                    if (!SetTokenInformation(sessionToken, TokenSessionId, ref sessionId, sizeof(uint)))
+                        throw new Win32Exception(Marshal.GetLastWin32Error());
 
-                if (!CreateProcessAsUser(sessionToken, executablePath, commandLine, 0, 0, false,
-                    CreateUnicodeEnvironment | CreateNoWindow, 0, workingDirectory, ref startup, out var info))
-                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                    var startup = new StartupInfo
+                    {
+                        Size = (uint)Marshal.SizeOf<StartupInfo>(),
+                        Desktop = @"winsta0\default"
+                    };
+                    string commandLine = string.IsNullOrWhiteSpace(arguments)
+                        ? $"\"{executablePath}\""
+                        : $"\"{executablePath}\" {arguments}";
+                    string? workingDirectory = Path.GetDirectoryName(executablePath);
 
-                if (info.Thread != 0) CloseHandle(info.Thread);
-                if (info.Process != 0) CloseHandle(info.Process);
-                return info.ProcessId;
+                    if (!CreateProcessAsUser(sessionToken, executablePath, commandLine, 0, 0, false,
+                        CreateUnicodeEnvironment | CreateNoWindow, 0, workingDirectory, ref startup, out var info))
+                        throw new Win32Exception(Marshal.GetLastWin32Error());
+
+                    if (info.Thread != 0) CloseHandle(info.Thread);
+                    if (info.Process != 0) CloseHandle(info.Process);
+                    return info.ProcessId;
+                }
             }
         }
     }

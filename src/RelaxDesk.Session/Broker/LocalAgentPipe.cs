@@ -98,7 +98,7 @@ public static class LocalAgentPipe
         finally { Marshal.FreeHGlobal(buffer); }
     }
 
-    public static void AuthenticateAdminWorker(NamedPipeServerStream pipe, int? expectedPid, string? expectedImage = null, string? elevatedOwner = null)
+    public static void AuthenticateAdminWorker(NamedPipeServerStream pipe, int? expectedPid, string? expectedImage = null, string? elevatedOwner = null, bool systemWorker = false)
     {
         Check(GetNamedPipeClientProcessId(pipe.SafePipeHandle, out uint pid));
         Check(GetNamedPipeClientSessionId(pipe.SafePipeHandle, out uint session));
@@ -112,13 +112,29 @@ public static class LocalAgentPipe
         Check(QueryFullProcessImageName(process, 0, image, ref length));
         if (!image.AsSpan(0, checked((int)length)).Equals(expectedImage.AsSpan(), StringComparison.OrdinalIgnoreCase))
             throw new SecurityException("Administrator input worker image mismatch");
+        if (systemWorker)
+        {
+            // Authenticate the pipe security context rather than opening a SYSTEM
+            // process token, which an ordinary coordinator is not entitled to query.
+            pipe.RunAsClient(() =>
+            {
+                using var identity = WindowsIdentity.GetCurrent(true);
+                if (identity?.User?.IsWellKnown(WellKnownSidType.LocalSystemSid) != true ||
+                    CoordinatorIntegrity(identity.AccessToken) != 0x4000)
+                    throw new SecurityException("Service input worker identity mismatch");
+            });
+            return;
+        }
         if (elevatedOwner is null) return;
         Check(OpenProcessToken(process, 8, out var token));
         using (token)
         using (var identity = new WindowsIdentity(token.DangerousGetHandle()))
         {
             Check(GetTokenInformation(token, 20, out uint elevated, sizeof(uint), out uint size));
-            if (identity.User?.Value != CanonicalUser(elevatedOwner) || size != sizeof(uint) || elevated != 1 || CoordinatorIntegrity(token) < 0x3000)
+            bool ownerMatches = systemWorker
+                ? identity.User?.IsWellKnown(WellKnownSidType.LocalSystemSid) == true && CoordinatorIntegrity(token) == 0x4000
+                : identity.User?.Value == CanonicalUser(elevatedOwner!);
+            if (!ownerMatches || size != sizeof(uint) || elevated != 1 || CoordinatorIntegrity(token) < 0x3000)
                 throw new SecurityException("Scheduled worker owner or integrity mismatch");
         }
     }

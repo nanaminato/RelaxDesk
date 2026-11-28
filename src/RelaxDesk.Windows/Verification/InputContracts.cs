@@ -9,6 +9,17 @@ public static class InputContracts
     {
         int count=0;
         void Check(bool value){if(!value)throw new IOException($"Native input contract {count+1} failed");count++;}
+        using (var inputThread = new InputDesktopThread())
+        {
+            int firstThread = 0, secondThread = 0;
+            inputThread.Invoke(() => { firstThread = Environment.CurrentManagedThreadId; Check(!Thread.CurrentThread.IsThreadPoolThread); });
+            inputThread.Invoke(() => secondThread = Environment.CurrentManagedThreadId);
+            Check(firstThread == secondThread && firstThread != Environment.CurrentManagedThreadId);
+            try { inputThread.Invoke(() => throw new IOException("input-thread-marker")); throw new InvalidOperationException("Input thread swallowed failure"); }
+            catch (IOException error) { Check(error.Message == "input-thread-marker"); }
+            inputThread.Invoke(() => secondThread = Environment.CurrentManagedThreadId);
+            Check(firstThread == secondThread);
+        }
         var geometry=new InputGeometry(new(0,0,1920,1080),new(-1920,-200,3840,1280));
         NativeInput[] Plan(RemoteInput value)=>WindowsInputPlan.Build(value,geometry);
         Check(Marshal.SizeOf<NativeInput>()==(IntPtr.Size==8?40:28));
@@ -51,6 +62,22 @@ public static class InputContracts
             Check(!ordinary.TryInjectOrdinary(new("key", VirtualKey: 66)) && sends.Count == 5 && WindowsInputPlan.IsUp(sends[4][0]));
             Check(ordinary.TryInjectOrdinary(new("key", VirtualKey: 67)) && ordinary.HeldCount == 1);
             Check(sends.Count == 7 && WindowsInputPlan.IsUp(sends[5][0]) && sends[6][0].Value.Keyboard.Key == 67);
+        }
+        // A failed key release must not suppress all later pointer motion.
+        var recoverySends = new List<NativeInput[]>();
+        var recoveryResults = new Queue<uint>(new uint[] { 1, 0, 0, 0, 1, 1, 1 });
+        using (var recovery = new WindowsInputSession(batch =>
+        {
+            recoverySends.Add(batch);
+            return recoveryResults.TryDequeue(out var result) ? result : (uint)batch.Length;
+        }, () => { }, () => geometry))
+        {
+            Check(recovery.TryInjectOrdinary(new("key", VirtualKey: 65)));
+            Check(!recovery.TryInjectOrdinary(new("key", VirtualKey: 65, Up: true)));
+            Check(recovery.TryInjectOrdinary(new("move", X: 1000, Y: 1000)));
+            Check(recovery.HeldCount == 1 && recoverySends[^1][0].Type == 0);
+            Check(recovery.TryInjectOrdinary(new("button", Button: 1)));
+            Check(WindowsInputPlan.IsUp(recoverySends[^2][0]) && recoverySends[^1][0].Type == 0);
         }
         bool permitted=false;using(var session=new WindowsInputSession(_=>throw new InvalidOperationException("Desktop guard bypassed"),()=>{if(!permitted)throw new IOException("Desktop unavailable");},()=>geometry))
         {try{session.Inject(new("key",VirtualKey:65));throw new InvalidOperationException("Guard bypassed");}catch(IOException){Check(session.HeldCount==0);}}

@@ -3,12 +3,14 @@ using RelaxDesk.Core;
 using RelaxDesk.Session;
 using RelaxDesk.Windows;
 
+bool serviceInput = args is ["--service-input", ..];
+if (serviceInput) args = args[1..];
 string? fingerprint = args is ["--local-consent", var device, ..] ? device : null;
 if (fingerprint is not null && !LocalConnectionConsent.ValidFingerprint(fingerprint)) return 2;
 var request = AdminInputLaunchRequest.Parse(fingerprint is null ? args : args[2..]);
 if (request is null) return 2;
 
-try { WindowsInputPrivilege.EnsureElevatedProcess(); }
+try { if (serviceInput) WindowsInputPrivilege.EnsureSystemInputProcess(); else WindowsInputPrivilege.EnsureElevatedProcess(); }
 catch (IOException) { return 4; }
 
 try
@@ -27,7 +29,7 @@ try
     }
     // Readiness comes from the worker after it checks the administrator token
     // and the interactive desktop.
-    await ElevatedInputWorker.Run(pipe, request.Grant, () => new WindowsDisplaySelection(request.Display), CancellationToken.None);
+    await ElevatedInputWorker.Run(pipe, request.Grant, () => new WindowsDisplaySelection(request.Display), CancellationToken.None, serviceInput);
     return 0;
 }
 catch (Exception error) when (error is IOException or SecurityException or UnauthorizedAccessException or

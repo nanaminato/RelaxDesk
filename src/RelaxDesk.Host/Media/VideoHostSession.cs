@@ -469,7 +469,9 @@ internal static class VideoHostSession
                                 if (blocked != ordinaryInputBlocked)
                                 {
                                     ordinaryInputBlocked = blocked;
-                                    if (blocked) HostSessionLog.Write("ordinary_input_temporarily_blocked");
+                                    HostSessionLog.Write(blocked
+                                        ? "ordinary_input_temporarily_blocked " + WindowsInputPrivilege.ForegroundDiagnostic()
+                                        : "ordinary_input_restored");
                                     if (shellSessionId is not null)
                                         ShellBridge.Emit(blocked ? "ordinary-input-blocked" : "ordinary-input-restored", sessionId: shellSessionId);
                                 }

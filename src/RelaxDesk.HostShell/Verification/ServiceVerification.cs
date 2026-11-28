@@ -92,7 +92,7 @@ internal static class ServiceVerification
                 }
                 Console.WriteLine($"PASS {checks} actual WPF service-agent/Host/TLS checks: opt-in, no implicit sharing, fresh Viewer consent, broker stop/crash stops owned Host, no silent portable fallback, explicit ordinary mode and resource cleanup; console broker/synthetic video only, no installed SCM or physical capture/input");
             }
-            catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}
+            catch(Exception error){Console.Error.WriteLine(error);foreach(var line in window.Host.Snapshot())Console.Error.WriteLine(line);Environment.ExitCode=1;}
             finally{await window.DisconnectService();await window.StopSharing();window.Close();}
         };
         app.Run(window);

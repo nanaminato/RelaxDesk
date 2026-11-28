@@ -109,7 +109,30 @@ internal static class HostConnection
     {
         bool synthetic = backend.StartsWith("test-", StringComparison.Ordinal);
         await using var elevated = synthetic && hello.DeviceKey is not null && backend is ("test-admin-lifecycle" or "test-admin-worker-loss")
-                ? await AdminInputFixture.Start(backend == "test-admin-worker-loss", stop) : null;
+                ? await AdminInputFixture.Start(backend == "test-admin-worker-loss", stop)
+                : !synthetic && Environment.GetEnvironmentVariable("RELAXDESK_SERVICE_INPUT") == "1"
+                    ? await StartServiceInput() : null;
+        async Task<AdminInputConnection> StartServiceInput()
+        {
+            if (hello.InputVersion != InputProtocol.Version) throw new IOException("Service input requires current input protocol.");
+            WindowsInputPrivilege.EnsureOrdinaryProcess();
+            WindowsSessionAccess.EnsureAllowed();
+            string device = new WindowsDisplaySelection(selectedDisplay).Device;
+            try
+            {
+                var worker = await AdminInputLauncher.StartService(Guid.NewGuid(), device, stop);
+                HostSessionLog.Write("input_route=service-system-worker");
+                return worker;
+            }
+            catch (Exception error)
+            {
+                HostSessionLog.Write($"service_input_start_failed type={error.GetType().Name} hresult=0x{error.HResult:X8}");
+                using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                await Wire.Write(tls, new(FullControlProtocol.InputUnavailable), deadline.Token);
+                throw;
+            }
+        }
+        if (!synthetic && elevated is null) HostSessionLog.Write("input_route=ordinary-user");
         if (shell is not null && attachments is null) ShellBridge.Emit("approved", sessionId: shell.Id);
         if(selectedFileRoot is null)
         {

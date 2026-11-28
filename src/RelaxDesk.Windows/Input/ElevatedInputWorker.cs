@@ -6,26 +6,36 @@ public static class ElevatedInputWorker
 {
     // Call only after the local IPC endpoint has authenticated its peer.
     public static async Task Run(Stream channel, Guid grant, Func<WindowsDisplaySelection> display,
-        CancellationToken revocation)
+        CancellationToken revocation, bool serviceInput = false)
     {
-        WindowsInputPrivilege.EnsureElevatedProcess();
+        if (serviceInput) WindowsInputPrivilege.EnsureSystemInputProcess();
+        else WindowsInputPrivilege.EnsureElevatedProcess();
         WindowsSessionAccess.EnsureAllowed();
         var selection = display();
-        using var input = new WindowsInputSession(() => selection);
-        await WhileSessionAvailable(revocation, async lifetime =>
+        using var inputThread = new InputDesktopThread();
+        WindowsInputSession? input = null;
+        inputThread.Invoke(() => input = new WindowsInputSession(() => selection));
+        try
         {
-            using (var readyDeadline = CancellationTokenSource.CreateLinkedTokenSource(lifetime))
+            await WhileSessionAvailable(revocation, async lifetime =>
             {
-                readyDeadline.CancelAfter(TimeSpan.FromSeconds(2));
-                await Wire.Write(channel, new(AdminInputChannel.Ready, Origin: grant.ToString("N")), readyDeadline.Token);
-            }
-            await AdminInputChannel.Run(channel, grant, input.Inject, input.ReleaseAll, lifetime, device =>
-            {
-                var next = selection.Select(device);
-                next.EnsureCurrent();
-                selection = next;
-            });
-        }, lifetime => WindowsSessionAccess.Watch(lifetime));
+                using (var readyDeadline = CancellationTokenSource.CreateLinkedTokenSource(lifetime))
+                {
+                    readyDeadline.CancelAfter(TimeSpan.FromSeconds(2));
+                    await Wire.Write(channel, new(AdminInputChannel.Ready, Origin: grant.ToString("N")), readyDeadline.Token);
+                }
+                await AdminInputChannel.Run(channel, grant,
+                    command => inputThread.Invoke(() => input!.Inject(command)),
+                    () => inputThread.Invoke(() => input!.ReleaseAll()), lifetime,
+                    device => inputThread.Invoke(() =>
+                    {
+                        var next = selection.Select(device);
+                        next.EnsureCurrent();
+                        selection = next;
+                    }));
+            }, lifetime => WindowsSessionAccess.Watch(lifetime));
+        }
+        finally { inputThread.Invoke(() => input!.Dispose()); }
     }
 
     internal static async Task WhileSessionAvailable(CancellationToken revocation,

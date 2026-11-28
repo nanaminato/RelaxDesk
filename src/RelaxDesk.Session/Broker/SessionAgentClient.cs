@@ -14,6 +14,26 @@ public sealed class SessionAgentClient:IAsyncDisposable
     SessionAgentClient(NamedPipeClientStream pipe,string nonce,string lease){this.pipe=pipe;this.nonce=nonce;this.lease=lease;running=Run();}
     public bool Healthy=>Volatile.Read(ref healthy)!=0;
     public Task Completion=>running;
+    public int? InputWorkerPid { get; private init; }
+    public static async Task<SessionAgentClient> ConnectInput(AdminInputLaunchRequest request, CancellationToken ct)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(15));
+        var pipe = await LocalAgentPipe.Connect(LocalAgentPipe.Name, deadline.Token);
+        try
+        {
+            LocalAgentPipe.AuthenticateServer(pipe);
+            string nonce = request.Grant.ToString("N");
+            await SessionAgentProtocol.Write(pipe, new("input-register", nonce), deadline.Token);
+            await Wire.Write(pipe, new("service-input-display-v1", Text: request.Display), deadline.Token);
+            var response = await SessionAgentProtocol.Read(pipe, deadline.Token);
+            if (!SessionAgentProtocol.Identifier(response.Lease) || response.Sequence is <= 0 or > int.MaxValue ||
+                response != new SessionAgentPacket("input-started", nonce, response.Sequence, response.Lease))
+                throw new IOException("Service input launch rejected; update/repair the system service.");
+            return new(pipe, nonce, response.Lease!) { InputWorkerPid = (int)response.Sequence };
+        }
+        catch { pipe.Dispose(); throw; }
+    }
     public static Task<SessionAgentClient> Connect(CancellationToken ct)=>ConnectInternal(LocalAgentPipe.Name,null,ct);
     public static Task<SessionAgentClient> ConnectTest(string name,int expectedPid,CancellationToken ct)
     {

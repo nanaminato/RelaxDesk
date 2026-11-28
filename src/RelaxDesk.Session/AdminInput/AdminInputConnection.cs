@@ -16,6 +16,8 @@ public sealed class AdminInputConnection : IAsyncDisposable
     readonly CancellationTokenSource stoppingHeartbeat = new();
     readonly SemaphoreSlim writer = new(1);
     readonly Task heartbeat;
+    SessionAgentClient? serviceLease;
+    Task? serviceWatch;
     long sequence;
     int closing;
 
@@ -29,7 +31,7 @@ public sealed class AdminInputConnection : IAsyncDisposable
     public Task Completion => heartbeat;
 
     public static async Task<AdminInputConnection> Accept(NamedPipeServerStream server, Guid grant,
-        int? workerPid, CancellationToken cancellation, string? workerImage = null, string? elevatedOwner = null)
+        int? workerPid, CancellationToken cancellation, string? workerImage = null, string? elevatedOwner = null, bool systemWorker = false)
     {
         try
         {
@@ -37,8 +39,8 @@ public sealed class AdminInputConnection : IAsyncDisposable
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
             deadline.CancelAfter(TimeSpan.FromSeconds(elevatedOwner is null ? 15 : 45));
             await server.WaitForConnectionAsync(deadline.Token);
-            LocalAgentPipe.AuthenticateAdminWorker(server, workerPid, workerImage, elevatedOwner);
             var ready = await Wire.Read(server, deadline.Token, 2048);
+            LocalAgentPipe.AuthenticateAdminWorker(server, workerPid, workerImage, elevatedOwner, systemWorker);
             if (elevatedOwner is not null && ready == new Packet("admin-input-consent-denied", Origin: grant.ToString("N")))
                 throw new AdminInputConsentDeniedException();
             if (ready != new Packet(AdminInputChannel.Ready, Origin: grant.ToString("N")))
@@ -50,6 +52,19 @@ public sealed class AdminInputConnection : IAsyncDisposable
         {
             server.Dispose();
             throw;
+        }
+    }
+
+    internal void BindServiceLease(SessionAgentClient lease)
+    {
+        serviceLease = lease;
+        serviceWatch = Watch();
+        async Task Watch()
+        {
+            try { await lease.Completion.WaitAsync(closed.Token); }
+            catch (OperationCanceledException) when (closed.IsCancellationRequested) { return; }
+            catch (Exception) { }
+            Close();
         }
     }
 
@@ -142,5 +157,7 @@ public sealed class AdminInputConnection : IAsyncDisposable
         Close();
         try { await heartbeat; }
         catch (Exception error) when (error is IOException or ObjectDisposedException) { }
+        if (serviceWatch is not null) await serviceWatch;
+        if (serviceLease is not null) await serviceLease.DisposeAsync();
     }
 }

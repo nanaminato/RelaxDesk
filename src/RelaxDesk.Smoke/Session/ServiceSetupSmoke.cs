@@ -121,8 +121,10 @@ internal static class ServiceSetupSmoke
         var queryRegistration=new ServiceRegistration(queryCommand,@"NT AUTHORITY\LocalService",16,3,4,allowed);
         var queried=MachineServiceSetup.Inspect(own,queryRegistration);Check(queried.Installed&&queried.State==4&&queried.Startup==3&&!queried.PendingDelete);
         Check(MachineServiceSetup.Inspect(own,queryRegistration with{State=1,Startup=2}).Startup==2);
+        Check(MachineServiceSetup.Inspect(own,queryRegistration with{Account="LocalSystem"}).Installed);
+        Check(MachineServiceSetup.Inspect(own,queryRegistration with{Account=@"NT AUTHORITY\SYSTEM"}).Installed);
         Check(MachineServiceSetup.Inspect(own,queryRegistration with{PendingDelete=true}).PendingDelete);
-        foreach(var invalidQuery in new[]{queryRegistration with{Command=queryCommand+" --extra"},queryRegistration with{Command=queryCommand.Replace("app-","other-")},queryRegistration with{Account="LocalSystem"},queryRegistration with{Type=32},queryRegistration with{Startup=4}})
+        foreach(var invalidQuery in new[]{queryRegistration with{Command=queryCommand+" --extra"},queryRegistration with{Command=queryCommand.Replace("app-","other-")},queryRegistration with{Account=@"NT AUTHORITY\NetworkService"},queryRegistration with{Type=32},queryRegistration with{Startup=4}})
             RejectPolicy(()=>MachineServiceSetup.Inspect(own,invalidQuery));
         RejectPolicy(()=>MachineServiceSetup.Inspect("S-1-5-21-1-2-3-99999",queryRegistration));
         RejectPolicy(()=>BrokerServiceSecurity.Validate(new($"O:BAG:BAD:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x00020025;;;{own})"),own));
@@ -163,7 +165,7 @@ internal static class ServiceSetupSmoke
         Check(services.Current?.Command==initialCommand&&services.Current.State==4&&files.ReadState()!.Current==initial.Current);
         int before=services.Writes;
         await Reject(async()=>await setup.Install(second,"S-1-5-21-1-2-3-99999",null,false,false,CancellationToken.None));Check(services.Writes==before);
-        var owned=services.Current!;services.Current=owned with{Account="LocalSystem"};await Reject(async()=>await setup.Uninstall(own,false,CancellationToken.None));Check(services.Writes==before);services.Current=owned;
+        var owned=services.Current!;services.Current=owned with{Account=@"NT AUTHORITY\NetworkService"};await Reject(async()=>await setup.Uninstall(own,false,CancellationToken.None));Check(services.Writes==before);services.Current=owned;
         var updated=await setup.Install(second,own,null,false,false,CancellationToken.None);Check(updated.Startup==2&&updated.Running&&files.ReadState()!.Current!=initial.Current&&!Directory.Exists(files.ReleasePath(initial.Current)));
         string protectedWorker = ServiceDeploymentTrust.ResolveElevatedInput(files, own);
         Check(inputTasks.Registered.SetEquals([protectedWorker]));

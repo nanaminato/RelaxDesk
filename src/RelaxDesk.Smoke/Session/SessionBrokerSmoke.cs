@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.ComponentModel;
 using System.IO.Pipes;
 using System.Security;
@@ -9,9 +10,18 @@ using RelaxDesk.Session;
 
 internal static class SessionBrokerSmoke
 {
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern nint CommandLineToArgvW(string command, out int count);
+    [DllImport("kernel32.dll")] static extern nint LocalFree(nint memory);
     public static async Task Run(string application)
     {
         int count=0;void Check(bool condition){if(!condition)throw new IOException($"Broker IPC check {count+1} failed");count++;}
+        foreach (string argument in new[] { @"\\.\DISPLAY1", "all", "space name", "quote\" --inject", @"ends-with\", "" })
+        {
+            nint parsed = CommandLineToArgvW("test.exe " + SessionBrokerServer.QuoteArgument(argument), out int argc);
+            try { Check(parsed != 0 && argc == 2 && Marshal.PtrToStringUni(Marshal.ReadIntPtr(parsed, IntPtr.Size)) == argument); }
+            finally { if (parsed != 0) LocalFree(parsed); }
+        }
         using var identity=WindowsIdentity.GetCurrent();string own=identity.User!.Value;
         var descriptor=new RawSecurityDescriptor(LocalAgentPipe.SecurityDescriptor(own,"S-1-5-19"));
         var ownerAce=descriptor.DiscretionaryAcl!.Cast<CommonAce>().Single(ace=>ace.SecurityIdentifier.Value==own);
@@ -49,6 +59,22 @@ internal static class SessionBrokerSmoke
             try { LocalAgentPipe.AuthenticateAdminCoordinator(adminClient, pid, "S-1-5-21-1-2-3-1001"); }
             catch (SecurityException) { rejected = true; }
             Check(rejected);
+        }
+        Guid systemGrant = Guid.NewGuid();
+        using (var systemServer = LocalAgentPipe.CreateAdminServer(systemGrant, own))
+        using (var systemDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        {
+            var accepting = systemServer.WaitForConnectionAsync(systemDeadline.Token);
+            using var ordinaryPeer = await LocalAgentPipe.ConnectAdmin(systemGrant, systemDeadline.Token);
+            await accepting;
+            await Wire.Write(ordinaryPeer, new(AdminInputChannel.Ready, Origin: systemGrant.ToString("N")), systemDeadline.Token);
+            _ = await Wire.Read(systemServer, systemDeadline.Token);
+            try
+            {
+                LocalAgentPipe.AuthenticateAdminWorker(systemServer, Environment.ProcessId, Environment.ProcessPath!, systemWorker: true);
+                throw new IOException("Ordinary peer impersonated a SYSTEM input worker");
+            }
+            catch (SecurityException) { Check(true); }
         }
         Guid mismatchedGrant = Guid.NewGuid();
         using (var wrongServer = LocalAgentPipe.CreateAdminServer(mismatchedGrant, own))
@@ -253,6 +279,12 @@ internal static class SessionBrokerSmoke
             await child.StandardInput.WriteLineAsync("INVALIDATE "+Process.GetCurrentProcess().SessionId);await child.StandardInput.FlushAsync();
             await Deny(async()=>await active.Completion.WaitAsync(deadline.Token));Check(!active.Healthy&&!child.HasExited);await active.DisposeAsync();active=null;
             // A new local registration gets a different one-use lease; no network authorization is involved.
+            using (var launch = await LocalAgentPipe.Connect(name, deadline.Token))
+            {
+                await SessionAgentProtocol.Write(launch, new("input-register", Guid.NewGuid().ToString("N")), deadline.Token);
+                // A console/test broker must never turn a launch request into SYSTEM execution.
+                Check(await launch.ReadAsync(new byte[1], deadline.Token) == 0);
+            }
             using(var raw=await LocalAgentPipe.Connect(name,deadline.Token))
             {
                 LocalAgentPipe.AuthenticateServer(raw,child.Id);string nonce=Guid.NewGuid().ToString("N");
