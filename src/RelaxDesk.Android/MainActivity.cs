@@ -38,6 +38,13 @@ public sealed class MainActivity : Activity
         appBar.SetPadding(Dp(20), Dp(14), Dp(12), Dp(14));
         appBar.SetGravity(GravityFlags.CenterVertical);
 
+        // Android 15+ (targetSdk 35+) enforces edge-to-edge; apply system bar & cutout insets.
+        root.SetOnApplyWindowInsetsListener(new InsetsListener((top, bottom, left, right) =>
+        {
+            appBar.SetPadding(Dp(20) + left, Dp(14) + top, Dp(12) + right, Dp(14));
+            root.SetPadding(0, 0, 0, bottom);
+        }));
+
         var title = new TextView(this) { Text = "RelaxDesk", TextSize = 20f };
         title.SetTypeface(Typeface.DefaultBold, TypefaceStyle.Bold);
         title.SetTextColor(TextPrimary);
@@ -271,4 +278,17 @@ public sealed class MainActivity : Activity
     }
 
     int Dp(int dp) => (int)Math.Round(dp * Resources!.DisplayMetrics!.Density);
+
+    sealed class InsetsListener(Action<int, int, int, int> onInsets) : Java.Lang.Object, View.IOnApplyWindowInsetsListener
+    {
+        public WindowInsets OnApplyWindowInsets(View v, WindowInsets insets)
+        {
+            if (OperatingSystem.IsAndroidVersionAtLeast(30))
+            {
+                var bars = insets.GetInsets(WindowInsets.Type.SystemBars() | WindowInsets.Type.DisplayCutout());
+                onInsets(bars.Top, bars.Bottom, bars.Left, bars.Right);
+            }
+            return insets;
+        }
+    }
 }
