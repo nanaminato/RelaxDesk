@@ -24,15 +24,37 @@ internal static class PhysicalInputSwitchVerification
         public readonly Button Button = new() { Content = "RelaxDesk physical input test", Margin = new Thickness(24), Height = 90 };
         public int Downs, Ups, KeyDowns, KeyUps;
         public Action? Updated;
+        bool leftHeld;
         public Target(string label, double left)
         {
             Title = "RelaxDesk input switch probe " + label;
             Width = 340; Height = 220; Left = left; Top = 80;
             Content = Button;
-            Button.PreviewMouseLeftButtonDown += (_, _) => { Downs++; Updated?.Invoke(); };
-            Button.PreviewMouseLeftButtonUp += (_, _) => { Ups++; Updated?.Invoke(); };
-            PreviewKeyDown += (_, e) => { if (e.Key == Key.F8 && !e.IsRepeat) { KeyDowns++; Updated?.Invoke(); e.Handled = true; } };
-            PreviewKeyUp += (_, e) => { if (e.Key == Key.F8) { KeyUps++; Updated?.Invoke(); e.Handled = true; } };
+            SourceInitialized += (_, _) =>
+            {
+                var source = (HwndSource)PresentationSource.FromVisual(this);
+                source.AddHook(CountNativeInput);
+            };
+        }
+        nint CountNativeInput(nint window, int message, nint key, nint flags, ref bool handled)
+        {
+            // WPF can re-raise routed button events while synthesizing a double
+            // click. Count each delivered native input message exactly once.
+            if (message is 0x201 or 0x203)
+            {
+                if (!leftHeld) Downs++;
+                leftHeld = true;
+            }
+            else if (message == 0x202)
+            {
+                if (leftHeld) Ups++;
+                leftHeld = false;
+            }
+            else if (message == 0x100 && key == 0x77 && ((long)flags & (1L << 30)) == 0) KeyDowns++;
+            else if (message == 0x101 && key == 0x77) KeyUps++;
+            else return 0;
+            Updated?.Invoke();
+            return 0;
         }
     }
 
