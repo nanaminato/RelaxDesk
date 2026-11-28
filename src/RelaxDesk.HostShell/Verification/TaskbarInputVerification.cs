@@ -15,6 +15,7 @@ internal static class TaskbarInputVerification
 {
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern nint FindWindow(string name,string? title);
     [DllImport("user32.dll")] static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] static extern bool ShowWindow(nint window,int command);
     [DllImport("shell32.dll")] static extern int SHGetPropertyStoreForWindow(nint window, ref Guid iid, [MarshalAs(UnmanagedType.Interface)] out IPropertyStore store);
     [StructLayout(LayoutKind.Sequential)] struct PropertyKey { public Guid Format; public uint Id; }
     [StructLayout(LayoutKind.Explicit,Size=24)] struct PropVariant { [FieldOffset(0)] public ushort Type; [FieldOffset(8)] public nint Text; }
@@ -35,14 +36,16 @@ internal static class TaskbarInputVerification
     sealed class Target : Window
     {
         public int Downs,Ups;
+        public string AppId { get; }
         public Target(string name,double left)
         {
+            AppId="RelaxDesk.TaskbarAcceptance."+Environment.ProcessId+"."+name;
             Title="RelaxDesk taskbar acceptance "+name;Width=340;Height=200;Left=left;Top=90;ShowInTaskbar=true;
             Content=new TextBlock{Text="F8 taskbar input acceptance",Margin=new Thickness(24)};
             SourceInitialized+=(_,_)=>
             {
                 nint handle=new WindowInteropHelper(this).Handle;
-                SetAppId(handle,"RelaxDesk.TaskbarAcceptance."+Environment.ProcessId+"."+name);
+                SetAppId(handle,AppId);
                 ((HwndSource)PresentationSource.FromVisual(this)).AddHook((nint w,int msg,nint key,nint flags,ref bool handled)=>
                 {if(key==0x77&&msg==0x100&&((long)flags&(1L<<30))==0)Downs++;else if(key==0x77&&msg==0x101)Ups++;return 0;});
             };
@@ -60,41 +63,62 @@ internal static class TaskbarInputVerification
             try
             {
                 WindowsInputPrivilege.EnsureOrdinaryProcess();
-                second.Show();first.Activate();second.WindowState=WindowState.Minimized;
+                second.Show();
+                ShowWindow(new WindowInteropHelper(first).Handle,5);
+                ShowWindow(new WindowInteropHelper(second).Handle,5);
+                SetAppId(new WindowInteropHelper(first).Handle,first.AppId);
+                SetAppId(new WindowInteropHelper(second).Handle,second.AppId);
+                first.Activate();await Task.Delay(1000);first.WindowState=WindowState.Minimized;second.WindowState=WindowState.Minimized;
                 var selection=new WindowsDisplaySelection("all");
                 worker=await AdminInputLauncher.StartService(Guid.NewGuid(),selection.Device,CancellationToken.None);
                 await Task.Delay(500);
                 nint taskbar=FindWindow("Shell_TrayWnd",null);
                 if(taskbar==0)throw new IOException("Explorer taskbar is unavailable in this Windows session");
-                async Task<Point> ButtonCenter(Target target)
+                async Task<Point[]> ButtonCenters()
                 {
-                    using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(10));
                     while(true)
                     {
                         var root=AutomationElement.FromHandle(taskbar);
                         var buttons=root.FindAll(TreeScope.Descendants,new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Button));
-                        foreach(AutomationElement button in buttons)
-                        {
-                            var data=button.Current;
-                            if(data.Name.Contains(target.Title,StringComparison.Ordinal)&&!data.IsOffscreen&&!data.BoundingRectangle.IsEmpty)
-                                return new(data.BoundingRectangle.Left+data.BoundingRectangle.Width/2,data.BoundingRectangle.Top+data.BoundingRectangle.Height/2);
-                        }
+                        var matching=buttons.Cast<AutomationElement>().Select(element=>element.Current)
+                            .Where(data=>!data.IsOffscreen&&!data.BoundingRectangle.IsEmpty&&
+                                (data.Name.Contains("RelaxDesk.HostShell",StringComparison.OrdinalIgnoreCase)||
+                                 data.AutomationId.Contains("RelaxDesk.TaskbarAcceptance.",StringComparison.OrdinalIgnoreCase)))
+                            .OrderBy(data=>data.BoundingRectangle.Left).ToArray();
+                        // Unique AppUserModelIDs make two independent one-window groups.
+                        // Server labels them with the executable name, not Window.Title.
+                        if(matching.Length==2)return matching.Select(data=>new Point(data.BoundingRectangle.Left+data.BoundingRectangle.Width/2,
+                            data.BoundingRectangle.Top+data.BoundingRectangle.Height/2)).ToArray();
+                        if(matching.Length>2)throw new IOException("Other RelaxDesk taskbar windows are present; probe will not activate an unrelated group");
                         await Task.Delay(50,deadline.Token);
                     }
                 }
-                foreach(var target in Enumerable.Range(0,12).Select(i=>i%2==0?second:first))
+                var centers=await ButtonCenters();
+                Target?[] mapped=new Target?[2];
+                for(int index=0;index<12;index++)
                 {
-                    Point point=await ButtonCenter(target);var bounds=selection.Bounds;
+                    int slot=index%2;Point point=centers[slot];var bounds=selection.Bounds;
+                    nint previouslyActive=GetForegroundWindow();
                     int x=(int)Math.Round((point.X-bounds.X)*65535/(bounds.Width-1));
                     int y=(int)Math.Round((point.Y-bounds.Y)*65535/(bounds.Height-1));
                     await worker.Send(new("move",X:x,Y:y),CancellationToken.None);await Task.Delay(30);
                     await worker.Send(new("button",Button:1),CancellationToken.None);
                     await worker.Send(new("button",Button:1,Up:true),CancellationToken.None);
                     using var foreground=new CancellationTokenSource(TimeSpan.FromSeconds(3));
-                    while(GetForegroundWindow()!=new WindowInteropHelper(target).Handle)await Task.Delay(20,foreground.Token);
+                    Target? target=mapped[slot];
+                    while(true)
+                    {
+                        nint active=GetForegroundWindow();
+                        Target? observed=active==new WindowInteropHelper(first).Handle?first:active==new WindowInteropHelper(second).Handle?second:null;
+                        if(observed is not null&&(target is not null?ReferenceEquals(observed,target):active!=previouslyActive))
+                        {target=observed;mapped[slot]=target;break;}
+                        await Task.Delay(20,foreground.Token);
+                    }
+                    if(index==1&&ReferenceEquals(mapped[0],mapped[1]))throw new IOException("Taskbar buttons did not map to distinct owned windows");
                     await worker.Send(new("key",VirtualKey:0x77),CancellationToken.None);
                     await worker.Send(new("key",VirtualKey:0x77,Up:true),CancellationToken.None);
-                    int expected=restored/2+1;
+                    int expected=index/2+1;
                     while(target.Downs!=expected||target.Ups!=expected)await Task.Delay(20,foreground.Token);
                     restored++;
                 }

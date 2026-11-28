@@ -42,13 +42,13 @@ public static class ServiceDesktopProtocol
         BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(36), length);
         BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(40), frame.PointerX);
         BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(44), frame.PointerY);
-        await stream.WriteAsync(header, cancellation);
-        if (length != 0) await stream.WriteAsync(frame.Pixels, cancellation);
+        await stream.WriteAsync(header, cancellation).ConfigureAwait(false);
+        if (length != 0) await stream.WriteAsync(frame.Pixels, cancellation).ConfigureAwait(false);
     }
     public static async Task<ServiceDesktopFrame> Read(Stream stream, long expectedSequence, CancellationToken cancellation)
     {
         byte[] header = new byte[HeaderSize];
-        await stream.ReadExactlyAsync(header, cancellation);
+        await stream.ReadExactlyAsync(header, cancellation).ConfigureAwait(false);
         if (BinaryPrimitives.ReadUInt32LittleEndian(header) != Magic || BinaryPrimitives.ReadInt32LittleEndian(header.AsSpan(4)) != 1)
             throw new InvalidDataException("Unknown service desktop frame");
         var frame = new ServiceDesktopFrame(BinaryPrimitives.ReadInt64LittleEndian(header.AsSpan(8)),
@@ -63,7 +63,7 @@ public static class ServiceDesktopProtocol
                 : frame.Width != 0 || frame.Height != 0 || length != 0 || frame.PointerX != 0 || frame.PointerY != 0))
             throw new InvalidDataException("Service desktop header/binding rejected");
         byte[] pixels = new byte[length];
-        if (length != 0) await stream.ReadExactlyAsync(pixels, cancellation);
+        if (length != 0) await stream.ReadExactlyAsync(pixels, cancellation).ConfigureAwait(false);
         return frame with { Pixels = pixels };
     }
 }

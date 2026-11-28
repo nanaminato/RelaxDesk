@@ -33,7 +33,7 @@ try
     {
         using var desktop = await LocalAgentPipe.ConnectDesktop(request.Grant, startup.Token);
         LocalAgentPipe.AuthenticateAdminCoordinator(desktop, request.CoordinatorPid, request.Owner);
-        await ServiceDesktopWorker.Run(pipe, desktop, request.Grant, () => new WindowsDisplaySelection(request.Display), CancellationToken.None);
+        await ServiceDesktopWorker.Run(pipe, desktop, request.Grant, () => new WindowsDisplaySelection(request.Display), CancellationToken.None, ServiceWorkerDiagnostics.Message);
     }
     else await ElevatedInputWorker.Run(pipe, request.Grant, () => new WindowsDisplaySelection(request.Display), CancellationToken.None);
     return 0;
@@ -41,5 +41,6 @@ try
 catch (Exception error) when (error is IOException or SecurityException or UnauthorizedAccessException or
     System.ComponentModel.Win32Exception or ArgumentException or InvalidDataException or OperationCanceledException)
 {
+    if(serviceInput)ServiceWorkerDiagnostics.Record("session",error);
     return 3;
 }

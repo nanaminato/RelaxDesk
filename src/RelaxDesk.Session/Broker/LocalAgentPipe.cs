@@ -60,7 +60,7 @@ public static class LocalAgentPipe
         _ = AdminName(grant);
         owner = CanonicalUser(owner);
         return CreateServerCore("RelaxDesk.ServiceDesktop." + grant.ToString("N"),
-            $"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;RC;;;OW)(A;;0x{ClientAccess:X8};;;{owner})", true, 1);
+            $"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;RC;;;OW)(A;;0x{ClientAccess:X8};;;{owner})", true, 1, 64*1024);
     }
     public static Task<NamedPipeClientStream> ConnectDesktop(Guid grant, CancellationToken cancellation)
     {
@@ -179,13 +179,13 @@ public static class LocalAgentPipe
         return CreateServerCore(name, SecurityDescriptor(user, server), first, 9);
     }
 
-    static NamedPipeServerStream CreateServerCore(string name, string sddl, bool first, uint instances)
+    static NamedPipeServerStream CreateServerCore(string name, string sddl, bool first, uint instances, uint bufferSize=4096)
     {
         Check(ConvertStringSecurityDescriptorToSecurityDescriptor(sddl,1,out var descriptor,out _));
         try
         {
             var attributes=new SecurityAttributes{Length=Marshal.SizeOf<SecurityAttributes>(),Descriptor=descriptor};
-            var handle=CreateNamedPipe(@"\\.\pipe\"+name,3|0x40000000u|(first?0x80000u:0),8,instances,4096,4096,0,ref attributes); // Overlapped, local-only; one spare instance for accept-race replacement.
+            var handle=CreateNamedPipe(@"\\.\pipe\"+name,3|0x40000000u|(first?0x80000u:0),8,instances,bufferSize,bufferSize,0,ref attributes); // Overlapped, local-only; one spare instance for accept-race replacement.
             if(handle.IsInvalid){handle.Dispose();throw new Win32Exception(Marshal.GetLastWin32Error());}
             try{return new NamedPipeServerStream(PipeDirection.InOut,true,false,handle);}catch{handle.Dispose();throw;}
         }

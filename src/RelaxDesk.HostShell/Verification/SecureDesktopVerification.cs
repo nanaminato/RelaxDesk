@@ -23,6 +23,8 @@ internal static class SecureDesktopVerification
         {
             AdminInputConnection? worker=null;bool secureSeen=false,mouseVerified=false,returned=false;long secureEpoch=0;int frames=0;
             using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(45));
+            await Task.Run(async () =>
+            {
             try
             {
                 WindowsInputPrivilege.EnsureOrdinaryProcess();
@@ -42,13 +44,24 @@ internal static class SecureDesktopVerification
                         using(var file=File.Create(Path.Combine(output,"uac-secure.png")))png.Save(file);
                         worker.Desktop.ConfirmDisplayed(frame.Epoch);
                         await worker.Send(new("move",X:50000,Y:10000),deadline.Token);
-                        var moved=await worker.Desktop.Capture(selection.Device,deadline.Token);
-                        if(moved.Kind!=ServiceDesktopKind.Secure||moved.Epoch!=frame.Epoch)throw new IOException("UAC prompt disappeared before input verification");
                         var bounds=selection.Bounds;
                         int expectedX=bounds.X+(int)((50000L*(bounds.Width-1)+32767)/65535);
                         int expectedY=bounds.Y+(int)((10000L*(bounds.Height-1)+32767)/65535);
-                        mouseVerified=Math.Abs(moved.PointerX-expectedX)<=1&&Math.Abs(moved.PointerY-expectedY)<=1;
-                        if(!mouseVerified)throw new IOException($"Secure mouse position mismatch {moved.PointerX},{moved.PointerY} vs {expectedX},{expectedY}");
+                        using var movement=CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+                        movement.CancelAfter(TimeSpan.FromSeconds(3));
+                        while(!mouseVerified)
+                        {
+                            var moved=await worker.Desktop.Capture(selection.Device,movement.Token);
+                            if(moved.Kind==ServiceDesktopKind.Default||moved.Epoch!=frame.Epoch)throw new IOException("UAC prompt disappeared before input verification");
+                            if(moved.Kind==ServiceDesktopKind.Transition){await Task.Delay(50,movement.Token);continue;}
+                            mouseVerified=Math.Abs(moved.PointerX-expectedX)<=1&&Math.Abs(moved.PointerY-expectedY)<=1;
+                            if(!mouseVerified)
+                            {
+                                // Motion is a new explicit test event, not replay of a click/key.
+                                await worker.Send(new("move",X:50000,Y:10000),movement.Token);
+                                await Task.Delay(50,movement.Token);
+                            }
+                        }
                         await worker.Send(new("key",VirtualKey:27),deadline.Token);
                         await worker.Send(new("key",VirtualKey:27,Up:true),deadline.Token);
                     }
@@ -69,7 +82,9 @@ internal static class SecureDesktopVerification
                 File.WriteAllText(Path.Combine(output,"result.json"),JsonSerializer.Serialize(new{status="FAIL",secureSeen,mouseVerified,returned,error=error.ToString()}));
                 Console.Error.WriteLine(error);Environment.ExitCode=1;
             }
-            finally{if(worker is not null)await worker.DisposeAsync();window.Close();}
+            finally{if(worker is not null)await worker.DisposeAsync();}
+            });
+            window.Close();
         };
         app.Run(window);
     }

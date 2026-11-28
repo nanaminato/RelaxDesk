@@ -18,7 +18,7 @@ public static class ServiceDesktopWorker
     // Both channels have already authenticated the coordinator's SID/PID/session.
     // Input and GDI capture share one dedicated OS thread, never a UI/CLR pool thread.
     public static async Task Run(Stream inputChannel, Stream desktopChannel, Guid grant,
-        Func<WindowsDisplaySelection> display, CancellationToken cancellation)
+        Func<WindowsDisplaySelection> display, CancellationToken cancellation, Action<string>? diagnostic=null)
     {
         WindowsInputPrivilege.EnsureSystemInputProcess();
         WindowsSessionAccess.EnsureAllowed();
@@ -26,6 +26,7 @@ public static class ServiceDesktopWorker
         WindowsDisplaySelection selection = display();
         WindowsInputSession? input = null;
         var state = new ServiceDesktopEpoch();
+        ServiceSecureCapture? secureCapture=null;
         thread.Invoke(() =>
         {
             input = new WindowsInputSession(() => selection);
@@ -33,17 +34,20 @@ public static class ServiceDesktopWorker
         });
         WindowsSessionSnapshot Observe()
         {
+            var before=WindowsSessionAccess.Read();
+            if(before.InputDesktop!=before.ThreadDesktop){secureCapture?.Dispose();secureCapture=null;}
             WindowsDesktopSwitch.SyncThreadToInputDesktop();
             var snapshot = WindowsSessionAccess.Read();
             EnsureCaptureAllowed(snapshot);
-            if (state.Observe(snapshot.InputDesktop!)) input!.ReleaseAll();
+            if (state.Observe(snapshot.InputDesktop!))
+            { secureCapture?.Dispose();secureCapture=null;input!.ReleaseAll(); }
             return snapshot;
         }
         void Release() => thread.Invoke(() => input!.ReleaseAll());
         void Select(string device)
         {
             if (selection.Device == device) return;
-            input!.ReleaseAll();
+            input!.ReleaseAll();secureCapture?.Dispose();secureCapture=null;
             selection = selection.Select(device);
             selection.EnsureCurrent();
         }
@@ -61,7 +65,7 @@ public static class ServiceDesktopWorker
                 var current = WindowsSessionAccess.Read(); EnsureCaptureAllowed(current);
                 if (current.InputDesktop == "Winlogon" && !WindowsUacDesktop.ConsentIsForeground()) throw new InputDesktopChangedException();
             };
-            try { input!.Inject(command); }
+            try { _ = input!.TryInject(command); }
             catch (InputDesktopChangedException) { } // A racing switch is observed on the next capture/input.
             finally { WindowsDesktopSwitch.ExpectedInputDesktop = null; WindowsDesktopSwitch.ExpectedInputAuthorization = null; }
         });
@@ -75,8 +79,8 @@ public static class ServiceDesktopWorker
                 if (!state.Secure) { frame = new(sequence, state.Epoch, ServiceDesktopKind.Default, 0, 0, []); return; }
                 if (!WindowsUacDesktop.ConsentIsForeground()) { frame = new(sequence,state.Epoch,ServiceDesktopKind.Transition,0,0,[]); return; }
                 long epoch = state.Epoch;
-                using var desktop = new Desktop(selection);
-                byte[] pixels = desktop.Capture(includePointer: true);
+                secureCapture??=new ServiceSecureCapture(selection,diagnostic);
+                byte[] pixels = secureCapture.Capture();
                 var after = Observe();
                 if (!GetCursorPos(out var pointer)) throw new IOException("Secure desktop cursor position unavailable");
                 if (after.InputDesktop != snapshot.InputDesktop || state.Epoch != epoch || !WindowsUacDesktop.ConsentIsForeground())
@@ -84,7 +88,7 @@ public static class ServiceDesktopWorker
                     System.Security.Cryptography.CryptographicOperations.ZeroMemory(pixels);
                     frame = new(sequence,state.Epoch,ServiceDesktopKind.Transition,0,0,[]);
                 }
-                else frame = new(sequence,epoch,ServiceDesktopKind.Secure,desktop.Width,desktop.Height,pixels,pointer.X,pointer.Y);
+                else frame = new(sequence,epoch,ServiceDesktopKind.Secure,selection.Bounds.Width,selection.Bounds.Height,pixels,pointer.X,pointer.Y);
             });
             return frame!;
         }
@@ -122,7 +126,7 @@ public static class ServiceDesktopWorker
                     if (task != first) try { await task; } catch (Exception) { }
             }
         }
-        finally { thread.Invoke(() => input!.Dispose()); }
+        finally { thread.Invoke(() => {secureCapture?.Dispose();input!.Dispose();}); }
 
         async Task CaptureLoop()
         {

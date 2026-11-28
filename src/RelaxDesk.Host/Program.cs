@@ -19,6 +19,11 @@ string? selectedFileRoot = null,selectedDisplay=null;
 while(args is [var option,var value,.. var remaining]&&option is "--file-root" or "--display")
 {if(option=="--file-root")selectedFileRoot=Path.GetFullPath(value);else selectedDisplay=value;args=remaining;}
 if(args is ["--list-displays"]){Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(WindowsDisplays.Enumerate()));return;}
+if(args is ["--secure-desktop-transport-probe",var secureTransportOutput])
+{
+    try{await SecureDesktopTransportProbe.Run(secureTransportOutput);}catch(Exception error){Console.Error.WriteLine(error);Environment.ExitCode=1;}
+    return;
+}
 bool interactiveLaunch = args.Length == 0;
 if (args is ["--version"]) { Console.WriteLine(BuildIdentity.Display); return; }
 if (args.Length == 0)

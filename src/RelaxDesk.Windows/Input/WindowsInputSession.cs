@@ -114,6 +114,8 @@ public sealed class WindowsInputSession : IDisposable
     public void InjectLegacy(int code,bool up,int x,int y)=>Inject(WindowsInputPlan.Legacy(code,up,x,y));
     public bool TryInjectOrdinaryLegacy(int code, bool up, int x, int y) => TryInjectOrdinary(WindowsInputPlan.Legacy(code, up, x, y));
 
+    public bool TryInject(RemoteInput input) => TryInjectOrdinary(input);
+
     public bool TryInjectOrdinary(RemoteInput input)
     {
         lock (inputSync)

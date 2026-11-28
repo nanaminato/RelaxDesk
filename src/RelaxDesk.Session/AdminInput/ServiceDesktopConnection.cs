@@ -49,12 +49,12 @@ public sealed class ServiceDesktopConnection : IDisposable
         if (!AdminInputChannel.ValidDisplay(display)) throw new InvalidDataException("Invalid service capture display");
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
         deadline.CancelAfter(TimeSpan.FromSeconds(2));
-        await reader.WaitAsync(deadline.Token);
+        await reader.WaitAsync(deadline.Token).ConfigureAwait(false);
         try
         {
             if (Volatile.Read(ref closed) != 0) throw new ObjectDisposedException(nameof(ServiceDesktopConnection));
-            await Wire.Write(pipe, new(ServiceDesktopProtocol.Request, checked(++sequence), Text: display, Origin: binding), deadline.Token);
-            var frame = await ServiceDesktopProtocol.Read(pipe, sequence, deadline.Token);
+            await Wire.Write(pipe, new(ServiceDesktopProtocol.Request, checked(++sequence), Text: display, Origin: binding), deadline.Token).ConfigureAwait(false);
+            var frame = await ServiceDesktopProtocol.Read(pipe, sequence, deadline.Token).ConfigureAwait(false);
             if (frame.Epoch < Epoch) throw new InvalidDataException("Service desktop epoch replay");
             Volatile.Write(ref kind, (int)frame.Kind);
             Interlocked.Exchange(ref epoch, frame.Epoch);
